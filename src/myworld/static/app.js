@@ -243,8 +243,21 @@ function catalogLinks(entry) {
 
 // ─── film search ────────────────────────────────────────────────────────────
 
+const MOVIE_FIELDS = ["title", "creator", "year"];
+
+// After a pick, the title, director, year and ids are what the catalog says; the
+// user reads them rather than edits them, until they ask to enter the film by hand.
+function lockMovieFields(locked) {
+	const form = $("add-form");
+	for (const name of MOVIE_FIELDS) {
+		form.elements[name].readOnly = locked;
+	}
+	$("movie-locked").hidden = !locked;
+}
+
 function movieIdsReset() {
 	showMovieIds({});
+	lockMovieFields(false);
 }
 
 function renderMovieResult(movie, onPick) {
@@ -304,6 +317,7 @@ async function pickMovie(movie) {
 		form.elements.creator.value = film.creator;
 		form.elements.year.value = film.year ?? "";
 		showMovieIds(film);
+		lockMovieFields(true);
 		$("movie-results").hidden = true;
 		const extras = [];
 		if (film.runtime) {
@@ -352,8 +366,11 @@ function setupMovieSearch() {
 			findMovies();
 		}
 	};
-	// typing a different title by hand means the ids no longer apply
-	$("add-form").elements.title.oninput = movieIdsReset;
+	$("movie-unlock").onclick = () => {
+		movieIdsReset();
+		$("movie-hint").hidden = true;
+		$("add-form").elements.title.focus();
+	};
 	box.hidden = state.kind !== "film";
 }
 
@@ -447,6 +464,9 @@ async function selectKind(kind) {
 	const film = state.config.tmdb && kind === "film";
 	$("movie-search").hidden = !film;
 	$("movie-ids").hidden = !film;
+	if (state.config.tmdb) {
+		movieIdsReset();
+	}
 	await loadEntries();
 }
 
