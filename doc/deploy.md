@@ -45,6 +45,36 @@ file says.
 1. Deploy: `gcloud_run_deploy.sh`. The app refuses to start on Cloud Run
    without `GOOGLE_CLIENT_ID`, so do the OAuth step first.
 
+## Custom domain
+
+The service answers on `https://myworld.stream` (`gcp_domain` in
+`.gcp.conf`). The domain is registered at Cloudflare, which also serves
+its DNS; Cloud Run owns the TLS certificate through a domain mapping, so
+the Cloudflare records must be plain DNS (proxy off, "DNS only"), or
+Google cannot issue and renew the certificate.
+
+One-time setup, in this order:
+
+1. Verify the domain for your Google account, which domain mappings
+   require. `gcloud domains verify myworld.stream` opens Search Console;
+   choose the `Domain` property type, copy the `google-site-verification=`
+   value, add it at Cloudflare as a `TXT` record on `@`, and click Verify.
+   `gcloud domains list-user-verified` shows it afterwards.
+1. Deploy at least once, then `./scripts/map_domain.sh`. It creates the
+   domain mapping and prints the `A` and `AAAA` records to add at
+   Cloudflare on `@` (DNS only). The script is safe to re-run and doubles
+   as a status check: the certificate is issued once the records resolve,
+   usually within minutes, at most an hour.
+1. Register the new origin with the sign-in providers, which reject
+   unknown redirect targets: on the Google OAuth client add
+   `https://myworld.stream` to the authorized JavaScript origins and
+   `https://myworld.stream/auth/login` to the redirect URIs; on GitHub and
+   Microsoft add `https://myworld.stream/auth/oauth/<provider>/callback`.
+
+`www.myworld.stream` is not mapped; if wanted, add a second mapping for it
+(`gcloud beta run domain-mappings create --domain www.myworld.stream`,
+a `CNAME` to `ghs.googlehosted.com`) or a Cloudflare redirect rule.
+
 ## How sign-in works
 
 The landing page (static HTML plus `static/app.js`, with the animated

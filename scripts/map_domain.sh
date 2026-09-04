@@ -24,9 +24,10 @@ fi
 
 echo "== DNS records to create at the registrar for ${gcp_domain} (proxy off / DNS only)"
 gcloud beta run domain-mappings describe --domain "${gcp_domain}" --region "${gcp_region}" \
-	--format 'table[no-heading](status.resourceRecords[].type, status.resourceRecords[].rrdata)' \
-	| tr ';' '\n'
+	--flatten status.resourceRecords \
+	--format 'table[no-heading](status.resourceRecords.type, status.resourceRecords.rrdata)'
 
 echo "== status (the certificate is issued once the records resolve; can take up to an hour)"
 gcloud beta run domain-mappings describe --domain "${gcp_domain}" --region "${gcp_region}" \
-	--format 'table(status.conditions[].type, status.conditions[].status, status.conditions[].message)'
+	--flatten status.conditions \
+	--format 'table(status.conditions.type, status.conditions.status, status.conditions.message)'
