@@ -1,0 +1,64 @@
+"""
+My World: a per-user library of books, films and other works, behind a
+Google sign-in. Runs on Cloud Run with Cloud SQL (PostgreSQL) in production
+and on sqlite locally.
+"""
+
+import json
+import os
+import secrets
+import warnings
+
+import flask
+from flask.json.provider import DefaultJSONProvider
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
+
+from myworld import auth, views
+from myworld.models import make_engine
+
+
+def load_build_info() -> dict[str, str]:
+    """ Load the deploy stamp written by scripts/deploy.sh; absent in dev. """
+    try:
+        with open("build_info.json", encoding="UTF8") as fp:
+            return json.load(fp)
+    except FileNotFoundError:
+        return {"deploy_date": "unknown", "git_describe": "dev"}
+
+
+def secret_key() -> str:
+    key = os.environ.get("SECRET_KEY")
+    if key:
+        return key
+    if "K_SERVICE" in os.environ:
+        raise RuntimeError("SECRET_KEY must be set on Cloud Run (see scripts/deploy.sh)")
+    warnings.warn("SECRET_KEY not set: sessions will not survive a restart", stacklevel=1)
+    return secrets.token_hex(32)
+
+
+def create_app(engine: Engine | None = None) -> flask.Flask:
+    app = flask.Flask(__name__)
+    app.config["SECRET_KEY"] = secret_key()
+    # keep KINDS/STATUSES in declaration order in /api/config
+    assert isinstance(app.json, DefaultJSONProvider)
+    app.json.sort_keys = False
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_SECURE"] = "K_SERVICE" in os.environ
+    app.config["build_info"] = load_build_info()
+    app.config["engine"] = engine or make_engine()
+
+    @app.before_request
+    def open_session() -> None:
+        flask.g.db = Session(app.config["engine"])
+
+    @app.teardown_request
+    def close_session(_exc: BaseException | None) -> None:
+        db: Session | None = flask.g.pop("db", None)
+        if db is not None:
+            db.close()
+
+    app.register_blueprint(auth.bp)
+    app.register_blueprint(views.bp)
+    return app

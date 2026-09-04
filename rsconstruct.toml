@@ -1,0 +1,61 @@
+# rsconstruct build configuration for this repository.
+
+# ─── analyzers ───────────────────────────────────────────────────────────────
+
+[analyzer.tera]
+
+[analyzer.python]
+
+# ─── templating ──────────────────────────────────────────────────────────────
+
+# Convention: tera configs are Lua (config/*.lua). dep_auto entries are
+# silently skipped where absent. Repos still on config/*.py keep a
+# dep_inputs override in their local overlay until converted.
+[processor.tera]
+dep_auto = [
+	"config/project.lua",
+	"config/personal.lua",
+	"config/version.lua",
+	"config/github.lua",
+	"config/python.lua",
+	"config/shared.lua",
+]
+src_dirs = ["tera.templates"]
+
+[processor.ruff]
+src_dirs = ["src", "scripts", "config", "tests"]
+
+[processor.pylint]
+src_dirs = ["src", "scripts", "config", "tests"]
+
+[processor.mypy]
+src_dirs = ["src", "scripts", "config", "tests"]
+
+[processor.pytest]
+src_dirs = ["tests"]
+
+# ─── shell ───────────────────────────────────────────────────────────────────
+
+[processor.shellcheck]
+src_dirs = ["scripts", "src", "misc", "config"]
+args = ["--severity=error", "--shell=bash"]
+
+# ─── lua ─────────────────────────────────────────────────────────────────────
+
+[processor.luacheck]
+src_dirs = ["config"]
+
+# ─── toml / yaml / json ──────────────────────────────────────────────────────
+
+[processor.taplo]
+src_dirs = ["."]
+
+[processor.htmlhint]
+src_dirs = ["src"]
+
+[processor.tidy]
+src_dirs = ["src"]
+
+# lint the GitHub Actions workflow files with actionlint
+[processor.actionlint]
+src_dirs = [".github/workflows"]

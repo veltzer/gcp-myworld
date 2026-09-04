@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>My World</title>
+		<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+		<link rel="stylesheet" href="/static/style.css">
+		<script src="/static/app.js" defer></script>
+	</head>
+	<body data-page="library">
+		<header class="topbar">
+			<a class="brand" href="/">My World</a>
+			<nav id="kinds" class="kinds"></nav>
+			<div class="whoami">
+				<img id="avatar" class="avatar" src="/static/favicon.svg" alt="">
+				<span id="who"></span>
+				<button id="logout" type="button">Sign out</button>
+			</div>
+		</header>
+		<main class="content">
+			<h1 id="heading"></h1>
+			<details class="add" open>
+				<summary id="add-summary">Add</summary>
+				<form id="add-form">
+					<div class="row">
+						<label>Title <input name="title" required></label>
+						<label><span id="creator-label">Creator</span> <input name="creator"></label>
+						<label>Year <input name="year" type="number" min="0" max="3000"></label>
+					</div>
+					<div class="row">
+						<label>Status <select name="status"></select></label>
+						<label>Rating <input name="rating" type="number"></label>
+						<label>Started <input name="started_on" type="date"></label>
+						<label>Finished <input name="finished_on" type="date"></label>
+					</div>
+					<div class="row">
+						<label class="wide">Notes <input name="notes"></label>
+						<button type="submit">Add</button>
+					</div>
+				</form>
+			</details>
+			<p id="error" class="warning" hidden></p>
+			<p id="empty" class="empty" hidden></p>
+			<table id="entries" class="entries" hidden>
+				<thead>
+					<tr>
+						<th>Title</th>
+						<th id="creator-column">Creator</th>
+						<th>Year</th>
+						<th>Status</th>
+						<th>Rating</th>
+						<th>Started</th>
+						<th>Finished</th>
+						<th>Notes</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody id="rows"></tbody>
+			</table>
+		</main>
+		<footer class="footer">
+			<span id="build"></span>
+		</footer>
+	</body>
+</html>

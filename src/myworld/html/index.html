@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>My World</title>
+		<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+		<link rel="stylesheet" href="/static/style.css">
+		<script src="/static/app.js" defer></script>
+	</head>
+	<body data-page="index">
+		<header class="topbar">
+			<a class="brand" href="/">My World</a>
+		</header>
+		<main class="content">
+			<section class="hero">
+				<h1>Keep track of what you read, watch and play.</h1>
+				<p>
+					Books, films, series, albums and games: what you finished, what
+					you are in the middle of, what you want next, and what you
+					thought of it.
+				</p>
+				<div id="signin"></div>
+				<p id="signin-missing" class="warning" hidden>
+					Google sign-in is not configured: set GOOGLE_CLIENT_ID.
+				</p>
+				<form id="dev-login" class="dev-login" method="post" action="/auth/dev-login" hidden>
+					<label for="dev-email">Development login (no Google):</label>
+					<input id="dev-email" name="email" type="email" placeholder="you@example.com" required>
+					<button type="submit">Sign in</button>
+				</form>
+			</section>
+		</main>
+		<footer class="footer">
+			<span id="build"></span>
+		</footer>
+	</body>
+</html>
