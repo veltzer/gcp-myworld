@@ -1,0 +1,271 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 900" role="img" aria-label="Books, films, music and games">
+	<style>
+		/* The landing page scene: everything animates with plain CSS so the
+		   file works as a plain img src. Transforms use fill-box so that
+		   rotate/scale happen around each shape's own centre. */
+		g, rect, circle, path, ellipse, polygon {
+			transform-box: fill-box;
+			transform-origin: center;
+		}
+		.float { animation: float 7s ease-in-out infinite; }
+		.float.d1 { animation-delay: -1.5s; }
+		.float.d2 { animation-delay: -3s; }
+		.float.d3 { animation-delay: -4.5s; }
+		.float.d4 { animation-delay: -6s; }
+		@keyframes float {
+			0%, 100% { transform: translateY(0); }
+			50% { transform: translateY(-9px); }
+		}
+		.star { animation: twinkle 3s ease-in-out infinite; }
+		.star:nth-child(2n) { animation-delay: -1s; }
+		.star:nth-child(3n) { animation-delay: -2s; animation-duration: 4s; }
+		.star:nth-child(5n) { animation-delay: -0.5s; animation-duration: 2.5s; }
+		@keyframes twinkle {
+			0%, 100% { opacity: 0.25; transform: scale(0.8); }
+			50% { opacity: 1; transform: scale(1.2); }
+		}
+		.book { animation: hop 6s ease-in-out infinite; }
+		.book:nth-child(1) { animation-delay: 0s; }
+		.book:nth-child(2) { animation-delay: 0.3s; }
+		.book:nth-child(3) { animation-delay: 0.6s; }
+		.book:nth-child(4) { animation-delay: 0.9s; }
+		.book:nth-child(5) { animation-delay: 1.2s; }
+		.book:nth-child(6) { animation-delay: 1.5s; }
+		.book:nth-child(7) { animation-delay: 1.8s; }
+		@keyframes hop {
+			0%, 70%, 100% { transform: translateY(0); }
+			80% { transform: translateY(-14px); }
+			90% { transform: translateY(0); }
+		}
+		.page {
+			transform-origin: left center;
+			animation: flip 5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+		}
+		@keyframes flip {
+			0%, 20% { transform: scaleX(1); fill: #fff7e0; }
+			50% { transform: scaleX(0.05); fill: #e6d5b3; }
+			80%, 100% { transform: scaleX(-1); fill: #fff7e0; }
+		}
+		.reel { animation: spin 14s linear infinite; }
+		.disc { animation: spin 6s linear infinite; }
+		@keyframes spin {
+			to { transform: rotate(360deg); }
+		}
+		.film {
+			stroke-dasharray: 18 8;
+			animation: run 2s linear infinite;
+		}
+		@keyframes run {
+			to { stroke-dashoffset: -52; }
+		}
+		.clap {
+			transform-origin: 0% 100%;
+			animation: clap 4s ease-in infinite;
+		}
+		@keyframes clap {
+			0%, 55% { transform: rotate(-22deg); }
+			65%, 100% { transform: rotate(0deg); }
+		}
+		.arm {
+			transform-origin: 85% 15%;
+			animation: sway 6s ease-in-out infinite;
+		}
+		@keyframes sway {
+			0%, 100% { transform: rotate(-3deg); }
+			50% { transform: rotate(4deg); }
+		}
+		.note {
+			opacity: 0;
+			animation: rise 4s ease-out infinite;
+		}
+		.note.n2 { animation-delay: 1.3s; }
+		.note.n3 { animation-delay: 2.6s; }
+		@keyframes rise {
+			0% { opacity: 0; transform: translate(0, 20px) rotate(-8deg); }
+			20% { opacity: 1; }
+			100% { opacity: 0; transform: translate(14px, -90px) rotate(10deg); }
+		}
+		.btn { animation: press 2.4s ease-in-out infinite; }
+		.btn.b2 { animation-delay: 0.6s; }
+		.btn.b3 { animation-delay: 1.2s; }
+		.btn.b4 { animation-delay: 1.8s; }
+		@keyframes press {
+			0%, 80%, 100% { transform: scale(1); opacity: 1; }
+			90% { transform: scale(0.72); opacity: 0.6; }
+		}
+		.screen { animation: glow 5s ease-in-out infinite; }
+		@keyframes glow {
+			0%, 100% { fill: #1e3a8a; }
+			50% { fill: #2563eb; }
+		}
+		.play { animation: pulse 2s ease-in-out infinite; }
+		@keyframes pulse {
+			0%, 100% { transform: scale(1); opacity: 0.9; }
+			50% { transform: scale(1.15); opacity: 1; }
+		}
+		.halo { animation: breathe 9s ease-in-out infinite; }
+		.halo.h2 { animation-delay: -4s; }
+		@keyframes breathe {
+			0%, 100% { transform: scale(1); opacity: 0.35; }
+			50% { transform: scale(1.25); opacity: 0.55; }
+		}
+		@media (prefers-reduced-motion: reduce) {
+			* { animation: none !important; }
+			.note { opacity: 0.8; }
+		}
+	</style>
+
+	<!-- soft glows behind the objects -->
+	<circle class="halo" cx="150" cy="200" r="130" fill="#f472b6" opacity="0.35"/>
+	<circle class="halo h2" cx="440" cy="640" r="150" fill="#60a5fa" opacity="0.35"/>
+	<circle class="halo" cx="470" cy="230" r="90" fill="#fbbf24" opacity="0.3"/>
+	<circle class="halo h2" cx="140" cy="660" r="110" fill="#a78bfa" opacity="0.3"/>
+
+	<!-- stars -->
+	<g class="stars" fill="#fff">
+		<circle class="star" cx="40" cy="60" r="2"/>
+		<circle class="star" cx="120" cy="30" r="1.5"/>
+		<circle class="star" cx="260" cy="70" r="2.5"/>
+		<circle class="star" cx="380" cy="40" r="1.5"/>
+		<circle class="star" cx="520" cy="80" r="2"/>
+		<circle class="star" cx="570" cy="160" r="1.5"/>
+		<circle class="star" cx="300" cy="300" r="2"/>
+		<circle class="star" cx="60" cy="330" r="1.5"/>
+		<circle class="star" cx="560" cy="380" r="2"/>
+		<circle class="star" cx="250" cy="520" r="1.5"/>
+		<circle class="star" cx="30" cy="540" r="2"/>
+		<circle class="star" cx="330" cy="560" r="2.5"/>
+		<circle class="star" cx="580" cy="560" r="1.5"/>
+		<circle class="star" cx="90" cy="820" r="2"/>
+		<circle class="star" cx="300" cy="880" r="1.5"/>
+		<circle class="star" cx="540" cy="850" r="2"/>
+		<circle class="star" cx="200" cy="420" r="1.5"/>
+		<circle class="star" cx="470" cy="470" r="1.5"/>
+	</g>
+
+	<!-- bookshelf -->
+	<g class="float">
+		<g class="books">
+			<rect class="book" x="60" y="150" width="26" height="100" rx="3" fill="#f472b6"/>
+			<rect class="book" x="90" y="130" width="22" height="120" rx="3" fill="#60a5fa"/>
+			<rect class="book" x="116" y="160" width="30" height="90" rx="3" fill="#34d399"/>
+			<rect class="book" x="150" y="140" width="20" height="110" rx="3" fill="#fbbf24"/>
+			<rect class="book" x="174" y="155" width="28" height="95" rx="3" fill="#a78bfa"/>
+			<rect class="book" x="206" y="135" width="24" height="115" rx="3" fill="#f87171"/>
+			<rect class="book" x="234" y="165" width="34" height="85" rx="3" fill="#fde68a" transform="rotate(-12 251 250)"/>
+		</g>
+		<!-- spines' labels -->
+		<g fill="#fff" opacity="0.7">
+			<rect x="66" y="165" width="14" height="4" rx="2"/>
+			<rect x="95" y="145" width="12" height="4" rx="2"/>
+			<rect x="123" y="175" width="16" height="4" rx="2"/>
+			<rect x="154" y="155" width="12" height="4" rx="2"/>
+			<rect x="180" y="170" width="16" height="4" rx="2"/>
+			<rect x="211" y="150" width="14" height="4" rx="2"/>
+		</g>
+		<rect x="40" y="250" width="240" height="12" rx="4" fill="#c7a17a"/>
+		<rect x="40" y="262" width="240" height="6" rx="2" fill="#8b5e3c"/>
+	</g>
+
+	<!-- open book with a turning page -->
+	<g class="float d2">
+		<path d="M330 230 Q345 170 440 180 L440 300 Q345 290 330 320 Z" fill="#fff7e0" stroke="#d6c39a" stroke-width="3"/>
+		<path d="M550 230 Q535 170 440 180 L440 300 Q535 290 550 320 Z" fill="#fff7e0" stroke="#d6c39a" stroke-width="3"/>
+		<g stroke="#c9b58c" stroke-width="3" stroke-linecap="round">
+			<line x1="350" y1="215" x2="420" y2="208"/>
+			<line x1="350" y1="235" x2="420" y2="228"/>
+			<line x1="350" y1="255" x2="420" y2="248"/>
+			<line x1="350" y1="275" x2="410" y2="268"/>
+			<line x1="460" y1="208" x2="530" y2="215"/>
+			<line x1="460" y1="228" x2="530" y2="235"/>
+			<line x1="460" y1="248" x2="530" y2="255"/>
+			<line x1="470" y1="268" x2="530" y2="275"/>
+		</g>
+		<path class="page" d="M440 182 Q535 172 548 230 L548 316 Q535 292 440 300 Z" fill="#fff7e0" stroke="#d6c39a" stroke-width="2"/>
+		<line x1="440" y1="180" x2="440" y2="300" stroke="#b39b6b" stroke-width="4" stroke-linecap="round"/>
+		<rect x="322" y="316" width="236" height="10" rx="5" fill="#7c3aed"/>
+	</g>
+
+	<!-- film reel and running strip -->
+	<g class="float d1">
+		<path class="film" d="M190 430 C 260 400, 290 470, 360 440 S 470 400, 560 440" fill="none" stroke="#e5e7eb" stroke-width="16" stroke-linecap="round"/>
+		<path d="M190 430 C 260 400, 290 470, 360 440 S 470 400, 560 440" fill="none" stroke="#111827" stroke-width="6" stroke-dasharray="6 14" stroke-linecap="round" opacity="0.7"/>
+		<g class="reel">
+			<circle cx="130" cy="430" r="72" fill="#1f2937" stroke="#e5e7eb" stroke-width="6"/>
+			<circle cx="130" cy="430" r="14" fill="#e5e7eb"/>
+			<circle cx="130" cy="384" r="16" fill="#0f172a"/>
+			<circle cx="174" cy="416" r="16" fill="#0f172a"/>
+			<circle cx="157" cy="467" r="16" fill="#0f172a"/>
+			<circle cx="103" cy="467" r="16" fill="#0f172a"/>
+			<circle cx="86" cy="416" r="16" fill="#0f172a"/>
+			<circle cx="130" cy="430" r="4" fill="#111827"/>
+		</g>
+	</g>
+
+	<!-- clapperboard -->
+	<g class="float d3">
+		<rect x="340" y="400" width="200" height="120" rx="8" fill="#111827" stroke="#e5e7eb" stroke-width="4"/>
+		<g stroke="#e5e7eb" stroke-width="3" stroke-linecap="round" opacity="0.8">
+			<line x1="360" y1="440" x2="520" y2="440"/>
+			<line x1="360" y1="470" x2="520" y2="470"/>
+			<line x1="360" y1="500" x2="470" y2="500"/>
+			<line x1="440" y1="430" x2="440" y2="450"/>
+		</g>
+		<g class="clap">
+			<rect x="340" y="368" width="200" height="34" rx="6" fill="#e5e7eb"/>
+			<polygon points="352,368 380,368 356,402 328,402" fill="#111827"/>
+			<polygon points="404,368 432,368 408,402 380,402" fill="#111827"/>
+			<polygon points="456,368 484,368 460,402 432,402" fill="#111827"/>
+			<polygon points="508,368 536,368 512,402 484,402" fill="#111827"/>
+		</g>
+	</g>
+
+	<!-- vinyl record and tonearm -->
+	<g class="float d4">
+		<g class="disc">
+			<circle cx="150" cy="680" r="90" fill="#0b0f19" stroke="#334155" stroke-width="2"/>
+			<circle cx="150" cy="680" r="74" fill="none" stroke="#1e293b" stroke-width="2"/>
+			<circle cx="150" cy="680" r="60" fill="none" stroke="#1e293b" stroke-width="2"/>
+			<circle cx="150" cy="680" r="46" fill="none" stroke="#1e293b" stroke-width="2"/>
+			<circle cx="150" cy="680" r="30" fill="#f59e0b"/>
+			<path d="M150 655 a25 25 0 0 1 22 12" fill="none" stroke="#fde68a" stroke-width="4" stroke-linecap="round"/>
+			<circle cx="150" cy="680" r="4" fill="#0b0f19"/>
+			<path d="M150 600 a80 80 0 0 1 56 24" fill="none" stroke="#475569" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+		</g>
+		<g class="arm">
+			<line x1="262" y1="600" x2="200" y2="690" stroke="#cbd5e1" stroke-width="6" stroke-linecap="round"/>
+			<circle cx="262" cy="600" r="12" fill="#94a3b8"/>
+			<rect x="188" y="684" width="22" height="12" rx="3" fill="#cbd5e1" transform="rotate(-55 199 690)"/>
+		</g>
+		<g fill="#fde68a">
+			<path class="note" d="M240 640 v-34 l16 -4 v30 a7 7 0 1 1 -4 -6 v-18 l-8 2 v26 a7 7 0 1 1 -4 -6 z"/>
+			<path class="note n2" d="M270 660 v-30 l6 -2 v22 a6 6 0 1 1 -3 -5 z"/>
+			<path class="note n3" d="M225 665 v-30 l6 -2 v22 a6 6 0 1 1 -3 -5 z"/>
+		</g>
+	</g>
+
+	<!-- gamepad -->
+	<g class="float d1">
+		<path d="M355 640 h150 q45 0 55 45 l14 60 q6 30 -22 34 q-20 2 -34 -18 l-22 -30 h-132 l-22 30 q-14 20 -34 18 q-28 -4 -22 -34 l14 -60 q10 -45 55 -45 z" fill="#e2e8f0" stroke="#94a3b8" stroke-width="3"/>
+		<g fill="#475569">
+			<rect x="374" y="676" width="12" height="36" rx="3"/>
+			<rect x="362" y="688" width="36" height="12" rx="3"/>
+		</g>
+		<circle class="btn" cx="482" cy="676" r="8" fill="#f87171"/>
+		<circle class="btn b2" cx="500" cy="694" r="8" fill="#fbbf24"/>
+		<circle class="btn b3" cx="464" cy="694" r="8" fill="#60a5fa"/>
+		<circle class="btn b4" cx="482" cy="712" r="8" fill="#34d399"/>
+		<rect x="416" y="690" width="14" height="6" rx="3" fill="#94a3b8"/>
+		<rect x="436" y="690" width="14" height="6" rx="3" fill="#94a3b8"/>
+	</g>
+
+	<!-- television with a play button -->
+	<g class="float d3">
+		<rect x="230" y="770" width="150" height="100" rx="12" fill="#0f172a" stroke="#94a3b8" stroke-width="4"/>
+		<rect class="screen" x="242" y="782" width="126" height="76" rx="6" fill="#1e3a8a"/>
+		<polygon class="play" points="292,804 292,836 322,820" fill="#fff"/>
+		<line x1="270" y1="770" x2="250" y2="740" stroke="#94a3b8" stroke-width="4" stroke-linecap="round"/>
+		<line x1="340" y1="770" x2="360" y2="740" stroke="#94a3b8" stroke-width="4" stroke-linecap="round"/>
+		<rect x="280" y="870" width="50" height="8" rx="4" fill="#94a3b8"/>
+	</g>
+</svg>

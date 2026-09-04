@@ -47,13 +47,49 @@ file says.
 
 ## How sign-in works
 
-The landing page (static HTML plus `static/app.js`) renders the Google
-Identity Services button in redirect mode. On success Google POSTs a signed
-ID token to `/auth/login` along with a CSRF token that is also set as a
-cookie. The server checks the two CSRF copies match,
-verifies the token against `GOOGLE_CLIENT_ID` with `google-auth`, creates or updates
-the user by the Google `sub` claim, and stores only our own user id in the
-signed Flask session cookie. No Firebase is involved.
+The landing page (static HTML plus `static/app.js`, with the animated
+scene in `static/scene.svg`) offers four ways in. Whichever one is used,
+the server ends up creating or updating a row in `users` keyed by a
+provider-qualified subject and storing only our own user id in the signed
+Flask session cookie. Accounts are never matched by email: the same email
+signed in through Google and through the password form is two accounts.
+
+- Google: the Google Identity Services button in redirect mode. On success
+  Google POSTs a signed ID token to `/auth/login` along with a CSRF token
+  that is also set as a cookie. The server checks the two CSRF copies
+  match, verifies the token against `GOOGLE_CLIENT_ID` with `google-auth`,
+  and matches the user by the Google `sub` claim. No Firebase is involved.
+- Email and password: `POST /auth/email/register` and
+  `POST /auth/email/login` take `{"email", "password"}` as JSON and answer
+  with `{"next": "/library"}` or `{"error": "..."}`. Passwords are stored
+  as werkzeug hashes in `users.password_hash`; the subject is
+  `email:<address>`. Always available, nothing to configure.
+- GitHub and Microsoft: the plain OAuth 2.0 authorization code flow.
+  `GET /auth/oauth/<provider>` redirects to the provider with a random
+  `state` kept in the session; `/auth/oauth/<provider>/callback` checks the
+  state, exchanges the code for an access token and asks the provider's
+  user endpoint who signed in (subject `github:<id>` or
+  `microsoft:<sub>`). A provider is offered only when both
+  `<PROVIDER>_CLIENT_ID` and `<PROVIDER>_CLIENT_SECRET` are set, e.g.
+  `GITHUB_CLIENT_ID`; the landing page disables the rest. Register the
+  callback URL, `https://<service-url>/auth/oauth/github/callback` and
+  the same for `microsoft`, with the provider when creating the OAuth app
+  (GitHub: `Settings -> Developer settings -> OAuth Apps`; Microsoft:
+  `Entra admin center -> App registrations`, single-page or web platform,
+  accounts in any organizational directory and personal accounts). The
+  secrets belong in Secret Manager and `--set-secrets` in `.gcp.conf`,
+  next to `SECRET_KEY`.
+- Development login: with `MYWORLD_DEV_LOGIN=1` (never on Cloud Run) the
+  page also shows a form that signs in as any email, subject
+  `dev:<address>`.
+
+The `users.password_hash` column and the wider `google_sub` column were
+added after the first deploy, so a database that predates them needs
+`scripts/migrate_sign_in_methods.sh` once before deploying this version
+(`--local` does the same for the sqlite file). It runs the ALTER TABLE
+statements through the Cloud SQL Auth Proxy with the password from Secret
+Manager, so there is nothing to type, and is safe to re-run; see the note on migrations under "Data
+model".
 
 ## Pages and API
 
@@ -71,7 +107,9 @@ script would use as well:
 
 ## Data model
 
-- `users`: one row per Google account (`google_sub` is the stable key).
+- `users`: one row per account (`google_sub` is the stable key: the Google
+  `sub` claim, or a provider-qualified subject for the other sign-in
+  methods; `password_hash` is set only for email accounts).
 - `works`: books, films, series, albums, games; one shared row per work,
   identified by kind, title, creator and year. New kinds are added to
   `KINDS` in `src/myworld/models.py`.

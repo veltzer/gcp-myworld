@@ -162,3 +162,144 @@ def test_users_are_isolated(app: webtest.TestApp) -> None:
     sign_in(app, sub="alice")
     [entry] = app.get("/api/library").json
     assert entry["rating"] is None
+
+
+# ─── email and password ──────────────────────────────────────────────────────
+
+def test_email_register_and_login(app: webtest.TestApp) -> None:
+    assert app.get("/api/config").json["password_min_length"] == auth.PASSWORD_MIN_LENGTH
+    response = app.post_json("/auth/email/register", {"email": "  Carol@Example.com ", "password": "correct horse"})
+    assert response.status_int == 200
+    assert response.json["next"].endswith("/library")
+    user = app.get("/api/config").json["user"]
+    assert user["email"] == "carol@example.com"
+    assert user["name"] == "carol"
+
+    app.post("/auth/logout")
+    assert app.get("/api/config").json["user"] is None
+    app.post_json("/auth/email/login", {"email": "carol@example.com", "password": "correct horse"}, status=200)
+    assert app.get("/api/config").json["user"]["email"] == "carol@example.com"
+    assert app.get("/library").status_int == 200
+
+
+def test_email_register_rejects_bad_input(app: webtest.TestApp) -> None:
+    for body, status in [
+        ({"email": "carol@example.com", "password": "short"}, 400),
+        ({"email": "not an email", "password": "correct horse"}, 400),
+        ({"email": "carol@example.com"}, 400),
+        ({"email": ["carol@example.com"], "password": "correct horse"}, 400),
+    ]:
+        response = app.post_json("/auth/email/register", body, status=status)
+        assert "error" in response.json
+    app.post("/auth/email/register", "not json", status=400)
+    app.post_json("/auth/email/register", {"email": "carol@example.com", "password": "correct horse"}, status=200)
+    app.post("/auth/logout")
+    response = app.post_json("/auth/email/register", {"email": "carol@example.com", "password": "another one"}, status=409)
+    assert "already" in response.json["error"]
+    assert app.get("/api/config").json["user"] is None
+
+
+def test_email_login_rejects_wrong_credentials(app: webtest.TestApp) -> None:
+    app.post_json("/auth/email/register", {"email": "carol@example.com", "password": "correct horse"})
+    app.post("/auth/logout")
+    unknown = app.post_json("/auth/email/login", {"email": "nobody@example.com", "password": "correct horse"}, status=401)
+    wrong = app.post_json("/auth/email/login", {"email": "carol@example.com", "password": "wrong horse"}, status=401)
+    # the same message either way, so the form does not reveal which emails have accounts
+    assert unknown.json["error"] == wrong.json["error"]
+    assert app.get("/api/config").json["user"] is None
+
+
+def test_email_account_is_separate_from_google_account(app: webtest.TestApp) -> None:
+    # the Google user in FAKE_CLAIMS has the same email; the accounts must not merge
+    sign_in(app)
+    app.post_json("/api/library", {"kind": "book", "title": "Dune"})
+    app.post("/auth/logout")
+    app.post_json("/auth/email/register", {"email": "alice@example.com", "password": "correct horse"})
+    assert app.get("/api/library").json == []
+    # a Google account cannot be entered through the password form
+    app.post("/auth/logout")
+    app.post_json("/auth/email/login", {"email": "alice@example.com", "password": "anything at all"}, status=401)
+
+
+# ─── other providers ─────────────────────────────────────────────────────────
+
+def test_providers_unconfigured(app: webtest.TestApp) -> None:
+    config = app.get("/api/config").json
+    assert config["providers"] == {"github": False, "microsoft": False}
+    app.get("/auth/oauth/github", status=404)
+    app.get("/auth/oauth/github/callback?code=x&state=y", status=404)
+    app.get("/auth/oauth/facebook", status=404)
+
+
+def configure_github(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_CLIENT_ID", "gh-id")
+    monkeypatch.setenv("GITHUB_CLIENT_SECRET", "gh-secret")
+
+
+def test_oauth_start(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    configure_github(monkeypatch)
+    assert app.get("/api/config").json["providers"]["github"] is True
+    response = app.get("/auth/oauth/github")
+    assert response.status_int == 302
+    assert response.location is not None
+    assert response.location.startswith("https://github.com/login/oauth/authorize?")
+    assert "client_id=gh-id" in response.location
+    assert "redirect_uri=http%3A%2F%2Flocalhost%2Fauth%2Foauth%2Fgithub%2Fcallback" in response.location
+    assert "state=" in response.location
+
+
+def test_oauth_callback(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    configure_github(monkeypatch)
+    exchanged: list[tuple[str, str]] = []
+
+    def fake_exchange(provider: auth.OAuthProvider, code: str, redirect_uri: str) -> str:
+        exchanged.append((provider.key, code))
+        assert redirect_uri.endswith("/auth/oauth/github/callback")
+        return "access-token"
+
+    def fake_claims(provider: auth.OAuthProvider, token: str) -> dict[str, str]:
+        assert (provider.key, token) == ("github", "access-token")
+        return {"sub": "github:42", "email": "dave@example.com", "name": "Dave", "picture": ""}
+
+    monkeypatch.setattr(auth, "exchange_code", fake_exchange)
+    monkeypatch.setattr(auth, "fetch_claims", fake_claims)
+
+    # the state must be the one we handed out, and a failed attempt consumes it
+    app.get("/auth/oauth/github/callback?code=abc&state=forged", status=400)
+    app.get("/auth/oauth/github")
+    app.get("/auth/oauth/github/callback?code=abc&state=forged", status=400)
+    start = app.get("/auth/oauth/github")
+    assert start.location is not None
+    state = start.location.split("state=")[1].split("&")[0]
+    response = app.get(f"/auth/oauth/github/callback?code=abc&state={state}")
+    assert response.status_int == 302
+    assert response.location is not None
+    assert response.location.endswith("/library")
+    assert exchanged == [("github", "abc")]
+    assert app.get("/api/config").json["user"] == {"email": "dave@example.com", "name": "Dave", "picture": ""}
+
+
+def test_oauth_callback_failures_return_to_landing(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    configure_github(monkeypatch)
+
+    def failing_exchange(provider: auth.OAuthProvider, code: str, redirect_uri: str) -> str:
+        raise auth.OAuthError("nope")
+
+    monkeypatch.setattr(auth, "exchange_code", failing_exchange)
+    start = app.get("/auth/oauth/github")
+    assert start.location is not None
+    state = start.location.split("state=")[1].split("&")[0]
+    # the user cancelled on GitHub: no code
+    response = app.get(f"/auth/oauth/github/callback?state={state}&error=access_denied")
+    assert response.status_int == 302
+    assert response.location is not None
+    assert "error=" in response.location and "cancelled" in response.location
+
+    start = app.get("/auth/oauth/github")
+    assert start.location is not None
+    state = start.location.split("state=")[1].split("&")[0]
+    response = app.get(f"/auth/oauth/github/callback?code=abc&state={state}")
+    assert response.status_int == 302
+    assert response.location is not None
+    assert "failed" in response.location
+    assert app.get("/api/config").json["user"] is None

@@ -54,11 +54,17 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    # the stable Google account id ("sub" claim); emails can change
-    google_sub: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    # The stable identity the user signed in with, qualified by how they did
+    # it: a bare Google "sub" claim for Google (the original and still the
+    # main method), "github:<id>", "microsoft:<sub>", "email:<address>" or
+    # "dev:<address>" for the others. Kept under its historical column name;
+    # emails can change so they are never the key for third-party sign-in.
+    google_sub: Mapped[str] = mapped_column(String(400), unique=True, nullable=False)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     picture: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    # only for accounts created with "sign in with email"; werkzeug hash
+    password_hash: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     works: Mapped[list[UserWork]] = relationship(  # pylint: disable=used-before-assignment

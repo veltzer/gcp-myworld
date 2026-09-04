@@ -154,6 +154,9 @@ def api_config() -> flask.Response:
     return flask.jsonify({
         "google_client_id": auth.client_id(),
         "dev_login": auth.dev_login_enabled(),
+        "password_min_length": auth.PASSWORD_MIN_LENGTH,
+        # every provider the page knows about, so it can grey out the ones this server cannot offer
+        "providers": {key: p.configured for key, p in auth.OAUTH_PROVIDERS.items()},
         "kinds": {k: {"name": name, "plural": plural, "creator": creator} for k, (name, plural, creator) in KINDS.items()},
         "statuses": STATUSES,
         "rating_min": RATING_MIN,

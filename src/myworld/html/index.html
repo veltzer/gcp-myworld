@@ -8,31 +8,83 @@
 		<link rel="stylesheet" href="/static/style.css">
 		<script src="/static/app.js" defer></script>
 	</head>
-	<body data-page="index">
-		<header class="topbar">
-			<a class="brand" href="/">My World</a>
-		</header>
-		<main class="content">
-			<section class="hero">
-				<h1>Keep track of what you read, watch and play.</h1>
-				<p>
-					Books, films, series, albums and games: what you finished, what
-					you are in the middle of, what you want next, and what you
-					thought of it.
-				</p>
-				<div id="signin"></div>
-				<p id="signin-missing" class="warning" hidden>
-					Google sign-in is not configured: set GOOGLE_CLIENT_ID.
-				</p>
-				<form id="dev-login" class="dev-login" method="post" action="/auth/dev-login" hidden>
-					<label for="dev-email">Development login (no Google):</label>
-					<input id="dev-email" name="email" type="email" placeholder="you@example.com" required>
-					<button type="submit">Sign in</button>
-				</form>
-			</section>
-		</main>
-		<footer class="footer">
-			<span id="build"></span>
-		</footer>
+	<body data-page="index" class="landing">
+		<div class="landing-grid">
+			<aside class="scene">
+				<img class="scene-art" src="/static/scene.svg" alt="">
+				<div class="scene-copy">
+					<p class="scene-kicker">Books · Films · Series · Albums · Games</p>
+					<h2>Everything you read, watch, hear and play, in one place.</h2>
+					<p>
+						What you finished, what you are in the middle of, what you
+						want next, and what you thought of it.
+					</p>
+				</div>
+			</aside>
+			<main class="panel">
+				<div class="card">
+					<a class="brand brand-lg" href="/">
+						<img class="brand-mark" src="/static/favicon.svg" alt="">
+						My World
+					</a>
+					<h1>Welcome back</h1>
+					<p class="lede">Sign in to open your library.</p>
+					<p id="error" class="warning" hidden></p>
+
+					<div class="google">
+						<div id="signin" class="gsi-slot"></div>
+						<div id="signin-loading" class="gsi-placeholder" aria-hidden="true"></div>
+						<p id="signin-missing" class="hint" hidden>
+							Google sign-in is not configured on this server (GOOGLE_CLIENT_ID is not set).
+						</p>
+					</div>
+
+					<div class="divider"><span>or with your email</span></div>
+
+					<form id="email-form" class="email-form" novalidate>
+						<label class="field">
+							<span>Email</span>
+							<input name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+						</label>
+						<label class="field">
+							<span>Password</span>
+							<span class="password-field">
+								<input name="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+								<button type="button" id="toggle-password" class="link">Show</button>
+							</span>
+						</label>
+						<button type="submit" id="email-submit" class="primary">Sign in</button>
+						<p class="switch">
+							<span id="email-switch-text">New here?</span>
+							<button type="button" id="email-mode" class="link">Create an account</button>
+						</p>
+					</form>
+
+					<div class="divider"><span>other ways</span></div>
+
+					<div class="providers">
+						<a class="provider" data-provider="github" href="/auth/oauth/github">
+							<img src="/static/github.svg" alt="">
+							<span>Continue with GitHub</span>
+						</a>
+						<a class="provider" data-provider="microsoft" href="/auth/oauth/microsoft">
+							<img src="/static/microsoft.svg" alt="">
+							<span>Continue with Microsoft</span>
+						</a>
+					</div>
+
+					<form id="dev-login" class="dev-login" method="post" action="/auth/dev-login" hidden>
+						<label for="dev-email">Development login (no Google):</label>
+						<div class="dev-row">
+							<input id="dev-email" name="email" type="email" placeholder="you@example.com" required>
+							<button type="submit">Sign in</button>
+						</div>
+					</form>
+				</div>
+				<footer class="footer">
+					<span id="build"></span>
+				</footer>
+			</main>
+		</div>
 	</body>
 </html>

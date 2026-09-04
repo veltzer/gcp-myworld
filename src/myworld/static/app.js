@@ -14,7 +14,8 @@ async function api(path, options = {}) {
 		init.body = JSON.stringify(options.body);
 	}
 	const response = await fetch(path, init);
-	if (response.status === 401) {
+	// a 401 from the library API means the session is gone; from a sign-in route it is the answer
+	if (response.status === 401 && !path.startsWith("/auth/")) {
 		window.location.href = "/";
 		throw new Error("not signed in");
 	}
@@ -59,11 +60,80 @@ function loadGoogleSignIn(clientId) {
 			type: "standard",
 			size: "large",
 			theme: "outline",
-			text: "signin_with",
-			shape: "rectangular",
+			text: "continue_with",
+			shape: "pill",
+			logo_alignment: "left",
+			width: Math.min(360, $("signin").clientWidth || 360),
 		});
+		$("signin-loading").hidden = true;
+	};
+	script.onerror = () => {
+		$("signin-loading").hidden = true;
+		showError("Could not load Google sign-in. Check your connection and reload.");
 	};
 	document.head.appendChild(script);
+}
+
+function setupProviders(configured) {
+	for (const link of document.querySelectorAll(".provider[data-provider]")) {
+		if (configured[link.dataset.provider]) {
+			continue;
+		}
+		link.classList.add("off");
+		link.setAttribute("aria-disabled", "true");
+		link.title = "Not configured on this server";
+		link.onclick = (event) => event.preventDefault();
+	}
+}
+
+function setupEmailForm(minLength) {
+	const form = $("email-form");
+	const password = form.elements.password;
+	const submit = $("email-submit");
+	let mode = "login";
+
+	const applyMode = () => {
+		const signup = mode === "register";
+		submit.textContent = signup ? "Create account" : "Sign in";
+		$("email-switch-text").textContent = signup ? "Already have an account?" : "New here?";
+		$("email-mode").textContent = signup ? "Sign in" : "Create an account";
+		password.autocomplete = signup ? "new-password" : "current-password";
+		password.minLength = signup ? minLength : 0;
+		showError("");
+	};
+	$("email-mode").onclick = () => {
+		mode = mode === "login" ? "register" : "login";
+		applyMode();
+	};
+	$("toggle-password").onclick = () => {
+		const hidden = password.type === "password";
+		password.type = hidden ? "text" : "password";
+		$("toggle-password").textContent = hidden ? "Hide" : "Show";
+	};
+	form.onsubmit = async (event) => {
+		event.preventDefault();
+		showError("");
+		const email = form.elements.email.value.trim();
+		if (!email || !email.includes("@")) {
+			showError("Enter your email address.");
+			form.elements.email.focus();
+			return;
+		}
+		if (mode === "register" && password.value.length < minLength) {
+			showError(`Use at least ${minLength} characters for the password.`);
+			password.focus();
+			return;
+		}
+		submit.disabled = true;
+		try {
+			const result = await api(`/auth/email/${mode}`, { method: "POST", body: { email, password: password.value } });
+			window.location.href = result.next;
+		} catch (e) {
+			showError(e.message);
+			submit.disabled = false;
+		}
+	};
+	applyMode();
 }
 
 async function indexPage() {
@@ -72,11 +142,19 @@ async function indexPage() {
 		window.location.href = "/library";
 		return;
 	}
+	const error = new URLSearchParams(window.location.search).get("error");
+	if (error) {
+		showError(error);
+		window.history.replaceState(null, "", "/");
+	}
 	if (config.google_client_id) {
 		loadGoogleSignIn(config.google_client_id);
 	} else {
+		$("signin-loading").hidden = true;
 		$("signin-missing").hidden = false;
 	}
+	setupProviders(config.providers);
+	setupEmailForm(config.password_min_length);
 	$("dev-login").hidden = !config.dev_login;
 }
 
