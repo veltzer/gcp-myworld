@@ -28,10 +28,16 @@ scaling, the service account) lives in the script as flags.
       scopes are needed beyond the defaults (email, profile, openid).
    1. Console: `APIs & Services -> Credentials -> Create credentials ->
       OAuth client ID`, application type `Web application`.
-   1. Under `Authorized JavaScript origins` add the service URL
-      (`gcloud run services describe myworld --region us-central1
-      --format 'value(status.url)'` after the first deploy) and
-      `http://localhost:8080` for local development.
+   1. Under `Authorized JavaScript origins` add the service URL and
+      `http://localhost:8080` for local development. The service URL is
+      deterministic, `https://myworld-<project-number>.us-central1.run.app`
+      (`gcloud projects describe <project> --format 'value(projectNumber)'`),
+      so it can be registered before the first deploy.
+   1. Under `Authorized redirect URIs` add the login endpoint on both
+      origins: `http://localhost:8080/auth/login` and
+      `https://myworld-<project-number>.us-central1.run.app/auth/login`.
+      The sign-in button runs in redirect mode, and Google refuses to POST
+      the credential to an unregistered URI (`redirect_uri_mismatch`).
    1. Paste the client ID into `gcp_oauth_client_id` in `.gcp.conf`. Client
       IDs are public, so it is fine to commit it.
 1. Deploy: `./scripts/deploy.sh`. The first deploy can happen before the
