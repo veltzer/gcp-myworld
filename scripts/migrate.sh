@@ -1,8 +1,9 @@
 #!/bin/bash
 # Schema migrations. Tables are created by create_all on startup but never
 # altered, so columns added after the first deploy need this, once, before
-# deploying the version that uses them. Every statement is a no-op when its
-# column already exists, so the script is safe to re-run at any time.
+# deploying the version that uses them. The script first looks at what the
+# database has, applies only what is missing, and ends with one line saying
+# whether anything was changed, so it is safe and cheap to run any time.
 #
 #   scripts/migrate.sh          the Cloud SQL database from .gcp.conf
 #   scripts/migrate.sh --local  the local sqlite file (db.gi/myworld.sqlite or DATABASE_URL)
@@ -20,7 +21,6 @@ set -euo pipefail
 cd "$(dirname "${0}")/.."
 
 if [[ "${1:-}" == "--local" ]]; then
-	echo "== local sqlite"
 	python - <<'PY'
 import os
 import sqlite3
@@ -40,14 +40,17 @@ path = url.removeprefix("sqlite:///")
 if not os.path.exists(path):
     raise SystemExit(f"{path} does not exist yet; the app creates it with all columns on first start")
 db = sqlite3.connect(path)
+added = []
 for table, column, kind in COLUMNS:
     existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
-    if column in existing:
-        print(f"{path}: {table}.{column} already there")
-    else:
+    if column not in existing:
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
-        print(f"{path}: added {table}.{column}")
+        added.append(f"{table}.{column}")
 db.commit()
+if added:
+    print(f"{path}: added {', '.join(added)}")
+else:
+    print(f"{path}: up to date, nothing to migrate")
 PY
 	exit 0
 fi
@@ -66,46 +69,68 @@ for tool in cloud-sql-proxy psql pg_isready; do
 	fi
 done
 
-echo "== Cloud SQL ${gcp_sql_instance}, database ${gcp_db_name}, user ${gcp_db_user}"
 # The app's own password, from Secret Manager; nobody needs to know it.
 PGPASSWORD="$(gcloud secrets versions access latest --secret "${gcp_service}-db-pass")"
 export PGPASSWORD
 
 # Run the proxy ourselves rather than through `gcloud sql connect`, which
-# insists on prompting for the password on stdin, where the SQL is.
+# insists on prompting for the password on stdin. Its chatter goes to a log
+# that is only shown if something fails.
 CONNECTION_NAME="$(gcloud sql instances describe "${gcp_sql_instance}" --format 'value(connectionName)')"
 PORT=54329
-cloud-sql-proxy --gcloud-auth --port "${PORT}" "${CONNECTION_NAME}" &
+PROXY_LOG="$(mktemp)"
+cloud-sql-proxy --gcloud-auth --port "${PORT}" "${CONNECTION_NAME}" >"${PROXY_LOG}" 2>&1 &
 PROXY_PID="${!}"
-trap 'kill "${PROXY_PID}" 2>/dev/null' EXIT
+cleanup() {
+	kill "${PROXY_PID}" 2>/dev/null || true
+	rm -f "${PROXY_LOG}"
+}
+trap cleanup EXIT
 for _ in $(seq 1 30); do
 	if pg_isready -h 127.0.0.1 -p "${PORT}" -q; then
 		break
 	fi
 	sleep 1
 done
+if ! pg_isready -h 127.0.0.1 -p "${PORT}" -q; then
+	echo "could not reach ${CONNECTION_NAME} through the proxy:"
+	cat "${PROXY_LOG}"
+	exit 1
+fi
 
-psql -h 127.0.0.1 -p "${PORT}" -U "${gcp_db_user}" -d "${gcp_db_name}" -v ON_ERROR_STOP=1 <<'SQL'
-\echo == before
-SELECT table_name, column_name, data_type, character_maximum_length, is_nullable
-FROM information_schema.columns
-WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash'))
-   OR (table_name = 'works' AND column_name IN ('imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
-ORDER BY table_name, column_name;
+# -X skips ~/.psqlrc (timing and the like); -qtA gives bare values, one per line.
+sql() {
+	psql -X -q -t -A -v ON_ERROR_STOP=1 -h 127.0.0.1 -p "${PORT}" -U "${gcp_db_user}" -d "${gcp_db_name}" "${@}"
+}
 
-\echo == migrating
-ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(300);
-ALTER TABLE users ALTER COLUMN google_sub TYPE VARCHAR(400);
-ALTER TABLE works ADD COLUMN IF NOT EXISTS imdb_id VARCHAR(20) NOT NULL DEFAULT '';
-ALTER TABLE works ADD COLUMN IF NOT EXISTS tmdb_id INTEGER;
-ALTER TABLE works ADD COLUMN IF NOT EXISTS rotten_tomatoes_id VARCHAR(200) NOT NULL DEFAULT '';
+# What the database has now: "table.column:max_length" per line.
+present="$(sql -c "
+	SELECT table_name || '.' || column_name || ':' || COALESCE(character_maximum_length::text, '')
+	FROM information_schema.columns
+	WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash'))
+	   OR (table_name = 'works' AND column_name IN ('imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
+")"
 
-\echo == after
-SELECT table_name, column_name, data_type, character_maximum_length, is_nullable
-FROM information_schema.columns
-WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash'))
-   OR (table_name = 'works' AND column_name IN ('imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
-ORDER BY table_name, column_name;
-SQL
+has_column() {
+	grep -qx "${1}:.*" <<<"${present}"
+}
 
-echo "== done, deploy with gcloud_run_deploy.sh"
+# (what, check, statement): the check passes when nothing needs doing.
+changed=()
+apply() {
+	local what="${1}" statement="${2}"
+	sql -c "${statement}" >/dev/null
+	changed+=("${what}")
+}
+has_column users.password_hash || apply users.password_hash "ALTER TABLE users ADD COLUMN password_hash VARCHAR(300)"
+grep -qx "users.google_sub:400" <<<"${present}" || apply "users.google_sub (wider)" "ALTER TABLE users ALTER COLUMN google_sub TYPE VARCHAR(400)"
+has_column works.imdb_id || apply works.imdb_id "ALTER TABLE works ADD COLUMN imdb_id VARCHAR(20) NOT NULL DEFAULT ''"
+has_column works.tmdb_id || apply works.tmdb_id "ALTER TABLE works ADD COLUMN tmdb_id INTEGER"
+has_column works.rotten_tomatoes_id || apply works.rotten_tomatoes_id "ALTER TABLE works ADD COLUMN rotten_tomatoes_id VARCHAR(200) NOT NULL DEFAULT ''"
+
+if (( ${#changed[@]} == 0 )); then
+	echo "${gcp_sql_instance}/${gcp_db_name}: up to date, nothing to migrate"
+else
+	echo "${gcp_sql_instance}/${gcp_db_name}: migrated ${changed[*]}"
+	echo "deploy with gcloud_run_deploy.sh"
+fi
