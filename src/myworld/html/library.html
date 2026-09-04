@@ -31,9 +31,11 @@
 						<p id="movie-hint" class="empty" hidden></p>
 						<ul id="movie-results" class="movie-results" hidden></ul>
 					</div>
-					<input type="hidden" name="imdb_id">
-					<input type="hidden" name="tmdb_id">
-					<input type="hidden" name="rotten_tomatoes_id">
+					<div id="movie-ids" class="row" hidden>
+						<label>IMDb id <span class="id-field"><input name="imdb_id" readonly placeholder="from the search"><a id="imdb-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
+						<label>TMDB id <span class="id-field"><input name="tmdb_id" readonly placeholder="from the search"><a id="tmdb-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
+						<label>Rotten Tomatoes id <span class="id-field"><input name="rotten_tomatoes_id" readonly placeholder="from the search"><a id="rt-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
+					</div>
 					<div class="row">
 						<label>Title <input name="title" required></label>
 						<label><span id="creator-label">Creator</span> <input name="creator"></label>

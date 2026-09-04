@@ -663,3 +663,27 @@ button.danger {
 	color: var(--accent);
 	border-color: var(--accent);
 }
+
+.id-field {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+}
+
+.id-field input {
+	width: 11rem;
+	background: var(--bg);
+	color: var(--muted);
+	cursor: default;
+}
+
+.id-link {
+	font-size: 0.8rem;
+	font-weight: 600;
+	color: var(--accent);
+	text-decoration: none;
+}
+
+.id-link:hover {
+	text-decoration: underline;
+}

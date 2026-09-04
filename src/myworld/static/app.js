@@ -203,11 +203,24 @@ function entryPayload(row) {
 	};
 }
 
+// [field, label, url of the work on that catalog, id of the "open" link in the add form]
 const CATALOGS = [
-	["imdb_id", "IMDb", (id) => `https://www.imdb.com/title/${id}/`],
-	["tmdb_id", "TMDB", (id) => `https://www.themoviedb.org/movie/${id}`],
-	["rotten_tomatoes_id", "RT", (id) => `https://www.rottentomatoes.com/${id}`],
+	["imdb_id", "IMDb", (id) => `https://www.imdb.com/title/${id}/`, "imdb-link"],
+	["tmdb_id", "TMDB", (id) => `https://www.themoviedb.org/movie/${id}`, "tmdb-link"],
+	["rotten_tomatoes_id", "RT", (id) => `https://www.rottentomatoes.com/${id}`, "rt-link"],
 ];
+
+// The read-only id fields of the add form: the values come from the search, never typed.
+function showMovieIds(values) {
+	const form = $("add-form");
+	for (const [key, , url, linkId] of CATALOGS) {
+		const value = values[key] ?? "";
+		form.elements[key].value = value;
+		const link = $(linkId);
+		link.hidden = !value;
+		link.href = value ? url(value) : "";
+	}
+}
 
 function catalogLinks(entry) {
 	const links = CATALOGS.filter(([key]) => entry[key]);
@@ -230,14 +243,8 @@ function catalogLinks(entry) {
 
 // ─── film search ────────────────────────────────────────────────────────────
 
-function movieIdsReset(form) {
-	for (const name of ["imdb_id", "tmdb_id", "rotten_tomatoes_id"]) {
-		form.elements[name].value = "";
-	}
-	const picked = $("movie-picked");
-	if (picked) {
-		picked.remove();
-	}
+function movieIdsReset() {
+	showMovieIds({});
 }
 
 function renderMovieResult(movie, onPick) {
@@ -296,11 +303,8 @@ async function pickMovie(movie) {
 		form.elements.title.value = film.title;
 		form.elements.creator.value = film.creator;
 		form.elements.year.value = film.year ?? "";
-		form.elements.imdb_id.value = film.imdb_id;
-		form.elements.tmdb_id.value = film.tmdb_id;
-		form.elements.rotten_tomatoes_id.value = film.rotten_tomatoes_id;
+		showMovieIds(film);
 		$("movie-results").hidden = true;
-		const found = CATALOGS.filter(([key]) => film[key]).map(([, label]) => label);
 		const extras = [];
 		if (film.runtime) {
 			extras.push(`${film.runtime} min`);
@@ -308,9 +312,7 @@ async function pickMovie(movie) {
 		if (film.genres && film.genres.length) {
 			extras.push(film.genres.join(", "));
 		}
-		const source = `Filled in from The Movie Database${extras.length ? ` (${extras.join(" · ")})` : ""}.`;
-		const ids = found.length ? `Ids found: ${found.join(", ")}.` : "No catalog ids found.";
-		hint.textContent = `${source} ${ids}`;
+		hint.textContent = `Filled in from The Movie Database${extras.length ? ` (${extras.join(" · ")})` : ""}.`;
 		form.elements.status.focus();
 	} catch (e) {
 		hint.textContent = e.message;
@@ -351,7 +353,7 @@ function setupMovieSearch() {
 		}
 	};
 	// typing a different title by hand means the ids no longer apply
-	$("add-form").elements.title.oninput = () => movieIdsReset($("add-form"));
+	$("add-form").elements.title.oninput = movieIdsReset;
 	box.hidden = state.kind !== "film";
 }
 
@@ -442,8 +444,9 @@ async function selectKind(kind) {
 	$("creator-column").textContent = creator;
 	renderKinds();
 	showError("");
-	const search = $("movie-search");
-	search.hidden = !(state.config.tmdb && kind === "film");
+	const film = state.config.tmdb && kind === "film";
+	$("movie-search").hidden = !film;
+	$("movie-ids").hidden = !film;
 	await loadEntries();
 }
 
@@ -483,7 +486,7 @@ async function libraryPage() {
 			form.elements.creator.value = "";
 			form.elements.year.value = "";
 			form.elements.notes.value = "";
-			movieIdsReset(form);
+			movieIdsReset();
 			$("movie-results").hidden = true;
 			$("movie-hint").hidden = true;
 			$("movie-query").value = "";
