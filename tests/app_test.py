@@ -225,7 +225,7 @@ def test_email_account_is_separate_from_google_account(app: webtest.TestApp) -> 
 
 def test_providers_unconfigured(app: webtest.TestApp) -> None:
     config = app.get("/api/config").json
-    assert config["providers"] == {"github": False, "microsoft": False}
+    assert config["providers"] == {"github": False}
     app.get("/auth/oauth/github", status=404)
     app.get("/auth/oauth/github/callback?code=x&state=y", status=404)
     app.get("/auth/oauth/facebook", status=404)

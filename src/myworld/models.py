@@ -56,7 +56,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # The stable identity the user signed in with, qualified by how they did
     # it: a bare Google "sub" claim for Google (the original and still the
-    # main method), "github:<id>", "microsoft:<sub>", "email:<address>" or
+    # main method), "github:<id>", "email:<address>" or
     # "dev:<address>" for the others. Kept under its historical column name;
     # emails can change so they are never the key for third-party sign-in.
     google_sub: Mapped[str] = mapped_column(String(400), unique=True, nullable=False)

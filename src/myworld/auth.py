@@ -10,8 +10,8 @@ and audience with google-auth, and then keeps only our own user id in the
 Flask session cookie.
 
 Email accounts live entirely in our users table (werkzeug password
-hashes). The other providers (GitHub, Microsoft) go through the plain OAuth
-2.0 authorization code flow: /auth/oauth/<provider> redirects to the
+hashes). Other providers (GitHub so far) go through the plain OAuth 2.0
+authorization code flow: /auth/oauth/<provider> redirects to the
 provider, the callback exchanges the code for an access token and asks the
 provider who the user is. A provider is offered only when its client id
 and secret are set in the environment.
@@ -213,14 +213,6 @@ OAUTH_PROVIDERS: dict[str, OAuthProvider] = {
         userinfo_url="https://api.github.com/user",
         scope="read:user user:email",
     ),
-    "microsoft": OAuthProvider(
-        key="microsoft",
-        name="Microsoft",
-        authorize_url="https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-        token_url="https://login.microsoftonline.com/common/oauth2/v2.0/token",
-        userinfo_url="https://graph.microsoft.com/oidc/userinfo",
-        scope="openid email profile",
-    ),
 }
 
 
@@ -268,25 +260,18 @@ def fetch_claims(provider: OAuthProvider, token: str) -> dict[str, Any]:
     if not response.ok:
         raise OAuthError(f"{provider.name} did not tell us who you are")
     info = response.json()
-    if provider.key == "github":
-        email = info.get("email") or ""
-        if not email:
-            # the profile email is only public if the user chose so; the emails endpoint is not
-            emails = requests.get(f"{provider.userinfo_url}/emails", headers=headers, timeout=HTTP_TIMEOUT)
-            if emails.ok:
-                email = next((e["email"] for e in emails.json() if e.get("primary") and e.get("verified")), "")
-        return {
-            "sub": f"github:{info['id']}",
-            "email": email,
-            "name": info.get("name") or info.get("login") or "",
-            "picture": info.get("avatar_url") or "",
-        }
-    # Microsoft's userinfo picture is a Graph URL that needs the token, so it is useless as an <img> src
+    # GitHub is the only provider so far; a second one gets its own branch here.
+    email = info.get("email") or ""
+    if not email:
+        # the profile email is only public if the user chose so; the emails endpoint is not
+        emails = requests.get(f"{provider.userinfo_url}/emails", headers=headers, timeout=HTTP_TIMEOUT)
+        if emails.ok:
+            email = next((e["email"] for e in emails.json() if e.get("primary") and e.get("verified")), "")
     return {
-        "sub": f"microsoft:{info['sub']}",
-        "email": info.get("email") or "",
-        "name": info.get("name") or "",
-        "picture": "",
+        "sub": f"{provider.key}:{info['id']}",
+        "email": email,
+        "name": info.get("name") or info.get("login") or "",
+        "picture": info.get("avatar_url") or "",
     }
 
 

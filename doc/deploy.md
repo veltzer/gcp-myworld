@@ -68,8 +68,8 @@ One-time setup, in this order:
 1. Register the new origin with the sign-in providers, which reject
    unknown redirect targets: on the Google OAuth client add
    `https://myworld.stream` to the authorized JavaScript origins and
-   `https://myworld.stream/auth/login` to the redirect URIs; on GitHub and
-   Microsoft add `https://myworld.stream/auth/oauth/<provider>/callback`.
+   `https://myworld.stream/auth/login` to the redirect URIs; the GitHub app
+   already has `https://myworld.stream/auth/oauth/github/callback`.
 
 `www.myworld.stream` is not mapped; if wanted, add a second mapping for it
 (`gcloud beta run domain-mappings create --domain www.myworld.stream`,
@@ -94,21 +94,20 @@ signed in through Google and through the password form is two accounts.
   with `{"next": "/library"}` or `{"error": "..."}`. Passwords are stored
   as werkzeug hashes in `users.password_hash`; the subject is
   `email:<address>`. Always available, nothing to configure.
-- GitHub and Microsoft: the plain OAuth 2.0 authorization code flow.
-  `GET /auth/oauth/<provider>` redirects to the provider with a random
-  `state` kept in the session; `/auth/oauth/<provider>/callback` checks the
-  state, exchanges the code for an access token and asks the provider's
-  user endpoint who signed in (subject `github:<id>` or
-  `microsoft:<sub>`). A provider is offered only when both
-  `<PROVIDER>_CLIENT_ID` and `<PROVIDER>_CLIENT_SECRET` are set, e.g.
-  `GITHUB_CLIENT_ID`; the landing page disables the rest. Register the
-  callback URL, `https://<service-url>/auth/oauth/github/callback` and
-  the same for `microsoft`, with the provider when creating the OAuth app
-  (GitHub: `Settings -> Developer settings -> OAuth Apps`; Microsoft:
-  `Entra admin center -> App registrations`, single-page or web platform,
-  accounts in any organizational directory and personal accounts). The
-  secrets belong in Secret Manager and `--set-secrets` in `.gcp.conf`,
-  next to `SECRET_KEY`.
+- GitHub: the plain OAuth 2.0 authorization code flow.
+  `GET /auth/oauth/github` redirects to GitHub with a random `state`
+  kept in the session; `/auth/oauth/github/callback` checks the state,
+  exchanges the code for an access token and asks GitHub who signed in
+  (subject `github:<id>`). The button is offered only when
+  `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are set: the client id is
+  `gcp_github_client_id` in `.gcp.conf`, the secret lives in the password
+  store as `keys/github.com.myworld-oauth` and `scripts/setup.sh` copies it
+  into the `myworld-github-client-secret` secret. The OAuth app ("My
+  World", under `Settings -> Developer settings -> OAuth Apps`) has the
+  callbacks `https://myworld.stream/auth/oauth/github/callback` and
+  `http://localhost:8080/auth/oauth/github/callback`. A second provider
+  would be one more `OAuthProvider` in `src/myworld/auth.py`; Microsoft was
+  tried and dropped on purpose.
 - Development login: with `MYWORLD_DEV_LOGIN=1` (never on Cloud Run) the
   page also shows a form that signs in as any email, subject
   `dev:<address>`.
