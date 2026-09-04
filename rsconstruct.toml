@@ -34,6 +34,11 @@ src_dirs = ["src", "scripts", "config", "tests"]
 [processor.pytest]
 src_dirs = ["tests"]
 
+# ─── markdown ────────────────────────────────────────────────────────────────
+
+[processor.zspell]
+src_dirs = ["."]
+
 # ─── shell ───────────────────────────────────────────────────────────────────
 
 [processor.shellcheck]

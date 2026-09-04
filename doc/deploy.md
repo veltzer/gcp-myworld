@@ -52,7 +52,7 @@ The landing page (static HTML plus `static/app.js`) renders the Google
 Identity Services button in redirect mode. On success Google POSTs a signed
 ID token to `/auth/login` along with a CSRF token that is also set as a
 cookie. The server checks the two CSRF copies match,
-verifies the token against `GOOGLE_CLIENT_ID` with `google-auth`, upserts
+verifies the token against `GOOGLE_CLIENT_ID` with `google-auth`, creates or updates
 the user by the Google `sub` claim, and stores only our own user id in the
 signed Flask session cookie. No Firebase is involved.
 
