@@ -561,3 +561,105 @@ button.danger {
 	font-size: 0.8rem;
 	padding: 2rem 0;
 }
+
+/* ─── film search (library page) ───────────────────────────────────────── */
+
+.movie-search {
+	padding-bottom: 0.75rem;
+	margin-bottom: 0.25rem;
+	border-bottom: 1px dashed var(--line);
+}
+
+.movie-results {
+	list-style: none;
+	margin: 0.75rem 0 0;
+	padding: 0;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+	gap: 0.5rem;
+}
+
+.movie-results[hidden] {
+	display: none;
+}
+
+.movie-results li {
+	display: flex;
+	gap: 0.6rem;
+	align-items: flex-start;
+	padding: 0.5rem;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--bg);
+	cursor: pointer;
+}
+
+.movie-results li:hover,
+.movie-results li:focus-within {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px rgb(37 99 235 / 15%);
+}
+
+.movie-results img,
+.movie-results .no-poster {
+	flex: none;
+	width: 46px;
+	height: 69px;
+	border-radius: 4px;
+	object-fit: cover;
+	background: var(--line);
+}
+
+.movie-results .movie-title {
+	font-weight: 600;
+}
+
+.movie-results .movie-meta {
+	font-size: 0.8rem;
+	color: var(--muted);
+}
+
+.movie-results .movie-overview {
+	margin: 0.2rem 0 0;
+	font-size: 0.8rem;
+	color: var(--ink);
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.movie-results button.pick {
+	margin-left: auto;
+	flex: none;
+	padding: 0.3rem 0.6rem;
+	font-size: 0.85rem;
+}
+
+.picked {
+	margin: 0.5rem 0 0;
+	font-size: 0.85rem;
+	color: var(--muted);
+}
+
+.ids {
+	display: inline-flex;
+	gap: 0.35rem;
+	margin-left: 0.4rem;
+	vertical-align: middle;
+}
+
+.ids a {
+	font-size: 0.7rem;
+	font-weight: 600;
+	padding: 0.05rem 0.35rem;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	color: var(--muted);
+	text-decoration: none;
+}
+
+.ids a:hover {
+	color: var(--accent);
+	border-color: var(--accent);
+}

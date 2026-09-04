@@ -23,6 +23,17 @@
 			<details class="add" open>
 				<summary id="add-summary">Add</summary>
 				<form id="add-form">
+					<div id="movie-search" class="movie-search" hidden>
+						<div class="row">
+							<label class="wide">Find on The Movie Database <input id="movie-query" placeholder="Title, e.g. Dune" autocomplete="off"></label>
+							<button type="button" id="movie-find">Find</button>
+						</div>
+						<p id="movie-hint" class="empty" hidden></p>
+						<ul id="movie-results" class="movie-results" hidden></ul>
+					</div>
+					<input type="hidden" name="imdb_id">
+					<input type="hidden" name="tmdb_id">
+					<input type="hidden" name="rotten_tomatoes_id">
 					<div class="row">
 						<label>Title <input name="title" required></label>
 						<label><span id="creator-label">Creator</span> <input name="creator"></label>

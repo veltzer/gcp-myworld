@@ -8,10 +8,11 @@ import os
 from typing import Any
 
 import flask
+import requests
 import werkzeug
 from sqlalchemy import select
 
-from myworld import auth
+from myworld import auth, movies
 from myworld.models import KINDS, RATING_MAX, RATING_MIN, STATUSES, UserWork, Work
 
 bp = flask.Blueprint("views", __name__)
@@ -70,6 +71,9 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
         "title": entry.work.title,
         "creator": entry.work.creator,
         "year": entry.work.year,
+        "imdb_id": entry.work.imdb_id,
+        "tmdb_id": entry.work.tmdb_id,
+        "rotten_tomatoes_id": entry.work.rotten_tomatoes_id,
         "status": entry.status,
         "rating": entry.rating,
         "started_on": entry.started_on.isoformat() if entry.started_on else None,
@@ -140,6 +144,19 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any]) -> None:
     entry.notes = _text(body, "notes")
 
 
+def _apply_work_ids(work: Work, body: dict[str, Any]) -> None:
+    """ Catalog ids from the film search; only ever filled in, never blanked. """
+    imdb_id = _text(body, "imdb_id")
+    if imdb_id:
+        work.imdb_id = imdb_id
+    tmdb_id = _int(body, "tmdb_id", 1, 2**31 - 1)
+    if tmdb_id is not None:
+        work.tmdb_id = tmdb_id
+    rotten_tomatoes_id = _text(body, "rotten_tomatoes_id")
+    if rotten_tomatoes_id:
+        work.rotten_tomatoes_id = rotten_tomatoes_id
+
+
 def _own_entry(work_id: int) -> UserWork:
     entry = flask.g.db.get(UserWork, (flask.g.user.id, work_id))
     if entry is None:
@@ -157,6 +174,7 @@ def api_config() -> flask.Response:
         "password_min_length": auth.PASSWORD_MIN_LENGTH,
         # every provider the page knows about, so it can grey out the ones this server cannot offer
         "providers": {key: p.configured for key, p in auth.OAUTH_PROVIDERS.items()},
+        "tmdb": movies.configured(),
         "kinds": {k: {"name": name, "plural": plural, "creator": creator} for k, (name, plural, creator) in KINDS.items()},
         "statuses": STATUSES,
         "rating_min": RATING_MIN,
@@ -192,7 +210,8 @@ def api_library_add() -> tuple[flask.Response, int]:
     if work is None:
         work = Work(kind=kind, title=title, creator=creator, year=year)
         db.add(work)
-        db.flush()
+    _apply_work_ids(work, body)
+    db.flush()
     entry = db.get(UserWork, (flask.g.user.id, work.id))
     created = entry is None
     if entry is None:
@@ -219,3 +238,35 @@ def api_library_delete(work_id: int) -> flask.Response:
     flask.g.db.delete(entry)
     flask.g.db.commit()
     return flask.Response(status=204)
+
+
+# ─── film lookups ────────────────────────────────────────────────────────────
+
+def _movies_available() -> None:
+    if not movies.configured():
+        raise ApiError(503, "film lookups are not configured on this server (TMDB_API_KEY)")
+
+
+@bp.route("/api/movies/search", methods=["GET"])
+@auth.login_required
+def api_movies_search() -> flask.Response:
+    """ Candidate films on The Movie Database for a title. """
+    _movies_available()
+    query = flask.request.args.get("q", "").strip()
+    if not query:
+        raise ApiError(400, "q: required")
+    try:
+        return flask.jsonify(movies.search(query))
+    except (movies.MovieLookupError, requests.RequestException, KeyError, ValueError) as e:
+        raise ApiError(502, "The Movie Database did not answer, try again") from e
+
+
+@bp.route("/api/movies/<int:tmdb_id>", methods=["GET"])
+@auth.login_required
+def api_movies_details(tmdb_id: int) -> flask.Response:
+    """ One film, normalised for the add form: title, director, year and its catalog ids. """
+    _movies_available()
+    try:
+        return flask.jsonify(movies.details(tmdb_id))
+    except (movies.MovieLookupError, requests.RequestException, KeyError, ValueError) as e:
+        raise ApiError(502, "The Movie Database did not answer, try again") from e

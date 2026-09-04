@@ -113,13 +113,36 @@ signed in through Google and through the password form is two accounts.
   page also shows a form that signs in as any email, subject
   `dev:<address>`.
 
-The `users.password_hash` column and the wider `google_sub` column were
-added after the first deploy, so a database that predates them needs
-`scripts/migrate_sign_in_methods.sh` once before deploying this version
-(`--local` does the same for the sqlite file). It runs the ALTER TABLE
+The `users.password_hash` column, the wider `google_sub` column and the
+film id columns on `works` were added after the first deploy, so a
+database that predates them needs `scripts/migrate.sh` once before
+deploying this version (`--local` does the same for the sqlite file). It runs the ALTER TABLE
 statements through the Cloud SQL Auth Proxy with the password from Secret
 Manager, so there is nothing to type, and is safe to re-run; see the note on migrations under "Data
 model".
+
+## Film search
+
+The "add a film" form can search The Movie Database (TMDB) and fill in
+the title, director and year, together with the film's ids on IMDb, TMDB
+and Rotten Tomatoes, which are stored on the shared `works` row and shown
+as links in the library. TMDB knows the IMDb id and the Wikidata item of a
+film; the Rotten Tomatoes id comes from that Wikidata item (property
+P1258), best effort.
+
+It needs `TMDB_API_KEY`, a TMDB v3 API key. The key lives in the password
+store as `keys/themoviedb.org.key`; `scripts/setup.sh` copies it into the
+`myworld-tmdb-key` secret that `.gcp.conf` mounts on Cloud Run, and
+locally:
+
+```bash
+TMDB_API_KEY="$(pass show keys/themoviedb.org.key)" MYWORLD_DEV_LOGIN=1 python src/main.py
+```
+
+Without the key the search box is hidden and the endpoints answer 503.
+
+- `GET /api/movies/search?q=<title>`: candidate films, most relevant first.
+- `GET /api/movies/<tmdb_id>`: one film normalized for the form.
 
 ## Pages and API
 
@@ -131,7 +154,8 @@ script would use as well:
 - `GET /api/library[?kind=book]`: the user's entries.
 - `POST /api/library`: add (or update, if the work is already in the
   library) with `kind`, `title`, `creator`, `year`, `status`, `rating`,
-  `started_on`, `finished_on`, `notes`.
+  `started_on`, `finished_on`, `notes`, and for films optionally
+  `imdb_id`, `tmdb_id`, `rotten_tomatoes_id`.
 - `PUT /api/library/<work_id>`: update the per-user fields.
 - `DELETE /api/library/<work_id>`: remove from the library.
 
@@ -141,8 +165,9 @@ script would use as well:
   `sub` claim, or a provider-qualified subject for the other sign-in
   methods; `password_hash` is set only for email accounts).
 - `works`: books, films, series, albums, games; one shared row per work,
-  identified by kind, title, creator and year. New kinds are added to
-  `KINDS` in `src/myworld/models.py`.
+  identified by kind, title, creator and year, plus the catalog ids of
+  films (`imdb_id`, `tmdb_id`, `rotten_tomatoes_id`). New kinds are added
+  to `KINDS` in `src/myworld/models.py`.
 - `user_works`: what a user thinks about a work: status, rating, dates,
   notes. All per-user queries go through this table, so users never see
   each other's entries even though the work rows are shared.

@@ -24,3 +24,6 @@ tls
 uris
 cloudflare
 dns
+tmdb
+imdb
+wikidata

@@ -83,8 +83,12 @@ class Work(Base):
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     creator: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # ISBN, IMDb id, ... for future enrichment from public catalogs
+    # ISBN and the like, for future enrichment from public catalogs
     external_id: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    # films: filled from The Movie Database when the work is added through the search (see movies.py)
+    imdb_id: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rotten_tomatoes_id: Mapped[str] = mapped_column(String(200), nullable=False, default="")
 
     users: Mapped[list[UserWork]] = relationship(back_populates="work")  # pylint: disable=used-before-assignment
 

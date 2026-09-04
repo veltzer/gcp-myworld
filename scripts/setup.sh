@@ -86,6 +86,10 @@ fi
 if create_secret_if_missing "${gcp_service}-secret-key"; then
 	openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add "${gcp_service}-secret-key" --data-file -
 fi
+# The Movie Database key for the film lookups, from the password store.
+if create_secret_if_missing "${gcp_service}-tmdb-key"; then
+	pass show keys/themoviedb.org.key | tr -d '\n' | gcloud secrets versions add "${gcp_service}-tmdb-key" --data-file -
+fi
 
 echo "== done"
 if [[ -z "${gcp_oauth_client_id}" ]]; then

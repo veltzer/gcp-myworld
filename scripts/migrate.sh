@@ -1,12 +1,15 @@
 #!/bin/bash
-# Schema migration for the email / GitHub / Microsoft sign-in methods:
-# adds users.password_hash and widens users.google_sub. Tables are created
-# by create_all on startup but never altered, so a database that existed
-# before those columns needs this once, before deploying the version that
-# uses them. Safe to re-run: both statements are no-ops the second time.
+# Schema migrations. Tables are created by create_all on startup but never
+# altered, so columns added after the first deploy need this, once, before
+# deploying the version that uses them. Every statement is a no-op when its
+# column already exists, so the script is safe to re-run at any time.
 #
-#   scripts/migrate_sign_in_methods.sh          the Cloud SQL database from .gcp.conf
-#   scripts/migrate_sign_in_methods.sh --local  the local sqlite file (db.gi/myworld.sqlite or DATABASE_URL)
+#   scripts/migrate.sh          the Cloud SQL database from .gcp.conf
+#   scripts/migrate.sh --local  the local sqlite file (db.gi/myworld.sqlite or DATABASE_URL)
+#
+# Migrations so far:
+#   - users.password_hash and a wider users.google_sub (email and OAuth sign-in)
+#   - works.imdb_id, works.tmdb_id, works.rotten_tomatoes_id (film lookups)
 #
 # Cloud SQL is reached through the Cloud SQL Auth Proxy with your gcloud
 # credentials; the database password comes from Secret Manager, the same
@@ -22,21 +25,29 @@ if [[ "${1:-}" == "--local" ]]; then
 import os
 import sqlite3
 
+# (table, column, sqlite type); sqlite ignores VARCHAR lengths, so the wider google_sub needs nothing
+COLUMNS = [
+    ("users", "password_hash", "VARCHAR(300)"),
+    ("works", "imdb_id", "VARCHAR(20) NOT NULL DEFAULT ''"),
+    ("works", "tmdb_id", "INTEGER"),
+    ("works", "rotten_tomatoes_id", "VARCHAR(200) NOT NULL DEFAULT ''"),
+]
+
 url = os.environ.get("DATABASE_URL", "sqlite:///db.gi/myworld.sqlite")
 if not url.startswith("sqlite:///"):
     raise SystemExit(f"--local only handles sqlite databases, DATABASE_URL is {url}")
 path = url.removeprefix("sqlite:///")
 if not os.path.exists(path):
-    raise SystemExit(f"{path} does not exist yet; the app creates it with the new columns on first start")
+    raise SystemExit(f"{path} does not exist yet; the app creates it with all columns on first start")
 db = sqlite3.connect(path)
-columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
-if "password_hash" in columns:
-    print(f"{path}: users.password_hash already there, nothing to do")
-else:
-    db.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(300)")
-    db.commit()
-    print(f"{path}: added users.password_hash")
-# sqlite ignores VARCHAR lengths, so google_sub needs no change
+for table, column, kind in COLUMNS:
+    existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+    if column in existing:
+        print(f"{path}: {table}.{column} already there")
+    else:
+        db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+        print(f"{path}: added {table}.{column}")
+db.commit()
 PY
 	exit 0
 fi
@@ -76,20 +87,25 @@ done
 
 psql -h 127.0.0.1 -p "${PORT}" -U "${gcp_db_user}" -d "${gcp_db_name}" -v ON_ERROR_STOP=1 <<'SQL'
 \echo == before
-SELECT column_name, data_type, character_maximum_length, is_nullable
+SELECT table_name, column_name, data_type, character_maximum_length, is_nullable
 FROM information_schema.columns
-WHERE table_name = 'users' AND column_name IN ('google_sub', 'password_hash')
-ORDER BY column_name;
+WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash'))
+   OR (table_name = 'works' AND column_name IN ('imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
+ORDER BY table_name, column_name;
 
 \echo == migrating
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(300);
 ALTER TABLE users ALTER COLUMN google_sub TYPE VARCHAR(400);
+ALTER TABLE works ADD COLUMN IF NOT EXISTS imdb_id VARCHAR(20) NOT NULL DEFAULT '';
+ALTER TABLE works ADD COLUMN IF NOT EXISTS tmdb_id INTEGER;
+ALTER TABLE works ADD COLUMN IF NOT EXISTS rotten_tomatoes_id VARCHAR(200) NOT NULL DEFAULT '';
 
 \echo == after
-SELECT column_name, data_type, character_maximum_length, is_nullable
+SELECT table_name, column_name, data_type, character_maximum_length, is_nullable
 FROM information_schema.columns
-WHERE table_name = 'users' AND column_name IN ('google_sub', 'password_hash')
-ORDER BY column_name;
+WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash'))
+   OR (table_name = 'works' AND column_name IN ('imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
+ORDER BY table_name, column_name;
 SQL
 
 echo "== done, deploy with gcloud_run_deploy.sh"

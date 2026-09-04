@@ -203,10 +203,167 @@ function entryPayload(row) {
 	};
 }
 
+const CATALOGS = [
+	["imdb_id", "IMDb", (id) => `https://www.imdb.com/title/${id}/`],
+	["tmdb_id", "TMDB", (id) => `https://www.themoviedb.org/movie/${id}`],
+	["rotten_tomatoes_id", "RT", (id) => `https://www.rottentomatoes.com/${id}`],
+];
+
+function catalogLinks(entry) {
+	const links = CATALOGS.filter(([key]) => entry[key]);
+	if (links.length === 0) {
+		return null;
+	}
+	const span = document.createElement("span");
+	span.className = "ids";
+	for (const [key, label, url] of links) {
+		const a = document.createElement("a");
+		a.href = url(entry[key]);
+		a.target = "_blank";
+		a.rel = "noopener";
+		a.textContent = label;
+		a.title = `${label}: ${entry[key]}`;
+		span.appendChild(a);
+	}
+	return span;
+}
+
+// ─── film search ────────────────────────────────────────────────────────────
+
+function movieIdsReset(form) {
+	for (const name of ["imdb_id", "tmdb_id", "rotten_tomatoes_id"]) {
+		form.elements[name].value = "";
+	}
+	const picked = $("movie-picked");
+	if (picked) {
+		picked.remove();
+	}
+}
+
+function renderMovieResult(movie, onPick) {
+	const li = document.createElement("li");
+	li.tabIndex = 0;
+	if (movie.poster) {
+		const img = document.createElement("img");
+		img.src = movie.poster;
+		img.alt = "";
+		li.appendChild(img);
+	} else {
+		const box = document.createElement("span");
+		box.className = "no-poster";
+		li.appendChild(box);
+	}
+	const text = document.createElement("div");
+	const title = document.createElement("div");
+	title.className = "movie-title";
+	title.textContent = movie.year ? `${movie.title} (${movie.year})` : movie.title;
+	text.appendChild(title);
+	if (movie.original_title && movie.original_title !== movie.title) {
+		const meta = document.createElement("div");
+		meta.className = "movie-meta";
+		meta.textContent = movie.original_title;
+		text.appendChild(meta);
+	}
+	if (movie.overview) {
+		const overview = document.createElement("p");
+		overview.className = "movie-overview";
+		overview.textContent = movie.overview;
+		text.appendChild(overview);
+	}
+	li.appendChild(text);
+	const pick = document.createElement("button");
+	pick.type = "button";
+	pick.className = "pick";
+	pick.textContent = "Use";
+	li.appendChild(pick);
+	const choose = () => onPick(movie);
+	pick.onclick = choose;
+	li.onkeydown = (event) => {
+		if (event.key === "Enter" && event.target === li) {
+			choose();
+		}
+	};
+	return li;
+}
+
+async function pickMovie(movie) {
+	const form = $("add-form");
+	const hint = $("movie-hint");
+	hint.hidden = false;
+	hint.textContent = `Fetching details for ${movie.title}...`;
+	try {
+		const film = await api(`/api/movies/${movie.tmdb_id}`);
+		form.elements.title.value = film.title;
+		form.elements.creator.value = film.creator;
+		form.elements.year.value = film.year ?? "";
+		form.elements.imdb_id.value = film.imdb_id;
+		form.elements.tmdb_id.value = film.tmdb_id;
+		form.elements.rotten_tomatoes_id.value = film.rotten_tomatoes_id;
+		$("movie-results").hidden = true;
+		const found = CATALOGS.filter(([key]) => film[key]).map(([, label]) => label);
+		const extras = [];
+		if (film.runtime) {
+			extras.push(`${film.runtime} min`);
+		}
+		if (film.genres && film.genres.length) {
+			extras.push(film.genres.join(", "));
+		}
+		const source = `Filled in from The Movie Database${extras.length ? ` (${extras.join(" · ")})` : ""}.`;
+		const ids = found.length ? `Ids found: ${found.join(", ")}.` : "No catalog ids found.";
+		hint.textContent = `${source} ${ids}`;
+		form.elements.status.focus();
+	} catch (e) {
+		hint.textContent = e.message;
+	}
+}
+
+async function findMovies() {
+	const query = $("movie-query").value.trim();
+	const results = $("movie-results");
+	const hint = $("movie-hint");
+	if (!query) {
+		$("movie-query").focus();
+		return;
+	}
+	hint.hidden = false;
+	hint.textContent = "Searching...";
+	results.hidden = true;
+	try {
+		const movies = await api(`/api/movies/search?q=${encodeURIComponent(query)}`);
+		results.replaceChildren(...movies.map((m) => renderMovieResult(m, pickMovie)));
+		results.hidden = movies.length === 0;
+		hint.textContent = movies.length ? "Pick the right one:" : "Nothing found, try another spelling or the original title.";
+	} catch (e) {
+		hint.textContent = e.message;
+	}
+}
+
+function setupMovieSearch() {
+	const box = $("movie-search");
+	if (!state.config.tmdb) {
+		return;
+	}
+	$("movie-find").onclick = findMovies;
+	$("movie-query").onkeydown = (event) => {
+		if (event.key === "Enter") {
+			event.preventDefault();
+			findMovies();
+		}
+	};
+	// typing a different title by hand means the ids no longer apply
+	$("add-form").elements.title.oninput = () => movieIdsReset($("add-form"));
+	box.hidden = state.kind !== "film";
+}
+
 function renderRow(entry) {
 	const { rating_min, rating_max } = state.config;
 	const tr = document.createElement("tr");
-	cell(tr, "title").textContent = entry.title;
+	const title = cell(tr, "title");
+	title.textContent = entry.title;
+	const links = catalogLinks(entry);
+	if (links) {
+		title.appendChild(links);
+	}
 	cell(tr).textContent = entry.creator;
 	cell(tr).textContent = entry.year ?? "";
 	const status = document.createElement("select");
@@ -285,6 +442,8 @@ async function selectKind(kind) {
 	$("creator-column").textContent = creator;
 	renderKinds();
 	showError("");
+	const search = $("movie-search");
+	search.hidden = !(state.config.tmdb && kind === "film");
 	await loadEntries();
 }
 
@@ -324,6 +483,10 @@ async function libraryPage() {
 			form.elements.creator.value = "";
 			form.elements.year.value = "";
 			form.elements.notes.value = "";
+			movieIdsReset(form);
+			$("movie-results").hidden = true;
+			$("movie-hint").hidden = true;
+			$("movie-query").value = "";
 			form.elements.title.focus();
 			await loadEntries();
 		} catch (e) {
@@ -331,6 +494,7 @@ async function libraryPage() {
 		}
 	};
 
+	setupMovieSearch();
 	const requested = window.location.hash.slice(1);
 	await selectKind(requested in state.config.kinds ? requested : "book");
 }
