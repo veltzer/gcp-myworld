@@ -10,19 +10,21 @@ gcloud configuration, region and resource names are in `.gcp.conf`.
 gcloud_run_deploy.sh
 ```
 
-The script (from `utils-bash`) wraps `gcloud run deploy --source .`:
-Cloud Build builds the `Dockerfile` and the new revision replaces the old
-one with no downtime. Everything the service needs (Cloud SQL attachment,
-environment, secrets, scaling, the service account) lives in `.gcp.conf` as
-`gcp_run_args`, so a redeploy always converges the service to what that
-file says.
+The script (from `utils-bash`, like every `gcloud_*.sh` below) wraps
+`gcloud run deploy --source .`: Cloud Build builds the `Dockerfile` and the
+new revision replaces the old one with no downtime. Everything the service
+needs (Cloud SQL attachment, environment, secrets, scaling, the service
+account) lives in `.gcp.conf` as `gcp_run_args`, so a redeploy always
+converges the service to what that file says.
 
 ## One-time project setup
 
-1. Create the resources: `./scripts/setup.sh`. It enables the APIs, creates
-   the service account the app runs as, the Cloud SQL instance, database
-   and user, and puts the database password and the Flask session key in
-   Secret Manager. Note the Cloud SQL instance is billed per hour.
+1. Create the resources: `gcloud_project_setup.sh`. Driven by `.gcp.conf`
+   (`gcp_service_account`, `gcp_sql_args`, `gcp_secrets`, ...), it enables
+   the APIs, creates the service account the app runs as, the Cloud SQL
+   instance, database and user, and puts the database password, the Flask
+   session key and the keys from the password store in Secret Manager.
+   Safe to re-run. Note the Cloud SQL instance is billed per hour.
 1. Create the OAuth client for "Sign in with Google". This part cannot be
    scripted for a project outside an organization:
    1. Console: `APIs & Services -> OAuth consent screen`. Configure it as
@@ -60,11 +62,11 @@ One-time setup, in this order:
    choose the `Domain` property type, copy the `google-site-verification=`
    value, add it at Cloudflare as a `TXT` record on `@`, and click Verify.
    `gcloud domains list-user-verified` shows it afterwards.
-1. Deploy at least once, then `./scripts/map_domain.sh`. It creates the
-   domain mapping and prints the `A` and `AAAA` records to add at
-   Cloudflare on `@` (DNS only). The script is safe to re-run and doubles
-   as a status check: the certificate is issued once the records resolve,
-   usually within minutes, at most an hour.
+1. Deploy at least once, then `gcloud_run_domain.sh`. It creates the
+   domain mapping for `gcp_domain` and prints the `A` and `AAAA` records
+   to add at Cloudflare on `@` (DNS only). The script is safe to re-run and
+   doubles as a status check: the certificate is issued once the records
+   resolve, usually within minutes, at most an hour.
 1. Register the new origin with the sign-in providers, which reject
    unknown redirect targets: on the Google OAuth client add
    `https://myworld.stream` to the authorized JavaScript origins and
@@ -101,8 +103,9 @@ signed in through Google and through the password form is two accounts.
   (subject `github:<id>`). The button is offered only when
   `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are set: the client id is
   `gcp_github_client_id` in `.gcp.conf`, the secret lives in the password
-  store as `keys/github.com.myworld-oauth` and `scripts/setup.sh` copies it
-  into the `myworld-github-client-secret` secret. The OAuth app ("My
+  store as `keys/github.com.myworld-oauth` and `gcloud_project_setup.sh`
+  copies it into the `myworld-github-client-secret` secret (`gcp_secrets`
+  in `.gcp.conf`). The OAuth app ("My
   World", under `Settings -> Developer settings -> OAuth Apps`) has the
   callbacks `https://myworld.stream/auth/oauth/github/callback` and
   `http://localhost:8080/auth/oauth/github/callback`. A second provider
@@ -115,10 +118,11 @@ signed in through Google and through the password form is two accounts.
 The `users.password_hash` column, the wider `google_sub` column and the
 film id columns on `works` were added after the first deploy, so a
 database that predates them needs `scripts/migrate.sh` once before
-deploying this version (`--local` does the same for the sqlite file). It runs the ALTER TABLE
-statements through the Cloud SQL Auth Proxy with the password from Secret
-Manager, so there is nothing to type, and is safe to re-run; see the note on migrations under "Data
-model".
+deploying this version (`--local` does the same for the sqlite file). It
+runs the ALTER TABLE statements through `gcloud_sql_psql.sh` (the Cloud
+SQL Auth Proxy with the password from Secret Manager, so there is nothing
+to type), applies only what is missing and is safe to re-run; see the note
+on migrations under "Data model".
 
 ## Film search
 
@@ -130,9 +134,9 @@ film; the Rotten Tomatoes id comes from that Wikidata item (property
 P1258), best effort.
 
 It needs `TMDB_API_KEY`, a TMDB v3 API key. The key lives in the password
-store as `keys/themoviedb.org.key`; `scripts/setup.sh` copies it into the
-`myworld-tmdb-key` secret that `.gcp.conf` mounts on Cloud Run, and
-locally:
+store as `keys/themoviedb.org.key`; `gcloud_project_setup.sh` copies it
+into the `myworld-tmdb-key` secret that `.gcp.conf` mounts on Cloud Run,
+and locally:
 
 ```bash
 TMDB_API_KEY="$(pass show keys/themoviedb.org.key)" MYWORLD_DEV_LOGIN=1 python src/main.py
