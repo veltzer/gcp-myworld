@@ -90,6 +90,10 @@ fi
 if create_secret_if_missing "${gcp_service}-tmdb-key"; then
 	pass show keys/themoviedb.org.key | tr -d '\n' | gcloud secrets versions add "${gcp_service}-tmdb-key" --data-file -
 fi
+# OAuth client secret of the "My World" GitHub OAuth app (client id in .gcp.conf).
+if create_secret_if_missing "${gcp_service}-github-client-secret"; then
+	pass show keys/github.com.myworld-oauth | tr -d '\n' | gcloud secrets versions add "${gcp_service}-github-client-secret" --data-file -
+fi
 
 echo "== done"
 if [[ -z "${gcp_oauth_client_id}" ]]; then
