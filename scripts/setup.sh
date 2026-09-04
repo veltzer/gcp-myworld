@@ -1,5 +1,6 @@
 #!/bin/bash
-# One-time project setup for the myworld app. Safe to re-run: every step
+# One-time project setup for the myworld app; deploying afterwards is
+# gcloud_run_deploy.sh (utils-bash). Safe to re-run: every step
 # skips what already exists. The OAuth client ID cannot be scripted and is
 # created by hand (see doc/deploy.md), then pasted into .gcp.conf.
 #
@@ -90,4 +91,4 @@ echo "== done"
 if [[ -z "${gcp_oauth_client_id}" ]]; then
 	echo "next: create the OAuth client (doc/deploy.md) and set gcp_oauth_client_id in .gcp.conf"
 fi
-echo "then: ./scripts/deploy.sh"
+echo "then: gcloud_run_deploy.sh"

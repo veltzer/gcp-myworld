@@ -19,7 +19,7 @@ from myworld.models import make_engine
 
 
 def load_build_info() -> dict[str, str]:
-    """ Load the deploy stamp written by scripts/deploy.sh; absent in dev. """
+    """ Load the deploy stamp written by gcloud_run_deploy.sh; absent in dev. """
     try:
         with open("build_info.json", encoding="UTF8") as fp:
             return json.load(fp)
@@ -32,7 +32,7 @@ def secret_key() -> str:
     if key:
         return key
     if "K_SERVICE" in os.environ:
-        raise RuntimeError("SECRET_KEY must be set on Cloud Run (see scripts/deploy.sh)")
+        raise RuntimeError("SECRET_KEY must be set on Cloud Run (see .gcp.conf)")
     warnings.warn("SECRET_KEY not set: sessions will not survive a restart", stacklevel=1)
     return secrets.token_hex(32)
 
@@ -40,6 +40,8 @@ def secret_key() -> str:
 def create_app(engine: Engine | None = None) -> flask.Flask:
     app = flask.Flask(__name__)
     app.config["SECRET_KEY"] = secret_key()
+    if "K_SERVICE" in os.environ and not auth.client_id():
+        raise RuntimeError("GOOGLE_CLIENT_ID must be set on Cloud Run (gcp_oauth_client_id in .gcp.conf)")
     # keep KINDS/STATUSES in declaration order in /api/config
     assert isinstance(app.json, DefaultJSONProvider)
     app.json.sort_keys = False

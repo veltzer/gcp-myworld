@@ -1,5 +1,6 @@
 # Cloud Run image for the myworld Flask app, built by Cloud Build via
-# `gcloud run deploy --source .` (see scripts/deploy.sh). Dependencies come
+# `gcloud run deploy --source .` (see gcloud_run_deploy.sh from utils-bash).
+# Dependencies come
 # from uv.lock, the single place versions are controlled.
 FROM python:3.14-slim
 
@@ -15,7 +16,7 @@ RUN uv sync --frozen --no-dev
 # The app package lives under src/; keep that layout so the import path is
 # the same as in development and in the tests.
 COPY src ./src
-# The deploy stamp is written by scripts/deploy.sh just before deploying;
+# The deploy stamp is written by gcloud_run_deploy.sh just before deploying;
 # building without it fails on purpose so an unstamped image never ships.
 COPY build_info.json ./
 

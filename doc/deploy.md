@@ -7,13 +7,15 @@ gcloud configuration, region and resource names are in `.gcp.conf`.
 ## Regular deploy
 
 ```bash
-./scripts/deploy.sh
+gcloud_run_deploy.sh
 ```
 
-The script wraps `gcloud run deploy --source .`: Cloud Build builds the
-`Dockerfile` and the new revision replaces the old one with no downtime.
-Everything the service needs (Cloud SQL attachment, environment, secrets,
-scaling, the service account) lives in the script as flags.
+The script (from `utils-bash`) wraps `gcloud run deploy --source .`:
+Cloud Build builds the `Dockerfile` and the new revision replaces the old
+one with no downtime. Everything the service needs (Cloud SQL attachment,
+environment, secrets, scaling, the service account) lives in `.gcp.conf` as
+`gcp_run_args`, so a redeploy always converges the service to what that
+file says.
 
 ## One-time project setup
 
@@ -40,11 +42,8 @@ scaling, the service account) lives in the script as flags.
       the credential to an unregistered URI (`redirect_uri_mismatch`).
    1. Paste the client ID into `gcp_oauth_client_id` in `.gcp.conf`. Client
       IDs are public, so it is fine to commit it.
-1. Deploy: `./scripts/deploy.sh`. The first deploy can happen before the
-   OAuth client exists only by temporarily leaving the check in the script,
-   so do the OAuth step first and use a placeholder origin if the URL is
-   not known yet; the URL is deterministic
-   (`https://myworld-<project-number>.us-central1.run.app`).
+1. Deploy: `gcloud_run_deploy.sh`. The app refuses to start on Cloud Run
+   without `GOOGLE_CLIENT_ID`, so do the OAuth step first.
 
 ## How sign-in works
 
