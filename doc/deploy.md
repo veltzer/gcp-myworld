@@ -32,16 +32,15 @@ converges the service to what that file says.
       scopes are needed beyond the defaults (email, profile, openid).
    1. Console: `APIs & Services -> Credentials -> Create credentials ->
       OAuth client ID`, application type `Web application`.
-   1. Under `Authorized JavaScript origins` add the service URL and
-      `http://localhost:8080` for local development. The service URL is
-      deterministic, `https://myworld-<project-number>.us-central1.run.app`
-      (`gcloud projects describe <project> --format 'value(projectNumber)'`),
-      so it can be registered before the first deploy.
+   1. Under `Authorized JavaScript origins` add `https://<gcp_domain>` and
+      `http://localhost:8080` for local development. The `run.app` service
+      URL is not needed: the app redirects it to the custom domain (see
+      below), so it never reaches Google as an origin.
    1. Under `Authorized redirect URIs` add the login endpoint on both
       origins: `http://localhost:8080/auth/login` and
-      `https://myworld-<project-number>.us-central1.run.app/auth/login`.
-      The sign-in button runs in redirect mode, and Google refuses to POST
-      the credential to an unregistered URI (`redirect_uri_mismatch`).
+      `https://<gcp_domain>/auth/login`. The sign-in button runs in
+      redirect mode, and Google refuses to POST the credential to an
+      unregistered URI (`redirect_uri_mismatch`).
    1. Paste the client ID into `gcp_oauth_client_id` in `.gcp.conf`. Client
       IDs are public, so it is fine to commit it.
 1. Deploy: `gcloud_run_deploy.sh`. The app refuses to start on Cloud Run
@@ -67,11 +66,12 @@ One-time setup, in this order:
    to add at Cloudflare on `@` (DNS only). The script is safe to re-run and
    doubles as a status check: the certificate is issued once the records
    resolve, usually within minutes, at most an hour.
-1. Register the new origin with the sign-in providers, which reject
-   unknown redirect targets: on the Google OAuth client add
-   `https://myworld.stream` to the authorized JavaScript origins and
-   `https://myworld.stream/auth/login` to the redirect URIs; the GitHub app
-   already has `https://myworld.stream/auth/oauth/github/callback`.
+1. Make sure the new origin is registered with the sign-in providers,
+   which reject unknown redirect targets: the Google OAuth client has
+   `https://myworld.stream` in the authorized JavaScript origins and
+   `https://myworld.stream/auth/login` in the redirect URIs (the OAuth step
+   above), and the GitHub app has
+   `https://myworld.stream/auth/oauth/github/callback`.
 
 The service keeps answering on its `run.app` hostnames, but those are not
 registered with the sign-in providers and would fail the login with a
