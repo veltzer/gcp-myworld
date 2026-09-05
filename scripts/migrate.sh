@@ -55,7 +55,7 @@ PY
 	exit 0
 fi
 
-# shellcheck source=/dev/null
+# shellcheck source=.gcp.conf
 source .gcp.conf
 
 # What the database has now: "table.column:max_length" per line.

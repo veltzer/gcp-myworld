@@ -39,9 +39,11 @@ src_dirs = ["."]
 
 # ─── shell ───────────────────────────────────────────────────────────────────
 
+# --external-sources lets shellcheck follow the tracked .gcp.conf that the
+# scripts source, so its variables are seen as assigned.
 [processor.shellcheck]
 src_dirs = ["scripts", "src", "misc", "config"]
-args = ["--severity=error", "--shell=bash"]
+args = ["--external-sources"]
 
 # ─── lua ─────────────────────────────────────────────────────────────────────
 
@@ -62,3 +64,35 @@ src_dirs = ["src"]
 # lint the GitHub Actions workflow files with actionlint
 [processor.actionlint]
 src_dirs = [".github/workflows"]
+
+# ─── markdown ────────────────────────────────────────────────────────────────
+
+[processor.rumdl]
+src_dirs = ["doc"]
+src_files = ["README.md"]
+
+# ─── docker ──────────────────────────────────────────────────────────────────
+
+[processor.hadolint]
+src_files = ["Dockerfile"]
+
+# ─── json ────────────────────────────────────────────────────────────────────
+
+[processor.ijsonlint]
+src_files = ["package.json"]
+
+# ─── xml / svg ───────────────────────────────────────────────────────────────
+
+[processor.xmllint]
+src_dirs = ["src/myworld/static"]
+
+# ─── css ─────────────────────────────────────────────────────────────────────
+
+[processor.stylelint]
+src_dirs = ["src/myworld/static"]
+
+# ─── javascript ──────────────────────────────────────────────────────────────
+
+[processor.eslint]
+src_dirs = ["src/myworld/static"]
+args = ["-c", ".eslint.config.js"]
