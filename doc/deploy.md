@@ -73,6 +73,16 @@ One-time setup, in this order:
    `https://myworld.stream/auth/login` to the redirect URIs; the GitHub app
    already has `https://myworld.stream/auth/oauth/github/callback`.
 
+The service keeps answering on its `run.app` hostnames, but those are not
+registered with the sign-in providers and would fail the login with a
+`redirect_uri` mismatch. So `gcp_run_args` in `.gcp.conf` passes
+`CANONICAL_HOST=${gcp_domain}` to the app, and every request on any other
+hostname is redirected (308) to the same path on the custom domain before
+it is served; only `/app/health` is exempt, for probes that address the
+service directly. Unset locally, where the app answers on whatever host it
+is reached on. Because of this redirect only the custom domain needs to be
+registered with the providers.
+
 `www.myworld.stream` is not mapped; if wanted, add a second mapping for it
 (`gcloud beta run domain-mappings create --domain www.myworld.stream`,
 a `CNAME` to `ghs.googlehosted.com`) or a Cloudflare redirect rule.

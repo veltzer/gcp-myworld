@@ -4,8 +4,9 @@ End to end tests of the myworld app through webtest.
 
 import pytest
 import webtest
+from sqlalchemy.engine import Engine
 
-from myworld import auth
+from myworld import auth, create_app
 from tests.conftest import sign_in
 
 
@@ -29,6 +30,23 @@ def test_version(app: webtest.TestApp) -> None:
 
 def test_health(app: webtest.TestApp) -> None:
     assert app.get("/app/health").json == {"status": "ok"}
+
+
+def test_canonical_host_redirect(app: webtest.TestApp, engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CANONICAL_HOST", "myworld.example")
+    canonical = webtest.TestApp(create_app(engine))
+    # any other hostname (the run.app ones in practice) is sent to the custom domain, path and query kept
+    response = canonical.get("/library?x=1", extra_environ={"HTTP_HOST": "myworld-123.us-central1.run.app"})
+    assert response.status_int == 308
+    assert response.location == "https://myworld.example/library?x=1"
+    # the custom domain itself is served as usual
+    response = canonical.get("/", extra_environ={"HTTP_HOST": "myworld.example"})
+    assert response.status_int == 200
+    # probes that address the service directly still get their answer
+    response = canonical.get("/app/health", extra_environ={"HTTP_HOST": "myworld-123.us-central1.run.app"})
+    assert response.json == {"status": "ok"}
+    # unset in development, where the app answers on whatever host it is reached on
+    assert app.get("/", extra_environ={"HTTP_HOST": "127.0.0.1:8080"}).status_int == 200
 
 
 def test_config_anonymous(app: webtest.TestApp) -> None:

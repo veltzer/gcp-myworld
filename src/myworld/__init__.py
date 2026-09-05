@@ -7,9 +7,11 @@ and on sqlite locally.
 import json
 import os
 import secrets
+import urllib.parse
 import warnings
 
 import flask
+import werkzeug
 from flask.json.provider import DefaultJSONProvider
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -50,6 +52,20 @@ def create_app(engine: Engine | None = None) -> flask.Flask:
     app.config["SESSION_COOKIE_SECURE"] = "K_SERVICE" in os.environ
     app.config["build_info"] = load_build_info()
     app.config["engine"] = engine or make_engine()
+    # The hostname the service is meant to be reached on (gcp_domain in .gcp.conf); empty in dev.
+    app.config["CANONICAL_HOST"] = os.environ.get("CANONICAL_HOST", "")
+
+    @app.before_request
+    def redirect_to_canonical_host() -> werkzeug.Response | None:
+        # Cloud Run also answers on its run.app hostnames. Send those to the custom domain
+        # before anything else happens, so there is one origin for cookies and links and the
+        # sign-in providers only ever see the callback URL that is registered with them.
+        # The health check is exempt so probes that address the service directly keep working.
+        host = app.config["CANONICAL_HOST"]
+        if not host or flask.request.host == host or flask.request.path == "/app/health":
+            return None
+        url = urllib.parse.urlsplit(flask.request.url)._replace(scheme="https", netloc=host).geturl()
+        return flask.redirect(url, code=308)
 
     @app.before_request
     def open_session() -> None:
