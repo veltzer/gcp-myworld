@@ -42,7 +42,7 @@ src_dirs = ["."]
 # --external-sources lets shellcheck follow the tracked .gcp.conf that the
 # scripts source, so its variables are seen as assigned.
 [processor.shellcheck]
-src_dirs = ["scripts", "src", "misc", "config"]
+src_dirs = ["scripts", "src", "config"]
 args = ["--external-sources"]
 
 # ─── lua ─────────────────────────────────────────────────────────────────────
