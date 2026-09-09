@@ -79,8 +79,7 @@ src_files = ["Dockerfile"]
 # ─── json ────────────────────────────────────────────────────────────────────
 
 [processor.ijsonlint]
-src_files = ["package.json"]
-
+src_files = ["package.json", ".stylelintrc.json"]
 # ─── xml / svg ───────────────────────────────────────────────────────────────
 
 [processor.xmllint]
