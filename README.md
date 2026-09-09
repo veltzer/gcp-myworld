@@ -1,11 +1,11 @@
 <!-- This file is generated. Do not edit it by hand: your changes will be
      lost on the next build. Edit the template it is rendered from, or the
      values that template reads, and build again. -->
-# *myworld* project by Mark Veltzer
+# *gcp-myworld* project by Mark Veltzer
 
 description: My World: a personal library of books, films and more
 
-project website: https://veltzer.github.io/myworld
+project website: https://veltzer.github.io/gcp-myworld
 
 author: Mark Veltzer
 
@@ -15,11 +15,11 @@ version: 0.0.1
 
 ## github
 
-![License](https://img.shields.io/github/license/veltzer/myworld)
+![License](https://img.shields.io/github/license/veltzer/gcp-myworld)
 
 ## build
 
-![build](https://github.com/veltzer/myworld/workflows/build/badge.svg)
+![build](https://github.com/veltzer/gcp-myworld/workflows/build/badge.svg)
 
 ## contact me
 
