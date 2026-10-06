@@ -1,10 +1,8 @@
 """
-Make src/ importable and give every test a fresh app on an in-memory
-sqlite database, with Google token verification stubbed out.
+Give every test a fresh app on an in-memory sqlite database, with Google
+token verification stubbed out.
 """
 
-import os
-import sys
 from collections.abc import Iterator
 from typing import Any
 
@@ -14,11 +12,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "src"))
-os.chdir(ROOT)
-
-# pylint: disable=wrong-import-position
 from myworld import auth, create_app
 from myworld.models import Base
 

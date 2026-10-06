@@ -19,11 +19,14 @@ from sqlalchemy.orm import Session
 from myworld import auth, views
 from myworld.models import make_engine
 
+# build_info.json is written next to src/, at the repo (and image) root.
+BUILD_INFO = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "build_info.json")
+
 
 def load_build_info() -> dict[str, str]:
     """ Load the deploy stamp written by gcloud_run_deploy.sh; absent in dev. """
     try:
-        with open("build_info.json", encoding="UTF8") as fp:
+        with open(BUILD_INFO, encoding="UTF8") as fp:
             return json.load(fp)
     except FileNotFoundError:
         return {"deploy_date": "unknown", "git_describe": "dev"}
