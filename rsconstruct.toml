@@ -78,7 +78,7 @@ src_files = ["Dockerfile"]
 
 # ─── xml / svg ───────────────────────────────────────────────────────────────
 
-[processor.checker.xmllint]
+[processor.checker.ixmllint]
 src_dirs = ["src/myworld/static"]
 
 # ─── css ─────────────────────────────────────────────────────────────────────
