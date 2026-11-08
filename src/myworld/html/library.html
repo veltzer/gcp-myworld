@@ -31,7 +31,10 @@
 			<!-- one toolbar for every tab: a control that does not apply is disabled, never hidden -->
 			<div class="world-tools">
 				<input id="world-search" type="search" placeholder="Search" aria-label="Search">
-				<select id="type-filter" aria-label="Type" disabled></select>
+				<span class="type-filter">
+					<button id="type-filter" type="button" class="filter-button" aria-haspopup="true" aria-expanded="false" aria-controls="type-filter-menu" disabled>All types</button>
+					<span id="type-filter-menu" class="type-filter-menu" role="group" aria-label="Types to show" hidden></span>
+				</span>
 				<span class="sort">
 					<select id="sort-field" aria-label="Sort by"></select>
 					<button id="sort-direction" type="button" class="icon-button"></button>

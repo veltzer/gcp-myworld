@@ -1050,42 +1050,87 @@ const TABLES = {
 	"person-types": ["person-types-table", "person-type-rows", typeRow],
 };
 
-// The type filter next to the search, for views whose rows have a type: "" is
-// everything, "none" the rows without one, else a type id. Kept per view.
+// The type filter next to the search, for views whose rows have a type: a set
+// of the picked values ("none" for the rows without a type, else type ids),
+// empty for everything. A row matches when it has any picked type. Kept per view.
 const typeFilters = {};
 
+function pickedTypes(view) {
+	if (!typeFilters[view]) {
+		typeFilters[view] = new Set();
+	}
+	return typeFilters[view];
+}
+
+// The button names what is picked: "All types", the names, or how many.
+function typeFilterLabel(view, types) {
+	const picked = pickedTypes(view);
+	if (picked.size === 0) {
+		return "All types";
+	}
+	const names = [...picked].map((value) => (value === "none" ? "No type" : types.find((t) => String(t.id) === value)?.name)).filter(Boolean);
+	return names.length <= 2 ? names.join(", ") : `${names.length} types`;
+}
+
 async function fillTypeFilter(view) {
-	const select = $("type-filter");
+	const button = $("type-filter");
+	const menu = $("type-filter-menu");
 	const typesView = TYPED[view];
-	const option = (value, label) => {
-		const node = document.createElement("option");
-		node.value = value;
-		node.textContent = label;
-		return node;
-	};
+	menu.hidden = true;
+	button.setAttribute("aria-expanded", "false");
 	// a view without types keeps the control, disabled
-	select.disabled = !typesView;
+	button.disabled = !typesView;
 	if (!typesView) {
-		select.replaceChildren(option("", "All types"));
+		button.textContent = "All types";
+		menu.replaceChildren();
 		return;
 	}
 	const types = await worldList(typesView);
-	select.replaceChildren(
-		option("", "All types"),
-		...types.map((t) => option(String(t.id), `${t.name} (${t.count})`)),
-		option("none", "No type"),
+	const picked = pickedTypes(view);
+	const box = (value, label) => {
+		const line = el("label", "type-filter-option");
+		const input = document.createElement("input");
+		input.type = "checkbox";
+		input.value = value;
+		input.checked = picked.has(value);
+		input.onchange = () => {
+			if (input.checked) {
+				picked.add(value);
+			} else {
+				picked.delete(value);
+			}
+			button.textContent = typeFilterLabel(view, types);
+			rerender();
+		};
+		line.append(input, ` ${label}`);
+		return line;
+	};
+	const clear = el("button", "text", "Show all");
+	clear.type = "button";
+	clear.onclick = () => {
+		picked.clear();
+		for (const input of menu.querySelectorAll("input")) {
+			input.checked = false;
+		}
+		button.textContent = typeFilterLabel(view, types);
+		rerender();
+	};
+	menu.replaceChildren(
+		...types.map((t) => box(String(t.id), `${t.name} (${t.count})`)),
+		box("none", "No type"),
+		clear,
 	);
-	select.value = typeFilters[view] || "";
+	button.textContent = typeFilterLabel(view, types);
 }
 
 function typeMatches(item) {
-	const wanted = typeFilters[state.view] || "";
-	if (!TYPED[state.view] || wanted === "") {
+	const picked = pickedTypes(state.view);
+	if (!TYPED[state.view] || picked.size === 0) {
 		return true;
 	}
 	// a person has a list of types, an organization one
 	const types = item.types || (item.type ? [item.type] : []);
-	return wanted === "none" ? types.length === 0 : types.some((t) => String(t.id) === wanted);
+	return types.length === 0 ? picked.has("none") : types.some((t) => picked.has(String(t.id)));
 }
 
 // Everything a search can match on, as one lowercase string.
@@ -1308,10 +1353,24 @@ function setupWorlds() {
 	$("world-search").oninput = rerender;
 	setupSort();
 	$("connections-close").onclick = () => $("connections-dialog").close();
-	$("type-filter").onchange = () => {
-		typeFilters[state.view] = $("type-filter").value;
-		rerender();
+	// the type filter's checkbox menu opens under its button and closes on a click elsewhere or Escape
+	$("type-filter").onclick = () => {
+		const menu = $("type-filter-menu");
+		menu.hidden = !menu.hidden;
+		$("type-filter").setAttribute("aria-expanded", String(!menu.hidden));
 	};
+	document.addEventListener("click", (event) => {
+		if (!event.target.closest(".type-filter")) {
+			$("type-filter-menu").hidden = true;
+			$("type-filter").setAttribute("aria-expanded", "false");
+		}
+	});
+	document.addEventListener("keydown", (event) => {
+		if (event.key === "Escape") {
+			$("type-filter-menu").hidden = true;
+			$("type-filter").setAttribute("aria-expanded", "false");
+		}
+	});
 	setupLayouts();
 }
 
