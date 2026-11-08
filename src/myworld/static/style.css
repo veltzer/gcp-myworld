@@ -720,29 +720,181 @@ button.danger {
 	overflow: hidden;
 }
 
-/* a photo fills the card behind the text, darkened so white text reads on it */
-.world-card.has-photo {
-	min-height: 10rem;
+/* ─── layouts: one markup, a class on #cards picks how it looks ─────────── */
+
+.layouts {
+	display: inline-flex;
+	margin-left: auto;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	overflow: hidden;
+}
+
+.layouts[hidden] {
+	display: none;
+}
+
+.layouts button {
+	border: 0;
+	border-radius: 0;
+	background: #fff;
+	color: var(--muted);
+	padding: 0.3rem 0.8rem;
+	font-size: 0.85rem;
+}
+
+.layouts button + button {
+	border-left: 1px solid var(--line);
+}
+
+.layouts button[aria-pressed="true"] {
+	background: var(--accent);
 	color: #fff;
-	background: linear-gradient(rgb(0 0 0 / 55%), rgb(0 0 0 / 75%)), var(--card-image, none) center / cover no-repeat, #475569;
+}
+
+.world-image {
+	display: block;
+	width: 100%;
+	aspect-ratio: 16 / 9;
+	object-fit: cover;
+	background: var(--line);
+}
+
+.world-card.is-logo .world-image {
+	object-fit: contain;
+	padding: 1rem 2rem;
+	box-sizing: border-box;
+	background: #fff;
+}
+
+/* cards: the image on top, the text under it */
+.layout-cards .world-card.is-logo .world-image {
+	border-bottom: 1px solid var(--line);
+}
+
+/* list: one row per item, a small image at the start, details run on one line */
+.cards.layout-list {
+	grid-template-columns: 1fr;
+	gap: 0.5rem;
+}
+
+.layout-list .world-card {
+	flex-direction: row;
+	align-items: flex-start;
+}
+
+.layout-list .world-image {
+	width: 7rem;
+	flex: none;
+	aspect-ratio: 4 / 3;
+}
+
+.layout-list .world-card.is-logo .world-image {
+	padding: 0.5rem;
+	border-right: 1px solid var(--line);
+}
+
+.layout-list .world-body {
+	padding: 0.5rem 0.75rem;
+}
+
+.layout-list .world-details {
+	margin-top: 0.25rem;
+}
+
+.layout-list .world-details li {
+	display: inline;
+	margin-right: 1rem;
+}
+
+.layout-list .credit {
+	display: none;
+}
+
+/* tiles: the image fills the card behind the text */
+.layout-tiles .world-card.has-image {
+	position: relative;
+	min-height: 10rem;
+}
+
+.layout-tiles .world-card.has-image .world-image {
+	position: absolute;
+	inset: 0;
+	height: 100%;
+	aspect-ratio: auto;
+}
+
+.layout-tiles .world-card.has-image .world-body {
+	position: relative;
+	flex: 1;
+}
+
+.layout-tiles .world-card.is-photo {
+	color: #fff;
 	border-color: transparent;
 }
 
-.world-card.has-photo .world-subtitle,
-.world-card.has-photo .world-details .label,
-.world-card.has-photo .credit {
+.layout-tiles .world-card.is-photo .world-body {
+	background: linear-gradient(rgb(0 0 0 / 55%), rgb(0 0 0 / 75%));
+}
+
+.layout-tiles .world-card.is-photo .world-subtitle,
+.layout-tiles .world-card.is-photo .world-details .label,
+.layout-tiles .world-card.is-photo .credit {
 	color: rgb(255 255 255 / 75%);
 }
 
-.world-card.has-photo .person-link,
-.world-card.has-photo .world-details a {
+.layout-tiles .world-card.is-photo .person-link,
+.layout-tiles .world-card.is-photo .world-details a {
 	color: #bfdbfe;
 }
 
-/* a logo is shown whole behind a light veil, dark text over it */
-.world-card.has-logo {
-	min-height: 8rem;
-	background: linear-gradient(rgb(255 255 255 / 82%), rgb(255 255 255 / 82%)), var(--card-image, none) center / contain no-repeat, #fff;
+.layout-tiles .world-card.is-logo .world-body {
+	background: rgb(255 255 255 / 82%);
+}
+
+/* gallery: the image alone, the name over its bottom edge; click for the rest */
+.cards.layout-gallery {
+	grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+	gap: 0.5rem;
+}
+
+.layout-gallery .world-card {
+	position: relative;
+	aspect-ratio: 4 / 3;
+	justify-content: flex-end;
+	background: var(--line);
+}
+
+.layout-gallery .world-image {
+	position: absolute;
+	inset: 0;
+	height: 100%;
+	aspect-ratio: auto;
+}
+
+.layout-gallery .world-body {
+	position: relative;
+	padding: 1.5rem 0.75rem 0.5rem;
+}
+
+.layout-gallery .world-card.is-photo .world-body {
+	color: #fff;
+	background: linear-gradient(transparent, rgb(0 0 0 / 70%));
+}
+
+.layout-gallery .world-card.is-logo .world-body {
+	background: linear-gradient(transparent, rgb(255 255 255 / 90%) 40%);
+}
+
+.layout-gallery .world-title {
+	font-size: 0.95rem;
+}
+
+.layout-gallery .world-subtitle,
+.layout-gallery .world-details,
+.layout-gallery .credit {
+	display: none;
 }
 
 .world-body {

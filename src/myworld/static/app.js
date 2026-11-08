@@ -604,32 +604,66 @@ function websiteDetail(list, url) {
 	list.appendChild(li);
 }
 
-// A card's photo or logo is its background, fetched only once the card comes
-// near the screen (what loading="lazy" does for an img).
-const backgrounds = "IntersectionObserver" in window
-	? new IntersectionObserver((entries, observer) => {
-		for (const entry of entries) {
-			if (entry.isIntersecting) {
-				entry.target.style.setProperty("--card-image", `url("${entry.target.dataset.image}")`);
-				observer.unobserve(entry.target);
-			}
-		}
-	}, { rootMargin: "400px" })
-	: null;
+// How the cards are laid out, picked with the buttons next to the search and
+// remembered in this browser. Every layout is the same markup styled by a
+// class on #cards, so switching never refetches anything.
+const LAYOUTS = {
+	list: "List",
+	cards: "Cards",
+	tiles: "Tiles",
+	gallery: "Gallery",
+};
+const LAYOUT_KEY = "myworld.layout";
 
-// kind is "photo" (covers the card, text in white over a dark veil) or "logo"
-// (shown whole behind a light veil)
+function savedLayout() {
+	try {
+		const saved = window.localStorage.getItem(LAYOUT_KEY);
+		return saved in LAYOUTS ? saved : "cards";
+	} catch (e) {
+		return "cards";
+	}
+}
+
+function applyLayout(layout) {
+	for (const name of Object.keys(LAYOUTS)) {
+		$("cards").classList.toggle(`layout-${name}`, name === layout);
+	}
+	for (const button of $("layouts").querySelectorAll("button")) {
+		button.setAttribute("aria-pressed", String(button.dataset.layout === layout));
+	}
+}
+
+function setupLayouts() {
+	const box = $("layouts");
+	for (const [name, label] of Object.entries(LAYOUTS)) {
+		const button = el("button", null, label);
+		button.type = "button";
+		button.dataset.layout = name;
+		button.onclick = () => {
+			applyLayout(name);
+			try {
+				window.localStorage.setItem(LAYOUT_KEY, name);
+			} catch (e) {
+				// private window or blocked storage: the choice lasts until reload
+			}
+		};
+		box.appendChild(button);
+	}
+	applyLayout(savedLayout());
+}
+
+// kind is "photo" or "logo" (a logo is always shown whole, never cropped)
 function cardShell(item, subtitle, kind = "photo") {
 	const card = el("article", "world-card");
 	card.id = `${WORLDS[state.view][2]}-${item.id}`;
+	card.title = item.name;
 	if (item.image) {
-		card.classList.add(`has-${kind}`);
-		card.dataset.image = item.image;
-		if (backgrounds) {
-			backgrounds.observe(card);
-		} else {
-			card.style.setProperty("--card-image", `url("${item.image}")`);
-		}
+		card.classList.add("has-image", `is-${kind}`);
+		const img = el("img", "world-image");
+		img.src = item.image;
+		img.alt = "";
+		img.loading = "lazy";
+		card.appendChild(img);
 	}
 	const body = el("div", "world-body");
 	body.appendChild(el("h2", "world-title", item.name));
@@ -742,6 +776,7 @@ function renderWorld() {
 	});
 	const people = view === "people";
 	$("cards").hidden = people;
+	$("layouts").hidden = people;
 	$("people").hidden = !people || shown.length === 0;
 	if (people) {
 		$("people-rows").replaceChildren(...shown.map(personRow));
@@ -813,6 +848,7 @@ async function showRow(view, id) {
 
 function setupWorlds() {
 	$("world-search").oninput = renderWorld;
+	setupLayouts();
 }
 
 // ─── the add dialog ─────────────────────────────────────────────────────────
