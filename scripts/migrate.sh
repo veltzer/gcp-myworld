@@ -38,6 +38,9 @@
 #     that is plainly two capitalized words is split between them, the way
 #     split_name in scripts/import_world.py does; any other stays whole in
 #     first_name. Run before deploying the version that has these columns.
+#   - a person may have several types: people.type_id is copied into the new
+#     person_person_types link table, then dropped. Run right after deploying
+#     the version that uses the links (its create_all makes the table).
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -70,7 +73,9 @@ if not url.startswith("sqlite:///"):
 path = url.removeprefix("sqlite:///")
 if not os.path.exists(path):
     raise SystemExit(f"{path} does not exist yet; the app creates it with all columns on first start")
-db = sqlite3.connect(path)
+# one transaction (sqlite rolls back schema changes too): a failing step leaves the file as it was
+db = sqlite3.connect(path, isolation_level=None)
+db.execute("BEGIN")
 added = []
 for table, column, kind in COLUMNS:
     existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
@@ -123,7 +128,8 @@ if "performers" in {row[1] for row in db.execute("PRAGMA table_info(concerts)")}
     db.execute("ALTER TABLE concerts DROP COLUMN performers")
     added.append("concerts.performers -> people, concert_performers")
 people_columns = {row[1] for row in db.execute("PRAGMA table_info(people)")}
-if people_columns and "type_id" not in people_columns:
+tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+if people_columns and "person_types" not in tables:
     db.execute("""CREATE TABLE IF NOT EXISTS person_types (
         id INTEGER NOT NULL PRIMARY KEY,
         owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -152,6 +158,26 @@ if "name" in people_columns:
         if match and match.group(1) != "The":
             db.execute("UPDATE people SET first_name = ?, surname = ? WHERE id = ?", (match.group(1), match.group(2), person_id))
     added.append("people.name -> first_name, surname (not unique)")
+people_columns = {row[1] for row in db.execute("PRAGMA table_info(people)")}
+if "type_id" in people_columns:
+    import re
+    db.execute("""CREATE TABLE IF NOT EXISTS person_person_types (
+        person_id INTEGER NOT NULL REFERENCES people (id) ON DELETE CASCADE,
+        type_id INTEGER NOT NULL REFERENCES person_types (id) ON DELETE CASCADE,
+        PRIMARY KEY (person_id, type_id))""")
+    db.execute("INSERT OR IGNORE INTO person_person_types (person_id, type_id) SELECT id, type_id FROM people WHERE type_id IS NOT NULL")
+    # sqlite cannot drop a column a foreign key uses: the table is made again without it
+    (create,) = db.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'people'").fetchone()
+    create = re.sub(r",\s*type_id INTEGER(\s+REFERENCES\s+\w+\s*\(\w+\))?[^,)]*", "", create)
+    create = re.sub(r",\s*FOREIGN KEY\s*\(type_id\)[^,)]*\([^)]*\)[^,)]*", "", create)
+    create = re.sub(r"^CREATE TABLE \"?people\"?", "CREATE TABLE people_new", create)
+    keep = ", ".join(column for column in people_columns if column != "type_id")
+    db.execute(create)
+    db.execute(f"INSERT INTO people_new ({keep}) SELECT {keep} FROM people")
+    db.execute("DROP TABLE people")
+    db.execute("ALTER TABLE people_new RENAME TO people")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_people_owner_id ON people (owner_id)")
+    added.append("people.type_id -> person_person_types")
 db.commit()
 if added:
     print(f"{path}: migrated {', '.join(added)}")
@@ -175,6 +201,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'organizations' AND column_name = 'type_id')
 	   OR (table_name = 'concerts' AND column_name = 'performers')
 	   OR (table_name = 'people' AND column_name IN ('name', 'type_id'))
+	   OR (table_name = 'person_types' AND column_name = 'id')
 ")"
 
 has() {
@@ -237,7 +264,7 @@ if has "concerts.performers:.*"; then
 		ALTER TABLE concerts DROP COLUMN performers"
 fi
 
-if ! has "people.type_id:.*"; then
+if ! has "person_types.id:.*"; then
 	need "person_types, people.type_id" "CREATE TABLE IF NOT EXISTS person_types (
 			id SERIAL PRIMARY KEY,
 			owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -255,6 +282,16 @@ if has "people.name:.*"; then
 			SET first_name = substring(first_name from '^([A-Z][^ ]*) [A-Z][^ ]*\$'),
 				surname = substring(first_name from '^[A-Z][^ ]* ([A-Z][^ ]*)\$')
 			WHERE first_name ~ '^[A-Z][^ ]* [A-Z][^ ]*\$' AND first_name NOT LIKE 'The %'"
+fi
+if has "people.type_id:.*" || ! has "person_types.id:.*"; then
+	need "people.type_id -> person_person_types" "CREATE TABLE IF NOT EXISTS person_person_types (
+			person_id INTEGER NOT NULL REFERENCES people (id) ON DELETE CASCADE,
+			type_id INTEGER NOT NULL REFERENCES person_types (id) ON DELETE CASCADE,
+			PRIMARY KEY (person_id, type_id));
+		INSERT INTO person_person_types (person_id, type_id)
+			SELECT id, type_id FROM people WHERE type_id IS NOT NULL
+			ON CONFLICT DO NOTHING;
+		ALTER TABLE people DROP COLUMN type_id"
 fi
 
 if (( ${#changed[@]} == 0 )); then

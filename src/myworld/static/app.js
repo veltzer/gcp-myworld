@@ -480,7 +480,7 @@ const SORTS = {
 	people: [
 		["first_name", "First name", (p) => p.first_name, "asc"],
 		["surname", "Surname", (p) => p.surname, "asc"],
-		["type", "Type", (p) => p.type?.name, "asc"],
+		["type", "Type", (p) => p.types[0]?.name, "asc"],
 		["organization", "Organization", (p) => p.organizations[0]?.name, "asc"],
 	],
 	organizations: [
@@ -982,7 +982,7 @@ function personRow(person) {
 	const tr = el("tr");
 	tr.id = `person-${person.id}`;
 	const kind = el("td");
-	appendLinks(kind, "person-types", person.type ? [person.type] : []);
+	appendLinks(kind, "person-types", person.types);
 	const organizations = el("td");
 	appendLinks(organizations, "organizations", person.organizations);
 	const links = el("td", "actions");
@@ -1048,7 +1048,9 @@ function typeMatches(item) {
 	if (!TYPED[state.view] || wanted === "") {
 		return true;
 	}
-	return wanted === "none" ? !item.type : Boolean(item.type) && String(item.type.id) === wanted;
+	// a person has a list of types, an organization one
+	const types = item.types || (item.type ? [item.type] : []);
+	return wanted === "none" ? types.length === 0 : types.some((t) => String(t.id) === wanted);
 }
 
 // Everything a search can match on, as one lowercase string.
@@ -1178,7 +1180,7 @@ async function worldList(view) {
 // What a picker suggests for a row: the name, and for people the type and
 // description too, since two people may share a name.
 function chipLabel(row) {
-	const more = [row.type?.name, row.description?.slice(0, 40)].filter(Boolean);
+	const more = [(row.types || []).map((t) => t.name).join("/"), row.description?.slice(0, 40)].filter(Boolean);
 	return more.length && "first_name" in row ? `${row.name} (${more.join(", ")})` : row.name;
 }
 
@@ -1333,7 +1335,7 @@ const WORLD_BODIES = {
 	people: async (form) => ({
 		first_name: form.elements.first_name.value,
 		surname: form.elements.surname.value,
-		type_id: form.elements.type_id.value,
+		type_ids: chosen(form, "types"),
 		organizations: chosen(form, "organizations"),
 		description: form.elements.description.value,
 	}),

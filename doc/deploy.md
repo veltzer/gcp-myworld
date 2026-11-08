@@ -180,8 +180,8 @@ for the free-text performer names already in the database.
 A person has a first name and a surname (a name that is not one, a band
 say, is all first name), and names are not unique: two people of the same
 name are two rows, and the pickers show each one's type and description to
-tell them apart. Each person may have a type from the user's own Person
-types enumeration (the Person types tab; an import starts with Family,
+tell them apart. Each person may have any number of types (a neighbor and a friend) from
+the user's own Person types enumeration (the Person types tab; an import starts with Family,
 Girlfriend, Performer and Co-Worker and guesses them from the data: see
 `_person_type` in `scripts/import_world.py`). People and Organizations
 have a type filter next to the search.
@@ -237,7 +237,8 @@ first `companies` tables to `organizations`, then making
   and `people` holds the ids and names of who the user went with; a
   concert's `performers` are people too (ids and names).
 - `GET /api/people`: `first_name`, `surname`, `name` (the two together),
-  `type` (id and name), description and `organizations` (ids and names).
+  `types` (ids and names), description and `organizations` (ids and names);
+a person is written with `type_ids`, a list.
 - `GET /api/organizations`: by name, with `type` (id and name), `functions` (what the organization
   was to the user), status, website, location, address, the logo as
   `image`, and `people` (ids and names).

@@ -211,9 +211,9 @@
 				<div class="row">
 					<label class="wide">First name <input name="first_name" required></label>
 					<label class="wide">Surname <input name="surname"></label>
-					<label>Type <select name="type_id"></select></label>
 				</div>
 				<div class="row">
+					<label class="wide">Types <span class="chips" data-chips="person-types" data-field="types"><input list="person-type-names" placeholder="Type a name from Person types" autocomplete="off"></span></label>
 					<label class="wide">Organizations <span class="chips" data-chips="organizations" data-field="organizations"><input list="organization-names" placeholder="Type a name from Organizations" autocomplete="off"></span></label>
 				</div>
 				<div class="row">
@@ -284,6 +284,7 @@
 			</form>
 			<datalist id="people-names"></datalist>
 			<datalist id="organization-names"></datalist>
+			<datalist id="person-type-names"></datalist>
 		</dialog>
 		<dialog id="connections-dialog" class="dialog" aria-labelledby="connections-title">
 			<h2 id="connections-title"></h2>

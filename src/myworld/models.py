@@ -150,6 +150,14 @@ concert_performers = Table(
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
 )
 
+# what a person is to the user: any number of their person types (a neighbor and a friend)
+person_person_types = Table(
+    "person_person_types",
+    Base.metadata,
+    Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
+    Column("type_id", ForeignKey("person_types.id", ondelete="CASCADE"), primary_key=True),
+)
+
 person_organizations = Table(
     "person_organizations",
     Base.metadata,
@@ -181,7 +189,7 @@ class PersonType(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
-    people: Mapped[list[Person]] = relationship(back_populates="type")
+    people: Mapped[list[Person]] = relationship(secondary=person_person_types, back_populates="types")
 
 
 class Person(Base):
@@ -197,9 +205,8 @@ class Person(Base):
     first_name: Mapped[str] = mapped_column(String(200), nullable=False)
     surname: Mapped[str] = mapped_column(String(200), nullable=False, default="", server_default="")
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    # family, co-worker, ...: one of the user's own person types
-    type_id: Mapped[int | None] = mapped_column(ForeignKey("person_types.id", ondelete="SET NULL"), nullable=True)
-    type: Mapped[PersonType | None] = relationship(back_populates="people")
+    # family, co-worker, ...: any number of the user's own person types
+    types: Mapped[list[PersonType]] = relationship(secondary=person_person_types, back_populates="people")
 
     organizations: Mapped[list[Organization]] = relationship(
         secondary=person_organizations, back_populates="people",

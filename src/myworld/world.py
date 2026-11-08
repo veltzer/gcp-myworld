@@ -27,6 +27,7 @@ from myworld.models import (
     OrganizationType,
     Person,
     PersonType,
+    person_person_types,
 )
 
 bp = flask.Blueprint("world", __name__)
@@ -66,7 +67,7 @@ def _names(people: list[Person]) -> list[str]:
     return sorted(p.name for p in people)
 
 
-def _refs(rows: list[Person] | list[Organization]) -> list[dict[str, Any]]:
+def _refs(rows: list[Person] | list[Organization] | list[PersonType]) -> list[dict[str, Any]]:
     """ Names with the ids the People and Organizations views link to. """
     return [{"id": row.id, "name": row.name} for row in sorted(rows, key=lambda row: row.name)]
 
@@ -120,7 +121,7 @@ def person_json(person: Person) -> dict[str, Any]:
         "name": person.name,
         "first_name": person.first_name,
         "surname": person.surname,
-        "type": None if person.type is None else {"id": person.type.id, "name": person.type.name},
+        "types": _refs(person.types),
         "organizations": _refs(person.organizations),
         "description": person.description,
     }
@@ -169,7 +170,7 @@ def api_people() -> flask.Response:
     query = (
         select(Person)
         .where(Person.owner_id == flask.g.user.id)
-        .options(selectinload(Person.organizations), selectinload(Person.type))
+        .options(selectinload(Person.organizations), selectinload(Person.types))
         .order_by(Person.first_name, Person.surname, Person.id)
     )
     people = flask.g.db.execute(query).scalars().all()
@@ -251,7 +252,7 @@ def _dates(body: dict[str, Any], current: Concert | Museum | None = None) -> dic
     return out
 
 
-def _owned_list[T: (Person, Organization)](body: dict[str, Any], key: str, model: type[T]) -> list[T]:
+def _owned_list[T: (Person, Organization, PersonType)](body: dict[str, Any], key: str, model: type[T]) -> list[T]:
     """ body[key], a list of ids of the user's own rows of model, as those rows. """
     ids = body.get(key) or []
     if not isinstance(ids, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
@@ -350,7 +351,7 @@ def _apply_person(person: Person, body: dict[str, Any]) -> None:
     person.first_name = text(body, "first_name", required=True)
     person.surname = text(body, "surname")
     person.organizations = _owned_list(body, "organizations", Organization)
-    person.type = _owned_type(PersonType, opt_int(body, "type_id", 1, 2**31 - 1))
+    person.types = _owned_list(body, "type_ids", PersonType)
     person.description = text(body, "description")
 
 
@@ -472,11 +473,23 @@ def api_world_delete(what: str, row_id: int) -> flask.Response:
 
 # ─── the enumerations: organization types and person types ────────────────
 
-# path -> (type model, the model whose type_id points at it, what the typed rows are called)
-TYPES: dict[str, tuple[type[OrganizationType | PersonType], type[Organization | Person], str]] = {
-    "organization-types": (OrganizationType, Organization, "organization"),
-    "person-types": (PersonType, Person, "person"),
+# path -> (type model, what the typed rows are called); an organization has one
+# type (organizations.type_id), a person any number (person_person_types)
+TYPES: dict[str, tuple[type[OrganizationType | PersonType], str]] = {
+    "organization-types": (OrganizationType, "organization"),
+    "person-types": (PersonType, "person"),
 }
+
+
+def _type_links(what: str) -> Any:
+    """ One row per typed row of the user and one of its types: (type_id). """
+    if what == "organization-types":
+        return select(Organization.type_id.label("type_id")).where(Organization.owner_id == flask.g.user.id)
+    return (
+        select(person_person_types.c.type_id.label("type_id"))
+        .join(Person, Person.id == person_person_types.c.person_id)
+        .where(Person.owner_id == flask.g.user.id)
+    )
 
 
 def type_json(kind: OrganizationType | PersonType, count: int) -> dict[str, Any]:
@@ -484,8 +497,8 @@ def type_json(kind: OrganizationType | PersonType, count: int) -> dict[str, Any]
 
 
 def _type_uses(what: str, kind: OrganizationType | PersonType) -> int:
-    typed = TYPES[what][1]
-    return flask.g.db.scalar(select(func.count()).select_from(typed).where(typed.type_id == kind.id)) or 0
+    links = _type_links(what).subquery()
+    return flask.g.db.scalar(select(func.count()).select_from(links).where(links.c.type_id == kind.id)) or 0
 
 
 def _owned_type[T: (OrganizationType, PersonType)](model: type[T], type_id: int | None) -> T | None:
@@ -513,13 +526,9 @@ def _apply_type(model: type[OrganizationType | PersonType], kind: OrganizationTy
 @auth.login_required
 def api_types(what: str) -> flask.Response:
     """ The user's enumeration, with how many rows are of each type. """
-    model, typed, _ = TYPES[what]
-    used = (
-        select(typed.type_id, func.count().label("n"))
-        .where(typed.owner_id == flask.g.user.id)
-        .group_by(typed.type_id)
-        .subquery()
-    )
+    model = TYPES[what][0]
+    links = _type_links(what).subquery()
+    used = select(links.c.type_id, func.count().label("n")).group_by(links.c.type_id).subquery()
     rows = flask.g.db.execute(
         select(model, func.coalesce(used.c.n, 0))
         .outerjoin(used, used.c.type_id == model.id)
@@ -554,7 +563,7 @@ def api_types_update(what: str, row_id: int) -> flask.Response:
 @auth.login_required
 def api_types_delete(what: str, row_id: int) -> flask.Response:
     """ Only a type nothing is: a row never silently loses its type. """
-    model, _, noun = TYPES[what]
+    model, noun = TYPES[what]
     kind = _owned(model, row_id)
     used = _type_uses(what, kind)
     if used:

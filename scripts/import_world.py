@@ -56,6 +56,7 @@ from myworld.models import (
     make_engine,
     museum_people,
     person_organizations,
+    person_person_types,
 )
 
 DATE_FIELDS = {"date_utcz", "date_ymd", "date_my", "date_y", "date_timezone"}
@@ -238,14 +239,14 @@ def give_types(session: Session, owner: User) -> dict[str, int]:
         typed += 1
     people = session.scalars(
         select(Person)
-        .where(Person.owner_id == owner.id, Person.type_id.is_(None))
+        .where(Person.owner_id == owner.id, ~Person.types.any())
         .options(selectinload(Person.organizations), selectinload(Person.performed))
     )
     people_typed = 0
     for person in people:
         name = _person_type(person)
         if name is not None:
-            person.type = person_types[name]
+            person.types = [person_types[name]]
             people_typed += 1
     session.flush()
     return {"types added": added, "organizations given a type": typed, "people given a type": people_typed}
@@ -276,6 +277,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     session.execute(delete(concert_people).where(concert_people.c.concert_id.in_(concerts_of_owner)))
     session.execute(delete(concert_performers).where(concert_performers.c.concert_id.in_(concerts_of_owner)))
     session.execute(delete(museum_people).where(museum_people.c.museum_id.in_(select(Museum.id).where(Museum.owner_id == owner.id))))
+    session.execute(delete(person_person_types).where(person_person_types.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
     session.execute(delete(person_organizations).where(person_organizations.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
     for model in (Concert, Museum, Person, Organization, OrganizationType, PersonType, Image):
         session.execute(delete(model).where(model.owner_id == owner.id))

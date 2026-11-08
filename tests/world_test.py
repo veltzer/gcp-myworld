@@ -210,7 +210,7 @@ def test_people(imported: webtest.TestApp) -> None:
     assert [c["name"] for c in alice["organizations"]] == ["Startup"]
     assert [c["name"] for c in bob["organizations"]] == ["Acme", "Startup"]
     # only the person and their organizations: their concerts and museums are not listed next to them
-    assert set(alice) == {"id", "name", "first_name", "surname", "type", "organizations", "description"}
+    assert set(alice) == {"id", "name", "first_name", "surname", "types", "organizations", "description"}
 
 
 def test_organizations(imported: webtest.TestApp) -> None:
@@ -248,19 +248,29 @@ def test_organization_types(imported: webtest.TestApp) -> None:
 def test_person_types(imported: webtest.TestApp) -> None:
     types = {t["name"]: t for t in imported.get("/api/person-types").json}
     assert sorted(types) == sorted(import_world.PERSON_TYPES)
-    people = {p["name"]: p["type"] for p in imported.get("/api/people").json}
+    people = {p["name"]: [t["name"] for t in p["types"]] for p in imported.get("/api/people").json}
     # Alice and Bob are at organizations; the two performers people.yaml does not have are Performers
-    assert people["Alice Friend"]["name"] == "Co-Worker"
-    assert people["Bob Buddy"]["name"] == "Co-Worker"
-    assert people["Singer"]["name"] == "Performer"
-    assert people["The Band"]["name"] == "Performer"
+    assert people["Alice Friend"] == ["Co-Worker"]
+    assert people["Bob Buddy"] == ["Co-Worker"]
+    assert people["Singer"] == ["Performer"]
+    assert people["The Band"] == ["Performer"]
     assert types["Performer"]["count"] == 2
     friend = imported.post_json("/api/person-types", {"name": "Friend"}, status=201).json
     alice = next(p for p in imported.get("/api/people").json if p["name"] == "Alice Friend")
-    edited = imported.put_json(f"/api/people/{alice['id']}", {"first_name": "Alice", "surname": "Friend", "type_id": friend["id"]}).json
-    assert edited["type"] == {"id": friend["id"], "name": "Friend"}
+    neighbor = imported.post_json("/api/person-types", {"name": "Neighbor"}, status=201).json
+    # a person may be of several types at once
+    edited = imported.put_json(f"/api/people/{alice['id']}", {
+        "first_name": "Alice", "surname": "Friend", "type_ids": [neighbor["id"], friend["id"]],
+    }).json
+    assert edited["types"] == [{"id": friend["id"], "name": "Friend"}, {"id": neighbor["id"], "name": "Neighbor"}]
+    counts = {t["name"]: t["count"] for t in imported.get("/api/person-types").json}
+    assert (counts["Friend"], counts["Neighbor"], counts["Co-Worker"]) == (1, 1, 1)
     imported.delete(f"/api/person-types/{friend['id']}", status=409)
-    imported.put_json(f"/api/people/{alice['id']}", {"first_name": "Alice", "surname": "Friend", "type_id": 9999}, status=400)
+    imported.put_json(f"/api/people/{alice['id']}", {"first_name": "Alice", "type_ids": [9999]}, status=400)
+    imported.put_json(f"/api/people/{alice['id']}", {"first_name": "Alice", "type_ids": friend["id"]}, status=400)
+    # taking a type off frees it for deleting
+    imported.put_json(f"/api/people/{alice['id']}", {"first_name": "Alice", "type_ids": [neighbor["id"]]})
+    imported.delete(f"/api/person-types/{friend['id']}", status=204)
 
 
 def test_split_name() -> None:
@@ -569,5 +579,5 @@ def test_others_cannot_touch(imported: webtest.TestApp) -> None:
     imported.delete("/api/organization-types/1", status=404)
     imported.post_json("/api/organizations", {"name": "x", "type_id": 1}, status=400)
     imported.put_json("/api/person-types/1", {"name": "mine now"}, status=404)
-    imported.post_json("/api/people", {"first_name": "x", "type_id": 1}, status=400)
+    imported.post_json("/api/people", {"first_name": "x", "type_ids": [1]}, status=400)
     imported.post_json("/api/concerts", {"name": "x", "people": [alice]}, status=400)
