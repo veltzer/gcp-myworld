@@ -32,6 +32,7 @@ uses too).
 - `organization-logos`: every organization has a logo.
 - `organization-relations`: every organization has at least one relation
   type.
+- `organization-addresses`: every organization has an address.
 - `person-types`: every person has at least one person type.
 
 ## Adding one

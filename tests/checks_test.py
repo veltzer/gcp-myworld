@@ -64,7 +64,7 @@ def test_bad_logo(data: bytes, wanted: str) -> None:
 
 
 def test_every_check_describes_itself() -> None:
-    assert {"logos", "organization-logos", "organization-relations", "person-types"} <= set(checks.CHECKS)
+    assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "person-types"} <= set(checks.CHECKS)
     for chosen in checks.CHECKS.values():
         assert chosen.title and chosen.description and chosen.noun
 
@@ -133,6 +133,24 @@ def test_organization_relations(engine: Engine) -> None:
         result = checks.CHECKS["organization-relations"].run(session)
     assert result.checked == 2
     assert [(p.subject, p.message) for p in result.problems] == [("Bare (organization 2, account 1)", "has no relation type")]
+
+
+def test_organization_addresses(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(google_sub="alice", email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        session.add_all([
+            Organization(owner_id=alice.id, name="Acme", address="1 Main St., Haifa, Israel"),
+            Organization(owner_id=alice.id, name="Bare"),
+            # only spaces is no address either
+            Organization(owner_id=alice.id, name="Blank", address="  "),
+        ])
+        session.commit()
+        result = checks.CHECKS["organization-addresses"].run(session)
+    assert result.checked == 3
+    assert [p.subject for p in result.problems] == ["Bare (organization 2, account 1)", "Blank (organization 3, account 1)"]
+    assert {p.message for p in result.problems} == {"has no address"}
 
 
 def test_person_types(engine: Engine) -> None:

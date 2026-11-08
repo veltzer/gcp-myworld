@@ -188,6 +188,18 @@ def check_organization_relations(session: Session) -> Result:
     return Result(checked=len(organizations), problems=problems)
 
 
+@check("organization-addresses", "Every organization has an address", "organizations")
+def check_organization_addresses(session: Session) -> Result:
+    """ Every organization, of every account, has an address (the office you knew, not only the city). """
+    organizations = session.execute(select(Organization.id, Organization.owner_id, Organization.name, Organization.address).order_by(Organization.name)).all()
+    problems = [
+        Problem(f"{name} (organization {organization_id}, account {owner_id})", "has no address")
+        for organization_id, owner_id, name, address in organizations
+        if not address.strip()
+    ]
+    return Result(checked=len(organizations), problems=problems)
+
+
 # ─── people ─────────────────────────────────────────────────────────────────
 
 @check("person-types", "Every person has a type", "people")
