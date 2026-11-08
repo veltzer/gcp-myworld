@@ -30,6 +30,7 @@ uses too).
   (canvas, square viewBox, nothing active or external). The margin and
   centering are not checked: they need a renderer.
 - `organization-logos`: every organization has a logo.
+- `person-types`: every person has at least one person type.
 
 ## Adding one
 

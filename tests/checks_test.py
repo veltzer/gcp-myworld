@@ -16,7 +16,15 @@ from sqlalchemy.orm import Session
 
 from myworld import checks
 from myworld.checks import logo_problems
-from myworld.models import ROLE_ADMIN, Base, Image, Organization, User
+from myworld.models import (
+    ROLE_ADMIN,
+    Base,
+    Image,
+    Organization,
+    Person,
+    PersonType,
+    User,
+)
 from tests.conftest import sign_in
 
 GOOD = b'<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="-1 -1 12 12"><rect width="10" height="10"/></svg>'
@@ -55,7 +63,7 @@ def test_bad_logo(data: bytes, wanted: str) -> None:
 
 
 def test_every_check_describes_itself() -> None:
-    assert {"logos", "organization-logos"} <= set(checks.CHECKS)
+    assert {"logos", "organization-logos", "person-types"} <= set(checks.CHECKS)
     for chosen in checks.CHECKS.values():
         assert chosen.title and chosen.description and chosen.noun
 
@@ -108,6 +116,28 @@ def test_checks_api_is_for_admins(app: webtest.TestApp, engine: Engine) -> None:
     result = app.get("/api/checks/logos").json
     assert (result["ok"], result["checked"], len(result["problems"])) == (False, 2, 1)
     app.get("/api/checks/nonesuch", status=404)
+
+
+def test_person_types(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(google_sub="alice", email="alice@example.com")
+        bob = User(google_sub="bob", email="bob@example.com")
+        session.add_all([alice, bob])
+        session.flush()
+        family = PersonType(owner_id=alice.id, name="family")
+        session.add_all([
+            Person(owner_id=alice.id, first_name="Dana", surname="Cohen", types=[family]),
+            Person(owner_id=alice.id, first_name="Eli"),
+            # a nameless person is named by the description, as everywhere else
+            Person(owner_id=bob.id, description="the guide at the Louvre"),
+        ])
+        session.commit()
+        result = checks.CHECKS["person-types"].run(session)
+    assert result.checked == 3
+    assert [(p.subject, p.message) for p in result.problems] == [
+        ("Eli (person 2, account 1)", "has no type"),
+        ("the guide at the Louvre (person 3, account 2)", "has no type"),
+    ]
 
 
 def run_script(url: str, *args: str) -> subprocess.CompletedProcess[str]:

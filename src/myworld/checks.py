@@ -19,7 +19,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from myworld.models import Image, Organization
+from myworld.models import Image, Organization, Person, person_person_types
 
 
 @dataclasses.dataclass(frozen=True)
@@ -167,3 +167,18 @@ def check_organization_logos(session: Session) -> Result:
         if image_id is None
     ]
     return Result(checked=len(organizations), problems=problems)
+
+
+# ─── people ─────────────────────────────────────────────────────────────────
+
+@check("person-types", "Every person has a type", "people")
+def check_person_types(session: Session) -> Result:
+    """ Every person, of every account, is categorized as at least one person type (family, co-worker, ...). """
+    typed = set(session.scalars(select(person_person_types.c.person_id)))
+    people = session.scalars(select(Person).order_by(Person.owner_id, Person.first_name, Person.surname, Person.id)).all()
+    problems = [
+        Problem(f"{person.name} (person {person.id}, account {person.owner_id})", "has no type")
+        for person in people
+        if person.id not in typed
+    ]
+    return Result(checked=len(people), problems=problems)
