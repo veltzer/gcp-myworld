@@ -219,7 +219,7 @@ exist, so sign in once first:
 
 ```bash
 # local sqlite (or whatever DATABASE_URL says)
-PYTHONPATH=src scripts/import_world.py --email you@example.com
+scripts/import_world.py --email you@example.com
 # Cloud SQL from .gcp.conf, through the Cloud SQL Auth Proxy
 scripts/import_world_cloud.sh --email you@example.com
 ```

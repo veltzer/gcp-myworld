@@ -11,4 +11,4 @@ set -euo pipefail
 
 cd "$(dirname "${0}")/.."
 
-PYTHONPATH=src exec scripts/with_cloud_db.sh python scripts/import_world.py "$@"
+exec scripts/with_cloud_db.sh python scripts/import_world.py "$@"

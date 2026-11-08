@@ -23,7 +23,7 @@ The user must have signed in at least once; pass the email they signed in
 with (and --subject when that email has several accounts, e.g. Google and
 GitHub).
 
-  PYTHONPATH=src scripts/import_world.py --email me@example.com [--source ../veltzer.github.io]
+  scripts/import_world.py --email me@example.com [--source ../veltzer.github.io]
 
 The database is DATABASE_URL (default: the local sqlite file); for Cloud SQL
 see doc/deploy.md.
@@ -37,6 +37,9 @@ import re
 import sys
 from pathlib import Path
 from typing import Any
+
+# the myworld package is in src/, not installed: find it from any directory, no PYTHONPATH needed
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import yaml
 from sqlalchemy import delete, select

@@ -14,10 +14,10 @@ checks read the whole database, every account's rows, and change nothing.
   when one finds a problem:
 
 ```bash
-PYTHONPATH=src scripts/check.py                        # every check
-PYTHONPATH=src scripts/check.py logos                  # only these
-PYTHONPATH=src scripts/check.py --list                 # what there is
-PYTHONPATH=src scripts/with_cloud_db.sh scripts/check.py   # production
+scripts/check.py                        # every check
+scripts/check.py logos                  # only these
+scripts/check.py --list                 # what there is
+scripts/with_cloud_db.sh scripts/check.py   # production
 ```
 
 `scripts/with_cloud_db.sh` runs any command with `DATABASE_URL` pointing

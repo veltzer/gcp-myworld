@@ -4,9 +4,9 @@
 Run the database checks (src/myworld/checks.py), the same ones an admin
 runs from the Checks page, over every account.
 
-  PYTHONPATH=src scripts/check.py             every check
-  PYTHONPATH=src scripts/check.py logos ...   only these
-  PYTHONPATH=src scripts/check.py --list      the checks there are
+  scripts/check.py             every check
+  scripts/check.py logos ...   only these
+  scripts/check.py --list      the checks there are
 
 The database is DATABASE_URL (default: the local sqlite file); for Cloud SQL
 run it through the proxy: scripts/with_cloud_db.sh scripts/check.py. Exits 1
@@ -14,7 +14,16 @@ when a check finds a problem, 2 when a name is not a check.
 """
 
 import argparse
+import os
 import sys
+from pathlib import Path
+
+# the myworld package is in src/, not installed: find it from any directory, no
+# PYTHONPATH needed; and work from the repository root, where the default
+# DATABASE_URL (db.gi/myworld.sqlite) is, rather than make an empty one elsewhere
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+os.chdir(ROOT)
 
 from sqlalchemy.orm import Session
 

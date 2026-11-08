@@ -5,8 +5,8 @@
 # command with DATABASE_URL pointing at the proxy, which stops when the
 # command ends. The port is CLOUD_DB_PORT (default 54330).
 #
-#   PYTHONPATH=src scripts/with_cloud_db.sh scripts/check.py
-#   PYTHONPATH=src scripts/with_cloud_db.sh python scripts/import_world.py --email me@example.com
+#   scripts/with_cloud_db.sh scripts/check.py
+#   scripts/with_cloud_db.sh python scripts/import_world.py --email me@example.com
 
 set -euo pipefail
 

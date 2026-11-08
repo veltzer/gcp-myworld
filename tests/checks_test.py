@@ -112,7 +112,8 @@ def test_checks_api_is_for_admins(app: webtest.TestApp, engine: Engine) -> None:
 
 def run_script(url: str, *args: str) -> subprocess.CompletedProcess[str]:
     root = Path(__file__).resolve().parent.parent
-    env = dict(os.environ, DATABASE_URL=url, PYTHONPATH=str(root / "src"))
+    # no PYTHONPATH: the script finds src/ by itself
+    env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"} | {"DATABASE_URL": url}
     return subprocess.run([sys.executable, str(root / "scripts" / "check.py"), *args], env=env, capture_output=True, text=True, check=False)
 
 
