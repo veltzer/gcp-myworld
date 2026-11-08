@@ -18,6 +18,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld import auth, views, world
+from myworld.api import ApiError, handle_api_error
 from myworld.models import make_engine
 
 # build_info.json is written next to src/, at the repo (and image) root.
@@ -81,6 +82,7 @@ def create_app(engine: Engine | None = None) -> flask.Flask:
         if db is not None:
             db.close()
 
+    app.register_error_handler(ApiError, handle_api_error)
     app.register_blueprint(auth.bp)
     app.register_blueprint(views.bp)
     app.register_blueprint(world.bp)

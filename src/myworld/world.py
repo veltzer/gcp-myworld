@@ -1,10 +1,13 @@
 """
-Read-only JSON API for the concerts, museum visits and people of the
-signed-in user, and the images they point at. Every query is filtered by
-owner_id, so a user only ever sees their own rows.
+JSON API for the concerts, museum visits and people of the signed-in user,
+and the images they point at: list and add. Every query is filtered by
+owner_id, so a user only ever sees, and only ever links to, their own rows.
 """
 
 import datetime
+import hashlib
+import re
+import zoneinfo
 from typing import Any
 
 import flask
@@ -13,12 +16,21 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from myworld import auth
-from myworld.models import Concert, Image, Museum, Person
+from myworld.api import ApiError, json_body, opt_int, text
+from myworld.models import RATING_MAX, RATING_MIN, Concert, Image, Museum, Person
 
 bp = flask.Blueprint("world", __name__)
 
 # images never change once imported (a new photo is a new row), so browsers may keep them
 IMAGE_MAX_AGE = 7 * 24 * 3600
+# uploads: what a browser can show, recognised by its first bytes, not by what the client claims
+IMAGE_MAX_BYTES = 8 * 1024 * 1024
+IMAGE_SIGNATURES: dict[str, tuple[bytes, ...]] = {
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/gif": (b"GIF87a", b"GIF89a"),
+}
+IMAGE_EXTENSIONS = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp"}
 
 
 def _date_json(row: Concert | Museum) -> dict[str, Any]:
@@ -98,8 +110,6 @@ def person_json(person: Person) -> dict[str, Any]:
         "name": person.name,
         "company": person.company,
         "description": person.description,
-        "concerts": [{"id": c.id, "name": c.name, **_date_json(c)} for c in person.concerts],
-        "museums": [{"id": m.id, "name": m.name, **_date_json(m)} for m in person.museums],
     }
 
 
@@ -129,7 +139,6 @@ def api_people() -> flask.Response:
     query = (
         select(Person)
         .where(Person.owner_id == flask.g.user.id)
-        .options(selectinload(Person.concerts), selectinload(Person.museums))
         .order_by(Person.name)
     )
     people = flask.g.db.execute(query).scalars().all()
@@ -146,3 +155,248 @@ def api_image(image_id: int) -> werkzeug.Response:
     response.headers["Cache-Control"] = f"private, max-age={IMAGE_MAX_AGE}"
     response.set_etag(image.sha256)
     return response.make_conditional(flask.request)
+
+
+# ─── adding ──────────────────────────────────────────────────────────────────
+
+def _sniff(data: bytes) -> str | None:
+    for content_type, signatures in IMAGE_SIGNATURES.items():
+        if data.startswith(signatures):
+            return content_type
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def _dates(body: dict[str, Any], current: Concert | Museum | None = None) -> dict[str, Any]:
+    """
+    The date as typed: YYYY, YYYY-MM or YYYY-MM-DD, stored at that precision,
+    or nothing. date_timezone is where it happened (an IANA name). On an edit
+    a date sent back exactly as it was shown leaves it as it is, so a stored
+    timestamp keeps its time.
+    """
+    value = text(body, "date")
+    zone = text(body, "date_timezone")
+    if zone:
+        try:
+            zoneinfo.ZoneInfo(zone)
+        except (zoneinfo.ZoneInfoNotFoundError, ValueError) as e:
+            raise ApiError(400, f"date_timezone: unknown time zone {zone!r}") from e
+    out: dict[str, Any] = {"date_timezone": zone}
+    if current is not None and value == (_date_json(current)["date"] or ""):
+        return out
+    out.update({"date_utcz": None, "date_ymd": None, "date_my": "", "date_y": None})
+    if not value:
+        return out
+    if re.fullmatch(r"\d{4}", value):
+        out["date_y"] = int(value)
+        return out
+    match = re.fullmatch(r"(\d{4})-(\d{2})", value)
+    if match:
+        if not 1 <= int(match.group(2)) <= 12:
+            raise ApiError(400, "date: no such month")
+        out["date_my"] = f"{match.group(2)}-{match.group(1)}"
+        return out
+    try:
+        out["date_ymd"] = datetime.date.fromisoformat(value)
+    except ValueError as e:
+        raise ApiError(400, "date: expected YYYY, YYYY-MM or YYYY-MM-DD") from e
+    return out
+
+
+def _owned_people(body: dict[str, Any]) -> list[Person]:
+    ids = body.get("people") or []
+    if not isinstance(ids, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
+        raise ApiError(400, "people: expected a list of person ids")
+    if not ids:
+        return []
+    people = flask.g.db.execute(
+        select(Person).where(Person.owner_id == flask.g.user.id, Person.id.in_(ids))
+    ).scalars().all()
+    if len(people) != len(set(ids)):
+        raise ApiError(400, "people: unknown person")
+    return list(people)
+
+
+def _owned_image(body: dict[str, Any]) -> int | None:
+    image_id = opt_int(body, "image_id", 1, 2**31 - 1)
+    if image_id is None:
+        return None
+    image = flask.g.db.get(Image, image_id)
+    if image is None or image.owner_id != flask.g.user.id:
+        raise ApiError(400, "image_id: unknown image")
+    return image_id
+
+
+def _strings(body: dict[str, Any], key: str) -> list[str]:
+    value = body.get(key) or []
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise ApiError(400, f"{key}: expected a list of strings")
+    return [v.strip() for v in value if v.strip()]
+
+
+def _owned(model: type[Concert | Museum | Person], row_id: int) -> Any:
+    row = flask.g.db.get(model, row_id)
+    if row is None or row.owner_id != flask.g.user.id:
+        raise ApiError(404, "no such entry")
+    return row
+
+
+def _drop_unused_images() -> None:
+    """ Photos no concert or museum shows any more (replaced or deleted) go too. """
+    db = flask.g.db
+    used = select(Concert.image_id).where(Concert.image_id.is_not(None)).union(
+        select(Museum.image_id).where(Museum.image_id.is_not(None))
+    )
+    for image in db.execute(select(Image).where(Image.owner_id == flask.g.user.id, Image.id.not_in(used))).scalars():
+        db.delete(image)
+
+
+def _apply_concert(concert: Concert, body: dict[str, Any], current: Concert | None) -> None:
+    concert.name = text(body, "name", required=True)
+    concert.performers = _strings(body, "performers")
+    concert.event = text(body, "event")
+    concert.genre = text(body, "genre")
+    concert.venue = text(body, "venue")
+    concert.city = text(body, "city")
+    concert.country = text(body, "country")
+    concert.tickets = opt_int(body, "tickets", 0, 1000)
+    concert.broadcast = body.get("broadcast") is True
+    concert.review = text(body, "review")
+    concert.remark = text(body, "remark")
+    # a photo is only ever replaced by a new upload, never blanked by omission
+    image_id = _owned_image(body)
+    if image_id is not None:
+        concert.image_id = image_id
+    concert.image_source = text(body, "image_source")
+    concert.image_license = text(body, "image_license")
+    concert.image_author = text(body, "image_author")
+    concert.people = _owned_people(body)
+    for key, value in _dates(body, current).items():
+        setattr(concert, key, value)
+
+
+def _apply_museum(museum: Museum, body: dict[str, Any], current: Museum | None) -> None:
+    museum.name = text(body, "name", required=True)
+    museum.city = text(body, "city")
+    museum.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
+    museum.review = text(body, "review")
+    museum.remark = text(body, "remark")
+    museum.url = text(body, "url")
+    museum.tickets = opt_int(body, "tickets", 0, 1000)
+    image_id = _owned_image(body)
+    if image_id is not None:
+        museum.image_id = image_id
+    museum.people = _owned_people(body)
+    for key, value in _dates(body, current).items():
+        setattr(museum, key, value)
+
+
+def _apply_person(person: Person, body: dict[str, Any]) -> None:
+    name = text(body, "name", required=True)
+    clash = flask.g.db.execute(
+        select(Person.id).where(Person.owner_id == flask.g.user.id, Person.name == name, Person.id != person.id)
+    ).first()
+    if clash is not None:
+        raise ApiError(409, f"{name} is already in People")
+    person.name = name
+    person.company = text(body, "company")
+    person.description = text(body, "description")
+
+
+@bp.route("/api/concerts", methods=["POST"])
+@auth.login_required
+def api_concerts_add() -> tuple[flask.Response, int]:
+    concert = Concert(owner_id=flask.g.user.id)
+    _apply_concert(concert, json_body(), None)
+    flask.g.db.add(concert)
+    flask.g.db.commit()
+    return flask.jsonify(concert_json(concert)), 201
+
+
+@bp.route("/api/concerts/<int:row_id>", methods=["PUT"])
+@auth.login_required
+def api_concerts_update(row_id: int) -> flask.Response:
+    concert = _owned(Concert, row_id)
+    _apply_concert(concert, json_body(), concert)
+    flask.g.db.flush()
+    _drop_unused_images()
+    flask.g.db.commit()
+    return flask.jsonify(concert_json(concert))
+
+
+@bp.route("/api/museums", methods=["POST"])
+@auth.login_required
+def api_museums_add() -> tuple[flask.Response, int]:
+    museum = Museum(owner_id=flask.g.user.id)
+    _apply_museum(museum, json_body(), None)
+    flask.g.db.add(museum)
+    flask.g.db.commit()
+    return flask.jsonify(museum_json(museum)), 201
+
+
+@bp.route("/api/museums/<int:row_id>", methods=["PUT"])
+@auth.login_required
+def api_museums_update(row_id: int) -> flask.Response:
+    museum = _owned(Museum, row_id)
+    _apply_museum(museum, json_body(), museum)
+    flask.g.db.flush()
+    _drop_unused_images()
+    flask.g.db.commit()
+    return flask.jsonify(museum_json(museum))
+
+
+@bp.route("/api/people", methods=["POST"])
+@auth.login_required
+def api_people_add() -> tuple[flask.Response, int]:
+    person = Person(owner_id=flask.g.user.id)
+    _apply_person(person, json_body())
+    flask.g.db.add(person)
+    flask.g.db.commit()
+    return flask.jsonify(person_json(person)), 201
+
+
+@bp.route("/api/people/<int:row_id>", methods=["PUT"])
+@auth.login_required
+def api_people_update(row_id: int) -> flask.Response:
+    person = _owned(Person, row_id)
+    _apply_person(person, json_body())
+    flask.g.db.commit()
+    return flask.jsonify(person_json(person))
+
+
+@bp.route("/api/<any(concerts, museums, people):what>/<int:row_id>", methods=["DELETE"])
+@auth.login_required
+def api_world_delete(what: str, row_id: int) -> flask.Response:
+    model = {"concerts": Concert, "museums": Museum, "people": Person}[what]
+    # the ORM also removes the row's links to people (or a person's to concerts and museums)
+    flask.g.db.delete(_owned(model, row_id))
+    flask.g.db.flush()
+    _drop_unused_images()
+    flask.g.db.commit()
+    return flask.Response(status=204)
+
+
+@bp.route("/api/images", methods=["POST"])
+@auth.login_required
+def api_images_add() -> tuple[flask.Response, int]:
+    """ Upload a photo (multipart, field "file"); the answer's id goes into image_id. """
+    upload = flask.request.files.get("file")
+    if upload is None:
+        raise ApiError(400, "file: required")
+    data = upload.read(IMAGE_MAX_BYTES + 1)
+    if len(data) > IMAGE_MAX_BYTES:
+        raise ApiError(413, f"file: larger than {IMAGE_MAX_BYTES // (1024 * 1024)} MB")
+    content_type = _sniff(data)
+    if content_type is None:
+        raise ApiError(400, "file: not a JPEG, PNG, GIF or WebP image")
+    sha256 = hashlib.sha256(data).hexdigest()
+    filename = f"upload-{sha256[:16]}{IMAGE_EXTENSIONS[content_type]}"
+    db = flask.g.db
+    image = db.execute(select(Image).where(Image.owner_id == flask.g.user.id, Image.filename == filename)).scalar_one_or_none()
+    created = image is None
+    if image is None:
+        image = Image(owner_id=flask.g.user.id, filename=filename, content_type=content_type, sha256=sha256, data=data)
+        db.add(image)
+        db.commit()
+    return flask.jsonify({"id": image.id, "url": _image_url(image.id)}), 201 if created else 200

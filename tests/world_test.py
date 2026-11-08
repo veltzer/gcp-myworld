@@ -151,9 +151,9 @@ def test_people(imported: webtest.TestApp) -> None:
     assert [p["name"] for p in people] == ["Alice Friend", "Bob Buddy"]
     alice, bob = people
     assert alice["description"] == "Old friend"
-    assert sorted(c["name"] for c in alice["concerts"]) == ["Late Show", "The Band"]
     assert bob["company"] == "Acme"
-    assert [m["name"] for m in bob["museums"]] == ["The Louvre"]
+    # only the person: their concerts and museums are not listed next to them
+    assert set(alice) == {"id", "name", "company", "description"}
 
 
 def test_image(imported: webtest.TestApp) -> None:
@@ -211,3 +211,107 @@ def test_find_owner(app: webtest.TestApp, engine: Engine) -> None:
         with pytest.raises(import_world.WorldImportError, match="several accounts"):
             owner(session)
         assert import_world.find_owner(session, "alice@example.com", "1234567890").google_sub == "1234567890"
+
+
+# ─── adding, editing, deleting ───────────────────────────────────────────────
+
+JPEG = b"\xff\xd8\xff\xe0" + b"0" * 32
+
+
+def people_ids(app: webtest.TestApp) -> dict[str, int]:
+    return {p["name"]: p["id"] for p in app.get("/api/people").json}
+
+
+def test_add_concert_with_photo(imported: webtest.TestApp) -> None:
+    upload = imported.post("/api/images", upload_files=[("file", "show.jpg", JPEG)]).json
+    ids = people_ids(imported)
+    concert = imported.post_json("/api/concerts", {
+        "name": "New Show", "performers": ["A", " B ", ""], "date": "2024-05",
+        "date_timezone": "Asia/Jerusalem", "people": [ids["Bob Buddy"]], "tickets": "2",
+        "broadcast": True, "image_id": upload["id"],
+    }, status=201).json
+    assert concert["performers"] == ["A", "B"]
+    assert concert["date"] == "2024-05"
+    assert concert["date_precision"] == "month"
+    assert concert["with"] == ["Bob Buddy"]
+    assert concert["image"] == upload["url"]
+    assert imported.get(upload["url"]).body == JPEG
+    assert "New Show" in [c["name"] for c in imported.get("/api/concerts").json]
+
+
+def test_add_validates(imported: webtest.TestApp) -> None:
+    imported.post_json("/api/concerts", {"name": ""}, status=400)
+    imported.post_json("/api/concerts", {"name": "x", "date": "2024-13"}, status=400)
+    imported.post_json("/api/concerts", {"name": "x", "date": "last year"}, status=400)
+    imported.post_json("/api/concerts", {"name": "x", "date_timezone": "Mars/Olympus"}, status=400)
+    imported.post_json("/api/concerts", {"name": "x", "people": [999]}, status=400)
+    imported.post_json("/api/museums", {"name": "x", "rating": 11}, status=400)
+    imported.post_json("/api/people", {"name": "Alice Friend"}, status=409)
+    imported.post("/api/images", upload_files=[("file", "x.jpg", b"not an image")], status=400)
+
+
+def test_add_museum_and_person(imported: webtest.TestApp) -> None:
+    person = imported.post_json("/api/people", {"name": "Carol", "company": "Zed"}, status=201).json
+    museum = imported.post_json("/api/museums", {
+        "name": "Prado", "city": "Madrid", "date": "2012", "rating": 9, "people": [person["id"]],
+    }, status=201).json
+    assert museum["date"] == "2012"
+    assert museum["with"] == ["Carol"]
+    assert museum["image"] is None
+
+
+def test_edit_keeps_a_timestamp_sent_back_unchanged(imported: webtest.TestApp) -> None:
+    late = next(c for c in imported.get("/api/concerts").json if c["name"] == "Late Show")
+    body = dict(late, name="Late Late Show", people=[p["id"] for p in late["people"]][:1])
+    edited = imported.put_json(f"/api/concerts/{late['id']}", body).json
+    assert edited["name"] == "Late Late Show"
+    assert edited["date"] == "2020-01-01T22:30:00Z"
+    assert edited["with"] == ["Alice Friend"]
+    # the photo stays when no new one is uploaded
+    assert edited["image"] == late["image"]
+    edited = imported.put_json(f"/api/concerts/{late['id']}", dict(body, date="2020-01-02")).json
+    assert edited["date"] == "2020-01-02"
+    assert edited["date_precision"] == "day"
+
+
+def test_edit_person(imported: webtest.TestApp) -> None:
+    ids = people_ids(imported)
+    imported.put_json(f"/api/people/{ids['Bob Buddy']}", {"name": "Alice Friend"}, status=409)
+    bob = imported.put_json(f"/api/people/{ids['Bob Buddy']}", {"name": "Robert Buddy", "description": "x"}).json
+    assert bob["name"] == "Robert Buddy"
+    louvre = next(m for m in imported.get("/api/museums").json if m["with"])
+    assert louvre["with"] == ["Robert Buddy"]
+
+
+def test_delete(imported: webtest.TestApp, engine: Engine) -> None:
+    ids = people_ids(imported)
+    imported.delete(f"/api/people/{ids['Alice Friend']}", status=204)
+    assert all("Alice Friend" not in c["with"] for c in imported.get("/api/concerts").json)
+    for concert in imported.get("/api/concerts").json:
+        imported.delete(f"/api/concerts/{concert['id']}", status=204)
+    assert imported.get("/api/concerts").json == []
+    with Session(engine) as session:
+        # the concert photo went with its last concert; the museum one stays
+        assert session.scalars(select(Image.filename)).all() == ["museum-15.jpg"]
+        assert session.scalar(select(func.count()).select_from(concert_people)) == 0
+    imported.delete("/api/concerts/1", status=404)
+
+
+def test_edit_replaces_photo_and_drops_the_old_one(imported: webtest.TestApp, engine: Engine) -> None:
+    upload = imported.post("/api/images", upload_files=[("file", "new.jpg", JPEG)]).json
+    for concert in imported.get("/api/concerts").json:
+        if concert["image"]:
+            imported.put_json(f"/api/concerts/{concert['id']}", dict(concert, image_id=upload["id"], people=[]))
+    with Session(engine) as session:
+        assert "concert-the-band.jpg" not in session.scalars(select(Image.filename)).all()
+
+
+def test_others_cannot_touch(imported: webtest.TestApp) -> None:
+    concert = imported.get("/api/concerts").json[0]
+    alice = people_ids(imported)["Alice Friend"]
+    imported.post("/auth/logout")
+    sign_in(imported, sub="someone-else")
+    imported.put_json(f"/api/concerts/{concert['id']}", {"name": "mine now"}, status=404)
+    imported.delete(f"/api/concerts/{concert['id']}", status=404)
+    imported.delete(f"/api/people/{alice}", status=404)
+    imported.post_json("/api/concerts", {"name": "x", "people": [alice]}, status=400)

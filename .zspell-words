@@ -6,6 +6,7 @@ dev
 dns
 gcloud
 gcp
+gif
 github
 gmail
 hostname
@@ -13,11 +14,13 @@ hostnames
 html
 imdb
 javascript
+jpeg
 json
 mailto
 microsoft
 myworld
 oauth
+png
 postgresql
 repo
 sql
@@ -29,6 +32,7 @@ uris
 url
 utils
 veltzer
+webp
 werkzeug
 wikidata
 yaml

@@ -3,7 +3,6 @@ Pages (static HTML, the browser side is static/app.js) and the JSON API
 it talks to.
 """
 
-import datetime
 import os
 from typing import Any
 
@@ -13,23 +12,12 @@ import werkzeug
 from sqlalchemy import select
 
 from myworld import auth, movies
+from myworld.api import ApiError, json_body, opt_date, opt_int, text
 from myworld.models import KINDS, RATING_MAX, RATING_MIN, STATUSES, UserWork, Work
 
 bp = flask.Blueprint("views", __name__)
 
 HTML_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "html")
-
-
-class ApiError(Exception):
-    def __init__(self, status: int, message: str) -> None:
-        super().__init__(message)
-        self.status = status
-        self.message = message
-
-
-@bp.errorhandler(ApiError)
-def handle_api_error(error: ApiError) -> tuple[flask.Response, int]:
-    return flask.jsonify({"error": error.message}), error.status
 
 
 # ─── pages ───────────────────────────────────────────────────────────────────
@@ -83,50 +71,6 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
     }
 
 
-def _json_body() -> dict[str, Any]:
-    body = flask.request.get_json(silent=True)
-    if not isinstance(body, dict):
-        raise ApiError(400, "expected a JSON object")
-    return body
-
-
-def _text(body: dict[str, Any], key: str, required: bool = False) -> str:
-    value = body.get(key)
-    if value is None:
-        value = ""
-    if not isinstance(value, str):
-        raise ApiError(400, f"{key}: expected a string")
-    value = value.strip()
-    if required and not value:
-        raise ApiError(400, f"{key}: required")
-    return value
-
-
-def _int(body: dict[str, Any], key: str, low: int, high: int) -> int | None:
-    value = body.get(key)
-    if value is None or value == "":
-        return None
-    if isinstance(value, bool) or not isinstance(value, int | str):
-        raise ApiError(400, f"{key}: expected a number")
-    try:
-        number = int(value)
-    except ValueError as e:
-        raise ApiError(400, f"{key}: expected a number") from e
-    if number < low or number > high:
-        raise ApiError(400, f"{key}: must be between {low} and {high}")
-    return number
-
-
-def _date(body: dict[str, Any], key: str) -> datetime.date | None:
-    value = _text(body, key)
-    if not value:
-        return None
-    try:
-        return datetime.date.fromisoformat(value)
-    except ValueError as e:
-        raise ApiError(400, f"{key}: expected a date as YYYY-MM-DD") from e
-
-
 def _kind(value: str) -> str:
     if value not in KINDS:
         raise ApiError(400, f"kind: unknown kind {value!r}")
@@ -134,25 +78,25 @@ def _kind(value: str) -> str:
 
 
 def _apply_entry_fields(entry: UserWork, body: dict[str, Any]) -> None:
-    status = _text(body, "status") or "done"
+    status = text(body, "status") or "done"
     if status not in STATUSES:
         raise ApiError(400, f"status: unknown status {status!r}")
     entry.status = status
-    entry.rating = _int(body, "rating", RATING_MIN, RATING_MAX)
-    entry.started_on = _date(body, "started_on")
-    entry.finished_on = _date(body, "finished_on")
-    entry.notes = _text(body, "notes")
+    entry.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
+    entry.started_on = opt_date(body, "started_on")
+    entry.finished_on = opt_date(body, "finished_on")
+    entry.notes = text(body, "notes")
 
 
 def _apply_work_ids(work: Work, body: dict[str, Any]) -> None:
     """ Catalog ids from the film search; only ever filled in, never blanked. """
-    imdb_id = _text(body, "imdb_id")
+    imdb_id = text(body, "imdb_id")
     if imdb_id:
         work.imdb_id = imdb_id
-    tmdb_id = _int(body, "tmdb_id", 1, 2**31 - 1)
+    tmdb_id = opt_int(body, "tmdb_id", 1, 2**31 - 1)
     if tmdb_id is not None:
         work.tmdb_id = tmdb_id
-    rotten_tomatoes_id = _text(body, "rotten_tomatoes_id")
+    rotten_tomatoes_id = text(body, "rotten_tomatoes_id")
     if rotten_tomatoes_id:
         work.rotten_tomatoes_id = rotten_tomatoes_id
 
@@ -198,11 +142,11 @@ def api_library_list() -> flask.Response:
 @bp.route("/api/library", methods=["POST"])
 @auth.login_required
 def api_library_add() -> tuple[flask.Response, int]:
-    body = _json_body()
-    kind = _kind(_text(body, "kind", required=True))
-    title = _text(body, "title", required=True)
-    creator = _text(body, "creator")
-    year = _int(body, "year", 0, 3000)
+    body = json_body()
+    kind = _kind(text(body, "kind", required=True))
+    title = text(body, "title", required=True)
+    creator = text(body, "creator")
+    year = opt_int(body, "year", 0, 3000)
     db = flask.g.db
     work = db.execute(
         select(Work).where(Work.kind == kind, Work.title == title, Work.creator == creator, Work.year == year)
@@ -226,7 +170,7 @@ def api_library_add() -> tuple[flask.Response, int]:
 @auth.login_required
 def api_library_update(work_id: int) -> flask.Response:
     entry = _own_entry(work_id)
-    _apply_entry_fields(entry, _json_body())
+    _apply_entry_fields(entry, json_body())
     flask.g.db.commit()
     return flask.jsonify(_entry_json(entry))
 

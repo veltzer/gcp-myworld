@@ -136,7 +136,7 @@ on migrations under "Data model".
 
 ## Film search
 
-The "add a film" form can search The Movie Database (TMDB) and fill in
+The add dialog for a film can search The Movie Database (TMDB) and fill in
 the title, director and year, together with the film's ids on IMDb, TMDB
 and Rotten Tomatoes, which are stored on the shared `works` row and shown
 as links in the library. TMDB knows the IMDb id and the Wikidata item of a
@@ -159,11 +159,17 @@ Without the key the search box is hidden and the endpoints answer 503.
 
 ## Concerts, museums and people
 
-Besides the library, the app shows the concerts, museum visits and people
-of the signed-in user: the Concerts, Museums and People tabs, with
-Concerts the page a sign-in lands on. They are read-only in the app and
-private to their owner: every row carries an `owner_id`, every query
+Besides the library, the app keeps the concerts, museum visits and people
+of the signed-in user: the Concerts, Museums and People tabs, in the same
+row as the library ones, with Concerts the page a sign-in lands on. They
+are private to their owner: every row carries an `owner_id`, every query
 filters on it, and another account sees nothing, images included.
+
+Everything is added and edited in the same dialog: the + button at the
+lower right adds to whatever tab is open, and clicking any card or row
+opens it for editing, with a Delete that asks twice. Library entries edit
+only their per-user fields; their title, creator and year belong to the
+shared work row.
 
 The data came from `veltzer.github.io` (`data/yaml/concerts.yaml`,
 `museums.yaml`, `people.yaml` and the photos in `static/images/`) and is
@@ -188,8 +194,17 @@ tables are created by `create_all`, so no `scripts/migrate.sh` step is
 needed.
 
 - `GET /api/concerts`, `GET /api/museums`: newest first; the date comes as
-  precisely as it is known (`date_precision`: time, day, month or year).
-- `GET /api/people`: with the concerts and museums shared with each person.
+  precisely as it is known (`date_precision`: time, day, month or year),
+  and `people` holds the ids and names of who was there.
+- `GET /api/people`: name, company and description.
+- `POST` to the same paths adds, `PUT /api/<concerts|museums|people>/<id>`
+  replaces the fields, `DELETE` removes. The date is typed as `YYYY`,
+  `YYYY-MM` or `YYYY-MM-DD`; a date sent back exactly as it came keeps its
+  stored precision, timestamps included. `people` is a list of person ids.
+- `POST /api/images` (multipart, field `file`, at most 8 MB, JPEG, PNG,
+  GIF or WebP by content) uploads a photo; its `id` goes into `image_id`.
+  A photo no concert or museum uses any more is deleted with the change
+  that dropped it.
 - `GET /api/images/<id>`: a photo, to its owner only.
 
 ## Pages and API

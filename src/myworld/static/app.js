@@ -161,7 +161,8 @@ async function indexPage() {
 // ─── library page ───────────────────────────────────────────────────────────
 
 // view is a kind of work ("book", ...) or one of WORLDS ("concerts", ...)
-const state = { config: null, kind: "book", view: "concerts", entries: [] };
+// editing is the item open in the dialog, null when adding
+const state = { config: null, kind: "book", view: "concerts", entries: [], editing: null };
 
 function fillStatuses(select, selected) {
 	select.replaceChildren();
@@ -181,27 +182,6 @@ function cell(parent, className) {
 	}
 	parent.appendChild(td);
 	return td;
-}
-
-function input(parent, name, type, value, extra = {}) {
-	const el = document.createElement("input");
-	el.name = name;
-	el.type = type;
-	el.value = value ?? "";
-	Object.assign(el, extra);
-	parent.appendChild(el);
-	return el;
-}
-
-function entryPayload(row) {
-	const value = (name) => row.querySelector(`[name="${name}"]`).value;
-	return {
-		status: value("status"),
-		rating: value("rating"),
-		started_on: value("started_on"),
-		finished_on: value("finished_on"),
-		notes: value("notes"),
-	};
 }
 
 // [field, label, url of the work on that catalog, id of the "open" link in the add form]
@@ -375,8 +355,26 @@ function setupMovieSearch() {
 	box.hidden = state.kind !== "film";
 }
 
+// Make a card or row open its item in the dialog, by click or by Enter, except
+// where the click lands on a link of its own.
+function editable(node, item) {
+	node.classList.add("clickable");
+	node.tabIndex = 0;
+	node.title = "Click to edit";
+	const open = () => openDialog(item).catch((e) => showError(e.message));
+	node.onclick = (event) => {
+		if (!event.target.closest("a, button")) {
+			open();
+		}
+	};
+	node.onkeydown = (event) => {
+		if (event.key === "Enter" && event.target === node) {
+			open();
+		}
+	};
+}
+
 function renderRow(entry) {
-	const { rating_min, rating_max } = state.config;
 	const tr = document.createElement("tr");
 	const title = cell(tr, "title");
 	title.textContent = entry.title;
@@ -386,41 +384,12 @@ function renderRow(entry) {
 	}
 	cell(tr).textContent = entry.creator;
 	cell(tr).textContent = entry.year ?? "";
-	const status = document.createElement("select");
-	status.name = "status";
-	fillStatuses(status, entry.status);
-	cell(tr).appendChild(status);
-	input(cell(tr), "rating", "number", entry.rating, { min: rating_min, max: rating_max });
-	input(cell(tr), "started_on", "date", entry.started_on);
-	input(cell(tr), "finished_on", "date", entry.finished_on);
-	input(cell(tr), "notes", "text", entry.notes);
-	const actions = cell(tr, "actions");
-	const save = document.createElement("button");
-	save.type = "button";
-	save.textContent = "Save";
-	save.onclick = async () => {
-		showError("");
-		try {
-			await api(`/api/library/${entry.work_id}`, { method: "PUT", body: entryPayload(tr) });
-			await loadEntries();
-		} catch (e) {
-			showError(e.message);
-		}
-	};
-	const remove = document.createElement("button");
-	remove.type = "button";
-	remove.className = "danger";
-	remove.textContent = "Remove";
-	remove.onclick = async () => {
-		showError("");
-		try {
-			await api(`/api/library/${entry.work_id}`, { method: "DELETE" });
-			await loadEntries();
-		} catch (e) {
-			showError(e.message);
-		}
-	};
-	actions.append(save, " ", remove);
+	cell(tr).textContent = state.config.statuses[entry.status] || entry.status;
+	cell(tr).textContent = entry.rating ?? "";
+	cell(tr).textContent = entry.started_on ?? "";
+	cell(tr).textContent = entry.finished_on ?? "";
+	cell(tr).textContent = entry.notes;
+	editable(tr, entry);
 	return tr;
 }
 
@@ -438,6 +407,17 @@ function renderKinds() {
 		};
 		nav.appendChild(a);
 	}
+	for (const [view, [, , , label]] of Object.entries(WORLDS)) {
+		const a = document.createElement("a");
+		a.href = `/library#${view}`;
+		a.textContent = label;
+		a.dataset.world = view;
+		a.onclick = (event) => {
+			event.preventDefault();
+			selectWorld(view).catch((e) => showError(e.message));
+		};
+		nav.appendChild(a);
+	}
 	markActive();
 }
 
@@ -447,7 +427,7 @@ async function loadEntries() {
 	$("rows").replaceChildren(...state.entries.map(renderRow));
 	$("entries").hidden = state.entries.length === 0;
 	$("empty").hidden = state.entries.length !== 0;
-	$("empty").textContent = `No ${plural.toLowerCase()} yet. Add your first one above.`;
+	$("empty").textContent = `No ${plural.toLowerCase()} yet. Add one with the + button.`;
 }
 
 async function selectKind(kind) {
@@ -456,20 +436,13 @@ async function selectKind(kind) {
 	window.location.hash = kind;
 	$("library-view").hidden = false;
 	$("world-view").hidden = true;
-	const { name, plural, creator } = state.config.kinds[kind];
+	const { plural, creator } = state.config.kinds[kind];
 	document.title = `${plural} - My World`;
 	$("heading").textContent = `My ${plural}`;
-	$("add-summary").textContent = `Add a ${name.toLowerCase()}`;
 	$("creator-label").textContent = creator;
 	$("creator-column").textContent = creator;
 	renderKinds();
 	showError("");
-	const film = state.config.tmdb && kind === "film";
-	$("movie-search").hidden = !film;
-	$("movie-ids").hidden = !film;
-	if (state.config.tmdb) {
-		movieIdsReset();
-	}
 	await loadEntries();
 }
 
@@ -496,7 +469,7 @@ async function libraryPage() {
 	form.elements.finished_on.value = new Date().toISOString().slice(0, 10);
 	form.onsubmit = async (event) => {
 		event.preventDefault();
-		showError("");
+		dialogError("");
 		const body = { kind: state.kind };
 		for (const el of form.elements) {
 			if (el.name) {
@@ -504,24 +477,21 @@ async function libraryPage() {
 			}
 		}
 		try {
-			await api("/api/library", { method: "POST", body });
-			form.elements.title.value = "";
-			form.elements.creator.value = "";
-			form.elements.year.value = "";
-			form.elements.notes.value = "";
-			movieIdsReset();
-			$("movie-results").hidden = true;
-			$("movie-hint").hidden = true;
-			$("movie-query").value = "";
-			form.elements.title.focus();
+			if (state.editing) {
+				await api(`/api/library/${state.editing.work_id}`, { method: "PUT", body });
+			} else {
+				await api("/api/library", { method: "POST", body });
+			}
+			$("add-dialog").close();
 			await loadEntries();
 		} catch (e) {
-			showError(e.message);
+			dialogError(e.message);
 		}
 	};
 
 	setupMovieSearch();
 	setupWorlds();
+	setupAddDialog();
 	renderKinds();
 	const requested = window.location.hash.slice(1);
 	const person = requested.match(/^people\/(\d+)$/);
@@ -536,11 +506,11 @@ async function libraryPage() {
 
 // ─── concerts, museums, people ──────────────────────────────────────────────
 
-// view -> [heading, API path]; the rows are the signed-in user's own, read-only
+// view -> [heading, API path, singular, tab label]; the rows are the signed-in user's own
 const WORLDS = {
-	concerts: ["My Concerts", "/api/concerts"],
-	museums: ["My Museums", "/api/museums"],
-	people: ["People", "/api/people"],
+	concerts: ["My Concerts", "/api/concerts", "concert", "Concerts"],
+	museums: ["My Museums", "/api/museums", "museum", "Museums"],
+	people: ["People", "/api/people", "person", "People"],
 };
 
 const worldCache = {};
@@ -636,6 +606,7 @@ function cardShell(item, subtitle) {
 	const list = el("ul", "world-details");
 	body.appendChild(list);
 	card.appendChild(body);
+	editable(card, item);
 	return { card, body, list };
 }
 
@@ -688,15 +659,6 @@ function museumCard(item) {
 	return card;
 }
 
-function outingList(outings) {
-	const td = el("td", "outings");
-	for (const outing of outings) {
-		const date = formatDate(outing);
-		td.appendChild(el("div", null, date ? `${outing.name} (${date})` : outing.name));
-	}
-	return td;
-}
-
 function personRow(person) {
 	const tr = el("tr");
 	tr.id = `person-${person.id}`;
@@ -704,9 +666,8 @@ function personRow(person) {
 		el("td", "title", person.name),
 		el("td", null, person.company),
 		el("td", null, person.description),
-		outingList(person.concerts),
-		outingList(person.museums),
 	);
+	editable(tr, person);
 	return tr;
 }
 
@@ -778,6 +739,17 @@ async function selectWorld(view) {
 	}
 }
 
+// After a change: everything is fetched again (people and their outings link
+// each other), and the view on screen is redrawn with its search kept.
+async function refreshWorld() {
+	for (const key of Object.keys(worldCache)) {
+		delete worldCache[key];
+	}
+	const view = state.view;
+	worldCache[view] = await api(WORLDS[view][1]);
+	renderWorld();
+}
+
 // Open the People view at one person, scrolled to and highlighted.
 async function showPerson(id) {
 	await selectWorld("people");
@@ -794,13 +766,317 @@ async function showPerson(id) {
 }
 
 function setupWorlds() {
-	for (const a of document.querySelectorAll("#worlds a")) {
-		a.onclick = (event) => {
-			event.preventDefault();
-			selectWorld(a.dataset.world).catch((e) => showError(e.message));
-		};
-	}
 	$("world-search").oninput = renderWorld;
+}
+
+// ─── the add dialog ─────────────────────────────────────────────────────────
+
+// One dialog, opened by the + button, showing the form of whatever is on screen.
+const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "person-form"];
+const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
+
+function dialogError(message) {
+	const box = $("dialog-error");
+	box.textContent = message;
+	box.hidden = !message;
+}
+
+async function peopleList() {
+	if (!worldCache.people) {
+		worldCache.people = await api("/api/people");
+	}
+	return worldCache.people;
+}
+
+// The people picker: names from People become removable chips; the ids are sent.
+function addChip(box, person) {
+	if (box.selected.has(person.id)) {
+		return;
+	}
+	box.selected.set(person.id, person.name);
+	const chip = el("span", "chip", person.name);
+	const remove = el("button", "chip-remove", "\u00d7");
+	remove.type = "button";
+	remove.setAttribute("aria-label", `Remove ${person.name}`);
+	remove.onclick = () => {
+		box.selected.delete(person.id);
+		chip.remove();
+	};
+	chip.appendChild(remove);
+	box.insertBefore(chip, box.querySelector("input"));
+}
+
+function setupChips(box) {
+	box.selected = new Map();
+	const input = box.querySelector("input");
+	const pick = (quiet) => {
+		const name = input.value.trim();
+		if (!name) {
+			return;
+		}
+		const person = (worldCache.people || []).find((p) => p.name.toLowerCase() === name.toLowerCase());
+		if (!person) {
+			if (!quiet) {
+				dialogError(`${name} is not in People yet: add them there first.`);
+			}
+			return;
+		}
+		dialogError("");
+		addChip(box, person);
+		input.value = "";
+	};
+	input.onkeydown = (event) => {
+		if (event.key === "Enter" || event.key === ",") {
+			event.preventDefault();
+			pick(false);
+		} else if (event.key === "Backspace" && !input.value && box.selected.size) {
+			const chips = box.querySelectorAll(".chip");
+			chips[chips.length - 1].querySelector("button").click();
+		}
+	};
+	// a pick from the suggestion list arrives as a replacement of the whole text
+	input.oninput = (event) => {
+		if (!(event instanceof InputEvent) || event.inputType === "insertReplacementText") {
+			pick(true);
+		}
+	};
+	input.onblur = () => pick(true);
+}
+
+function resetForm(form) {
+	form.reset();
+	for (const box of form.querySelectorAll("[data-people]")) {
+		box.selected.clear();
+		for (const chip of box.querySelectorAll(".chip")) {
+			chip.remove();
+		}
+	}
+}
+
+async function uploadPhoto(form) {
+	const file = form.elements.photo.files[0];
+	if (!file) {
+		return null;
+	}
+	if (file.size > PHOTO_MAX_BYTES) {
+		throw new Error("The photo is larger than 8 MB.");
+	}
+	const data = new FormData();
+	data.append("file", file);
+	const response = await fetch("/api/images", { method: "POST", body: data });
+	const result = await response.json().catch(() => ({}));
+	if (!response.ok) {
+		throw new Error(result.error || response.statusText);
+	}
+	return result.id;
+}
+
+function chosenPeople(form) {
+	return [...form.querySelector("[data-people]").selected.keys()];
+}
+
+function where() {
+	try {
+		return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+	} catch (e) {
+		return "";
+	}
+}
+
+// view -> what its form posts
+const WORLD_BODIES = {
+	concerts: async (form) => {
+		const value = (name) => form.elements[name].value;
+		return {
+			name: value("name"),
+			event: value("event"),
+			performers: value("performers").split(",").map((p) => p.trim()).filter(Boolean),
+			genre: value("genre"),
+			date: value("date"),
+			date_timezone: state.editing?.date_timezone || where(),
+			venue: value("venue"),
+			city: value("city"),
+			country: value("country"),
+			people: chosenPeople(form),
+			tickets: value("tickets"),
+			broadcast: form.elements.broadcast.checked,
+			review: value("review"),
+			remark: value("remark"),
+			image_id: await uploadPhoto(form),
+			image_source: value("image_source"),
+			image_license: value("image_license"),
+			image_author: value("image_author"),
+		};
+	},
+	museums: async (form) => {
+		const value = (name) => form.elements[name].value;
+		return {
+			name: value("name"),
+			city: value("city"),
+			date: value("date"),
+			date_timezone: state.editing?.date_timezone || where(),
+			rating: value("rating"),
+			tickets: value("tickets"),
+			url: value("url"),
+			people: chosenPeople(form),
+			review: value("review"),
+			remark: value("remark"),
+			image_id: await uploadPhoto(form),
+		};
+	},
+	people: async (form) => ({
+		name: form.elements.name.value,
+		company: form.elements.company.value,
+		description: form.elements.description.value,
+	}),
+};
+
+function setupWorldForm(view) {
+	const [, path, singular] = WORLDS[view];
+	const form = $(`${singular}-form`);
+	form.onsubmit = async (event) => {
+		event.preventDefault();
+		dialogError("");
+		const submit = form.querySelector("button[type=submit]");
+		submit.disabled = true;
+		try {
+			const body = await WORLD_BODIES[view](form);
+			if (state.editing) {
+				await api(`${path}/${state.editing.id}`, { method: "PUT", body });
+			} else {
+				await api(path, { method: "POST", body });
+			}
+			$("add-dialog").close();
+			await refreshWorld();
+		} catch (e) {
+			dialogError(e.message);
+		} finally {
+			submit.disabled = false;
+		}
+	};
+}
+
+function fillWorldForm(form, item) {
+	for (const element of form.elements) {
+		if (!element.name || element.type === "file") {
+			continue;
+		}
+		const value = item[element.name];
+		if (element.type === "checkbox") {
+			element.checked = Boolean(value);
+		} else if (Array.isArray(value)) {
+			element.value = value.join(", ");
+		} else {
+			element.value = value ?? "";
+		}
+	}
+	const box = form.querySelector("[data-people]");
+	if (box) {
+		for (const person of item.people) {
+			addChip(box, person);
+		}
+	}
+}
+
+// The work form: a new entry starts empty (with the film search for films); an
+// existing one shows its work, which is shared with other users and so read only.
+function prepareWorkForm(form, entry) {
+	const film = state.config.tmdb && state.kind === "film" && !entry;
+	if (state.config.tmdb) {
+		movieIdsReset();
+	}
+	$("movie-search").hidden = !film;
+	$("movie-ids").hidden = !film;
+	$("movie-results").hidden = true;
+	$("movie-hint").hidden = true;
+	$("movie-query").value = "";
+	const values = entry || { title: "", creator: "", year: "", status: "done", rating: "", started_on: "", notes: "", finished_on: new Date().toISOString().slice(0, 10) };
+	for (const name of ["title", "creator", "year", "status", "rating", "started_on", "finished_on", "notes"]) {
+		form.elements[name].value = values[name] ?? "";
+	}
+	for (const name of MOVIE_FIELDS) {
+		form.elements[name].readOnly = Boolean(entry);
+	}
+}
+
+// The + button (item null) or a click on an item: the dialog with the form of the view on screen.
+async function openDialog(item) {
+	state.editing = item;
+	const world = WORLDS[state.view];
+	const form = world ? $(`${world[2]}-form`) : $("add-form");
+	for (const id of DIALOG_FORMS) {
+		$(id).hidden = $(id) !== form;
+	}
+	const noun = world ? world[2] : state.config.kinds[state.kind].name.toLowerCase();
+	$("dialog-title").textContent = item ? `Edit ${noun}` : `Add a ${noun}`;
+	form.querySelector("button[type=submit]").textContent = item ? "Save" : "Add";
+	const remove = form.querySelector("button.delete");
+	remove.hidden = !item;
+	remove.textContent = "Delete";
+	delete remove.dataset.armed;
+	dialogError("");
+	if (world) {
+		if (form.querySelector("[data-people]")) {
+			const names = await peopleList();
+			$("people-names").replaceChildren(...names.map((p) => {
+				const option = document.createElement("option");
+				option.value = p.name;
+				return option;
+			}));
+		}
+		resetForm(form);
+		if (item) {
+			fillWorldForm(form, item);
+		}
+	} else {
+		prepareWorkForm(form, item);
+	}
+	$("add-dialog").showModal();
+	const first = [...form.querySelectorAll("input")].find((i) => i.offsetParent !== null && !i.readOnly);
+	if (first) {
+		first.focus();
+	}
+}
+
+// Delete asks twice, in the button itself: the first click arms it.
+async function deleteEditing(button) {
+	if (!button.dataset.armed) {
+		button.dataset.armed = "1";
+		button.textContent = "Delete for good?";
+		return;
+	}
+	const world = WORLDS[state.view];
+	if (world) {
+		await api(`${world[1]}/${state.editing.id}`, { method: "DELETE" });
+		$("add-dialog").close();
+		await refreshWorld();
+	} else {
+		await api(`/api/library/${state.editing.work_id}`, { method: "DELETE" });
+		$("add-dialog").close();
+		await loadEntries();
+	}
+}
+
+function setupAddDialog() {
+	const dialog = $("add-dialog");
+	for (const button of dialog.querySelectorAll("button.cancel")) {
+		button.onclick = () => dialog.close();
+	}
+	for (const button of dialog.querySelectorAll("button.delete")) {
+		button.onclick = () => deleteEditing(button).catch((e) => dialogError(e.message));
+	}
+	for (const box of dialog.querySelectorAll("[data-people]")) {
+		setupChips(box);
+	}
+	const { rating_min, rating_max } = state.config;
+	$("museum-form").elements.rating.min = rating_min;
+	$("museum-form").elements.rating.max = rating_max;
+	for (const view of Object.keys(WORLDS)) {
+		setupWorldForm(view);
+	}
+	$("fab").onclick = () => {
+		openDialog(null).catch((e) => showError(e.message));
+	};
 }
 
 // ─── entry point ────────────────────────────────────────────────────────────

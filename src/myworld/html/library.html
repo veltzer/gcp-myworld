@@ -15,11 +15,6 @@
 				My World
 			</a>
 			<nav id="kinds" class="kinds"></nav>
-			<nav id="worlds" class="kinds worlds">
-				<a href="/library#concerts" data-world="concerts">Concerts</a>
-				<a href="/library#museums" data-world="museums">Museums</a>
-				<a href="/library#people" data-world="people">People</a>
-			</nav>
 			<div class="whoami">
 				<img id="avatar" class="avatar" src="/static/favicon.svg" alt="">
 				<span id="who"></span>
@@ -41,51 +36,12 @@
 							<th>Name</th>
 							<th>Company</th>
 							<th>Description</th>
-							<th>Concerts</th>
-							<th>Museums</th>
 						</tr>
 					</thead>
 					<tbody id="people-rows"></tbody>
 				</table>
 			</section>
 			<section id="library-view">
-				<details class="add" open>
-					<summary id="add-summary">Add</summary>
-					<form id="add-form">
-						<div id="movie-search" class="movie-search" hidden>
-							<div class="row">
-								<label class="wide">Find on The Movie Database <input id="movie-query" placeholder="Title, e.g. Dune" autocomplete="off"></label>
-								<button type="button" id="movie-find">Find</button>
-							</div>
-							<p id="movie-hint" class="empty" hidden></p>
-							<p id="movie-locked" class="empty" hidden>
-								Title, director, year and the ids come from The Movie Database and are locked.
-								<button type="button" id="movie-unlock" class="link">Enter the film by hand instead</button>
-							</p>
-							<ul id="movie-results" class="movie-results" hidden></ul>
-						</div>
-						<div id="movie-ids" class="row" hidden>
-							<label>IMDb id <span class="id-field"><input name="imdb_id" readonly placeholder="from the search"><a id="imdb-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
-							<label>TMDB id <span class="id-field"><input name="tmdb_id" readonly placeholder="from the search"><a id="tmdb-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
-							<label>Rotten Tomatoes id <span class="id-field"><input name="rotten_tomatoes_id" readonly placeholder="from the search"><a id="rt-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
-						</div>
-						<div class="row">
-							<label>Title <input name="title" required></label>
-							<label><span id="creator-label">Creator</span> <input name="creator"></label>
-							<label>Year <input name="year" type="number" min="0" max="3000"></label>
-						</div>
-						<div class="row">
-							<label>Status <select name="status"></select></label>
-							<label>Rating <input name="rating" type="number"></label>
-							<label>Started <input name="started_on" type="date"></label>
-							<label>Finished <input name="finished_on" type="date"></label>
-						</div>
-						<div class="row">
-							<label class="wide">Notes <input name="notes"></label>
-							<button type="submit">Add</button>
-						</div>
-					</form>
-				</details>
 				<p id="empty" class="empty" hidden></p>
 				<table id="entries" class="entries" hidden>
 					<thead>
@@ -98,13 +54,146 @@
 							<th>Started</th>
 							<th>Finished</th>
 							<th>Notes</th>
-							<th></th>
 						</tr>
 					</thead>
 					<tbody id="rows"></tbody>
 				</table>
 			</section>
 		</main>
+		<button id="fab" class="fab" type="button" aria-label="Add" title="Add">
+			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+		</button>
+		<dialog id="add-dialog" class="dialog" aria-labelledby="dialog-title">
+			<h2 id="dialog-title">Add</h2>
+			<p id="dialog-error" class="warning" hidden></p>
+			<!-- a book, film, series, album or game; the film search fills it from The Movie Database -->
+			<form id="add-form" class="dialog-form" hidden>
+				<div id="movie-search" class="movie-search" hidden>
+					<div class="row">
+						<label class="wide">Find on The Movie Database <input id="movie-query" placeholder="Title, e.g. Dune" autocomplete="off"></label>
+						<button type="button" id="movie-find">Find</button>
+					</div>
+					<p id="movie-hint" class="empty" hidden></p>
+					<p id="movie-locked" class="empty" hidden>
+						Title, director, year and the ids come from The Movie Database and are locked.
+						<button type="button" id="movie-unlock" class="link">Enter the film by hand instead</button>
+					</p>
+					<ul id="movie-results" class="movie-results" hidden></ul>
+				</div>
+				<div id="movie-ids" class="row" hidden>
+					<label>IMDb id <span class="id-field"><input name="imdb_id" readonly placeholder="from the search"><a id="imdb-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
+					<label>TMDB id <span class="id-field"><input name="tmdb_id" readonly placeholder="from the search"><a id="tmdb-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
+					<label>Rotten Tomatoes id <span class="id-field"><input name="rotten_tomatoes_id" readonly placeholder="from the search"><a id="rt-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
+				</div>
+				<div class="row">
+					<label class="wide">Title <input name="title" required></label>
+					<label class="wide"><span id="creator-label">Creator</span> <input name="creator"></label>
+					<label>Year <input name="year" type="number" min="0" max="3000"></label>
+				</div>
+				<div class="row">
+					<label>Status <select name="status"></select></label>
+					<label>Rating <input name="rating" type="number"></label>
+					<label>Started <input name="started_on" type="date"></label>
+					<label>Finished <input name="finished_on" type="date"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Notes <input name="notes"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="concert-form" class="dialog-form" hidden>
+				<div class="row">
+					<label class="wide">Name <input name="name" required placeholder="Who or what, e.g. Avishai Cohen Trio"></label>
+					<label class="wide">Event <input name="event" placeholder="Festival, tour, occasion"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Performers <input name="performers" placeholder="Comma separated"></label>
+					<label>Genre <input name="genre" placeholder="jazz, rock, ..."></label>
+				</div>
+				<div class="row">
+					<label>Date <input name="date" pattern="\d{4}(-\d{2}(-\d{2}(T[0-9:.]+Z)?)?)?" placeholder="YYYY-MM-DD, YYYY-MM or YYYY"></label>
+					<label class="wide">Venue <input name="venue"></label>
+					<label>City <input name="city"></label>
+					<label>Country <input name="country"></label>
+				</div>
+				<div class="row">
+					<label class="wide">With <span class="chips" data-people><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
+				</div>
+				<div class="row">
+					<label>Tickets <input name="tickets" type="number" min="0" max="1000"></label>
+					<label class="check"><input name="broadcast" type="checkbox"> Seen on TV</label>
+				</div>
+				<div class="row">
+					<label class="wide">Review <input name="review"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Remark <input name="remark"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Photo source <input name="image_source" type="url" placeholder="Where the photo comes from"></label>
+					<label>License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
+					<label>Author <input name="image_author"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="museum-form" class="dialog-form" hidden>
+				<div class="row">
+					<label class="wide">Name <input name="name" required placeholder="e.g. Louvre"></label>
+					<label>City <input name="city"></label>
+				</div>
+				<div class="row">
+					<label>Date <input name="date" pattern="\d{4}(-\d{2}(-\d{2}(T[0-9:.]+Z)?)?)?" placeholder="YYYY-MM-DD, YYYY-MM or YYYY"></label>
+					<label>Rating <input name="rating" type="number"></label>
+					<label>Tickets <input name="tickets" type="number" min="0" max="1000"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Website <input name="url" type="url" placeholder="https://"></label>
+				</div>
+				<div class="row">
+					<label class="wide">With <span class="chips" data-people><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
+				</div>
+				<div class="row">
+					<label class="wide">Review <input name="review"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Remark <input name="remark"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="person-form" class="dialog-form" hidden>
+				<div class="row">
+					<label class="wide">Name <input name="name" required></label>
+					<label class="wide">Company <input name="company"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Description <input name="description" placeholder="How you know them"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<datalist id="people-names"></datalist>
+		</dialog>
 		<footer class="footer">
 			<span id="build"></span>
 		</footer>
