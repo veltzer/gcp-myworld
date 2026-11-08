@@ -1093,6 +1093,15 @@ tr.clickable:focus-visible td {
 	color: #fff;
 }
 
+.stats-link[aria-disabled="true"] {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.stats-link[aria-disabled="true"]:hover {
+	color: var(--muted);
+}
+
 .stat-tiles {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));

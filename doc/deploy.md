@@ -248,6 +248,11 @@ a person is written with `type_ids`, a list.
   `YYYY-MM-DD`; a date sent back exactly as it came keeps its stored
   precision, timestamps included. `people` and `organizations` are lists of
   ids, `type_id` an organization type id.
+- `GET /api/users` (admins only, 403 otherwise): every account, with
+  email, name, provider (google, github, email, dev), role and when it
+  was made. `PUT /api/users/<id>` with `{"role": "user" | "admin"}`
+  changes one, refusing to demote the last admin (409). See
+  `accounts.md`.
 - `GET /api/stats`: how many of everything the user has (library entries
   per kind and status, concerts, performers, museum visits and museums,
   people, organizations, both kinds of types, images), people and

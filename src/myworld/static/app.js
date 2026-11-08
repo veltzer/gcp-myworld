@@ -523,8 +523,11 @@ const SORTS = {
 };
 const SORT_KEY = "myworld.sort";
 
+// views that are a page of their own, outside the tabs: nothing to search, sort or add
+const PAGES = new Set(["stats", "users"]);
+
 function sortFields() {
-	if (state.view === "stats") {
+	if (PAGES.has(state.view)) {
 		return [];
 	}
 	return SORTS[state.view in WORLDS ? state.view : "library"] || [];
@@ -603,9 +606,9 @@ function updateTools() {
 	button.innerHTML = ARROWS[direction];
 	button.title = direction === "asc" ? "Ascending: click for descending" : "Descending: click for ascending";
 	button.setAttribute("aria-label", button.title);
-	// the stats page has nothing to search or add: both stay, disabled
-	$("world-search").disabled = state.view === "stats";
-	$("fab").disabled = state.view === "stats";
+	// the stats and users pages have nothing to search or add: both stay, disabled
+	$("world-search").disabled = PAGES.has(state.view);
+	$("fab").disabled = PAGES.has(state.view);
 	const cards = state.view in CARDS;
 	for (const layout of $("layouts").querySelectorAll("button")) {
 		layout.disabled = !cards;
@@ -615,7 +618,7 @@ function updateTools() {
 
 // After a change to the search, the filter or the sort: redraw what is on screen.
 function rerender() {
-	if (state.view === "stats") {
+	if (PAGES.has(state.view)) {
 		return;
 	}
 	if (state.view in WORLDS) {
@@ -710,6 +713,8 @@ async function libraryPage() {
 		await showRow(linked[1], Number(linked[2]));
 	} else if (requested === "stats") {
 		await selectStats();
+	} else if (requested === "users" && isAdmin()) {
+		await selectUsers();
 	} else if (requested in state.config.kinds) {
 		await selectKind(requested);
 	} else {
@@ -1174,11 +1179,12 @@ function markActive() {
 		a.classList.toggle("active", active);
 	}
 	$("stats-link").classList.toggle("active", state.view === "stats");
+	$("users-link").classList.toggle("active", state.view === "users");
 }
 
-// One of the three page bodies: the library table, the cards and tables, the stats.
+// One of the page bodies: the library table, the cards and tables, the stats, the users.
 function showSection(id) {
-	for (const section of ["library-view", "world-view", "stats-view"]) {
+	for (const section of ["library-view", "world-view", "stats-view", "users-view"]) {
 		$(section).hidden = section !== id;
 	}
 }
@@ -1201,6 +1207,73 @@ async function selectStats() {
 	if (state.view === "stats") {
 		renderStats(stats);
 	}
+}
+
+// ─── users (admins only) ────────────────────────────────────────────────────
+
+function isAdmin() {
+	return state.config.user.role === "admin";
+}
+
+async function selectUsers() {
+	state.view = "users";
+	window.location.hash = "users";
+	document.title = "Users - My World";
+	showSection("users-view");
+	markActive();
+	renderKinds();
+	showError("");
+	$("world-search").value = "";
+	await fillTypeFilter("users");
+	updateTools();
+	const users = await api("/api/users");
+	if (state.view === "users") {
+		renderUsers(users);
+	}
+}
+
+// Every account; an admin gives or takes the admin role with the select, and
+// the server refuses to demote the last admin.
+function renderUsers(users) {
+	const admins = users.filter((u) => u.role === "admin").length;
+	$("world-count").textContent = `${users.length} account${users.length === 1 ? "" : "s"}, ${admins} admin${admins === 1 ? "" : "s"}`;
+	$("users-rows").replaceChildren(...users.map((user) => {
+		const tr = el("tr");
+		const role = el("select");
+		role.setAttribute("aria-label", `Role of ${user.email}`);
+		for (const value of ["user", "admin"]) {
+			const option = el("option", null, value === "admin" ? "Admin" : "User");
+			option.value = value;
+			role.appendChild(option);
+		}
+		role.value = user.role;
+		role.onchange = async () => {
+			showError("");
+			try {
+				await api(`/api/users/${user.id}`, { method: "PUT", body: { role: role.value } });
+			} catch (e) {
+				role.value = user.role;
+				showError(e.message);
+				return;
+			}
+			// an admin who made themselves a user can no longer see this page
+			state.config = await api("/api/config");
+			if (!isAdmin()) {
+				window.location.href = "/library";
+				return;
+			}
+			await selectUsers();
+		};
+		tr.append(
+			el("td", "title", user.name),
+			el("td", null, user.email),
+			el("td", null, user.provider),
+			el("td", null, user.created_at.slice(0, 10)),
+			el("td", null),
+		);
+		tr.lastChild.appendChild(role);
+		return tr;
+	}));
 }
 
 // A number with what it counts, a link to its tab when there is one.
@@ -1349,6 +1422,18 @@ function setupWorlds() {
 	$("stats-link").onclick = (event) => {
 		event.preventDefault();
 		selectStats().catch((e) => showError(e.message));
+	};
+	const users = $("users-link");
+	if (!isAdmin()) {
+		users.setAttribute("aria-disabled", "true");
+		users.tabIndex = -1;
+		users.title = "Only an admin can see the accounts";
+	}
+	users.onclick = (event) => {
+		event.preventDefault();
+		if (isAdmin()) {
+			selectUsers().catch((e) => showError(e.message));
+		}
 	};
 	$("world-search").oninput = rerender;
 	setupSort();

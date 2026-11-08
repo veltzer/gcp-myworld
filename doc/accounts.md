@@ -39,6 +39,27 @@ library, with no hint that another account holds their data. The app
 creates the second account silently, which is the least common choice
 among sites.
 
+## Roles: users and admins
+
+Every account has a role in `users.role`: `user`, which every new account
+gets, or `admin`. Sign-in is the app's own code (`src/myworld/auth.py`,
+no framework), and so is this: `auth.admin_required` guards what only an
+admin may do, reading the role from the database on every request, so a
+change takes effect at once, without signing out.
+
+An admin opens the Users page (top bar; disabled for everyone else),
+which lists every account, and can make any account an admin, which is
+how the role is delegated, or turn an admin back into a user. The last
+admin cannot be demoted (409), so the site always has one. The role
+belongs to the account, not the person: with separate accounts per
+sign-in method, an admin's GitHub account is a plain user until it is
+made an admin too.
+
+The first admin comes from `scripts/migrate.sh`: when no account is an
+admin, it makes the oldest account one. In production that is the site
+owner's Google account (user 1). On a fresh local database, sign in once
+and run `scripts/migrate.sh --local`.
+
 ## What most sites do
 
 Most sites merge, but not blindly. The common pattern has three parts:

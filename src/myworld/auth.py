@@ -37,7 +37,7 @@ from google.oauth2 import id_token
 from sqlalchemy.orm import Session
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from myworld.models import User
+from myworld.models import ROLE_ADMIN, User
 
 bp = flask.Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -96,6 +96,20 @@ def login_required(view: Callable[..., Any]) -> Callable[..., Any]:
         user = current_user()
         if user is None:
             return flask.jsonify({"error": "sign in first"}), 401
+        flask.g.user = user
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def admin_required(view: Callable[..., Any]) -> Callable[..., Any]:
+    """ Like login_required, for what only an admin (users.role) may do. """
+    @functools.wraps(view)
+    def wrapped(*args: Any, **kwargs: Any) -> Any:
+        user = current_user()
+        if user is None:
+            return flask.jsonify({"error": "sign in first"}), 401
+        if user.role != ROLE_ADMIN:
+            return flask.jsonify({"error": "only an admin may do this"}), 403
         flask.g.user = user
         return view(*args, **kwargs)
     return wrapped

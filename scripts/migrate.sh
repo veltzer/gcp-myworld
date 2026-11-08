@@ -41,6 +41,12 @@
 #   - a person may have several types: people.type_id is copied into the new
 #     person_person_types link table, then dropped. Run right after deploying
 #     the version that uses the links (its create_all makes the table).
+#   - users.role ("user" or "admin"), and when no account is an admin the
+#     oldest account (the site owner's, who made it) becomes one, so there is
+#     always someone to delegate from. Safe before deploying: the column has a
+#     server default the old version does not need to know about. On a fresh
+#     database create_all makes the column; run this after the first sign-in
+#     to make that account the admin.
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -65,6 +71,7 @@ COLUMNS = [
     ("works", "imdb_id", "VARCHAR(20) NOT NULL DEFAULT ''"),
     ("works", "tmdb_id", "INTEGER"),
     ("works", "rotten_tomatoes_id", "VARCHAR(200) NOT NULL DEFAULT ''"),
+    ("users", "role", "VARCHAR(20) NOT NULL DEFAULT 'user'"),
 ]
 
 url = os.environ.get("DATABASE_URL", "sqlite:///db.gi/myworld.sqlite")
@@ -178,6 +185,11 @@ if "type_id" in people_columns:
     db.execute("ALTER TABLE people_new RENAME TO people")
     db.execute("CREATE INDEX IF NOT EXISTS ix_people_owner_id ON people (owner_id)")
     added.append("people.type_id -> person_person_types")
+if not db.execute("SELECT 1 FROM users WHERE role = 'admin'").fetchone():
+    oldest = db.execute("SELECT min(id) FROM users").fetchone()[0]
+    if oldest is not None:
+        db.execute("UPDATE users SET role = 'admin' WHERE id = ?", (oldest,))
+        added.append(f"user {oldest} made the first admin")
 db.commit()
 if added:
     print(f"{path}: migrated {', '.join(added)}")
@@ -194,7 +206,7 @@ source .gcp.conf
 present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	SELECT table_name || '.' || column_name || ':' || COALESCE(character_maximum_length::text, '')
 	FROM information_schema.columns
-	WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash'))
+	WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash', 'role'))
 	   OR (table_name = 'works' AND column_name IN ('imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
 	   OR (table_name = 'people' AND column_name = 'company')
 	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
@@ -292,6 +304,15 @@ if has "people.type_id:.*" || ! has "person_types.id:.*"; then
 			SELECT id, type_id FROM people WHERE type_id IS NOT NULL
 			ON CONFLICT DO NOTHING;
 		ALTER TABLE people DROP COLUMN type_id"
+fi
+
+if ! has "users.role:.*"; then
+	need users.role "ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'user'"
+fi
+# no admin (the column is new, or every admin was removed by hand): the oldest account becomes one
+if ! has "users.role:.*" || [[ "$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM users WHERE role = 'admin'")" == "0" ]]; then
+	need "the oldest account made the first admin" "UPDATE users SET role = 'admin'
+		WHERE id = (SELECT min(id) FROM users) AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'admin')"
 fi
 
 if (( ${#changed[@]} == 0 )); then

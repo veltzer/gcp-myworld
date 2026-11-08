@@ -20,6 +20,11 @@
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
 				Stats
 			</a>
+			<!-- only an admin can open it; for everyone else it stays here, disabled -->
+			<a id="users-link" class="stats-link" href="/library#users" title="Every account and its role">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm0 1.5c-3.3 0-6 1.8-6 4v2h12v-2c0-2.2-2.7-4-6-4zm7.5-1.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm.5 1.5c-.6 0-1.2.1-1.7.2 1.1.9 1.7 2.1 1.7 3.3v2h5v-2c0-1.9-2.2-3.5-5-3.5z"/></svg>
+				Users
+			</a>
 			<div class="whoami">
 				<img id="avatar" class="avatar" src="/static/favicon.svg" alt="">
 				<span id="who"></span>
@@ -43,6 +48,14 @@
 				<div id="layouts" class="layouts" role="group" aria-label="Layout"></div>
 			</div>
 			<section id="stats-view" class="stats" hidden></section>
+			<section id="users-view" hidden>
+				<table id="users" class="entries">
+					<thead>
+						<tr><th>Name</th><th>Email</th><th>Signs in with</th><th>Since</th><th>Role</th></tr>
+					</thead>
+					<tbody id="users-rows"></tbody>
+				</table>
+			</section>
 			<section id="world-view" hidden>
 				<div id="cards" class="cards"></div>
 				<table id="people" class="entries" hidden>

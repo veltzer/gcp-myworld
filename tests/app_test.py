@@ -294,7 +294,7 @@ def test_oauth_callback(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -
     assert response.location is not None
     assert response.location.endswith("/library")
     assert exchanged == [("github", "abc")]
-    assert app.get("/api/config").json["user"] == {"email": "dave@example.com", "name": "Dave", "picture": ""}
+    assert app.get("/api/config").json["user"] == {"email": "dave@example.com", "name": "Dave", "picture": "", "role": "user"}
 
 
 def test_oauth_callback_failures_return_to_landing(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
