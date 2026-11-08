@@ -438,7 +438,6 @@ async function selectKind(kind) {
 	$("world-view").hidden = true;
 	const { plural, creator } = state.config.kinds[kind];
 	document.title = `${plural} - My World`;
-	$("heading").textContent = `My ${plural}`;
 	$("creator-label").textContent = creator;
 	$("creator-column").textContent = creator;
 	renderKinds();
@@ -506,7 +505,7 @@ async function libraryPage() {
 
 // ─── concerts, museums, people, companies ───────────────────────────────────
 
-// view -> [heading, API path, singular, tab label]; the rows are the signed-in user's own
+// view -> [page title, API path, singular, tab label]; the rows are the signed-in user's own
 const WORLDS = {
 	concerts: ["My Concerts", "/api/concerts", "concert", "Concerts"],
 	museums: ["My Museums", "/api/museums", "museum", "Museums"],
@@ -605,17 +604,32 @@ function websiteDetail(list, url) {
 	list.appendChild(li);
 }
 
-function cardShell(item, subtitle, imageClass = "world-image") {
+// A card's photo or logo is its background, fetched only once the card comes
+// near the screen (what loading="lazy" does for an img).
+const backgrounds = "IntersectionObserver" in window
+	? new IntersectionObserver((entries, observer) => {
+		for (const entry of entries) {
+			if (entry.isIntersecting) {
+				entry.target.style.setProperty("--card-image", `url("${entry.target.dataset.image}")`);
+				observer.unobserve(entry.target);
+			}
+		}
+	}, { rootMargin: "400px" })
+	: null;
+
+// kind is "photo" (covers the card, text in white over a dark veil) or "logo"
+// (shown whole behind a light veil)
+function cardShell(item, subtitle, kind = "photo") {
 	const card = el("article", "world-card");
 	card.id = `${WORLDS[state.view][2]}-${item.id}`;
 	if (item.image) {
-		const img = el("img", imageClass);
-		img.src = item.image;
-		img.alt = "";
-		img.loading = "lazy";
-		card.appendChild(img);
-	} else {
-		card.appendChild(el("div", `${imageClass} no-image`));
+		card.classList.add(`has-${kind}`);
+		card.dataset.image = item.image;
+		if (backgrounds) {
+			backgrounds.observe(card);
+		} else {
+			card.style.setProperty("--card-image", `url("${item.image}")`);
+		}
 	}
 	const body = el("div", "world-body");
 	body.appendChild(el("h2", "world-title", item.name));
@@ -681,7 +695,7 @@ const FUNCTIONS = {
 };
 
 function companyCard(item) {
-	const { card, list } = cardShell(item, item.location, "world-image logo");
+	const { card, list } = cardShell(item, item.location, "logo");
 	detail(list, "Was", item.functions.map((f) => FUNCTIONS[f] || f));
 	detail(list, "Status", item.status);
 	detail(list, "What happened", item.what_happened);
@@ -755,7 +769,6 @@ async function selectWorld(view) {
 	window.location.hash = view;
 	const [heading, path] = WORLDS[view];
 	document.title = `${heading.replace(/^My /, "")} - My World`;
-	$("heading").textContent = heading;
 	$("library-view").hidden = true;
 	$("world-view").hidden = false;
 	markActive();

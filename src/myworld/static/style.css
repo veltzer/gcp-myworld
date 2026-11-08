@@ -73,7 +73,7 @@ body {
 	max-width: 1100px;
 	margin: 0 auto;
 	/* room under the last row so the + button never hides it */
-	padding: 1.5rem 1.5rem 6rem;
+	padding: 1rem 1.5rem 6rem;
 }
 
 /* ─── landing page ─────────────────────────────────────────────────────── */
@@ -720,25 +720,29 @@ button.danger {
 	overflow: hidden;
 }
 
-.world-image {
-	width: 100%;
-	aspect-ratio: 16 / 9;
-	object-fit: cover;
-	display: block;
-	background: var(--line);
+/* a photo fills the card behind the text, darkened so white text reads on it */
+.world-card.has-photo {
+	min-height: 10rem;
+	color: #fff;
+	background: linear-gradient(rgb(0 0 0 / 55%), rgb(0 0 0 / 75%)), var(--card-image, none) center / cover no-repeat, #475569;
+	border-color: transparent;
 }
 
-/* a logo is shown whole, on white, never cropped */
-.world-image.logo {
-	object-fit: contain;
-	padding: 1.25rem 2rem;
-	box-sizing: border-box;
-	background: #fff;
-	border-bottom: 1px solid var(--line);
+.world-card.has-photo .world-subtitle,
+.world-card.has-photo .world-details .label,
+.world-card.has-photo .credit {
+	color: rgb(255 255 255 / 75%);
 }
 
-.world-image.logo.no-image {
-	background: var(--line);
+.world-card.has-photo .person-link,
+.world-card.has-photo .world-details a {
+	color: #bfdbfe;
+}
+
+/* a logo is shown whole behind a light veil, dark text over it */
+.world-card.has-logo {
+	min-height: 8rem;
+	background: linear-gradient(rgb(255 255 255 / 82%), rgb(255 255 255 / 82%)), var(--card-image, none) center / contain no-repeat, #fff;
 }
 
 .world-body {
