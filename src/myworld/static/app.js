@@ -759,6 +759,7 @@ async function libraryPage() {
 	setupAddDialog();
 	renderKinds();
 	startHistory();
+	setupFreshness();
 	await openHash();
 }
 
@@ -823,6 +824,15 @@ function saveNavTop() {
 	} catch (e) {
 		// blocked storage: after a reload Forward may stay disabled; Back still works
 	}
+}
+
+// Back to this tab after a while: the data may have changed meanwhile.
+function setupFreshness() {
+	document.addEventListener("visibilitychange", () => {
+		if (document.visibilityState === "visible" && state.view in WORLDS) {
+			reloadWorld(state.view).catch((e) => showError(e.message));
+		}
+	});
 }
 
 function startHistory() {
@@ -1717,10 +1727,37 @@ async function selectWorld(view, hash = view) {
 			$(tableId).hidden = true;
 		}
 		worldCache[view] = await api(path);
+		await fillTypeFilter(view);
+		if (state.view === view) {
+			renderWorld();
+		}
+		return;
 	}
+	// what was fetched before is shown at once, then fetched again: a row
+	// added, changed or removed elsewhere (another tab, a script) shows up
 	await fillTypeFilter(view);
 	if (state.view === view) {
 		renderWorld();
+	}
+	await reloadWorld(view);
+}
+
+// Fetch a view again and redraw it if it is still on screen, keeping the
+// search, the filter and the scroll; the other views' rows are dropped, to be
+// fetched again when they are opened.
+async function reloadWorld(view) {
+	for (const key of Object.keys(worldCache)) {
+		if (key !== view) {
+			delete worldCache[key];
+		}
+	}
+	const rows = await api(WORLDS[view][1]);
+	worldCache[view] = rows;
+	if (state.view === view && !$("add-dialog").open) {
+		await fillTypeFilter(view);
+		const y = window.scrollY;
+		renderWorld();
+		window.scrollTo(0, y);
 	}
 }
 
