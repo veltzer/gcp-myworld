@@ -19,7 +19,9 @@ from myworld import checks
 from myworld.checks import logo_problems
 from myworld.models import (
     ROLE_ADMIN,
+    AudioCourse,
     Base,
+    Device,
     Image,
     Museum,
     Organization,
@@ -66,7 +68,9 @@ def test_bad_logo(data: bytes, wanted: str) -> None:
 
 
 def test_every_check_describes_itself() -> None:
-    assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "person-types", "museum-dates", "organization-locations", "museum-addresses", "museum-locations", "museum-company"} <= set(checks.CHECKS)
+    assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "person-types", "museum-dates", "organization-locations", "museum-addresses", "museum-locations", "museum-company",
+        "audio-course-lecturers", "audio-course-devices", "audio-course-status", "audio-course-reviews",
+        "audio-course-covers", "audio-course-links", "audio-course-stalled", "audio-course-duplicates"} <= set(checks.CHECKS)
     for chosen in checks.CHECKS.values():
         assert chosen.title and chosen.description and chosen.noun
 
@@ -219,6 +223,48 @@ def test_museum_company(engine: Engine) -> None:
         ("Tate", "has no one in With and is not marked alone"),
         ("Uffizi", "is marked alone but has people in With"),
     ]
+
+
+def test_audio_courses(engine: Engine) -> None:
+    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    with Session(engine) as session:
+        alice = User(google_sub="alice", email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        lecturer = Person(owner_id=alice.id, first_name="Robert", surname="Greenberg")
+        phone = Device(owner_id=alice.id, name="Samsung S10")
+        cover = Image(owner_id=alice.id, filename="c.jpg", content_type="image/jpeg", sha256="0" * 64, data=b"\xff\xd8")
+        good = {"lecturers": [lecturer], "device": phone, "image": cover, "great_courses_slug": "x"}
+        session.add_all([
+            # every rule kept: finished, rated and reviewed
+            AudioCourse(owner_id=alice.id, name="Good", date_ymd=datetime.date(2020, 1, 1), rating=8, review="Fine", **good),
+            # in progress a month: not stalled, and not asked for a review
+            AudioCourse(owner_id=alice.id, name="Running", started_utcz=now - datetime.timedelta(days=30), **good),
+            # each of these breaks one rule (or two)
+            AudioCourse(owner_id=alice.id, name="Bare", date_y=2019, rating=7, review="ok"),
+            AudioCourse(owner_id=alice.id, name="Limbo", **good),
+            AudioCourse(owner_id=alice.id, name="Unrated", date_y=2018, review="ok", **good),
+            AudioCourse(owner_id=alice.id, name="Stalled", started_utcz=now - datetime.timedelta(days=800), progress="4/24", **good),
+            AudioCourse(owner_id=alice.id, name="Twice", date_y=2017, rating=6, review="a", **good),
+            AudioCourse(owner_id=alice.id, name="twice ", date_y=2017, rating=6, review="b", **good),
+        ])
+        session.commit()
+
+        def found(name: str) -> list[tuple[str, str]]:
+            return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS[name].run(session).problems]
+
+        assert found("audio-course-lecturers") == [("Bare", "has no lecturer")]
+        assert found("audio-course-devices") == [("Bare", "has no device")]
+        assert found("audio-course-covers") == [("Bare", "has no cover")]
+        assert found("audio-course-links") == [("Bare", "has neither a Great Courses slug nor an Audible ASIN")]
+        assert found("audio-course-status") == [("Limbo", "has neither a finished date nor a start: is it finished or in progress?")]
+        assert found("audio-course-reviews") == [("Unrated", "is finished but has no rating")]
+        stalled = checks.CHECKS["audio-course-stalled"].run(session)
+        assert stalled.checked == 2
+        assert [(p.subject.split(" (")[0], p.message.split(" (")[1]) for p in stalled.problems] == [("Stalled", "800 days, at 4/24)")]
+        assert [name for name, _ in found("audio-course-duplicates")] == ["Twice", "twice "]
+        # each problem opens its course
+        assert [(p.link.split("/")[0], p.owner) for p in stalled.problems] == [("audio-courses", alice.id)]
 
 
 def test_person_types(engine: Engine) -> None:

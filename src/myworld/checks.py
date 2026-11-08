@@ -11,6 +11,7 @@ script pick it up. A check only reads; it never changes anything.
 """
 
 import dataclasses
+import datetime
 import re
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
@@ -20,10 +21,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from myworld.models import (
+    AudioCourse,
     Image,
     Museum,
     Organization,
     Person,
+    audio_course_lecturers,
     museum_people,
     organization_relation_types,
     person_person_types,
@@ -297,3 +300,118 @@ def check_museum_company(session: Session) -> Result:
         elif not visit.alone and visit.id not in with_people:
             problems.append(Problem(subject, "has no one in With and is not marked alone", f"museums/{visit.id}", visit.owner_id))
     return Result(checked=len(visits), problems=problems)
+
+
+# ─── audio courses ──────────────────────────────────────────────────────────
+
+# in progress for longer than this, a course is reported as stalled
+STALLED_AFTER = datetime.timedelta(days=365)
+
+
+def _courses(session: Session) -> list[AudioCourse]:
+    return list(session.scalars(select(AudioCourse).order_by(AudioCourse.owner_id, AudioCourse.name, AudioCourse.id)))
+
+
+def _course_problem(course: AudioCourse, message: str) -> Problem:
+    return Problem(f"{course.name} (audio course {course.id}, account {course.owner_id})", message, f"audio-courses/{course.id}", course.owner_id)
+
+
+def _finished(course: AudioCourse) -> bool:
+    """ Whether it has a date, at any precision: the day it was finished. """
+    return course.date_utcz is not None or course.date_ymd is not None or bool(course.date_my) or course.date_y is not None
+
+
+@check("audio-course-lecturers", "Every audio course has a lecturer", "audio courses")
+def check_audio_course_lecturers(session: Session) -> Result:
+    """ Every audio course, of every account, has at least one lecturer (a person). """
+    taught = set(session.scalars(select(audio_course_lecturers.c.audio_course_id)))
+    courses = _courses(session)
+    return Result(checked=len(courses), problems=[_course_problem(c, "has no lecturer") for c in courses if c.id not in taught])
+
+
+@check("audio-course-devices", "Every audio course has a device", "audio courses")
+def check_audio_course_devices(session: Session) -> Result:
+    """ Every audio course, of every account, says what it was played on (one of the account's devices). """
+    courses = _courses(session)
+    return Result(checked=len(courses), problems=[_course_problem(c, "has no device") for c in courses if c.device_id is None])
+
+
+@check("audio-course-status", "Every audio course is finished or in progress", "audio courses")
+def check_audio_course_status(session: Session) -> Result:
+    """
+    Every audio course, of every account, is either finished (it has a date)
+    or in progress (it has a start), never neither.
+    """
+    courses = _courses(session)
+    problems = [
+        _course_problem(c, "has neither a finished date nor a start: is it finished or in progress?")
+        for c in courses
+        if not _finished(c) and c.started_utcz is None
+    ]
+    return Result(checked=len(courses), problems=problems)
+
+
+@check("audio-course-reviews", "Every finished audio course is rated and reviewed", "finished audio courses")
+def check_audio_course_reviews(session: Session) -> Result:
+    """ Every finished audio course, of every account, has a rating and a review; one still in progress need not. """
+    finished = [c for c in _courses(session) if _finished(c)]
+    problems = []
+    for course in finished:
+        missing = [what for what, absent in (("rating", course.rating is None), ("review", not course.review.strip())) if absent]
+        if missing:
+            problems.append(_course_problem(course, f"is finished but has no {' and no '.join(missing)}"))
+    return Result(checked=len(finished), problems=problems)
+
+
+@check("audio-course-covers", "Every audio course has a cover", "audio courses")
+def check_audio_course_covers(session: Session) -> Result:
+    """ Every audio course, of every account, has a cover image. """
+    courses = _courses(session)
+    return Result(checked=len(courses), problems=[_course_problem(c, "has no cover") for c in courses if c.image_id is None])
+
+
+@check("audio-course-links", "Every audio course links to where it is sold", "audio courses")
+def check_audio_course_links(session: Session) -> Result:
+    """ Every audio course, of every account, has a Great Courses slug or an Audible ASIN, so its card links to its page. """
+    courses = _courses(session)
+    problems = [
+        _course_problem(c, "has neither a Great Courses slug nor an Audible ASIN")
+        for c in courses
+        if not c.great_courses_slug.strip() and not c.audible_asin.strip()
+    ]
+    return Result(checked=len(courses), problems=problems)
+
+
+@check("audio-course-stalled", "No audio course is stuck in progress", "audio courses in progress")
+def check_audio_course_stalled(session: Session) -> Result:
+    """
+    No audio course, of any account, has been in progress (started, not
+    finished) for more than a year: finish it, or say how far it got and
+    give up on it.
+    """
+    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    running = [c for c in _courses(session) if not _finished(c) and c.started_utcz is not None]
+    problems = []
+    for course in running:
+        assert course.started_utcz is not None
+        waited = now - course.started_utcz
+        if waited > STALLED_AFTER:
+            progress = f", at {course.progress}" if course.progress else ""
+            problems.append(_course_problem(course, f"in progress since {course.started_utcz.date().isoformat()} ({waited.days} days{progress})"))
+    return Result(checked=len(running), problems=problems)
+
+
+@check("audio-course-duplicates", "No audio course is listed twice", "audio courses")
+def check_audio_course_duplicates(session: Session) -> Result:
+    """ No account has two audio courses of the same name (ignoring case and spaces at the ends). """
+    courses = _courses(session)
+    seen: dict[tuple[int, str], list[AudioCourse]] = {}
+    for course in courses:
+        seen.setdefault((course.owner_id, course.name.strip().lower()), []).append(course)
+    problems = [
+        _course_problem(course, f"has the same name as {len(same) - 1} other audio course{'s' if len(same) > 2 else ''} of the account")
+        for same in seen.values()
+        if len(same) > 1
+        for course in same
+    ]
+    return Result(checked=len(courses), problems=problems)

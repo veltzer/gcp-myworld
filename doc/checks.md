@@ -45,6 +45,19 @@ uses too).
 - `museum-locations`: every museum visit has a latitude and a longitude.
 - `museum-company`: every museum visit has people in With or is marked
   "I went alone", and none is both.
+- `audio-course-lecturers`: every audio course has a lecturer.
+- `audio-course-devices`: every audio course has a device.
+- `audio-course-status`: every audio course is finished (has a date) or
+  in progress (has a start), never neither.
+- `audio-course-reviews`: every finished audio course has a rating and a
+  review.
+- `audio-course-covers`: every audio course has a cover.
+- `audio-course-links`: every audio course has a Great Courses slug or an
+  Audible ASIN, so its card links to where it is sold.
+- `audio-course-stalled`: no audio course has been in progress for more
+  than a year.
+- `audio-course-duplicates`: no account has two audio courses of the same
+  name.
 
 ## Adding one
 
