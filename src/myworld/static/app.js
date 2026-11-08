@@ -42,7 +42,7 @@ async function showBuild() {
 		const info = await api("/app/version");
 		const deployed = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(info.deploy_date || "") ? info.deploy_date : null;
 		for (const year of document.querySelectorAll(".copyright-year")) {
-			year.textContent = `${(deployed || new Date().toISOString()).slice(0, 4)} `;
+			year.textContent = (deployed || new Date().toISOString()).slice(0, 4);
 		}
 		const build = $("build");
 		const commit = (info.git_describe || "").match(/(?:-g)?([0-9a-f]{7,40})(?:-dirty)?$/);
@@ -508,6 +508,7 @@ const SORTS = {
 	organizations: [
 		["name", "Name", (o) => o.name, "asc"],
 		["type", "Type", (o) => o.type?.name, "asc"],
+		["people", "People", (o) => o.people.length, "desc"],
 		["status", "Status", (o) => o.status, "asc"],
 		["location", "Location", (o) => o.location, "asc"],
 	],
@@ -959,7 +960,9 @@ function organizationCard(item) {
 	detail(list, "Status", item.status);
 	detail(list, "What happened", item.what_happened);
 	detail(list, "Address", item.address);
-	linksDetail(list, "People", "people", item.people);
+	// how many people are at it, always shown (0 too), then who they are
+	detail(list, "People", String(item.people.length));
+	linksDetail(list, "Who", "people", item.people);
 	detail(list, "Remark", item.remark);
 	websiteDetail(list, item.website);
 	return card;
