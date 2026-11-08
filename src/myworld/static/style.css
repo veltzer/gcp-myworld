@@ -979,6 +979,65 @@ tr.clickable:focus-visible td {
 	outline: none;
 }
 
+/* ─── how a person is connected to the user ─────────────────────────────── */
+
+.icon-button {
+	display: inline-flex;
+	padding: 0.3rem;
+	border: none;
+	border-radius: 50%;
+	background: transparent;
+	color: var(--accent);
+	cursor: pointer;
+}
+
+.icon-button:hover,
+.icon-button:focus-visible {
+	background: #eff6ff;
+}
+
+.icon-button svg {
+	width: 20px;
+	height: 20px;
+	fill: currentColor;
+}
+
+td.actions {
+	width: 1px;
+	text-align: right;
+}
+
+.connections h3 {
+	margin: 1rem 0 0.4rem;
+	font-size: 0.95rem;
+}
+
+.connections ul {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.connections li {
+	padding: 0.2rem 0;
+}
+
+.connections .when {
+	display: inline-block;
+	min-width: 7rem;
+	color: var(--muted);
+	white-space: nowrap;
+}
+
+.visually-hidden {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
 /* ─── the + button and its dialog (Material style) ──────────────────────── */
 
 .fab {

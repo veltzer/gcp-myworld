@@ -493,7 +493,7 @@ async function libraryPage() {
 	setupAddDialog();
 	renderKinds();
 	const requested = window.location.hash.slice(1);
-	const linked = requested.match(/^(people|organizations|organization-types|person-types)\/(\d+)$/);
+	const linked = requested.match(/^(concerts|museums|people|organizations|organization-types|person-types)\/(\d+)$/);
 	if (linked) {
 		await showRow(linked[1], Number(linked[2]));
 	} else if (requested in state.config.kinds) {
@@ -754,6 +754,49 @@ function organizationCard(item) {
 
 const CARDS = { concerts: concertCard, museums: museumCard, organizations: organizationCard };
 
+// Material "link"
+const LINK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>';
+
+// Everything that ties a person to the user, grouped, each entry a link to its card.
+async function showConnections(person) {
+	const [concerts, museums] = await Promise.all([worldList("concerts"), worldList("museums")]);
+	const has = (list) => list.some((p) => p.id === person.id);
+	const groups = [
+		["Concerts you went to together", "concerts", concerts.filter((c) => has(c.people))],
+		["Concerts they performed at", "concerts", concerts.filter((c) => has(c.performers))],
+		["Museums you visited together", "museums", museums.filter((m) => has(m.people))],
+		["Organizations", "organizations", person.organizations],
+	].filter(([, , items]) => items.length > 0);
+	$("connections-title").textContent = person.name;
+	const body = $("connections-body");
+	body.replaceChildren();
+	if (groups.length === 0) {
+		body.appendChild(el("p", "empty", "No concerts, museums or organizations link you yet."));
+	}
+	for (const [label, view, items] of groups) {
+		body.appendChild(el("h3", null, `${label} (${items.length})`));
+		const ul = el("ul");
+		for (const item of items) {
+			const li = el("li");
+			const when = formatDate(item);
+			if (when) {
+				li.appendChild(el("span", "when", when));
+			}
+			const a = el("a", "person-link", item.name);
+			a.href = `/library#${view}/${item.id}`;
+			a.onclick = (event) => {
+				event.preventDefault();
+				$("connections-dialog").close();
+				showRow(view, item.id).catch((e) => showError(e.message));
+			};
+			li.appendChild(a);
+			ul.appendChild(li);
+		}
+		body.appendChild(ul);
+	}
+	$("connections-dialog").showModal();
+}
+
 function personRow(person) {
 	const tr = el("tr");
 	tr.id = `person-${person.id}`;
@@ -761,7 +804,15 @@ function personRow(person) {
 	appendLinks(kind, "person-types", person.type ? [person.type] : []);
 	const organizations = el("td");
 	appendLinks(organizations, "organizations", person.organizations);
-	tr.append(el("td", "title", person.first_name), el("td", "title", person.surname), kind, organizations, el("td", null, person.description));
+	const links = el("td", "actions");
+	const button = el("button", "icon-button");
+	button.type = "button";
+	button.title = `How you are connected to ${person.name}`;
+	button.setAttribute("aria-label", button.title);
+	button.innerHTML = LINK_ICON;
+	button.onclick = () => showConnections(person).catch((e) => showError(e.message));
+	links.appendChild(button);
+	tr.append(el("td", "title", person.first_name), el("td", "title", person.surname), kind, organizations, el("td", null, person.description), links);
 	editable(tr, person);
 	return tr;
 }
@@ -920,6 +971,7 @@ async function showRow(view, id) {
 
 function setupWorlds() {
 	$("world-search").oninput = renderWorld;
+	$("connections-close").onclick = () => $("connections-dialog").close();
 	$("type-filter").onchange = () => {
 		typeFilters[state.view] = $("type-filter").value;
 		renderWorld();

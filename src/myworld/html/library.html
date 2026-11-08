@@ -39,6 +39,7 @@
 							<th>Type</th>
 							<th>Organizations</th>
 							<th>Description</th>
+							<th><span class="visually-hidden">Connections</span></th>
 						</tr>
 					</thead>
 					<tbody id="people-rows"></tbody>
@@ -278,6 +279,13 @@
 			</form>
 			<datalist id="people-names"></datalist>
 			<datalist id="organization-names"></datalist>
+		</dialog>
+		<dialog id="connections-dialog" class="dialog" aria-labelledby="connections-title">
+			<h2 id="connections-title"></h2>
+			<div id="connections-body" class="connections"></div>
+			<div class="dialog-actions">
+				<button type="button" id="connections-close">Close</button>
+			</div>
 		</dialog>
 		<footer class="footer">
 			<span id="build"></span>
