@@ -701,6 +701,24 @@ button.danger {
 	max-width: 28rem;
 }
 
+.sort {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.15rem;
+}
+
+/* a control that does not apply here stays in its place, greyed out */
+.world-tools select:disabled,
+.icon-button:disabled,
+.layouts button:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.icon-button:disabled:hover {
+	background: transparent;
+}
+
 .cards {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));

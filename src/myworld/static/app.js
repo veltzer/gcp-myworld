@@ -423,11 +423,189 @@ function renderKinds() {
 
 async function loadEntries() {
 	state.entries = await api(`/api/library?kind=${encodeURIComponent(state.kind)}`);
+	renderEntries();
+}
+
+// The library table: searched and sorted with the same toolbar as every other tab.
+function renderEntries() {
 	const { plural } = state.config.kinds[state.kind];
-	$("rows").replaceChildren(...state.entries.map(renderRow));
-	$("entries").hidden = state.entries.length === 0;
+	const shown = sortItems(state.entries.filter(searchMatches));
+	$("rows").replaceChildren(...shown.map(renderRow));
+	$("entries").hidden = shown.length === 0;
 	$("empty").hidden = state.entries.length !== 0;
 	$("empty").textContent = `No ${plural.toLowerCase()} yet. Add one with the + button.`;
+	showCount(shown.length, state.entries.length, plural.toLowerCase());
+}
+
+function showCount(shown, total, what) {
+	$("world-count").textContent = total === 0 ? "" : shown === total ? `${total} ${what}` : `${shown} of ${total} ${what}`;
+}
+
+function searchMatches(item) {
+	const words = $("world-search").value.toLowerCase().split(/\s+/).filter(Boolean);
+	const text = haystack(item);
+	return words.every((w) => text.includes(w));
+}
+
+// ─── sorting ────────────────────────────────────────────────────────────────
+
+// view -> the fields it can be sorted by: [key, label, value of an item, first direction].
+// The first field is the default. A view with none still shows the (disabled) control.
+const SORTS = {
+	library: [
+		["updated", "Recently changed", (e) => e.updated_at, "desc"],
+		["title", "Title", (e) => e.title, "asc"],
+		["creator", "Creator", (e) => e.creator, "asc"],
+		["year", "Year", (e) => e.year, "desc"],
+		["status", "Status", (e) => state.config.statuses[e.status] || e.status, "asc"],
+		["rating", "Rating", (e) => e.rating, "desc"],
+		["started", "Started", (e) => e.started_on, "desc"],
+		["finished", "Finished", (e) => e.finished_on, "desc"],
+	],
+	concerts: [
+		["date", "Date", (c) => c.date_sort, "desc"],
+		["name", "Name", (c) => c.name, "asc"],
+		["venue", "Venue", (c) => c.venue, "asc"],
+		["city", "City", (c) => c.city, "asc"],
+		["genre", "Genre", (c) => c.genre, "asc"],
+		["tickets", "Tickets", (c) => c.tickets, "desc"],
+	],
+	museums: [
+		["date", "Date", (m) => m.date_sort, "desc"],
+		["name", "Name", (m) => m.name, "asc"],
+		["city", "City", (m) => m.city, "asc"],
+		["rating", "Rating", (m) => m.rating, "desc"],
+		["tickets", "Tickets", (m) => m.tickets, "desc"],
+	],
+	people: [
+		["first_name", "First name", (p) => p.first_name, "asc"],
+		["surname", "Surname", (p) => p.surname, "asc"],
+		["type", "Type", (p) => p.type?.name, "asc"],
+		["organization", "Organization", (p) => p.organizations[0]?.name, "asc"],
+	],
+	organizations: [
+		["name", "Name", (o) => o.name, "asc"],
+		["type", "Type", (o) => o.type?.name, "asc"],
+		["status", "Status", (o) => o.status, "asc"],
+		["location", "Location", (o) => o.location, "asc"],
+	],
+	"organization-types": [
+		["name", "Name", (t) => t.name, "asc"],
+		["count", "Organizations", (t) => t.count, "desc"],
+	],
+	"person-types": [
+		["name", "Name", (t) => t.name, "asc"],
+		["count", "People", (t) => t.count, "desc"],
+	],
+};
+const SORT_KEY = "myworld.sort";
+
+function sortFields() {
+	return SORTS[state.view in WORLDS ? state.view : "library"] || [];
+}
+
+// the chosen field and direction of the view on screen, remembered in this browser
+function savedSorts() {
+	try {
+		return JSON.parse(window.localStorage.getItem(SORT_KEY) || "{}");
+	} catch (e) {
+		return {};
+	}
+}
+
+function currentSort() {
+	const fields = sortFields();
+	const saved = savedSorts()[state.view];
+	const field = fields.find(([key]) => key === saved?.key) || fields[0];
+	return field ? { field, direction: saved?.key === field[0] ? saved.direction : field[3] } : null;
+}
+
+function saveSort(key, direction) {
+	const sorts = savedSorts();
+	sorts[state.view] = { key, direction };
+	try {
+		window.localStorage.setItem(SORT_KEY, JSON.stringify(sorts));
+	} catch (e) {
+		// private window or blocked storage: the choice lasts until reload
+	}
+}
+
+const COLLATOR = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+
+// Sorted by the current field; an item without a value goes last either way.
+function sortItems(items) {
+	const sort = currentSort();
+	if (!sort) {
+		return items;
+	}
+	const get = sort.field[2];
+	const sign = sort.direction === "desc" ? -1 : 1;
+	const empty = (v) => v === null || v === undefined || v === "";
+	return [...items].sort((a, b) => {
+		const x = get(a);
+		const y = get(b);
+		if (empty(x) || empty(y)) {
+			return empty(x) - empty(y);
+		}
+		const order = typeof x === "number" && typeof y === "number" ? x - y : COLLATOR.compare(String(x), String(y));
+		return sign * order;
+	});
+}
+
+// Material arrow_upward / arrow_downward
+const ARROWS = {
+	asc: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z"/></svg>',
+	desc: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z"/></svg>',
+};
+
+// The toolbar for the view on screen: every control is always there, disabled where it does not apply.
+function updateTools() {
+	const select = $("sort-field");
+	const fields = sortFields();
+	const sort = currentSort();
+	select.replaceChildren(...(fields.length ? fields : [["", "Sort"]]).map(([key, label]) => {
+		const option = document.createElement("option");
+		option.value = key;
+		option.textContent = label;
+		return option;
+	}));
+	select.disabled = fields.length === 0;
+	select.value = sort ? sort.field[0] : "";
+	const direction = sort ? sort.direction : "asc";
+	const button = $("sort-direction");
+	button.disabled = !sort;
+	button.innerHTML = ARROWS[direction];
+	button.title = direction === "asc" ? "Ascending: click for descending" : "Descending: click for ascending";
+	button.setAttribute("aria-label", button.title);
+	const cards = state.view in CARDS;
+	for (const layout of $("layouts").querySelectorAll("button")) {
+		layout.disabled = !cards;
+	}
+	$("layouts").setAttribute("aria-disabled", String(!cards));
+}
+
+// After a change to the search, the filter or the sort: redraw what is on screen.
+function rerender() {
+	if (state.view in WORLDS) {
+		renderWorld();
+	} else {
+		renderEntries();
+	}
+}
+
+function setupSort() {
+	$("sort-field").onchange = () => {
+		const field = sortFields().find(([key]) => key === $("sort-field").value);
+		saveSort(field[0], field[3]);
+		updateTools();
+		rerender();
+	};
+	$("sort-direction").onclick = () => {
+		const sort = currentSort();
+		saveSort(sort.field[0], sort.direction === "asc" ? "desc" : "asc");
+		updateTools();
+		rerender();
+	};
 }
 
 async function selectKind(kind) {
@@ -436,6 +614,9 @@ async function selectKind(kind) {
 	window.location.hash = kind;
 	$("library-view").hidden = false;
 	$("world-view").hidden = true;
+	$("world-search").value = "";
+	await fillTypeFilter(kind);
+	updateTools();
 	const { plural, creator } = state.config.kinds[kind];
 	document.title = `${plural} - My World`;
 	$("creator-label").textContent = creator;
@@ -841,17 +1022,19 @@ const typeFilters = {};
 async function fillTypeFilter(view) {
 	const select = $("type-filter");
 	const typesView = TYPED[view];
-	select.hidden = !typesView;
-	if (!typesView) {
-		return;
-	}
-	const types = await worldList(typesView);
 	const option = (value, label) => {
 		const node = document.createElement("option");
 		node.value = value;
 		node.textContent = label;
 		return node;
 	};
+	// a view without types keeps the control, disabled
+	select.disabled = !typesView;
+	if (!typesView) {
+		select.replaceChildren(option("", "All types"));
+		return;
+	}
+	const types = await worldList(typesView);
 	select.replaceChildren(
 		option("", "All types"),
 		...types.map((t) => option(String(t.id), `${t.name} (${t.count})`)),
@@ -887,17 +1070,9 @@ function haystack(item) {
 function renderWorld() {
 	const view = state.view;
 	const items = worldCache[view] || [];
-	const words = $("world-search").value.toLowerCase().split(/\s+/).filter(Boolean);
-	const shown = items.filter((item) => {
-		if (!typeMatches(item)) {
-			return false;
-		}
-		const text = haystack(item);
-		return words.every((w) => text.includes(w));
-	});
+	const shown = sortItems(items.filter((item) => typeMatches(item) && searchMatches(item)));
 	const table = TABLES[view];
 	$("cards").hidden = Boolean(table);
-	$("layouts").hidden = Boolean(table);
 	$("cards").replaceChildren(...(table ? [] : shown.map(CARDS[view])));
 	for (const [name, [tableId, rowsId, row]] of Object.entries(TABLES)) {
 		$(tableId).hidden = name !== view || shown.length === 0;
@@ -907,7 +1082,7 @@ function renderWorld() {
 	if (items.length === 0) {
 		$("world-count").textContent = `Nothing here yet: no ${what} for this account.`;
 	} else {
-		$("world-count").textContent = shown.length === items.length ? `${items.length} ${what}` : `${shown.length} of ${items.length} ${what}`;
+		showCount(shown.length, items.length, what);
 	}
 }
 
@@ -926,6 +1101,7 @@ async function selectWorld(view) {
 	$("library-view").hidden = true;
 	$("world-view").hidden = false;
 	markActive();
+	updateTools();
 	showError("");
 	$("world-search").value = "";
 	if (!worldCache[view]) {
@@ -970,11 +1146,12 @@ async function showRow(view, id) {
 }
 
 function setupWorlds() {
-	$("world-search").oninput = renderWorld;
+	$("world-search").oninput = rerender;
+	setupSort();
 	$("connections-close").onclick = () => $("connections-dialog").close();
 	$("type-filter").onchange = () => {
 		typeFilters[state.view] = $("type-filter").value;
-		renderWorld();
+		rerender();
 	};
 	setupLayouts();
 }

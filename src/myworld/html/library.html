@@ -23,13 +23,18 @@
 		</header>
 		<main class="content">
 			<p id="error" class="warning" hidden></p>
+			<!-- one toolbar for every tab: a control that does not apply is disabled, never hidden -->
+			<div class="world-tools">
+				<input id="world-search" type="search" placeholder="Search" aria-label="Search">
+				<select id="type-filter" aria-label="Type" disabled></select>
+				<span class="sort">
+					<select id="sort-field" aria-label="Sort by"></select>
+					<button id="sort-direction" type="button" class="icon-button"></button>
+				</span>
+				<span id="world-count" class="empty"></span>
+				<div id="layouts" class="layouts" role="group" aria-label="Layout"></div>
+			</div>
 			<section id="world-view" hidden>
-				<div class="world-tools">
-					<input id="world-search" type="search" placeholder="Search" aria-label="Search">
-					<select id="type-filter" aria-label="Type" hidden></select>
-					<span id="world-count" class="empty"></span>
-					<div id="layouts" class="layouts" role="group" aria-label="Layout"></div>
-				</div>
 				<div id="cards" class="cards"></div>
 				<table id="people" class="entries" hidden>
 					<thead>
