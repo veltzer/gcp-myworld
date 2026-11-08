@@ -20,6 +20,7 @@ body {
 
 .topbar {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: 1.5rem;
 	padding: 0.75rem 1.5rem;
@@ -692,4 +693,96 @@ button.danger {
 
 .id-link:hover {
 	text-decoration: underline;
+}
+
+/* ─── concerts, museums, people ─────────────────────────────────────────── */
+
+.worlds {
+	border-left: 1px solid var(--line);
+	padding-left: 1rem;
+}
+
+.world-tools {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1rem;
+	align-items: center;
+	margin-bottom: 1rem;
+}
+
+.world-tools input {
+	flex: 1;
+	max-width: 28rem;
+}
+
+.cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+	gap: 1rem;
+}
+
+.cards[hidden] {
+	display: none;
+}
+
+.world-card {
+	display: flex;
+	flex-direction: column;
+	background: #fff;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	overflow: hidden;
+}
+
+.world-image {
+	width: 100%;
+	aspect-ratio: 16 / 9;
+	object-fit: cover;
+	display: block;
+	background: var(--line);
+}
+
+.world-body {
+	padding: 0.75rem 1rem 1rem;
+}
+
+.world-title {
+	font-size: 1.05rem;
+	margin: 0;
+}
+
+.world-subtitle {
+	margin: 0.15rem 0 0;
+	color: var(--muted);
+}
+
+.world-details {
+	list-style: none;
+	margin: 0.6rem 0 0;
+	padding: 0;
+	font-size: 0.9rem;
+}
+
+.world-details li {
+	padding: 0.15rem 0;
+}
+
+.world-details .label {
+	color: var(--muted);
+	margin-right: 0.4rem;
+}
+
+.credit {
+	margin: 0.6rem 0 0;
+	font-size: 0.75rem;
+	color: var(--muted);
+}
+
+.credit a {
+	color: inherit;
+}
+
+.outings {
+	font-size: 0.85rem;
+	vertical-align: top;
 }

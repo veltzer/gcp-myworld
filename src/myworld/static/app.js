@@ -160,7 +160,8 @@ async function indexPage() {
 
 // ─── library page ───────────────────────────────────────────────────────────
 
-const state = { config: null, kind: "book", entries: [] };
+// view is a kind of work ("book", ...) or one of WORLDS ("concerts", ...)
+const state = { config: null, kind: "book", view: "concerts", entries: [] };
 
 function fillStatuses(select, selected) {
 	select.replaceChildren();
@@ -430,15 +431,14 @@ function renderKinds() {
 		const a = document.createElement("a");
 		a.href = `/library#${kind}`;
 		a.textContent = plural;
-		if (kind === state.kind) {
-			a.className = "active";
-		}
+		a.dataset.kind = kind;
 		a.onclick = (event) => {
 			event.preventDefault();
 			selectKind(kind);
 		};
 		nav.appendChild(a);
 	}
+	markActive();
 }
 
 async function loadEntries() {
@@ -452,7 +452,10 @@ async function loadEntries() {
 
 async function selectKind(kind) {
 	state.kind = kind;
+	state.view = kind;
 	window.location.hash = kind;
+	$("library-view").hidden = false;
+	$("world-view").hidden = true;
 	const { name, plural, creator } = state.config.kinds[kind];
 	document.title = `${plural} - My World`;
 	$("heading").textContent = `My ${plural}`;
@@ -518,8 +521,245 @@ async function libraryPage() {
 	};
 
 	setupMovieSearch();
+	setupWorlds();
+	renderKinds();
 	const requested = window.location.hash.slice(1);
-	await selectKind(requested in state.config.kinds ? requested : "book");
+	if (requested in state.config.kinds) {
+		await selectKind(requested);
+	} else {
+		await selectWorld(requested in WORLDS ? requested : "concerts");
+	}
+}
+
+// ─── concerts, museums, people ──────────────────────────────────────────────
+
+// view -> [heading, API path]; the rows are the signed-in user's own, read-only
+const WORLDS = {
+	concerts: ["My Concerts", "/api/concerts"],
+	museums: ["My Museums", "/api/museums"],
+	people: ["People", "/api/people"],
+};
+
+const worldCache = {};
+
+function el(tag, className, text) {
+	const node = document.createElement(tag);
+	if (className) {
+		node.className = className;
+	}
+	if (text !== undefined && text !== null) {
+		node.textContent = text;
+	}
+	return node;
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// A date as precisely as it is known: a year, a month, a day, or a moment shown on
+// the calendar of the place it happened.
+function formatDate(item) {
+	if (!item.date) {
+		return "";
+	}
+	const parts = item.date.split(/[-T]/);
+	if (item.date_precision === "year") {
+		return parts[0];
+	}
+	if (item.date_precision === "month") {
+		return `${MONTHS[Number(parts[1]) - 1]} ${parts[0]}`;
+	}
+	if (item.date_precision === "day") {
+		return `${Number(parts[2])} ${MONTHS[Number(parts[1]) - 1]} ${parts[0]}`;
+	}
+	try {
+		return new Date(item.date).toLocaleDateString("en-GB", {
+			timeZone: item.date_timezone || undefined,
+			day: "numeric",
+			month: "short",
+			year: "numeric",
+		});
+	} catch (e) {
+		return item.date.slice(0, 10);
+	}
+}
+
+function detail(list, label, value) {
+	if (value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0)) {
+		return;
+	}
+	const li = el("li");
+	li.append(el("span", "label", label), Array.isArray(value) ? value.join(", ") : String(value));
+	list.appendChild(li);
+}
+
+function cardShell(item, subtitle) {
+	const card = el("article", "world-card");
+	if (item.image) {
+		const img = el("img", "world-image");
+		img.src = item.image;
+		img.alt = "";
+		img.loading = "lazy";
+		card.appendChild(img);
+	} else {
+		card.appendChild(el("div", "world-image no-image"));
+	}
+	const body = el("div", "world-body");
+	body.appendChild(el("h2", "world-title", item.name));
+	if (subtitle) {
+		body.appendChild(el("p", "world-subtitle", subtitle));
+	}
+	const list = el("ul", "world-details");
+	body.appendChild(list);
+	card.appendChild(body);
+	return { card, body, list };
+}
+
+function concertCard(item) {
+	const { body, card, list } = cardShell(item, item.event);
+	detail(list, "Date", formatDate(item));
+	detail(list, "Where", [item.venue, item.city, item.country].filter(Boolean).join(", "));
+	const performers = item.performers.length === 1 && item.performers[0] === item.name ? [] : item.performers;
+	detail(list, "Performers", performers);
+	detail(list, "Genre", item.genre);
+	detail(list, "With", item.with);
+	detail(list, "Tickets", item.tickets);
+	if (item.broadcast) {
+		detail(list, "Seen", "on TV");
+	}
+	detail(list, "Review", item.review);
+	detail(list, "Remark", item.remark);
+	if (item.image && item.image_source) {
+		const credit = el("p", "credit");
+		const a = el("a", null, "Photo");
+		a.href = item.image_source;
+		a.target = "_blank";
+		a.rel = "noopener";
+		const who = [item.image_author, item.image_license].filter(Boolean).join(", ");
+		credit.append(a, who ? `: ${who}` : "");
+		body.appendChild(credit);
+	}
+	return card;
+}
+
+function museumCard(item) {
+	const { card, list } = cardShell(item, item.city);
+	detail(list, "Date", formatDate(item));
+	if (item.rating !== null) {
+		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
+	}
+	detail(list, "With", item.with);
+	detail(list, "Tickets", item.tickets);
+	detail(list, "Review", item.review);
+	detail(list, "Remark", item.remark);
+	if (item.url) {
+		const li = el("li");
+		const a = el("a", null, "Website");
+		a.href = item.url;
+		a.target = "_blank";
+		a.rel = "noopener";
+		li.appendChild(a);
+		list.appendChild(li);
+	}
+	return card;
+}
+
+function outingList(outings) {
+	const td = el("td", "outings");
+	for (const outing of outings) {
+		const date = formatDate(outing);
+		td.appendChild(el("div", null, date ? `${outing.name} (${date})` : outing.name));
+	}
+	return td;
+}
+
+function personRow(person) {
+	const tr = el("tr");
+	tr.append(
+		el("td", "title", person.name),
+		el("td", null, person.company),
+		el("td", null, person.description),
+		outingList(person.concerts),
+		outingList(person.museums),
+	);
+	return tr;
+}
+
+// Everything a search can match on, as one lowercase string.
+function haystack(item) {
+	const values = [];
+	for (const value of Object.values(item)) {
+		if (typeof value === "string") {
+			values.push(value);
+		} else if (Array.isArray(value)) {
+			values.push(...value.map((v) => (typeof v === "string" ? v : v.name)));
+		}
+	}
+	values.push(formatDate(item));
+	return values.join(" ").toLowerCase();
+}
+
+function renderWorld() {
+	const view = state.view;
+	const items = worldCache[view] || [];
+	const words = $("world-search").value.toLowerCase().split(/\s+/).filter(Boolean);
+	const shown = items.filter((item) => {
+		const text = haystack(item);
+		return words.every((w) => text.includes(w));
+	});
+	const people = view === "people";
+	$("cards").hidden = people;
+	$("people").hidden = !people || shown.length === 0;
+	if (people) {
+		$("people-rows").replaceChildren(...shown.map(personRow));
+		$("cards").replaceChildren();
+	} else {
+		$("cards").replaceChildren(...shown.map(view === "concerts" ? concertCard : museumCard));
+		$("people-rows").replaceChildren();
+	}
+	if (items.length === 0) {
+		$("world-count").textContent = `Nothing here yet: no ${view} have been imported for this account.`;
+	} else {
+		$("world-count").textContent = shown.length === items.length ? `${items.length} ${view}` : `${shown.length} of ${items.length} ${view}`;
+	}
+}
+
+function markActive() {
+	for (const a of document.querySelectorAll(".kinds a")) {
+		const active = a.dataset.world ? a.dataset.world === state.view : a.dataset.kind === state.view;
+		a.classList.toggle("active", active);
+	}
+}
+
+async function selectWorld(view) {
+	state.view = view;
+	window.location.hash = view;
+	const [heading, path] = WORLDS[view];
+	document.title = `${heading.replace(/^My /, "")} - My World`;
+	$("heading").textContent = heading;
+	$("library-view").hidden = true;
+	$("world-view").hidden = false;
+	markActive();
+	showError("");
+	$("world-search").value = "";
+	if (!worldCache[view]) {
+		$("world-count").textContent = "Loading...";
+		$("cards").replaceChildren();
+		$("people").hidden = true;
+		worldCache[view] = await api(path);
+	}
+	if (state.view === view) {
+		renderWorld();
+	}
+}
+
+function setupWorlds() {
+	for (const a of document.querySelectorAll("#worlds a")) {
+		a.onclick = (event) => {
+			event.preventDefault();
+			selectWorld(a.dataset.world).catch((e) => showError(e.message));
+		};
+	}
+	$("world-search").oninput = renderWorld;
 }
 
 // ─── entry point ────────────────────────────────────────────────────────────

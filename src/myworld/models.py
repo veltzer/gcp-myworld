@@ -4,17 +4,28 @@ Database schema.
 Works (books, films, ...) are shared rows; what a user thinks about a work
 (status, rating, dates, notes) lives in the per-user UserWork join row.
 Adding a new kind of work is a matter of adding it to KINDS.
+
+Concerts, museum visits and the people they were shared with are a second,
+separate part: each row belongs to one user (owner_id) and is never shared.
+Their photos live in the images table, so the database alone holds all of it.
+They are loaded by scripts/import_world.py.
 """
 
 import datetime
 import os
 
 from sqlalchemy import (
+    JSON,
+    Boolean,
     CheckConstraint,
+    Column,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
+    Table,
     Text,
     UniqueConstraint,
     create_engine,
@@ -110,6 +121,117 @@ class UserWork(Base):
 
     user: Mapped[User] = relationship(back_populates="works")
     work: Mapped[Work] = relationship(back_populates="users", lazy="joined")
+
+
+# ─── concerts, museums, people ───────────────────────────────────────────────
+
+concert_people = Table(
+    "concert_people",
+    Base.metadata,
+    Column("concert_id", ForeignKey("concerts.id", ondelete="CASCADE"), primary_key=True),
+    Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
+)
+
+museum_people = Table(
+    "museum_people",
+    Base.metadata,
+    Column("museum_id", ForeignKey("museums.id", ondelete="CASCADE"), primary_key=True),
+    Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class Image(Base):
+    """ A photo, stored in the database itself; several rows may point at one. """
+    __tablename__ = "images"
+    __table_args__ = (UniqueConstraint("owner_id", "filename", name="uq_image_filename"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    filename: Mapped[str] = mapped_column(String(200), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+
+
+class Person(Base):
+    __tablename__ = "people"
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_person_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    company: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    concerts: Mapped[list[Concert]] = relationship(
+        secondary=concert_people, back_populates="people",
+    )
+    museums: Mapped[list[Museum]] = relationship(
+        secondary=museum_people, back_populates="people",
+    )
+
+
+class _Dated:
+    """
+    When it happened, as precisely as it is known: exactly one of the date_*
+    columns is set. date_utcz is a full timestamp in UTC, date_ymd a day,
+    date_my a month ("MM-YYYY"), date_y a year. date_timezone is where it was.
+    """
+    date_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    date_ymd: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    date_my: Mapped[str] = mapped_column(String(7), nullable=False, default="")
+    date_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    date_timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+
+
+class Concert(_Dated, Base):
+    __tablename__ = "concerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    # free text names of who was on stage
+    performers: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    event: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    genre: Mapped[str] = mapped_column(String(50), nullable=False, default="")
+    venue: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    city: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    country: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    tickets: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # seen on TV rather than in the hall
+    broadcast: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    review: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
+    image: Mapped[Image | None] = relationship()
+    # the credit the image license asks for
+    image_source: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    image_license: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    image_author: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+
+    people: Mapped[list[Person]] = relationship(secondary=concert_people, back_populates="concerts")
+
+
+class Museum(_Dated, Base):
+    """ One visit to a museum; a museum visited twice is two rows. """
+    __tablename__ = "museums"
+    __table_args__ = (
+        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_museum_rating_range"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    city: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    review: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    url: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    tickets: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
+    image: Mapped[Image | None] = relationship()
+
+    people: Mapped[list[Person]] = relationship(secondary=museum_people, back_populates="museums")
 
 
 def database_url() -> str:

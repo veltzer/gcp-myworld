@@ -18,7 +18,9 @@ dependencies = [
 dev = [
     "pyrefly",
     "pytest",
+    "pyyaml",
     "ruff",
+    "types-PyYAML",
     "types-WebTest",
     "types-requests",
     "webtest",
@@ -44,5 +46,6 @@ ignore-missing-imports = [
 ]
 
 [tool.pytest.ini_options]
-# Tests import from here: the myworld package lives in src/ and is not installed.
-pythonpath = ["src"]
+# Tests import from here: the myworld package lives in src/ and is not installed;
+# scripts/ holds import_world.py, which the tests exercise too.
+pythonpath = ["src", "scripts"]

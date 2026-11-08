@@ -157,6 +157,41 @@ Without the key the search box is hidden and the endpoints answer 503.
 - `GET /api/movies/search?q=<title>`: candidate films, most relevant first.
 - `GET /api/movies/<tmdb_id>`: one film normalized for the form.
 
+## Concerts, museums and people
+
+Besides the library, the app shows the concerts, museum visits and people
+of the signed-in user: the Concerts, Museums and People tabs, with
+Concerts the page a sign-in lands on. They are read-only in the app and
+private to their owner: every row carries an `owner_id`, every query
+filters on it, and another account sees nothing, images included.
+
+The data came from `veltzer.github.io` (`data/yaml/concerts.yaml`,
+`museums.yaml`, `people.yaml` and the photos in `static/images/`) and is
+loaded with `scripts/import_world.py`. The photos are stored in the
+database too (the `images` table), so the database, and its Cloud SQL
+backups, hold all of it. The import replaces everything the user had in
+these tables in one transaction, so it is safe to run again, and stops on
+any YAML field it does not know rather than dropping it. The account must
+exist, so sign in once first:
+
+```bash
+# local sqlite (or whatever DATABASE_URL says)
+PYTHONPATH=src scripts/import_world.py --email you@example.com
+# Cloud SQL from .gcp.conf, through the Cloud SQL Auth Proxy
+scripts/import_world_cloud.sh --email you@example.com
+```
+
+`--source` points at the directory holding `data/yaml/` and
+`static/images/` (default `../veltzer.github.io`); `--subject` picks the
+account when one email has several (Google and GitHub, say). The new
+tables are created by `create_all`, so no `scripts/migrate.sh` step is
+needed.
+
+- `GET /api/concerts`, `GET /api/museums`: newest first; the date comes as
+  precisely as it is known (`date_precision`: time, day, month or year).
+- `GET /api/people`: with the concerts and museums shared with each person.
+- `GET /api/images/<id>`: a photo, to its owner only.
+
 ## Pages and API
 
 The HTML under `src/myworld/html/` is static; `static/app.js` fetches
@@ -184,6 +219,9 @@ script would use as well:
 - `user_works`: what a user thinks about a work: status, rating, dates,
   notes. All per-user queries go through this table, so users never see
   each other's entries even though the work rows are shared.
+- `concerts`, `museums` (one row per visit), `people`, linked by
+  `concert_people` and `museum_people`, and `images`: owned by one user
+  each, never shared (see "Concerts, museums and people").
 
 Tables are created on startup with `create_all`; there is no migration
 tool yet. Adding columns to an existing deployment needs a manual

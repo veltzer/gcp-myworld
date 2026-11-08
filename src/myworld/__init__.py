@@ -1,7 +1,8 @@
 """
-My World: a per-user library of books, films and other works, behind a
-Google sign-in. Runs on Cloud Run with Cloud SQL (PostgreSQL) in production
-and on sqlite locally.
+My World: a per-user library of books, films and other works, and the
+concerts, museum visits and people of its owner, behind a Google sign-in.
+Runs on Cloud Run with Cloud SQL (PostgreSQL) in production and on sqlite
+locally.
 """
 
 import json
@@ -16,7 +17,7 @@ from flask.json.provider import DefaultJSONProvider
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from myworld import auth, views
+from myworld import auth, views, world
 from myworld.models import make_engine
 
 # build_info.json is written next to src/, at the repo (and image) root.
@@ -82,4 +83,5 @@ def create_app(engine: Engine | None = None) -> flask.Flask:
 
     app.register_blueprint(auth.bp)
     app.register_blueprint(views.bp)
+    app.register_blueprint(world.bp)
     return app
