@@ -524,7 +524,7 @@ const SORTS = {
 const SORT_KEY = "myworld.sort";
 
 // views that are a page of their own, outside the tabs: nothing to search, sort or add
-const PAGES = new Set(["stats", "users"]);
+const PAGES = new Set(["stats", "users", "checks"]);
 
 function sortFields() {
 	if (PAGES.has(state.view)) {
@@ -606,7 +606,7 @@ function updateTools() {
 	button.innerHTML = ARROWS[direction];
 	button.title = direction === "asc" ? "Ascending: click for descending" : "Descending: click for ascending";
 	button.setAttribute("aria-label", button.title);
-	// the stats and users pages have nothing to search or add: both stay, disabled
+	// the stats, users and checks pages have nothing to search or add: both stay, disabled
 	$("world-search").disabled = PAGES.has(state.view);
 	$("fab").disabled = PAGES.has(state.view);
 	const cards = state.view in CARDS;
@@ -715,6 +715,8 @@ async function libraryPage() {
 		await selectStats();
 	} else if (requested === "users" && isAdmin()) {
 		await selectUsers();
+	} else if (requested === "checks" && isAdmin()) {
+		await selectChecks();
 	} else if (requested in state.config.kinds) {
 		await selectKind(requested);
 	} else {
@@ -1180,11 +1182,12 @@ function markActive() {
 	}
 	$("stats-link").classList.toggle("active", state.view === "stats");
 	$("users-link").classList.toggle("active", state.view === "users");
+	$("checks-link").classList.toggle("active", state.view === "checks");
 }
 
-// One of the page bodies: the library table, the cards and tables, the stats, the users.
+// One of the page bodies: the library table, the cards and tables, the stats, the users, the checks.
 function showSection(id) {
-	for (const section of ["library-view", "world-view", "stats-view", "users-view"]) {
+	for (const section of ["library-view", "world-view", "stats-view", "users-view", "checks-view"]) {
 		$(section).hidden = section !== id;
 	}
 }
@@ -1274,6 +1277,78 @@ function renderUsers(users) {
 		tr.lastChild.appendChild(role);
 		return tr;
 	}));
+}
+
+// ─── checks (admins only) ───────────────────────────────────────────────────
+
+async function selectChecks() {
+	state.view = "checks";
+	window.location.hash = "checks";
+	document.title = "Checks - My World";
+	showSection("checks-view");
+	markActive();
+	renderKinds();
+	showError("");
+	$("world-search").value = "";
+	await fillTypeFilter("checks");
+	updateTools();
+	const checks = await api("/api/checks");
+	if (state.view === "checks") {
+		$("world-count").textContent = `${checks.length} check${checks.length === 1 ? "" : "s"}`;
+		$("checks-list").replaceChildren(...checks.map(checkCard));
+	}
+}
+
+// One check: what it looks at, a button to run it, and the last result under it.
+function checkCard(check) {
+	const card = el("div", "check");
+	card.dataset.check = check.name;
+	const head = el("div", "check-head");
+	const run = el("button", null, "Run");
+	run.type = "button";
+	run.onclick = () => runCheck(card).catch((e) => showError(e.message));
+	head.append(el("h3", "check-title", check.title), run);
+	card.append(head, el("p", "check-description", check.description), el("div", "check-result"));
+	return card;
+}
+
+async function runCheck(card) {
+	const button = card.querySelector("button");
+	const out = card.querySelector(".check-result");
+	button.disabled = true;
+	out.className = "check-result";
+	out.textContent = "Running\u2026";
+	try {
+		const result = await api(`/api/checks/${card.dataset.check}`);
+		out.classList.add(result.ok ? "pass" : "fail");
+		if (result.ok) {
+			out.textContent = `All ${result.checked} ${result.noun} pass.`;
+		} else {
+			const list = el("ul", "check-problems");
+			for (const problem of result.problems) {
+				const item = el("li");
+				item.append(el("span", "check-subject", problem.subject), document.createTextNode(`: ${problem.message}`));
+				list.appendChild(item);
+			}
+			out.replaceChildren(el("p", null, `${result.problems.length} problem${result.problems.length === 1 ? "" : "s"} in ${result.checked} ${result.noun}:`), list);
+		}
+	} catch (e) {
+		out.classList.add("fail");
+		out.textContent = e.message;
+	} finally {
+		button.disabled = false;
+	}
+}
+
+async function runAllChecks() {
+	$("checks-run-all").disabled = true;
+	try {
+		for (const card of $("checks-list").querySelectorAll(".check")) {
+			await runCheck(card);
+		}
+	} finally {
+		$("checks-run-all").disabled = false;
+	}
 }
 
 // A number with what it counts, a link to its tab when there is one.
@@ -1423,18 +1498,25 @@ function setupWorlds() {
 		event.preventDefault();
 		selectStats().catch((e) => showError(e.message));
 	};
-	const users = $("users-link");
-	if (!isAdmin()) {
-		users.setAttribute("aria-disabled", "true");
-		users.tabIndex = -1;
-		users.title = "Only an admin can see the accounts";
-	}
-	users.onclick = (event) => {
-		event.preventDefault();
-		if (isAdmin()) {
-			selectUsers().catch((e) => showError(e.message));
+	// the admin pages: for everyone else the links stay, disabled
+	for (const [id, select, title] of [
+		["users-link", selectUsers, "Only an admin can see the accounts"],
+		["checks-link", selectChecks, "Only an admin can run the checks"],
+	]) {
+		const link = $(id);
+		if (!isAdmin()) {
+			link.setAttribute("aria-disabled", "true");
+			link.tabIndex = -1;
+			link.title = title;
 		}
-	};
+		link.onclick = (event) => {
+			event.preventDefault();
+			if (isAdmin()) {
+				select().catch((e) => showError(e.message));
+			}
+		};
+	}
+	$("checks-run-all").onclick = () => runAllChecks().catch((e) => showError(e.message));
 	$("world-search").oninput = rerender;
 	setupSort();
 	$("connections-close").onclick = () => $("connections-dialog").close();

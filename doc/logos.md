@@ -25,6 +25,9 @@ shape the original artwork has.
   the files should not need it.
 - **Valid XML**, clean under `xmllint --noout`.
 
+The `logos` check (`checks.md`) tests every SVG in the database against
+all of this but the margin and centering, which need a renderer.
+
 ## Where a logo comes from
 
 In order of preference:

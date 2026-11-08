@@ -114,7 +114,8 @@ items:
 """
 
 
-LOGO = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>'
+# by the logo convention (doc/logos.md), so the checks pass on imported data
+LOGO = b'<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="-1 -1 12 12"><rect width="10" height="10"/></svg>'
 
 
 def write_source(root: Path, concerts: str = CONCERTS) -> Path:

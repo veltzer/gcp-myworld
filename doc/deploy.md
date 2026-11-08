@@ -253,6 +253,9 @@ a person is written with `type_ids`, a list.
   was made. `PUT /api/users/<id>` with `{"role": "user" | "admin"}`
   changes one, refusing to demote the last admin (409). See
   `accounts.md`.
+- `GET /api/checks` (admins only): the database checks, and
+  `GET /api/checks/<name>` runs one over every account's rows; see
+  `checks.md`.
 - `GET /api/stats`: how many of everything the user has (library entries
   per kind and status, concerts, performers, museum visits and museums,
   people, organizations, both kinds of types, images), people and

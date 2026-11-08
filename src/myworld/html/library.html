@@ -25,6 +25,10 @@
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm0 1.5c-3.3 0-6 1.8-6 4v2h12v-2c0-2.2-2.7-4-6-4zm7.5-1.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm.5 1.5c-.6 0-1.2.1-1.7.2 1.1.9 1.7 2.1 1.7 3.3v2h5v-2c0-1.9-2.2-3.5-5-3.5z"/></svg>
 				Users
 			</a>
+			<a id="checks-link" class="stats-link" href="/library#checks" title="Checks over the whole database">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 16.2 5.3 12l-1.4 1.4 5.6 5.6L21.1 7.4 19.7 6 9.5 16.2z"/></svg>
+				Checks
+			</a>
 			<div class="whoami">
 				<img id="avatar" class="avatar" src="/static/favicon.svg" alt="">
 				<span id="who"></span>
@@ -48,6 +52,14 @@
 				<div id="layouts" class="layouts" role="group" aria-label="Layout"></div>
 			</div>
 			<section id="stats-view" class="stats" hidden></section>
+			<section id="checks-view" hidden>
+				<p class="checks-intro">
+					Checks over the whole database, every account's rows: rules the data should follow that the app
+					does not enforce when it is written. <code>scripts/check.py</code> runs the same ones.
+					<button id="checks-run-all" type="button">Run all</button>
+				</p>
+				<div id="checks-list" class="checks"></div>
+			</section>
 			<section id="users-view" hidden>
 				<table id="users" class="entries">
 					<thead>
