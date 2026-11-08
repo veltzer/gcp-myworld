@@ -1,5 +1,5 @@
 """
-The concerts, museums and people: the import script and the read-only API.
+The concerts, museums, people and companies: the import script and the API.
 """
 
 from pathlib import Path
@@ -11,15 +11,47 @@ from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from myworld.models import Concert, Image, Museum, Person, User, concert_people
+from myworld.models import (
+    Company,
+    Concert,
+    Image,
+    Museum,
+    Person,
+    User,
+    concert_people,
+    person_companies,
+)
 from tests.conftest import sign_in
 
 PEOPLE = """
 items:
   - name: "Alice Friend"
+    company: "Startup"
     description: "Old friend"
   - name: "Bob Buddy"
-    company: "Acme"
+    company: ["Acme", "Startup"]
+"""
+
+ORGANIZATIONS = """
+items:
+  - id: 1
+    name: "Acme"
+    slug: "acme"
+    functions: ["teaching", "consulting"]
+    status: "acquired"
+    what_happened: "Bought by Bigco"
+    website: "https://acme.example"
+    location: "Tel Aviv, Israel"
+    address: "1 Main St"
+    logo: "logos/acme.svg"
+    geo: {"from": "location", "place": "Tel Aviv, Israel", "lat": 32.08, "lon": 34.78}
+    sources: ["https://en.wikipedia.org/wiki/Acme"]
+  - id: 2
+    name: "Old School"
+    slug: "old-school"
+    functions: ["education"]
+    status: "active"
+    from_date: 2008-03-21
 """
 
 CONCERTS = """
@@ -80,11 +112,16 @@ items:
 """
 
 
+LOGO = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>'
+
+
 def write_source(root: Path, concerts: str = CONCERTS) -> Path:
     (root / "data" / "yaml").mkdir(parents=True)
     (root / "static" / "images").mkdir(parents=True)
-    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS)):
+    (root / "data" / "logos").mkdir(parents=True)
+    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS)):
         (root / "data" / "yaml" / f"{name}.yaml").write_text(text, encoding="UTF8")
+    (root / "data" / "logos" / "acme.svg").write_bytes(LOGO)
     (root / "static" / "images" / "concert-the-band.jpg").write_bytes(b"\xff\xd8band")
     (root / "static" / "images" / "museum-15.jpg").write_bytes(b"\xff\xd8louvre")
     return root
@@ -100,12 +137,12 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
     with Session(engine) as session:
         counts = import_world.import_world(session, owner(session), write_source(tmp_path))
         session.commit()
-    assert counts == {"people": 2, "concerts": 3, "museums": 3, "images": 2}
+    assert counts == {"people": 2, "companies": 3, "organizations": 2, "concerts": 3, "museums": 3, "images": 3}
     return app
 
 
 def test_requires_login(app: webtest.TestApp) -> None:
-    for path in ("/api/concerts", "/api/museums", "/api/people", "/api/images/1"):
+    for path in ("/api/concerts", "/api/museums", "/api/people", "/api/companies", "/api/images/1"):
         app.get(path, status=401)
 
 
@@ -151,9 +188,50 @@ def test_people(imported: webtest.TestApp) -> None:
     assert [p["name"] for p in people] == ["Alice Friend", "Bob Buddy"]
     alice, bob = people
     assert alice["description"] == "Old friend"
-    assert bob["company"] == "Acme"
-    # only the person: their concerts and museums are not listed next to them
-    assert set(alice) == {"id", "name", "company", "description"}
+    assert [c["name"] for c in alice["companies"]] == ["Startup"]
+    assert [c["name"] for c in bob["companies"]] == ["Acme", "Startup"]
+    # only the person and their companies: their concerts and museums are not listed next to them
+    assert set(alice) == {"id", "name", "companies", "description"}
+
+
+def test_companies(imported: webtest.TestApp) -> None:
+    companies = imported.get("/api/companies").json
+    assert [c["name"] for c in companies] == ["Acme", "Old School", "Startup"]
+    acme, school, startup = companies
+    assert acme["functions"] == ["teaching", "consulting"]
+    assert acme["status"] == "acquired"
+    assert acme["what_happened"] == "Bought by Bigco"
+    assert acme["website"] == "https://acme.example"
+    assert [p["name"] for p in acme["people"]] == ["Bob Buddy"]
+    assert [p["name"] for p in startup["people"]] == ["Alice Friend", "Bob Buddy"]
+    # a company only a person names has nothing but its name
+    assert startup["functions"] == []
+    assert startup["image"] is None
+    assert school["image"] is None
+    # the links point at the same rows both ways
+    ids = {c["name"]: c["id"] for c in companies}
+    for person in imported.get("/api/people").json:
+        assert all(ids[c["name"]] == c["id"] for c in person["companies"])
+
+
+def test_company_details_are_kept(imported: webtest.TestApp, engine: Engine) -> None:
+    with Session(engine) as session:
+        acme = session.scalars(select(Company).where(Company.name == "Acme")).one()
+        assert acme.details["geo"]["lat"] == 32.08
+        assert acme.details["sources"] == ["https://en.wikipedia.org/wiki/Acme"]
+        assert acme.details["slug"] == "acme"
+        school = session.scalars(select(Company).where(Company.name == "Old School")).one()
+        assert school.details["from_date"] == "2008-03-21"
+
+
+def test_logo(imported: webtest.TestApp) -> None:
+    acme = imported.get("/api/companies").json[0]
+    response = imported.get(acme["image"])
+    assert response.content_type == "image/svg+xml"
+    assert response.body == LOGO
+    # an SVG opened on its own cannot run scripts on this origin
+    assert "sandbox" in response.headers["Content-Security-Policy"]
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 
 def test_image(imported: webtest.TestApp) -> None:
@@ -173,6 +251,7 @@ def test_other_users_see_nothing(imported: webtest.TestApp, engine: Engine) -> N
     assert imported.get("/api/concerts").json == []
     assert imported.get("/api/museums").json == []
     assert imported.get("/api/people").json == []
+    assert imported.get("/api/companies").json == []
     imported.get(url, status=404)
     with Session(engine) as session:
         assert session.scalar(select(func.count()).select_from(Concert)) == 3
@@ -182,9 +261,10 @@ def test_reimport_replaces(imported: webtest.TestApp, engine: Engine, tmp_path: 
     with Session(engine) as session:
         import_world.import_world(session, owner(session), tmp_path)
         session.commit()
-        for model, count in ((Concert, 3), (Museum, 3), (Person, 2), (Image, 2)):
+        for model, count in ((Concert, 3), (Museum, 3), (Person, 2), (Company, 3), (Image, 3)):
             assert session.scalar(select(func.count()).select_from(model)) == count
         assert session.scalar(select(func.count()).select_from(concert_people)) == 3
+        assert session.scalar(select(func.count()).select_from(person_companies)) == 3
     assert len(imported.get("/api/concerts").json) == 3
 
 
@@ -199,6 +279,15 @@ def test_unknown_person_stops_the_import(app: webtest.TestApp, engine: Engine, t
     sign_in(app)
     source = write_source(tmp_path, CONCERTS.replace('with: []', 'with: ["Stranger"]'))
     with Session(engine) as session, pytest.raises(import_world.WorldImportError, match="Stranger"):
+        import_world.import_world(session, owner(session), source)
+
+
+def test_unknown_organization_field_stops_the_import(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    sign_in(app)
+    source = write_source(tmp_path)
+    path = source / "data" / "yaml" / "organizations.yaml"
+    path.write_text(ORGANIZATIONS + '    ceo: "Someone"\n', encoding="UTF8")
+    with Session(engine) as session, pytest.raises(import_world.WorldImportError, match="ceo"):
         import_world.import_world(session, owner(session), source)
 
 
@@ -251,7 +340,7 @@ def test_add_validates(imported: webtest.TestApp) -> None:
 
 
 def test_add_museum_and_person(imported: webtest.TestApp) -> None:
-    person = imported.post_json("/api/people", {"name": "Carol", "company": "Zed"}, status=201).json
+    person = imported.post_json("/api/people", {"name": "Carol", "description": "Zed"}, status=201).json
     museum = imported.post_json("/api/museums", {
         "name": "Prado", "city": "Madrid", "date": "2012", "rating": 9, "people": [person["id"]],
     }, status=201).json
@@ -281,6 +370,51 @@ def test_edit_person(imported: webtest.TestApp) -> None:
     assert bob["name"] == "Robert Buddy"
     louvre = next(m for m in imported.get("/api/museums").json if m["with"])
     assert louvre["with"] == ["Robert Buddy"]
+    # no companies sent: the person is linked to none
+    assert bob["companies"] == []
+
+
+def company_ids(app: webtest.TestApp) -> dict[str, int]:
+    return {c["name"]: c["id"] for c in app.get("/api/companies").json}
+
+
+def test_link_person_to_companies(imported: webtest.TestApp) -> None:
+    companies = company_ids(imported)
+    bob = people_ids(imported)["Bob Buddy"]
+    edited = imported.put_json(f"/api/people/{bob}", {
+        "name": "Bob Buddy", "companies": [companies["Old School"], companies["Acme"]],
+    }).json
+    assert [c["name"] for c in edited["companies"]] == ["Acme", "Old School"]
+    school = next(c for c in imported.get("/api/companies").json if c["name"] == "Old School")
+    assert [p["name"] for p in school["people"]] == ["Bob Buddy"]
+    imported.put_json(f"/api/people/{bob}", {"name": "Bob Buddy", "companies": [999]}, status=400)
+    imported.put_json(f"/api/people/{bob}", {"name": "Bob Buddy", "companies": "Acme"}, status=400)
+
+
+def test_add_edit_delete_company(imported: webtest.TestApp, engine: Engine) -> None:
+    imported.post_json("/api/companies", {"name": ""}, status=400)
+    imported.post_json("/api/companies", {"name": "Acme"}, status=409)
+    upload = imported.post("/api/images", upload_files=[("file", "logo.jpg", JPEG)]).json
+    company = imported.post_json("/api/companies", {
+        "name": "Newco", "functions": ["consulting", " "], "website": "https://newco.example", "image_id": upload["id"],
+    }, status=201).json
+    assert company["functions"] == ["consulting"]
+    assert company["image"] == upload["url"]
+    acme = next(c for c in imported.get("/api/companies").json if c["name"] == "Acme")
+    edited = imported.put_json(f"/api/companies/{acme['id']}", dict(acme, name="Acme Ltd", image_id=upload["id"])).json
+    assert edited["name"] == "Acme Ltd"
+    assert edited["what_happened"] == "Bought by Bigco"
+    # people keep the link through a rename
+    assert [p["name"] for p in edited["people"]] == ["Bob Buddy"]
+    with Session(engine) as session:
+        # the logo nothing shows any more is gone; the details the dialog never sends are kept
+        assert "acme.svg" not in session.scalars(select(Image.filename)).all()
+        kept = session.get(Company, acme["id"])
+        assert kept is not None
+        assert kept.details["slug"] == "acme"
+    imported.delete(f"/api/companies/{acme['id']}", status=204)
+    bob = next(p for p in imported.get("/api/people").json if p["name"] == "Bob Buddy")
+    assert [c["name"] for c in bob["companies"]] == ["Startup"]
 
 
 def test_delete(imported: webtest.TestApp, engine: Engine) -> None:
@@ -292,7 +426,7 @@ def test_delete(imported: webtest.TestApp, engine: Engine) -> None:
     assert imported.get("/api/concerts").json == []
     with Session(engine) as session:
         # the concert photo went with its last concert; the museum one stays
-        assert session.scalars(select(Image.filename)).all() == ["museum-15.jpg"]
+        assert sorted(session.scalars(select(Image.filename)).all()) == ["acme.svg", "museum-15.jpg"]
         assert session.scalar(select(func.count()).select_from(concert_people)) == 0
     imported.delete("/api/concerts/1", status=404)
 
@@ -314,4 +448,8 @@ def test_others_cannot_touch(imported: webtest.TestApp) -> None:
     imported.put_json(f"/api/concerts/{concert['id']}", {"name": "mine now"}, status=404)
     imported.delete(f"/api/concerts/{concert['id']}", status=404)
     imported.delete(f"/api/people/{alice}", status=404)
+    assert company_ids(imported) == {}
+    imported.post_json("/api/people", {"name": "x", "companies": [1]}, status=400)
+    imported.put_json("/api/companies/1", {"name": "mine now"}, status=404)
+    imported.delete("/api/companies/1", status=404)
     imported.post_json("/api/concerts", {"name": "x", "people": [alice]}, status=400)

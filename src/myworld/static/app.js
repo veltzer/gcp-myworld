@@ -494,9 +494,9 @@ async function libraryPage() {
 	setupAddDialog();
 	renderKinds();
 	const requested = window.location.hash.slice(1);
-	const person = requested.match(/^people\/(\d+)$/);
-	if (person) {
-		await showPerson(Number(person[1]));
+	const linked = requested.match(/^(people|companies)\/(\d+)$/);
+	if (linked) {
+		await showRow(linked[1], Number(linked[2]));
 	} else if (requested in state.config.kinds) {
 		await selectKind(requested);
 	} else {
@@ -504,13 +504,14 @@ async function libraryPage() {
 	}
 }
 
-// ─── concerts, museums, people ──────────────────────────────────────────────
+// ─── concerts, museums, people, companies ───────────────────────────────────
 
 // view -> [heading, API path, singular, tab label]; the rows are the signed-in user's own
 const WORLDS = {
 	concerts: ["My Concerts", "/api/concerts", "concert", "Concerts"],
 	museums: ["My Museums", "/api/museums", "museum", "Museums"],
 	people: ["People", "/api/people", "person", "People"],
+	companies: ["Companies", "/api/companies", "company", "Companies"],
 };
 
 const worldCache = {};
@@ -565,38 +566,56 @@ function detail(list, label, value) {
 	list.appendChild(li);
 }
 
-// The people who were there, each a link to their row in the People view.
-function peopleDetail(list, people) {
-	if (people.length === 0) {
+// Names as links to their place in the People or Companies view, appended to parent.
+function appendLinks(parent, view, rows) {
+	rows.forEach((row, index) => {
+		if (index > 0) {
+			parent.append(", ");
+		}
+		const a = el("a", "person-link", row.name);
+		a.href = `/library#${view}/${row.id}`;
+		a.onclick = (event) => {
+			event.preventDefault();
+			showRow(view, row.id).catch((e) => showError(e.message));
+		};
+		parent.appendChild(a);
+	});
+}
+
+function linksDetail(list, label, view, rows) {
+	if (rows.length === 0) {
 		return;
 	}
 	const li = el("li");
-	li.appendChild(el("span", "label", "With"));
-	people.forEach((person, index) => {
-		if (index > 0) {
-			li.append(", ");
-		}
-		const a = el("a", "person-link", person.name);
-		a.href = `/library#people/${person.id}`;
-		a.onclick = (event) => {
-			event.preventDefault();
-			showPerson(person.id).catch((e) => showError(e.message));
-		};
-		li.appendChild(a);
-	});
+	li.appendChild(el("span", "label", label));
+	appendLinks(li, view, rows);
 	list.appendChild(li);
 }
 
-function cardShell(item, subtitle) {
+function websiteDetail(list, url) {
+	if (!url) {
+		return;
+	}
+	const li = el("li");
+	const a = el("a", null, "Website");
+	a.href = url;
+	a.target = "_blank";
+	a.rel = "noopener";
+	li.appendChild(a);
+	list.appendChild(li);
+}
+
+function cardShell(item, subtitle, imageClass = "world-image") {
 	const card = el("article", "world-card");
+	card.id = `${WORLDS[state.view][2]}-${item.id}`;
 	if (item.image) {
-		const img = el("img", "world-image");
+		const img = el("img", imageClass);
 		img.src = item.image;
 		img.alt = "";
 		img.loading = "lazy";
 		card.appendChild(img);
 	} else {
-		card.appendChild(el("div", "world-image no-image"));
+		card.appendChild(el("div", `${imageClass} no-image`));
 	}
 	const body = el("div", "world-body");
 	body.appendChild(el("h2", "world-title", item.name));
@@ -617,7 +636,7 @@ function concertCard(item) {
 	const performers = item.performers.length === 1 && item.performers[0] === item.name ? [] : item.performers;
 	detail(list, "Performers", performers);
 	detail(list, "Genre", item.genre);
-	peopleDetail(list, item.people);
+	linksDetail(list, "With", "people", item.people);
 	detail(list, "Tickets", item.tickets);
 	if (item.broadcast) {
 		detail(list, "Seen", "on TV");
@@ -643,30 +662,44 @@ function museumCard(item) {
 	if (item.rating !== null) {
 		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
 	}
-	peopleDetail(list, item.people);
+	linksDetail(list, "With", "people", item.people);
 	detail(list, "Tickets", item.tickets);
 	detail(list, "Review", item.review);
 	detail(list, "Remark", item.remark);
-	if (item.url) {
-		const li = el("li");
-		const a = el("a", null, "Website");
-		a.href = item.url;
-		a.target = "_blank";
-		a.rel = "noopener";
-		li.appendChild(a);
-		list.appendChild(li);
-	}
+	websiteDetail(list, item.url);
 	return card;
 }
+
+// what the organization was to me, in words
+const FUNCTIONS = {
+	teaching: "I taught there",
+	"training-provider": "Hired me to teach",
+	consulting: "I consulted",
+	certification: "Certified me",
+	publisher: "Publisher",
+	education: "I studied there",
+};
+
+function companyCard(item) {
+	const { card, list } = cardShell(item, item.location, "world-image logo");
+	detail(list, "Was", item.functions.map((f) => FUNCTIONS[f] || f));
+	detail(list, "Status", item.status);
+	detail(list, "What happened", item.what_happened);
+	detail(list, "Address", item.address);
+	linksDetail(list, "People", "people", item.people);
+	detail(list, "Remark", item.remark);
+	websiteDetail(list, item.website);
+	return card;
+}
+
+const CARDS = { concerts: concertCard, museums: museumCard, companies: companyCard };
 
 function personRow(person) {
 	const tr = el("tr");
 	tr.id = `person-${person.id}`;
-	tr.append(
-		el("td", "title", person.name),
-		el("td", null, person.company),
-		el("td", null, person.description),
-	);
+	const companies = el("td");
+	appendLinks(companies, "companies", person.companies);
+	tr.append(el("td", "title", person.name), companies, el("td", null, person.description));
 	editable(tr, person);
 	return tr;
 }
@@ -700,7 +733,7 @@ function renderWorld() {
 		$("people-rows").replaceChildren(...shown.map(personRow));
 		$("cards").replaceChildren();
 	} else {
-		$("cards").replaceChildren(...shown.map(view === "concerts" ? concertCard : museumCard));
+		$("cards").replaceChildren(...shown.map(CARDS[view]));
 		$("people-rows").replaceChildren();
 	}
 	if (items.length === 0) {
@@ -750,15 +783,15 @@ async function refreshWorld() {
 	renderWorld();
 }
 
-// Open the People view at one person, scrolled to and highlighted.
-async function showPerson(id) {
-	await selectWorld("people");
-	window.location.hash = `people/${id}`;
-	const row = $(`person-${id}`);
+// Open the People or Companies view at one row or card, scrolled to and highlighted.
+async function showRow(view, id) {
+	await selectWorld(view);
+	window.location.hash = `${view}/${id}`;
+	const row = $(`${WORLDS[view][2]}-${id}`);
 	if (!row) {
 		return;
 	}
-	for (const old of document.querySelectorAll("#people-rows tr.highlight")) {
+	for (const old of document.querySelectorAll("#world-view .highlight")) {
 		old.classList.remove("highlight");
 	}
 	row.classList.add("highlight");
@@ -772,7 +805,7 @@ function setupWorlds() {
 // ─── the add dialog ─────────────────────────────────────────────────────────
 
 // One dialog, opened by the + button, showing the form of whatever is on screen.
-const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "person-form"];
+const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "person-form", "company-form"];
 const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 
 function dialogError(message) {
@@ -781,14 +814,15 @@ function dialogError(message) {
 	box.hidden = !message;
 }
 
-async function peopleList() {
-	if (!worldCache.people) {
-		worldCache.people = await api("/api/people");
+async function worldList(view) {
+	if (!worldCache[view]) {
+		worldCache[view] = await api(WORLDS[view][1]);
 	}
-	return worldCache.people;
+	return worldCache[view];
 }
 
-// The people picker: names from People become removable chips; the ids are sent.
+// A picker (data-chips="people" or "companies"): names from that view become
+// removable chips; the ids are sent.
 function addChip(box, person) {
 	if (box.selected.has(person.id)) {
 		return;
@@ -814,10 +848,11 @@ function setupChips(box) {
 		if (!name) {
 			return;
 		}
-		const person = (worldCache.people || []).find((p) => p.name.toLowerCase() === name.toLowerCase());
+		const view = box.dataset.chips;
+		const person = (worldCache[view] || []).find((p) => p.name.toLowerCase() === name.toLowerCase());
 		if (!person) {
 			if (!quiet) {
-				dialogError(`${name} is not in People yet: add them there first.`);
+				dialogError(`${name} is not in ${WORLDS[view][0]} yet: add it there first.`);
 			}
 			return;
 		}
@@ -845,7 +880,7 @@ function setupChips(box) {
 
 function resetForm(form) {
 	form.reset();
-	for (const box of form.querySelectorAll("[data-people]")) {
+	for (const box of form.querySelectorAll("[data-chips]")) {
 		box.selected.clear();
 		for (const chip of box.querySelectorAll(".chip")) {
 			chip.remove();
@@ -871,8 +906,8 @@ async function uploadPhoto(form) {
 	return result.id;
 }
 
-function chosenPeople(form) {
-	return [...form.querySelector("[data-people]").selected.keys()];
+function chosen(form, view) {
+	return [...form.querySelector(`[data-chips=${view}]`).selected.keys()];
 }
 
 function where() {
@@ -897,7 +932,7 @@ const WORLD_BODIES = {
 			venue: value("venue"),
 			city: value("city"),
 			country: value("country"),
-			people: chosenPeople(form),
+			people: chosen(form, "people"),
 			tickets: value("tickets"),
 			broadcast: form.elements.broadcast.checked,
 			review: value("review"),
@@ -918,7 +953,7 @@ const WORLD_BODIES = {
 			rating: value("rating"),
 			tickets: value("tickets"),
 			url: value("url"),
-			people: chosenPeople(form),
+			people: chosen(form, "people"),
 			review: value("review"),
 			remark: value("remark"),
 			image_id: await uploadPhoto(form),
@@ -926,9 +961,23 @@ const WORLD_BODIES = {
 	},
 	people: async (form) => ({
 		name: form.elements.name.value,
-		company: form.elements.company.value,
+		companies: chosen(form, "companies"),
 		description: form.elements.description.value,
 	}),
+	companies: async (form) => {
+		const value = (name) => form.elements[name].value;
+		return {
+			name: value("name"),
+			functions: value("functions").split(",").map((f) => f.trim()).filter(Boolean),
+			status: value("status"),
+			website: value("website"),
+			location: value("location"),
+			address: value("address"),
+			what_happened: value("what_happened"),
+			remark: value("remark"),
+			image_id: await uploadPhoto(form),
+		};
+	},
 };
 
 function setupWorldForm(view) {
@@ -970,10 +1019,9 @@ function fillWorldForm(form, item) {
 			element.value = value ?? "";
 		}
 	}
-	const box = form.querySelector("[data-people]");
-	if (box) {
-		for (const person of item.people) {
-			addChip(box, person);
+	for (const box of form.querySelectorAll("[data-chips]")) {
+		for (const row of item[box.dataset.chips]) {
+			addChip(box, row);
 		}
 	}
 }
@@ -1016,11 +1064,11 @@ async function openDialog(item) {
 	delete remove.dataset.armed;
 	dialogError("");
 	if (world) {
-		if (form.querySelector("[data-people]")) {
-			const names = await peopleList();
-			$("people-names").replaceChildren(...names.map((p) => {
+		for (const box of form.querySelectorAll("[data-chips]")) {
+			const rows = await worldList(box.dataset.chips);
+			$(box.querySelector("input").getAttribute("list")).replaceChildren(...rows.map((row) => {
 				const option = document.createElement("option");
-				option.value = p.name;
+				option.value = row.name;
 				return option;
 			}));
 		}
@@ -1065,7 +1113,7 @@ function setupAddDialog() {
 	for (const button of dialog.querySelectorAll("button.delete")) {
 		button.onclick = () => deleteEditing(button).catch((e) => dialogError(e.message));
 	}
-	for (const box of dialog.querySelectorAll("[data-people]")) {
+	for (const box of dialog.querySelectorAll("[data-chips]")) {
 		setupChips(box);
 	}
 	const { rating_min, rating_max } = state.config;

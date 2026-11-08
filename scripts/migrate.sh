@@ -11,6 +11,11 @@
 # Migrations so far:
 #   - users.password_hash and a wider users.google_sub (email and OAuth sign-in)
 #   - works.imdb_id, works.tmdb_id, works.rotten_tomatoes_id (film lookups)
+#   - people.company dropped: a person's companies are rows in companies, linked
+#     through person_companies (both new tables, made by create_all); the column
+#     is NOT NULL without a server default, so the app can no longer add people
+#     while it exists. Re-run scripts/import_world_cloud.sh afterwards to link
+#     the imported people to their companies.
 #
 # Cloud SQL is reached with gcloud_sql_psql.sh (utils-bash): the Cloud SQL
 # Auth Proxy with your gcloud credentials and the app's own password from
@@ -46,9 +51,13 @@ for table, column, kind in COLUMNS:
     if column not in existing:
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
         added.append(f"{table}.{column}")
+people = {row[1] for row in db.execute("PRAGMA table_info(people)")}
+if "company" in people:
+    db.execute("ALTER TABLE people DROP COLUMN company")
+    added.append("people.company (dropped)")
 db.commit()
 if added:
-    print(f"{path}: added {', '.join(added)}")
+    print(f"{path}: migrated {', '.join(added)}")
 else:
     print(f"{path}: up to date, nothing to migrate")
 PY
@@ -64,6 +73,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	FROM information_schema.columns
 	WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash'))
 	   OR (table_name = 'works' AND column_name IN ('imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
+	   OR (table_name = 'people' AND column_name = 'company')
 ")"
 
 has() {
@@ -82,6 +92,7 @@ has "users.google_sub:400" || need "users.google_sub (wider)" "ALTER TABLE users
 has "works.imdb_id:.*" || need works.imdb_id "ALTER TABLE works ADD COLUMN imdb_id VARCHAR(20) NOT NULL DEFAULT ''"
 has "works.tmdb_id:.*" || need works.tmdb_id "ALTER TABLE works ADD COLUMN tmdb_id INTEGER"
 has "works.rotten_tomatoes_id:.*" || need works.rotten_tomatoes_id "ALTER TABLE works ADD COLUMN rotten_tomatoes_id VARCHAR(200) NOT NULL DEFAULT ''"
+! has "people.company:.*" || need "people.company (dropped)" "ALTER TABLE people DROP COLUMN company"
 
 if (( ${#changed[@]} == 0 )); then
 	echo "${gcp_sql_instance}/${gcp_db_name}: up to date, nothing to migrate"

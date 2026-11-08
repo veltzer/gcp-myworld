@@ -26,6 +26,7 @@ repo
 sql
 sqlite
 supabase
+svg
 tls
 tmdb
 uris

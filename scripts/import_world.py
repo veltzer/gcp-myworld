@@ -1,14 +1,18 @@
 #!/usr/bin/env python
 
 """
-Load concerts, museum visits and people, with their images, into the
-database for one user.
+Load concerts, museum visits, people and companies, with their images, into
+the database for one user.
 
 The source is a directory laid out the way veltzer.github.io keeps them:
-data/yaml/{concerts,museums,people}.yaml and the photos in static/images/
-(concert-*.jpg named by each concert's image field, museum-<internal_id>.jpg
-for the first visit of each museum, which every later visit of the same
-museum shares).
+data/yaml/{concerts,museums,people,organizations}.yaml, the photos in
+static/images/ (concert-*.jpg named by each concert's image field,
+museum-<internal_id>.jpg for the first visit of each museum, which every
+later visit of the same museum shares) and the organization logos in
+data/logos/.
+
+Companies are every organization plus every company a person names that is
+not one of them; each person is linked to the companies they name.
 
 Everything the user had in these tables is replaced, in one transaction, so
 the script is safe to run again. Unknown fields in the YAML stop the import
@@ -37,6 +41,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from myworld.models import (
+    Company,
     Concert,
     Image,
     Museum,
@@ -45,6 +50,7 @@ from myworld.models import (
     concert_people,
     make_engine,
     museum_people,
+    person_companies,
 )
 
 DATE_FIELDS = {"date_utcz", "date_ymd", "date_my", "date_y", "date_timezone"}
@@ -53,6 +59,15 @@ CONCERT_FIELDS = DATE_FIELDS | {
     "name", "performers", "event", "genre", "venue", "city", "country", "with", "tickets",
     "broadcast", "review", "remark", "image", "image_source", "image_license", "image_author",
 }
+# organization fields that have a column of their own; logo names the logo file
+ORGANIZATION_COLUMNS = {"name", "functions", "status", "website", "location", "address", "what_happened", "remark"}
+# kept as they are in companies.details
+ORGANIZATION_DETAILS = {
+    "id", "slug", "logo_kind", "logo_source", "logo_license", "logo_note", "old_url", "location_geo",
+    "israel_office", "israel_office_geo", "former_website", "former_location", "former_location_geo",
+    "address_source", "geo", "sources", "from_date",
+}
+ORGANIZATION_FIELDS = ORGANIZATION_COLUMNS | ORGANIZATION_DETAILS | {"logo"}
 # internal_id only names the image file; it is not stored
 MUSEUM_FIELDS = DATE_FIELDS | {
     "name", "city", "rating", "review", "remark", "url", "tickets", "with", "internal_id",
@@ -92,6 +107,26 @@ def _dates(item: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _person_companies(item: dict[str, Any]) -> list[str]:
+    """ company in people.yaml: one name, or a list of names. """
+    value = item.get("company", [])
+    names = [value] if isinstance(value, str) else list(value)
+    if len(set(names)) != len(names):
+        raise WorldImportError(f"people.yaml: {item['name']!r} names a company twice")
+    return names
+
+
+def _json_safe(value: Any) -> Any:
+    """ YAML may hand over dates; JSON columns want strings. """
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    return value
+
+
 def find_owner(session: Session, email: str, subject: str | None) -> User:
     users = session.execute(select(User).where(User.email == email)).scalars().all()
     if subject is not None:
@@ -105,8 +140,9 @@ def find_owner(session: Session, email: str, subject: str | None) -> User:
 
 
 def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
-    """ Replace owner's concerts, museums, people and images with those under source. Does not commit. """
+    """ Replace owner's concerts, museums, people, companies and images with those under source. Does not commit. """
     people_items = _items(source, "people", PERSON_FIELDS)
+    organization_items = _items(source, "organizations", ORGANIZATION_FIELDS)
     concert_items = _items(source, "concerts", CONCERT_FIELDS)
     museum_items = _items(source, "museums", MUSEUM_FIELDS)
     image_dir = source / "static" / "images"
@@ -114,32 +150,17 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     # the link rows explicitly: sqlite does not enforce ON DELETE CASCADE unless asked to
     session.execute(delete(concert_people).where(concert_people.c.concert_id.in_(select(Concert.id).where(Concert.owner_id == owner.id))))
     session.execute(delete(museum_people).where(museum_people.c.museum_id.in_(select(Museum.id).where(Museum.owner_id == owner.id))))
-    for model in (Concert, Museum, Person, Image):
+    session.execute(delete(person_companies).where(person_companies.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
+    for model in (Concert, Museum, Person, Company, Image):
         session.execute(delete(model).where(model.owner_id == owner.id))
     session.flush()
 
-    people: dict[str, Person] = {}
-    for item in people_items:
-        if item["name"] in people:
-            raise WorldImportError(f"people.yaml: {item['name']!r} appears twice")
-        person = Person(owner_id=owner.id, name=item["name"], company=item.get("company", ""), description=item.get("description", ""))
-        people[person.name] = person
-        session.add(person)
-
-    def with_people(item: dict[str, Any]) -> list[Person]:
-        if len(set(item["with"])) != len(item["with"]):
-            raise WorldImportError(f"{item['name']!r}: a name appears twice in with")
-        missing = [name for name in item["with"] if name not in people]
-        if missing:
-            raise WorldImportError(f"{item['name']!r}: with names not in people.yaml: {missing}")
-        return [people[name] for name in item["with"]]
-
     images: dict[str, Image] = {}
 
-    def image(filename: str, required: bool) -> Image | None:
+    def image(path: Path, required: bool) -> Image | None:
+        filename = path.name
         if filename in images:
             return images[filename]
-        path = image_dir / filename
         if not path.exists():
             if required:
                 raise WorldImportError(f"missing image {path}")
@@ -155,6 +176,47 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
         session.add(images[filename])
         return images[filename]
 
+    companies: dict[str, Company] = {}
+    for item in organization_items:
+        if item["name"] in companies:
+            raise WorldImportError(f"organizations.yaml: {item['name']!r} appears twice")
+        company = Company(
+            owner_id=owner.id,
+            name=item["name"],
+            functions=list(item.get("functions", [])),
+            **{key: item.get(key, "") for key in sorted(ORGANIZATION_COLUMNS - {"name", "functions"})},
+            details={key: _json_safe(item[key]) for key in sorted(ORGANIZATION_DETAILS) if key in item},
+            # logos live in data/, as logos/<slug>.svg
+            image=image(source / "data" / item["logo"], required=True) if "logo" in item else None,
+        )
+        companies[company.name] = company
+        session.add(company)
+    organizations = len(companies)
+
+    people: dict[str, Person] = {}
+    for item in people_items:
+        if item["name"] in people:
+            raise WorldImportError(f"people.yaml: {item['name']!r} appears twice")
+        names = _person_companies(item)
+        for name in names:
+            if name not in companies:
+                companies[name] = Company(owner_id=owner.id, name=name)
+                session.add(companies[name])
+        person = Person(
+            owner_id=owner.id, name=item["name"], description=item.get("description", ""),
+            companies=[companies[name] for name in names],
+        )
+        people[person.name] = person
+        session.add(person)
+
+    def with_people(item: dict[str, Any]) -> list[Person]:
+        if len(set(item["with"])) != len(item["with"]):
+            raise WorldImportError(f"{item['name']!r}: a name appears twice in with")
+        missing = [name for name in item["with"] if name not in people]
+        if missing:
+            raise WorldImportError(f"{item['name']!r}: with names not in people.yaml: {missing}")
+        return [people[name] for name in item["with"]]
+
     for item in concert_items:
         session.add(Concert(
             owner_id=owner.id,
@@ -169,7 +231,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
             broadcast=bool(item.get("broadcast", False)),
             review=item.get("review", ""),
             remark=item.get("remark", ""),
-            image=image(item["image"], required=True) if "image" in item else None,
+            image=image(image_dir / item["image"], required=True) if "image" in item else None,
             image_source=item.get("image_source", ""),
             image_license=item.get("image_license", ""),
             image_author=item.get("image_author", ""),
@@ -191,12 +253,15 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
             remark=item.get("remark", ""),
             url=item.get("url", ""),
             tickets=item.get("tickets"),
-            image=image(f"museum-{first_visit[item['name']]}.jpg", required=False),
+            image=image(image_dir / f"museum-{first_visit[item['name']]}.jpg", required=False),
             people=with_people(item),
             **_dates(item),
         ))
     session.flush()
-    return {"people": len(people), "concerts": len(concert_items), "museums": len(museum_items), "images": len(images)}
+    return {
+        "people": len(people), "companies": len(companies), "organizations": organizations,
+        "concerts": len(concert_items), "museums": len(museum_items), "images": len(images),
+    }
 
 
 def main() -> int:

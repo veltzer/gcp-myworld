@@ -5,14 +5,17 @@ Works (books, films, ...) are shared rows; what a user thinks about a work
 (status, rating, dates, notes) lives in the per-user UserWork join row.
 Adding a new kind of work is a matter of adding it to KINDS.
 
-Concerts, museum visits and the people they were shared with are a second,
-separate part: each row belongs to one user (owner_id) and is never shared.
+Concerts, museum visits, the people they were shared with and the companies
+those people work at are a second, separate part: each row belongs to one
+user (owner_id) and is never shared. A person may be linked to several
+companies (person_companies).
 Their photos live in the images table, so the database alone holds all of it.
 They are loaded by scripts/import_world.py.
 """
 
 import datetime
 import os
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -139,6 +142,13 @@ museum_people = Table(
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
 )
 
+person_companies = Table(
+    "person_companies",
+    Base.metadata,
+    Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
+    Column("company_id", ForeignKey("companies.id", ondelete="CASCADE"), primary_key=True),
+)
+
 
 class Image(Base):
     """ A photo, stored in the database itself; several rows may point at one. """
@@ -160,15 +170,46 @@ class Person(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    company: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
+    companies: Mapped[list[Company]] = relationship(
+        secondary=person_companies, back_populates="people",
+    )
     concerts: Mapped[list[Concert]] = relationship(
         secondary=concert_people, back_populates="people",
     )
     museums: Mapped[list[Museum]] = relationship(
         secondary=museum_people, back_populates="people",
     )
+
+
+class Company(Base):
+    """
+    An organization: one a person works at, or one the user taught at,
+    consulted for, studied at, was certified by or bought media from
+    (functions). Fields that are only kept, never shown or edited one by one
+    (old websites, the geo points, where the logo came from, ...), are in
+    details, so an import loses nothing.
+    """
+    __tablename__ = "companies"
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_company_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    functions: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    # active, acquired, defunct, ...
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="")
+    website: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    location: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    address: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    what_happened: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
+    image: Mapped[Image | None] = relationship()
+
+    people: Mapped[list[Person]] = relationship(secondary=person_companies, back_populates="companies")
 
 
 class _Dated:

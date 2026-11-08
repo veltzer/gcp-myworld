@@ -1,6 +1,6 @@
 """
-JSON API for the concerts, museum visits and people of the signed-in user,
-and the images they point at: list and add. Every query is filtered by
+JSON API for the concerts, museum visits, people and companies of the
+signed-in user, and the images they point at: list, add, edit and delete. Every query is filtered by
 owner_id, so a user only ever sees, and only ever links to, their own rows.
 """
 
@@ -17,7 +17,15 @@ from sqlalchemy.orm import selectinload
 
 from myworld import auth
 from myworld.api import ApiError, json_body, opt_int, text
-from myworld.models import RATING_MAX, RATING_MIN, Concert, Image, Museum, Person
+from myworld.models import (
+    RATING_MAX,
+    RATING_MIN,
+    Company,
+    Concert,
+    Image,
+    Museum,
+    Person,
+)
 
 bp = flask.Blueprint("world", __name__)
 
@@ -56,9 +64,9 @@ def _names(people: list[Person]) -> list[str]:
     return sorted(p.name for p in people)
 
 
-def _people_refs(people: list[Person]) -> list[dict[str, Any]]:
-    """ Who was there, with the ids the People view links to. """
-    return [{"id": p.id, "name": p.name} for p in sorted(people, key=lambda p: p.name)]
+def _refs(rows: list[Person] | list[Company]) -> list[dict[str, Any]]:
+    """ Names with the ids the People and Companies views link to. """
+    return [{"id": row.id, "name": row.name} for row in sorted(rows, key=lambda row: row.name)]
 
 
 def concert_json(concert: Concert) -> dict[str, Any]:
@@ -78,7 +86,7 @@ def concert_json(concert: Concert) -> dict[str, Any]:
         "review": concert.review,
         "remark": concert.remark,
         "with": _names(concert.people),
-        "people": _people_refs(concert.people),
+        "people": _refs(concert.people),
         "image": _image_url(concert.image_id),
         "image_source": concert.image_source,
         "image_license": concert.image_license,
@@ -99,7 +107,7 @@ def museum_json(museum: Museum) -> dict[str, Any]:
         "url": museum.url,
         "tickets": museum.tickets,
         "with": _names(museum.people),
-        "people": _people_refs(museum.people),
+        "people": _refs(museum.people),
         "image": _image_url(museum.image_id),
     }
 
@@ -108,8 +116,24 @@ def person_json(person: Person) -> dict[str, Any]:
     return {
         "id": person.id,
         "name": person.name,
-        "company": person.company,
+        "companies": _refs(person.companies),
         "description": person.description,
+    }
+
+
+def company_json(company: Company) -> dict[str, Any]:
+    return {
+        "id": company.id,
+        "name": company.name,
+        "functions": company.functions,
+        "status": company.status,
+        "website": company.website,
+        "location": company.location,
+        "address": company.address,
+        "what_happened": company.what_happened,
+        "remark": company.remark,
+        "image": _image_url(company.image_id),
+        "people": _refs(company.people),
     }
 
 
@@ -139,10 +163,24 @@ def api_people() -> flask.Response:
     query = (
         select(Person)
         .where(Person.owner_id == flask.g.user.id)
+        .options(selectinload(Person.companies))
         .order_by(Person.name)
     )
     people = flask.g.db.execute(query).scalars().all()
     return flask.jsonify([person_json(p) for p in people])
+
+
+@bp.route("/api/companies", methods=["GET"])
+@auth.login_required
+def api_companies() -> flask.Response:
+    query = (
+        select(Company)
+        .where(Company.owner_id == flask.g.user.id)
+        .options(selectinload(Company.people))
+        .order_by(Company.name)
+    )
+    companies = flask.g.db.execute(query).scalars().all()
+    return flask.jsonify([company_json(c) for c in companies])
 
 
 @bp.route("/api/images/<int:image_id>", methods=["GET"])
@@ -153,6 +191,9 @@ def api_image(image_id: int) -> werkzeug.Response:
         return flask.Response(status=404)
     response = flask.Response(image.data, mimetype=image.content_type)
     response.headers["Cache-Control"] = f"private, max-age={IMAGE_MAX_AGE}"
+    # the imported logos are SVG: opened on their own they must not run scripts on this origin
+    response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    response.headers["X-Content-Type-Options"] = "nosniff"
     response.set_etag(image.sha256)
     return response.make_conditional(flask.request)
 
@@ -204,18 +245,23 @@ def _dates(body: dict[str, Any], current: Concert | Museum | None = None) -> dic
     return out
 
 
-def _owned_people(body: dict[str, Any]) -> list[Person]:
-    ids = body.get("people") or []
+def _owned_list[T: (Person, Company)](body: dict[str, Any], key: str, model: type[T]) -> list[T]:
+    """ body[key], a list of ids of the user's own rows of model, as those rows. """
+    ids = body.get(key) or []
     if not isinstance(ids, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
-        raise ApiError(400, "people: expected a list of person ids")
+        raise ApiError(400, f"{key}: expected a list of ids")
     if not ids:
         return []
-    people = flask.g.db.execute(
-        select(Person).where(Person.owner_id == flask.g.user.id, Person.id.in_(ids))
+    rows = flask.g.db.execute(
+        select(model).where(model.owner_id == flask.g.user.id, model.id.in_(ids))
     ).scalars().all()
-    if len(people) != len(set(ids)):
-        raise ApiError(400, "people: unknown person")
-    return list(people)
+    if len(rows) != len(set(ids)):
+        raise ApiError(400, f"{key}: unknown {model.__name__.lower()}")
+    return list(rows)
+
+
+def _owned_people(body: dict[str, Any]) -> list[Person]:
+    return _owned_list(body, "people", Person)
 
 
 def _owned_image(body: dict[str, Any]) -> int | None:
@@ -235,7 +281,7 @@ def _strings(body: dict[str, Any], key: str) -> list[str]:
     return [v.strip() for v in value if v.strip()]
 
 
-def _owned(model: type[Concert | Museum | Person], row_id: int) -> Any:
+def _owned(model: type[Concert | Museum | Person | Company], row_id: int) -> Any:
     row = flask.g.db.get(model, row_id)
     if row is None or row.owner_id != flask.g.user.id:
         raise ApiError(404, "no such entry")
@@ -243,10 +289,11 @@ def _owned(model: type[Concert | Museum | Person], row_id: int) -> Any:
 
 
 def _drop_unused_images() -> None:
-    """ Photos no concert or museum shows any more (replaced or deleted) go too. """
+    """ Photos and logos nothing shows any more (replaced or deleted) go too. """
     db = flask.g.db
     used = select(Concert.image_id).where(Concert.image_id.is_not(None)).union(
-        select(Museum.image_id).where(Museum.image_id.is_not(None))
+        select(Museum.image_id).where(Museum.image_id.is_not(None)),
+        select(Company.image_id).where(Company.image_id.is_not(None)),
     )
     for image in db.execute(select(Image).where(Image.owner_id == flask.g.user.id, Image.id.not_in(used))).scalars():
         db.delete(image)
@@ -300,8 +347,28 @@ def _apply_person(person: Person, body: dict[str, Any]) -> None:
     if clash is not None:
         raise ApiError(409, f"{name} is already in People")
     person.name = name
-    person.company = text(body, "company")
+    person.companies = _owned_list(body, "companies", Company)
     person.description = text(body, "description")
+
+
+def _apply_company(company: Company, body: dict[str, Any]) -> None:
+    name = text(body, "name", required=True)
+    clash = flask.g.db.execute(
+        select(Company.id).where(Company.owner_id == flask.g.user.id, Company.name == name, Company.id != company.id)
+    ).first()
+    if clash is not None:
+        raise ApiError(409, f"{name} is already in Companies")
+    company.name = name
+    company.functions = _strings(body, "functions")
+    company.status = text(body, "status")
+    company.website = text(body, "website")
+    company.location = text(body, "location")
+    company.address = text(body, "address")
+    company.what_happened = text(body, "what_happened")
+    company.remark = text(body, "remark")
+    image_id = _owned_image(body)
+    if image_id is not None:
+        company.image_id = image_id
 
 
 @bp.route("/api/concerts", methods=["POST"])
@@ -365,11 +432,32 @@ def api_people_update(row_id: int) -> flask.Response:
     return flask.jsonify(person_json(person))
 
 
-@bp.route("/api/<any(concerts, museums, people):what>/<int:row_id>", methods=["DELETE"])
+@bp.route("/api/companies", methods=["POST"])
+@auth.login_required
+def api_companies_add() -> tuple[flask.Response, int]:
+    company = Company(owner_id=flask.g.user.id)
+    _apply_company(company, json_body())
+    flask.g.db.add(company)
+    flask.g.db.commit()
+    return flask.jsonify(company_json(company)), 201
+
+
+@bp.route("/api/companies/<int:row_id>", methods=["PUT"])
+@auth.login_required
+def api_companies_update(row_id: int) -> flask.Response:
+    company = _owned(Company, row_id)
+    _apply_company(company, json_body())
+    flask.g.db.flush()
+    _drop_unused_images()
+    flask.g.db.commit()
+    return flask.jsonify(company_json(company))
+
+
+@bp.route("/api/<any(concerts, museums, people, companies):what>/<int:row_id>", methods=["DELETE"])
 @auth.login_required
 def api_world_delete(what: str, row_id: int) -> flask.Response:
-    model = {"concerts": Concert, "museums": Museum, "people": Person}[what]
-    # the ORM also removes the row's links to people (or a person's to concerts and museums)
+    model = {"concerts": Concert, "museums": Museum, "people": Person, "companies": Company}[what]
+    # the ORM also removes the row's links (to people, to companies, to concerts and museums)
     flask.g.db.delete(_owned(model, row_id))
     flask.g.db.flush()
     _drop_unused_images()

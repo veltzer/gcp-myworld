@@ -157,10 +157,11 @@ Without the key the search box is hidden and the endpoints answer 503.
 - `GET /api/movies/search?q=<title>`: candidate films, most relevant first.
 - `GET /api/movies/<tmdb_id>`: one film normalized for the form.
 
-## Concerts, museums and people
+## Concerts, museums, people and companies
 
-Besides the library, the app keeps the concerts, museum visits and people
-of the signed-in user: the Concerts, Museums and People tabs, in the same
+Besides the library, the app keeps the concerts, museum visits, people and
+companies of the signed-in user: the Concerts, Museums, People and
+Companies tabs, in the same
 row as the library ones, with Concerts the page a sign-in lands on. They
 are private to their owner: every row carries an `owner_id`, every query
 filters on it, and another account sees nothing, images included.
@@ -171,9 +172,17 @@ opens it for editing, with a Delete that asks twice. Library entries edit
 only their per-user fields; their title, creator and year belong to the
 shared work row.
 
+A person may work at several companies: the People tab links each one to
+its card in Companies, and a company card links back to its people. The
+person dialog picks companies the way the concert dialog picks people.
+
 The data came from `veltzer.github.io` (`data/yaml/concerts.yaml`,
-`museums.yaml`, `people.yaml` and the photos in `static/images/`) and is
-loaded with `scripts/import_world.py`. The photos are stored in the
+`museums.yaml`, `people.yaml`, `organizations.yaml`, the photos in
+`static/images/` and the logos in `data/logos/`) and is loaded with
+`scripts/import_world.py`. Companies are every organization plus every
+company a person names that is not one of them. The organization fields
+the app neither shows nor edits (old websites, map points, logo sources,
+...) are kept in `companies.details`. The photos are stored in the
 database too (the `images` table), so the database, and its Cloud SQL
 backups, hold all of it. The import replaces everything the user had in
 these tables in one transaction, so it is safe to run again, and stops on
@@ -187,25 +196,32 @@ PYTHONPATH=src scripts/import_world.py --email you@example.com
 scripts/import_world_cloud.sh --email you@example.com
 ```
 
-`--source` points at the directory holding `data/yaml/` and
-`static/images/` (default `../veltzer.github.io`); `--subject` picks the
-account when one email has several (Google and GitHub, say). The new
-tables are created by `create_all`, so no `scripts/migrate.sh` step is
-needed.
+`--source` points at the directory holding `data/yaml/`, `data/logos/`
+and `static/images/` (default `../veltzer.github.io`); `--subject` picks
+the account when one email has several (Google and GitHub, say). The new
+tables are created by `create_all`; the one `scripts/migrate.sh` step is
+dropping the old free-text `people.company` column, before deploying.
 
 - `GET /api/concerts`, `GET /api/museums`: newest first; the date comes as
   precisely as it is known (`date_precision`: time, day, month or year),
   and `people` holds the ids and names of who was there.
-- `GET /api/people`: name, company and description.
-- `POST` to the same paths adds, `PUT /api/<concerts|museums|people>/<id>`
-  replaces the fields, `DELETE` removes. The date is typed as `YYYY`,
-  `YYYY-MM` or `YYYY-MM-DD`; a date sent back exactly as it came keeps its
-  stored precision, timestamps included. `people` is a list of person ids.
+- `GET /api/people`: name, description and `companies` (ids and names).
+- `GET /api/companies`: by name, with `functions` (what the organization
+  was to the user), status, website, location, address, the logo as
+  `image`, and `people` (ids and names).
+- `POST` to the same paths adds,
+  `PUT /api/<concerts|museums|people|companies>/<id>` replaces the fields,
+  `DELETE` removes. The date is typed as `YYYY`, `YYYY-MM` or
+  `YYYY-MM-DD`; a date sent back exactly as it came keeps its stored
+  precision, timestamps included. `people` and `companies` are lists of
+  ids.
 - `POST /api/images` (multipart, field `file`, at most 8 MB, JPEG, PNG,
   GIF or WebP by content) uploads a photo; its `id` goes into `image_id`.
-  A photo no concert or museum uses any more is deleted with the change
-  that dropped it.
-- `GET /api/images/<id>`: a photo, to its owner only.
+  A photo or logo nothing uses any more is deleted with the change that
+  dropped it.
+- `GET /api/images/<id>`: a photo or logo, to its owner only. The imported
+  logos are SVG, so images are served with a sandbox
+  Content-Security-Policy.
 
 ## Pages and API
 
@@ -234,9 +250,10 @@ script would use as well:
 - `user_works`: what a user thinks about a work: status, rating, dates,
   notes. All per-user queries go through this table, so users never see
   each other's entries even though the work rows are shared.
-- `concerts`, `museums` (one row per visit), `people`, linked by
-  `concert_people` and `museum_people`, and `images`: owned by one user
-  each, never shared (see "Concerts, museums and people").
+- `concerts`, `museums` (one row per visit), `people` and `companies`,
+  linked by `concert_people`, `museum_people` and `person_companies`, and
+  `images`: owned by one user each, never shared (see "Concerts, museums,
+  people and companies").
 
 Tables are created on startup with `create_all`; there is no migration
 tool yet. Adding columns to an existing deployment needs a manual
