@@ -660,6 +660,52 @@ async function selectKind(kind) {
 	await loadEntries();
 }
 
+// how each sign-in method is named, and what its own id for the user is called
+const PROVIDERS = {
+	google: ["Google", "Google ID"],
+	github: ["GitHub", "GitHub user ID"],
+	email: ["Email and password", "Email"],
+	dev: ["Development login", "Email"],
+};
+
+// The menu under the avatar and name: how the user signed in and as whom.
+function setupAccountMenu(user) {
+	const [method, idLabel] = PROVIDERS[user.provider] || [user.provider, "ID"];
+	const rows = [
+		["Signed in with", method],
+		[idLabel, user.provider_id],
+		["Email", user.email],
+		["Account", `#${user.id}`],
+		["Role", user.role === "admin" ? "Admin" : "User"],
+	];
+	// an email account's id is its email: said once
+	const seen = new Set();
+	$("account-details").replaceChildren(...rows.filter(([label, value]) => {
+		const key = `${label}=${value}`;
+		const repeat = seen.has(key);
+		seen.add(key);
+		return value && !repeat;
+	}).flatMap(([label, value]) => [el("dt", null, label), el("dd", null, value)]));
+	const button = $("account-button");
+	const menu = $("account-menu");
+	const show = (open) => {
+		menu.hidden = !open;
+		button.setAttribute("aria-expanded", String(open));
+	};
+	button.onclick = () => show(menu.hidden);
+	document.addEventListener("click", (event) => {
+		if (!menu.hidden && !event.target.closest(".account")) {
+			show(false);
+		}
+	});
+	document.addEventListener("keydown", (event) => {
+		if (event.key === "Escape" && !menu.hidden) {
+			show(false);
+			button.focus();
+		}
+	});
+}
+
 async function libraryPage() {
 	state.config = await api("/api/config");
 	if (!state.config.user) {
@@ -671,6 +717,7 @@ async function libraryPage() {
 	if (user.picture) {
 		$("avatar").src = user.picture;
 	}
+	setupAccountMenu(user);
 	$("logout").onclick = async () => {
 		await fetch("/auth/logout", { method: "POST" });
 		window.location.href = "/";
@@ -895,6 +942,9 @@ function cardShell(item, subtitle, kind = "photo") {
 		img.alt = "";
 		img.loading = "lazy";
 		card.appendChild(img);
+	} else {
+		// an empty slot where the image would be: the list layout keeps every row the same shape
+		card.appendChild(el("div", "world-image no-image"));
 	}
 	const body = el("div", "world-body");
 	body.appendChild(el("h2", "world-title", item.name));

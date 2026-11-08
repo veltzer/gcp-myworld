@@ -30,8 +30,16 @@
 				Checks
 			</a>
 			<div class="whoami">
-				<img id="avatar" class="avatar" src="/static/favicon.svg" alt="">
-				<span id="who"></span>
+				<!-- the account menu: how you signed in and as whom -->
+				<div class="account">
+					<button id="account-button" class="account-button" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="account-menu" title="Your account">
+						<img id="avatar" class="avatar" src="/static/favicon.svg" alt="">
+						<span id="who"></span>
+					</button>
+					<div id="account-menu" class="account-menu" role="group" aria-label="Your account" hidden>
+						<dl id="account-details" class="account-details"></dl>
+					</div>
+				</div>
 				<button id="logout" type="button">Sign out</button>
 			</div>
 		</header>

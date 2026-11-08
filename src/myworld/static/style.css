@@ -69,6 +69,64 @@ body {
 	border-radius: 50%;
 }
 
+/* the account menu: the avatar and name open it */
+.account {
+	position: relative;
+}
+
+.account-button {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	padding: 0.2rem 0.4rem;
+	border-radius: 999px;
+	white-space: nowrap;
+}
+
+.account-button:hover,
+.account-button[aria-expanded="true"] {
+	background: #f3f4f6;
+}
+
+.account-menu {
+	position: absolute;
+	right: 0;
+	top: calc(100% + 0.4rem);
+	z-index: 20;
+	min-width: 18rem;
+	padding: 0.75rem 1rem;
+	background: #fff;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	box-shadow: 0 6px 20px rgb(0 0 0 / 12%);
+}
+
+.account-menu[hidden] {
+	display: none;
+}
+
+.account-details {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 0.35rem 1rem;
+	margin: 0;
+	font-size: 0.9rem;
+}
+
+.account-details dt {
+	color: var(--muted);
+	white-space: nowrap;
+}
+
+.account-details dd {
+	margin: 0;
+	/* an id or an email is never split over two lines: the menu widens instead */
+	white-space: nowrap;
+}
+
 .content {
 	max-width: 1100px;
 	margin: 0 auto;
@@ -858,7 +916,17 @@ button.danger {
 	border-bottom: 1px solid var(--line);
 }
 
-/* list: one row per item, a small image at the start, details run on one line */
+/* only the list layout shows the empty image slot of an item without one */
+.world-image.no-image {
+	display: none;
+}
+
+/*
+ * list: one row per item, every row the same size: the image slot at the
+ * start (empty when there is no image), the name and subtitle on one line
+ * each, the details running on at most two lines, cut with an ellipsis.
+ * Everything is on the item's card in the other layouts.
+ */
 .cards.layout-list {
 	grid-template-columns: 1fr;
 	gap: 0.5rem;
@@ -866,13 +934,38 @@ button.danger {
 
 .layout-list .world-card {
 	flex-direction: row;
-	align-items: flex-start;
+	align-items: stretch;
+	height: 6.5rem;
 }
 
-.layout-list .world-image {
-	width: 7rem;
+.layout-list .world-image,
+.layout-list .world-image.no-image {
+	display: block;
+	width: 8.5rem;
+	height: 100%;
 	flex: none;
-	aspect-ratio: 4 / 3;
+	aspect-ratio: auto;
+}
+
+.layout-list .world-image.no-image {
+	border-right: 1px solid var(--line);
+	background: #f3f4f6;
+}
+
+.layout-list .world-title,
+.layout-list .world-subtitle {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.layout-list .world-details {
+	margin-top: 0.25rem;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+	overflow: hidden;
 }
 
 .layout-list .world-card.is-logo .world-image {
@@ -882,10 +975,8 @@ button.danger {
 
 .layout-list .world-body {
 	padding: 0.5rem 0.75rem;
-}
-
-.layout-list .world-details {
-	margin-top: 0.25rem;
+	min-width: 0;
+	overflow: hidden;
 }
 
 .layout-list .world-details li {

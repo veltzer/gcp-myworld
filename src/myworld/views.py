@@ -123,7 +123,16 @@ def api_config() -> flask.Response:
         "statuses": STATUSES,
         "rating_min": RATING_MIN,
         "rating_max": RATING_MAX,
-        "user": None if user is None else {"email": user.email, "name": user.name, "picture": user.picture, "role": user.role},
+        "user": None if user is None else {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "picture": user.picture,
+            "role": user.role,
+            # how they signed in, and who that provider says they are: the account menu
+            "provider": user.provider,
+            "provider_id": user.provider_id,
+        },
     })
 
 

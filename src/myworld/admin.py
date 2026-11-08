@@ -18,18 +18,12 @@ from myworld.models import ROLE_ADMIN, ROLES, User
 bp = flask.Blueprint("admin", __name__)
 
 
-def _provider(user: User) -> str:
-    """ How the account signs in, from its subject (see User.google_sub). """
-    prefix, colon, _ = user.google_sub.partition(":")
-    return prefix if colon else "google"
-
-
 def user_json(user: User) -> dict[str, Any]:
     return {
         "id": user.id,
         "email": user.email,
         "name": user.name,
-        "provider": _provider(user),
+        "provider": user.provider,
         "role": user.role,
         "created_at": user.created_at.isoformat(timespec="seconds"),
     }

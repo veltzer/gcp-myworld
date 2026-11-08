@@ -94,6 +94,18 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan",
     )
 
+    @property
+    def provider(self) -> str:
+        """ How the account signs in: google, github, email or dev, from its subject. """
+        prefix, colon, _ = self.google_sub.partition(":")
+        return prefix if colon else "google"
+
+    @property
+    def provider_id(self) -> str:
+        """ Who the provider says the account is: the Google sub, the GitHub user id, the email address. """
+        prefix, colon, rest = self.google_sub.partition(":")
+        return rest if colon else prefix
+
 
 class Work(Base):
     __tablename__ = "works"

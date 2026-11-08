@@ -87,6 +87,8 @@ def test_login_then_index_redirects(app: webtest.TestApp) -> None:
     assert app.get("/library").status_int == 200
     config = app.get("/api/config").json
     assert config["user"]["email"] == "alice@example.com"
+    # the account menu: a Google account's id is its bare sub
+    assert (config["user"]["provider"], config["user"]["provider_id"]) == ("google", "1234567890")
     app.post("/auth/logout")
     assert app.get("/api/config").json["user"] is None
 
@@ -294,7 +296,10 @@ def test_oauth_callback(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -
     assert response.location is not None
     assert response.location.endswith("/library")
     assert exchanged == [("github", "abc")]
-    assert app.get("/api/config").json["user"] == {"email": "dave@example.com", "name": "Dave", "picture": "", "role": "user"}
+    assert app.get("/api/config").json["user"] == {
+        "id": 1, "email": "dave@example.com", "name": "Dave", "picture": "", "role": "user",
+        "provider": "github", "provider_id": "42",
+    }
 
 
 def test_oauth_callback_failures_return_to_landing(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
