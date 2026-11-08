@@ -940,6 +940,13 @@ button.danger {
 .person-link {
 	color: var(--accent);
 	text-decoration: none;
+	/* a value is never split over two lines ("Co-" / "Worker"); a list of them wraps between values */
+	white-space: nowrap;
+}
+
+/* names and types in the people and type tables stay on one line too */
+#world-view .entries td.title {
+	white-space: nowrap;
 }
 
 .person-link:hover {
