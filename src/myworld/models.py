@@ -196,8 +196,9 @@ class Person(Base):
     """
     Someone the user knows or saw. Names are not unique: two people may share
     one, and they stay two rows. A name that is not a first name and a
-    surname (a band, "Oded from MAFAT") is all in first_name. Either part
-    may be empty, but not both.
+    surname (a band, "Oded from MAFAT") is all in first_name. Either part,
+    or both, may be empty: a person known only by a description ("the
+    guide at the Louvre") goes by that description.
     """
     __tablename__ = "people"
 
@@ -221,8 +222,8 @@ class Person(Base):
 
     @property
     def name(self) -> str:
-        """ The whole name, as shown. """
-        return f"{self.first_name} {self.surname}".strip()
+        """ The whole name, as shown; the description for someone with no name. """
+        return f"{self.first_name} {self.surname}".strip() or self.description
     museums: Mapped[list[Museum]] = relationship(
         secondary=museum_people, back_populates="people",
     )

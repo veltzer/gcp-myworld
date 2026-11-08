@@ -471,6 +471,15 @@ def test_person_with_one_name(imported: webtest.TestApp) -> None:
     imported.put_json(f"/api/people/{first_only['id']}", {"first_name": "", "surname": ""}, status=400)
 
 
+def test_person_with_no_name(imported: webtest.TestApp) -> None:
+    # the description is what such a person is called, in pickers and elsewhere
+    guide = imported.post_json("/api/people", {"description": "the guide at the Louvre"}, status=201).json
+    assert (guide["first_name"], guide["surname"], guide["name"]) == ("", "", "the guide at the Louvre")
+    concert = imported.post_json("/api/concerts", {"name": "x", "people": [guide["id"]]}, status=201).json
+    assert concert["with"] == ["the guide at the Louvre"]
+    imported.put_json(f"/api/people/{guide['id']}", {"description": " "}, status=400)
+
+
 def test_add_museum_and_person(imported: webtest.TestApp) -> None:
     person = imported.post_json("/api/people", {"first_name": "Carol", "description": "Zed"}, status=201).json
     museum = imported.post_json("/api/museums", {

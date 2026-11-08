@@ -353,15 +353,16 @@ def _apply_museum(museum: Museum, body: dict[str, Any], current: Museum | None) 
 
 def _apply_person(person: Person, body: dict[str, Any]) -> None:
     # two people may share a name, so there is no clash to look for
-    # either name may be missing (a surname alone, a first name alone), but
-    # not both: a person with no name could not be picked in any picker
+    # either name, or both, may be missing: someone with no name goes by the
+    # description, so it is only a person with none of the three, who could
+    # not be picked in any picker, that is refused
     person.first_name = text(body, "first_name")
     person.surname = text(body, "surname")
-    if not person.first_name and not person.surname:
-        raise ApiError(400, "a person needs a first name or a surname")
+    person.description = text(body, "description")
+    if not person.first_name and not person.surname and not person.description:
+        raise ApiError(400, "a person needs a first name, a surname or a description")
     person.organizations = _owned_list(body, "organizations", Organization)
     person.types = _owned_list(body, "type_ids", PersonType)
-    person.description = text(body, "description")
 
 
 def _apply_organization(organization: Organization, body: dict[str, Any]) -> None:

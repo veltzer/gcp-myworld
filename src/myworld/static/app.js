@@ -1394,9 +1394,11 @@ async function worldList(view) {
 }
 
 // What a picker suggests for a row: the name, and for people the type and
-// description too, since two people may share a name.
+// description too, since two people may share a name. A person with no name
+// is called by the description already, so it is not repeated.
 function chipLabel(row) {
-	const more = [(row.types || []).map((t) => t.name).join("/"), row.description?.slice(0, 40)].filter(Boolean);
+	const named = row.first_name || row.surname;
+	const more = [(row.types || []).map((t) => t.name).join("/"), named && row.description?.slice(0, 40)].filter(Boolean);
 	return more.length && "first_name" in row ? `${row.name} (${more.join(", ")})` : row.name;
 }
 
