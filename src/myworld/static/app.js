@@ -520,6 +520,10 @@ const SORTS = {
 		["name", "Name", (t) => t.name, "asc"],
 		["count", "People", (t) => t.count, "desc"],
 	],
+	"relation-types": [
+		["name", "Name", (t) => t.name, "asc"],
+		["count", "Organizations", (t) => t.count, "desc"],
+	],
 };
 const SORT_KEY = "myworld.sort";
 
@@ -755,7 +759,7 @@ async function libraryPage() {
 	setupAddDialog();
 	renderKinds();
 	const requested = window.location.hash.slice(1);
-	const linked = requested.match(/^(concerts|museums|people|organizations|organization-types|person-types)\/(\d+)$/);
+	const linked = requested.match(/^(concerts|museums|people|organizations|organization-types|person-types|relation-types)\/(\d+)$/);
 	if (linked) {
 		await showRow(linked[1], Number(linked[2]));
 	} else if (requested === "stats") {
@@ -781,6 +785,7 @@ const WORLDS = {
 	organizations: ["Organizations", "/api/organizations", "organization", "Organizations"],
 	"organization-types": ["Organization types", "/api/organization-types", "organization type", "Org types"],
 	"person-types": ["Person types", "/api/person-types", "person type", "Person types"],
+	"relation-types": ["Relation types", "/api/relation-types", "relation type", "Relations"],
 };
 
 // views whose rows have a type -> the view of their enumeration
@@ -1000,20 +1005,11 @@ function museumCard(item) {
 	return card;
 }
 
-// what the organization was to me, in words
-const FUNCTIONS = {
-	teaching: "I taught there",
-	"training-provider": "Hired me to teach",
-	consulting: "I consulted",
-	certification: "Certified me",
-	publisher: "Publisher",
-	education: "I studied there",
-};
-
 function organizationCard(item) {
 	const { card, list } = cardShell(item, item.location, "logo");
 	linksDetail(list, "Type", "organization-types", item.type ? [item.type] : []);
-	detail(list, "Was", item.functions.map((f) => FUNCTIONS[f] || f));
+	// how it is related to me: links to the Relation types page
+	linksDetail(list, "Relation", "relation-types", item.relations);
 	detail(list, "Status", item.status);
 	detail(list, "What happened", item.what_happened);
 	detail(list, "Address", item.address);
@@ -1090,8 +1086,7 @@ function personRow(person) {
 	return tr;
 }
 
-// The enumeration of what an organization can be, and how many are of each.
-// A row of an enumeration (Org types, Person types), with how many rows are of it.
+// A row of an enumeration (Org types, Person types, Relation types), with how many rows are of it.
 function typeRow(kind) {
 	const tr = el("tr");
 	tr.id = `${slug(state.view)}-${kind.id}`;
@@ -1105,6 +1100,7 @@ const TABLES = {
 	people: ["people", "people-rows", personRow],
 	"organization-types": ["types", "type-rows", typeRow],
 	"person-types": ["person-types-table", "person-type-rows", typeRow],
+	"relation-types": ["relation-types-table", "relation-type-rows", typeRow],
 };
 
 // The type filter next to the search, for views whose rows have a type: a set
@@ -1480,12 +1476,14 @@ function renderStats(stats) {
 		statTile("Organizations", stats.organizations, "", "organizations"),
 		statTile("Organization types", stats.organization_types, "", "organization-types"),
 		statTile("Person types", stats.person_types, "", "person-types"),
+		statTile("Relation types", stats.relation_types, "", "relation-types"),
 		statTile("Photos and logos", stats.images, "", null),
 	);
 	const charts = el("div", "stat-charts");
 	charts.append(
 		barChart("People by type (one with several types counts in each)", stats.people_by_type),
 		barChart("Organizations by type", stats.organizations_by_type),
+		barChart("Organizations by relation (one with several relations counts in each)", stats.organizations_by_relation),
 		yearChart("Concerts per year", stats.concerts_by_year, "concerts"),
 		yearChart("Museum visits per year", stats.museums_by_year, "visits"),
 	);
@@ -1594,7 +1592,7 @@ function setupWorlds() {
 // ─── the add dialog ─────────────────────────────────────────────────────────
 
 // One dialog, opened by the + button, showing the form of whatever is on screen.
-const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "person-form", "organization-form", "organization-type-form", "person-type-form"];
+const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "person-form", "organization-form", "organization-type-form", "person-type-form", "relation-type-form"];
 const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 
 function dialogError(message) {
@@ -1793,7 +1791,7 @@ const WORLD_BODIES = {
 		return {
 			name: value("name"),
 			type_id: value("type_id"),
-			functions: value("functions").split(",").map((f) => f.trim()).filter(Boolean),
+			relation_ids: chosen(form, "relations"),
 			status: value("status"),
 			website: value("website"),
 			location: value("location"),
@@ -1808,6 +1806,10 @@ const WORLD_BODIES = {
 		description: form.elements.description.value,
 	}),
 	"person-types": async (form) => ({
+		name: form.elements.name.value,
+		description: form.elements.description.value,
+	}),
+	"relation-types": async (form) => ({
 		name: form.elements.name.value,
 		description: form.elements.description.value,
 	}),

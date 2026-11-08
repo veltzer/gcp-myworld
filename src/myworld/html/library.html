@@ -111,6 +111,16 @@
 					</thead>
 					<tbody id="person-type-rows"></tbody>
 				</table>
+				<table id="relation-types-table" class="entries" hidden>
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>Description</th>
+							<th>Organizations</th>
+						</tr>
+					</thead>
+					<tbody id="relation-type-rows"></tbody>
+				</table>
 			</section>
 			<section id="library-view">
 				<p id="empty" class="empty" hidden></p>
@@ -274,7 +284,7 @@
 					<label>Type <select name="type_id"></select></label>
 				</div>
 				<div class="row">
-					<label class="wide">What it was to me <input name="functions" placeholder="Comma separated: teaching, consulting, education, ..."></label>
+					<label class="wide">Relation to me <span class="chips" data-chips="relation-types" data-field="relations"><input list="relation-type-names" placeholder="Type a name from Relation types" autocomplete="off"></span></label>
 					<label>Status <input name="status" placeholder="active, acquired, defunct"></label>
 				</div>
 				<div class="row">
@@ -324,9 +334,23 @@
 					<button type="submit">Add</button>
 				</div>
 			</form>
+			<form id="relation-type-form" class="dialog-form" hidden>
+				<div class="row">
+					<label class="wide">Name <input name="name" required placeholder="e.g. Taught there"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Description <input name="description"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
 			<datalist id="people-names"></datalist>
 			<datalist id="organization-names"></datalist>
 			<datalist id="person-type-names"></datalist>
+			<datalist id="relation-type-names"></datalist>
 		</dialog>
 		<dialog id="connections-dialog" class="dialog" aria-labelledby="connections-title">
 			<h2 id="connections-title"></h2>

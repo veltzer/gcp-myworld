@@ -19,7 +19,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from myworld.models import Image, Organization, Person, person_person_types
+from myworld.models import (
+    Image,
+    Organization,
+    Person,
+    organization_relation_types,
+    person_person_types,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -165,6 +171,19 @@ def check_organization_logos(session: Session) -> Result:
         Problem(f"{name} (organization {organization_id}, account {owner_id})", "has no logo")
         for organization_id, owner_id, name, image_id in organizations
         if image_id is None
+    ]
+    return Result(checked=len(organizations), problems=problems)
+
+
+@check("organization-relations", "Every organization is related to you", "organizations")
+def check_organization_relations(session: Session) -> Result:
+    """ Every organization, of every account, has at least one relation type (taught there, consulted, ...). """
+    related = set(session.scalars(select(organization_relation_types.c.organization_id)))
+    organizations = session.execute(select(Organization.id, Organization.owner_id, Organization.name).order_by(Organization.name)).all()
+    problems = [
+        Problem(f"{name} (organization {organization_id}, account {owner_id})", "has no relation type")
+        for organization_id, owner_id, name in organizations
+        if organization_id not in related
     ]
     return Result(checked=len(organizations), problems=problems)
 

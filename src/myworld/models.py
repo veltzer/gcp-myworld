@@ -266,11 +266,36 @@ class OrganizationType(Base):
     organizations: Mapped[list[Organization]] = relationship(back_populates="type")
 
 
+organization_relation_types = Table(
+    "organization_relation_types",
+    Base.metadata,
+    Column("organization_id", ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True),
+    Column("relation_type_id", ForeignKey("relation_types.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class RelationType(Base):
+    """
+    How an organization is related to the user: taught there, consulted,
+    studied there, ... An enumeration the user keeps themselves (the
+    Relation types page); an organization has any number of them.
+    """
+    __tablename__ = "relation_types"
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_relation_type_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    organizations: Mapped[list[Organization]] = relationship(secondary=organization_relation_types, back_populates="relations")
+
+
 class Organization(Base):
     """
     An organization: one a person works at, or one the user taught at,
     consulted for, studied at, was certified by or bought media from
-    (functions). Fields that are only kept, never shown or edited one by one
+    (relations, the user's own relation types). Fields that are only kept, never shown or edited one by one
     (old websites, the geo points, where the logo came from, ...), are in
     details, so an import loses nothing.
     """
@@ -283,7 +308,6 @@ class Organization(Base):
     # what it is (company, university, ...): one of the user's own organization types
     type_id: Mapped[int | None] = mapped_column(ForeignKey("organization_types.id", ondelete="SET NULL"), nullable=True)
     type: Mapped[OrganizationType | None] = relationship(back_populates="organizations")
-    functions: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     # active, acquired, defunct, ...
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     website: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
@@ -296,6 +320,7 @@ class Organization(Base):
     image: Mapped[Image | None] = relationship()
 
     people: Mapped[list[Person]] = relationship(secondary=person_organizations, back_populates="organizations")
+    relations: Mapped[list[RelationType]] = relationship(secondary=organization_relation_types, back_populates="organizations")
 
 
 class _Dated:

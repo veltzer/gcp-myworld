@@ -191,6 +191,15 @@ to its card in Organizations, and an organization card links back to its
 people. The person dialog picks organizations the way the concert dialog
 picks people.
 
+Each organization is related to the user in one or more ways (taught
+there, consulted, studied there, ...): its relation types, an enumeration
+the user keeps on the Relation types tab and picks in the organization
+dialog, shown on the card. An import starts the user with Teaching,
+Training provider, Consulting, Certification, Publisher and Education,
+from the `functions` field of `organizations.yaml`; the
+`organization-relations` check (`checks.md`) finds an organization with
+none.
+
 Each organization has a type (company, university, government, ...), shown
 on its card. The types are an enumeration the user keeps on the Org types
 tab: add, rename, describe or delete them there, and pick one in the
@@ -239,15 +248,16 @@ first `companies` tables to `organizations`, then making
 - `GET /api/people`: `first_name`, `surname`, `name` (the two together),
   `types` (ids and names), description and `organizations` (ids and names);
 a person is written with `type_ids`, a list.
-- `GET /api/organizations`: by name, with `type` (id and name), `functions` (what the organization
-  was to the user), status, website, location, address, the logo as
+- `GET /api/organizations`: by name, with `type` (id and name), `relations`
+  (how it is related to the user: ids and names of relation types), status, website, location, address, the logo as
   `image`, and `people` (ids and names).
 - `POST` to the same paths adds,
   `PUT /api/<concerts|museums|people|organizations>/<id>` replaces the fields,
   `DELETE` removes. The date is typed as `YYYY`, `YYYY-MM` or
   `YYYY-MM-DD`; a date sent back exactly as it came keeps its stored
   precision, timestamps included. `people` and `organizations` are lists of
-  ids, `type_id` an organization type id.
+  ids, `type_id` an organization type id, and an organization's relation
+  types are written as `relation_ids`, a list.
 - `GET /api/users` (admins only, 403 otherwise): every account, with
   email, name, provider (google, github, email, dev), role and when it
   was made. `PUT /api/users/<id>` with `{"role": "user" | "admin"}`
@@ -261,9 +271,10 @@ a person is written with `type_ids`, a list.
   people, organizations, both kinds of types, images), people and
   organizations by type, and concerts and museum visits per year: the
   Stats page, linked from the top bar.
-- `GET /api/organization-types`, `GET /api/person-types`: name,
-  description and `count`, how many rows are of it; `POST`,
-  `PUT /api/<organization-types|person-types>/<id>` and `DELETE` (refused
+- `GET /api/organization-types`, `GET /api/person-types`,
+  `GET /api/relation-types`: name, description and `count`, how many rows
+  are of it; `POST`,
+  `PUT /api/<organization-types|person-types|relation-types>/<id>` and `DELETE` (refused
   while rows are of it) edit the enumeration.
 - `POST /api/images` (multipart, field `file`, at most 8 MB, JPEG, PNG,
   GIF or WebP by content) uploads a photo; its `id` goes into `image_id`.

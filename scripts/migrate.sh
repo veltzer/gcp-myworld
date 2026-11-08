@@ -47,6 +47,15 @@
 #     server default the old version does not need to know about. On a fresh
 #     database create_all makes the column; run this after the first sign-in
 #     to make that account the admin.
+#   - organizations.functions (a JSON list of words: teaching, consulting, ...)
+#     becomes relation types, the user's own enumeration (relation_types),
+#     linked to organizations through organization_relation_types: each owner
+#     gets the six starting types (named as RELATION_TYPES in
+#     scripts/import_world.py does) and one for any other word their
+#     organizations use, every organization is linked to the types of its
+#     words, and only then is the column dropped. The new code no longer
+#     writes the column, which is NOT NULL, so run this right after deploying
+#     that version.
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -185,6 +194,41 @@ if "type_id" in people_columns:
     db.execute("ALTER TABLE people_new RENAME TO people")
     db.execute("CREATE INDEX IF NOT EXISTS ix_people_owner_id ON people (owner_id)")
     added.append("people.type_id -> person_person_types")
+if "functions" in {row[1] for row in db.execute("PRAGMA table_info(organizations)")}:
+    import json
+    # as RELATION_TYPES in scripts/import_world.py
+    standard = {
+        "teaching": ("Teaching", "I taught there"),
+        "training-provider": ("Training provider", "Hired me to teach"),
+        "consulting": ("Consulting", "I consulted for them"),
+        "certification": ("Certification", "Certified me"),
+        "publisher": ("Publisher", "I consumed media they published"),
+        "education": ("Education", "I studied there"),
+    }
+    db.execute("""CREATE TABLE IF NOT EXISTS relation_types (
+        id INTEGER NOT NULL PRIMARY KEY,
+        owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL,
+        description TEXT NOT NULL,
+        CONSTRAINT uq_relation_type_name UNIQUE (owner_id, name))""")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_relation_types_owner_id ON relation_types (owner_id)")
+    db.execute("""CREATE TABLE IF NOT EXISTS organization_relation_types (
+        organization_id INTEGER NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+        relation_type_id INTEGER NOT NULL REFERENCES relation_types (id) ON DELETE CASCADE,
+        PRIMARY KEY (organization_id, relation_type_id))""")
+    rows = db.execute("SELECT id, owner_id, functions FROM organizations").fetchall()
+    for owner_id in {owner for _, owner, _ in rows}:
+        for name, description in standard.values():
+            db.execute("INSERT OR IGNORE INTO relation_types (owner_id, name, description) VALUES (?, ?, ?)", (owner_id, name, description))
+    for organization_id, owner_id, functions in rows:
+        for word in {w.strip() for w in json.loads(functions or "[]") if w.strip()}:
+            spaced = word.replace("-", " ")
+            name, description = standard.get(word, (spaced[:1].upper() + spaced[1:], ""))
+            db.execute("INSERT OR IGNORE INTO relation_types (owner_id, name, description) VALUES (?, ?, ?)", (owner_id, name, description))
+            (type_id,) = db.execute("SELECT id FROM relation_types WHERE owner_id = ? AND name = ?", (owner_id, name)).fetchone()
+            db.execute("INSERT OR IGNORE INTO organization_relation_types (organization_id, relation_type_id) VALUES (?, ?)", (organization_id, type_id))
+    db.execute("ALTER TABLE organizations DROP COLUMN functions")
+    added.append("organizations.functions -> relation_types, organization_relation_types")
 if not db.execute("SELECT 1 FROM users WHERE role = 'admin'").fetchone():
     oldest = db.execute("SELECT min(id) FROM users").fetchone()[0]
     if oldest is not None:
@@ -210,7 +254,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'works' AND column_name IN ('imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
 	   OR (table_name = 'people' AND column_name = 'company')
 	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
-	   OR (table_name = 'organizations' AND column_name = 'type_id')
+	   OR (table_name = 'organizations' AND column_name IN ('type_id', 'functions'))
 	   OR (table_name = 'concerts' AND column_name = 'performers')
 	   OR (table_name = 'people' AND column_name IN ('name', 'type_id'))
 	   OR (table_name = 'person_types' AND column_name = 'id')
@@ -306,6 +350,45 @@ if has "people.type_id:.*" || ! has "person_types.id:.*"; then
 		ALTER TABLE people DROP COLUMN type_id"
 fi
 
+if has "organizations.functions:.*"; then
+	# relation_words: every word to its type name (the six of RELATION_TYPES in
+	# scripts/import_world.py, any other capitalized), standard for those six
+	need "organizations.functions -> relation_types, organization_relation_types" "CREATE TABLE IF NOT EXISTS relation_types (
+			id SERIAL PRIMARY KEY,
+			owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+			name VARCHAR(100) NOT NULL,
+			description TEXT NOT NULL,
+			CONSTRAINT uq_relation_type_name UNIQUE (owner_id, name));
+		CREATE INDEX IF NOT EXISTS ix_relation_types_owner_id ON relation_types (owner_id);
+		CREATE TABLE IF NOT EXISTS organization_relation_types (
+			organization_id INTEGER NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+			relation_type_id INTEGER NOT NULL REFERENCES relation_types (id) ON DELETE CASCADE,
+			PRIMARY KEY (organization_id, relation_type_id));
+		CREATE TEMP TABLE relation_words (word TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, standard BOOLEAN NOT NULL) ON COMMIT DROP;
+		INSERT INTO relation_words VALUES
+			('teaching', 'Teaching', 'I taught there', true),
+			('training-provider', 'Training provider', 'Hired me to teach', true),
+			('consulting', 'Consulting', 'I consulted for them', true),
+			('certification', 'Certification', 'Certified me', true),
+			('publisher', 'Publisher', 'I consumed media they published', true),
+			('education', 'Education', 'I studied there', true);
+		INSERT INTO relation_words
+			SELECT DISTINCT w, upper(left(replace(w, '-', ' '), 1)) || substr(replace(w, '-', ' '), 2), '', false
+			FROM (SELECT btrim(f) AS w FROM organizations, json_array_elements_text(functions::json) AS f) AS words
+			WHERE w <> ''
+			ON CONFLICT (word) DO NOTHING;
+		INSERT INTO relation_types (owner_id, name, description)
+			SELECT DISTINCT o.owner_id, r.name, r.description FROM organizations o
+			JOIN relation_words r ON r.standard OR r.word IN (SELECT btrim(f) FROM json_array_elements_text(o.functions::json) AS f)
+			ON CONFLICT ON CONSTRAINT uq_relation_type_name DO NOTHING;
+		INSERT INTO organization_relation_types (organization_id, relation_type_id)
+			SELECT DISTINCT o.id, t.id FROM organizations o
+			CROSS JOIN LATERAL json_array_elements_text(o.functions::json) AS f (word)
+			JOIN relation_words r ON r.word = btrim(f.word)
+			JOIN relation_types t ON t.owner_id = o.owner_id AND t.name = r.name
+			ON CONFLICT DO NOTHING;
+		ALTER TABLE organizations DROP COLUMN functions"
+fi
 if ! has "users.role:.*"; then
 	need users.role "ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'user'"
 fi

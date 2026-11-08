@@ -141,7 +141,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         counts = import_world.import_world(session, owner(session), write_source(tmp_path))
         session.commit()
     assert counts == {
-        "people": 4, "organizations": 3, "organization types": 7, "person types": 4, "people with a type": 4, "concerts": 3, "museums": 3, "images": 3}
+        "people": 4, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 4, "people with a type": 4, "concerts": 3, "museums": 3, "images": 3}
     return app
 
 
@@ -218,14 +218,16 @@ def test_organizations(imported: webtest.TestApp) -> None:
     organizations = imported.get("/api/organizations").json
     assert [c["name"] for c in organizations] == ["Acme", "Old School", "Startup"]
     acme, school, startup = organizations
-    assert acme["functions"] == ["teaching", "consulting"]
+    # the functions of organizations.yaml become relation types
+    assert [r["name"] for r in acme["relations"]] == ["Consulting", "Teaching"]
+    assert [r["name"] for r in school["relations"]] == ["Education"]
     assert acme["status"] == "acquired"
     assert acme["what_happened"] == "Bought by Bigco"
     assert acme["website"] == "https://acme.example"
     assert [p["name"] for p in acme["people"]] == ["Bob Buddy"]
     assert [p["name"] for p in startup["people"]] == ["Alice Friend", "Bob Buddy"]
     # an organization only a person names has nothing but its name
-    assert startup["functions"] == []
+    assert startup["relations"] == []
     assert startup["image"] is None
     assert school["image"] is None
     # the links point at the same rows both ways
@@ -533,14 +535,35 @@ def test_link_person_to_organizations(imported: webtest.TestApp) -> None:
     imported.put_json(f"/api/people/{bob}", {"first_name": "Bob", "organizations": "Acme"}, status=400)
 
 
+def test_relation_types(imported: webtest.TestApp) -> None:
+    # every import starts with the six; counts are of the user's organizations
+    counts = {t["name"]: t["count"] for t in imported.get("/api/relation-types").json}
+    assert counts == {
+        "Certification": 0, "Consulting": 1, "Education": 1, "Publisher": 0, "Teaching": 1, "Training provider": 0,
+    }
+    board = imported.post_json("/api/relation-types", {"name": "Board member", "description": "I sat on the board"}, status=201).json
+    imported.post_json("/api/relation-types", {"name": "Board member"}, status=409)
+    startup = next(c for c in imported.get("/api/organizations").json if c["name"] == "Startup")
+    imported.put_json(f"/api/organizations/{startup['id']}", {"name": "Startup", "relation_ids": [board["id"]]})
+    # a type in use cannot go: no organization silently loses a relation
+    imported.delete(f"/api/relation-types/{board['id']}", status=409)
+    imported.put_json(f"/api/organizations/{startup['id']}", {"name": "Startup", "relation_ids": []})
+    imported.delete(f"/api/relation-types/{board['id']}", status=204)
+    stats = imported.get("/api/stats").json
+    assert stats["relation_types"] == 6
+    assert {"name": "No relation", "count": 1} in stats["organizations_by_relation"]
+
+
 def test_add_edit_delete_organization(imported: webtest.TestApp, engine: Engine) -> None:
     imported.post_json("/api/organizations", {"name": ""}, status=400)
     imported.post_json("/api/organizations", {"name": "Acme"}, status=409)
     upload = imported.post("/api/images", upload_files=[("file", "logo.jpg", JPEG)]).json
+    relations = {t["name"]: t["id"] for t in imported.get("/api/relation-types").json}
+    imported.post_json("/api/organizations", {"name": "Badco", "relation_ids": [999]}, status=400)
     organization = imported.post_json("/api/organizations", {
-        "name": "Newco", "functions": ["consulting", " "], "website": "https://newco.example", "image_id": upload["id"],
+        "name": "Newco", "relation_ids": [relations["Consulting"]], "website": "https://newco.example", "image_id": upload["id"],
     }, status=201).json
-    assert organization["functions"] == ["consulting"]
+    assert [r["name"] for r in organization["relations"]] == ["Consulting"]
     assert organization["image"] == upload["url"]
     acme = next(c for c in imported.get("/api/organizations").json if c["name"] == "Acme")
     edited = imported.put_json(f"/api/organizations/{acme['id']}", dict(acme, name="Acme Ltd", image_id=upload["id"])).json

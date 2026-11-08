@@ -23,6 +23,7 @@ from myworld.models import (
     Organization,
     Person,
     PersonType,
+    RelationType,
     User,
 )
 from tests.conftest import sign_in
@@ -63,7 +64,7 @@ def test_bad_logo(data: bytes, wanted: str) -> None:
 
 
 def test_every_check_describes_itself() -> None:
-    assert {"logos", "organization-logos", "person-types"} <= set(checks.CHECKS)
+    assert {"logos", "organization-logos", "organization-relations", "person-types"} <= set(checks.CHECKS)
     for chosen in checks.CHECKS.values():
         assert chosen.title and chosen.description and chosen.noun
 
@@ -118,6 +119,22 @@ def test_checks_api_is_for_admins(app: webtest.TestApp, engine: Engine) -> None:
     app.get("/api/checks/nonesuch", status=404)
 
 
+def test_organization_relations(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(google_sub="alice", email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        teaching = RelationType(owner_id=alice.id, name="Teaching")
+        session.add_all([
+            Organization(owner_id=alice.id, name="Acme", relations=[teaching]),
+            Organization(owner_id=alice.id, name="Bare"),
+        ])
+        session.commit()
+        result = checks.CHECKS["organization-relations"].run(session)
+    assert result.checked == 2
+    assert [(p.subject, p.message) for p in result.problems] == [("Bare (organization 2, account 1)", "has no relation type")]
+
+
 def test_person_types(engine: Engine) -> None:
     with Session(engine) as session:
         alice = User(google_sub="alice", email="alice@example.com")
@@ -165,6 +182,7 @@ def test_script(tmp_path: Path) -> None:
         # an SVG nothing uses is still checked, so the bad one has to go
         session.execute(delete(Image).where(Image.filename == "evil.svg"))
         session.commit()
-    passing = run_script(url)
+    # the two logo checks; the sample organizations have no relation types
+    passing = run_script(url, "logos", "organization-logos")
     assert passing.returncode == 0, passing.stdout + passing.stderr
     assert "ok    logos: all 1 logos pass" in passing.stdout

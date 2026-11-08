@@ -53,11 +53,13 @@ from myworld.models import (
     OrganizationType,
     Person,
     PersonType,
+    RelationType,
     User,
     concert_people,
     concert_performers,
     make_engine,
     museum_people,
+    organization_relation_types,
     person_organizations,
     person_person_types,
 )
@@ -69,7 +71,8 @@ CONCERT_FIELDS = DATE_FIELDS | {
     "name", "performers", "event", "genre", "venue", "city", "country", "with", "tickets",
     "broadcast", "review", "remark", "image", "image_source", "image_license", "image_author",
 }
-# organization fields that have a column of their own; logo names the logo file
+# organization fields that have a column of their own (functions: the relation
+# types); logo names the logo file
 ORGANIZATION_COLUMNS = {"name", "type", "functions", "status", "website", "location", "address", "what_happened", "remark"}
 # kept as they are in organizations.details
 ORGANIZATION_DETAILS = {
@@ -95,6 +98,17 @@ PERSON_TYPES = {
     "Girlfriend": "A girlfriend, now or before",
     "Performer": "Someone seen on stage",
     "Co-Worker": "Someone worked with",
+}
+# the relation types (how an organization is related to the user) every import
+# starts the user with, by the word organizations.yaml uses in its functions
+# field: (name, description). scripts/migrate.sh names them the same way.
+RELATION_TYPES = {
+    "teaching": ("Teaching", "I taught there"),
+    "training-provider": ("Training provider", "Hired me to teach"),
+    "consulting": ("Consulting", "I consulted for them"),
+    "certification": ("Certification", "Certified me"),
+    "publisher": ("Publisher", "I consumed media they published"),
+    "education": ("Education", "I studied there"),
 }
 # what _person_type reads a person's type from
 FAMILY_NAME = "Veltzer"
@@ -212,7 +226,7 @@ def _person_type(person: Person) -> str | None:
     return None
 
 
-def _starting_types[T: (OrganizationType, PersonType)](
+def _starting_types[T: (OrganizationType, PersonType, RelationType)](
     session: Session, owner: User, model: type[T], starting: dict[str, str],
 ) -> tuple[dict[str, T], int]:
     """ owner's types of model by name, after adding those of starting they lack, and how many were added. """
@@ -235,7 +249,8 @@ def give_types(session: Session, owner: User) -> dict[str, int]:
     """
     org_types, org_added = _starting_types(session, owner, OrganizationType, ORGANIZATION_TYPES)
     person_types, person_added = _starting_types(session, owner, PersonType, PERSON_TYPES)
-    added = org_added + person_added
+    _, relation_added = _starting_types(session, owner, RelationType, dict(RELATION_TYPES.values()))
+    added = org_added + person_added + relation_added
     typed = 0
     for organization in session.scalars(select(Organization).where(Organization.owner_id == owner.id, Organization.type_id.is_(None))):
         organization.type = org_types[type_for(organization.name)]
@@ -282,7 +297,10 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     session.execute(delete(museum_people).where(museum_people.c.museum_id.in_(select(Museum.id).where(Museum.owner_id == owner.id))))
     session.execute(delete(person_person_types).where(person_person_types.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
     session.execute(delete(person_organizations).where(person_organizations.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
-    for model in (Concert, Museum, Person, Organization, OrganizationType, PersonType, Image):
+    session.execute(delete(organization_relation_types).where(
+        organization_relation_types.c.organization_id.in_(select(Organization.id).where(Organization.owner_id == owner.id)),
+    ))
+    for model in (Concert, Museum, Person, Organization, OrganizationType, PersonType, RelationType, Image):
         session.execute(delete(model).where(model.owner_id == owner.id))
     session.flush()
 
@@ -318,6 +336,19 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     for name in ORGANIZATION_TYPES:
         organization_type(name)
 
+    relation_types: dict[str, RelationType] = {}
+
+    def relation_type(word: str) -> RelationType:
+        """ The relation type for a word of the functions field; one not in RELATION_TYPES is named after the word. """
+        name, description = RELATION_TYPES.get(word, (word.replace("-", " ").capitalize(), ""))
+        if name not in relation_types:
+            relation_types[name] = RelationType(owner_id=owner.id, name=name, description=description)
+            session.add(relation_types[name])
+        return relation_types[name]
+
+    for word in RELATION_TYPES:
+        relation_type(word)
+
     organizations: dict[str, Organization] = {}
     for item in organization_items:
         if item["name"] in organizations:
@@ -326,7 +357,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
             owner_id=owner.id,
             name=item["name"],
             type=organization_type(item.get("type") or type_for(item["name"])),
-            functions=list(item.get("functions", [])),
+            relations=[relation_type(word) for word in dict.fromkeys(item.get("functions", []))],
             **{key: item.get(key, "") for key in sorted(ORGANIZATION_COLUMNS - {"name", "type", "functions"})},
             details={key: _json_safe(item[key]) for key in sorted(ORGANIZATION_DETAILS) if key in item},
             # logos live in data/, as logos/<slug>.svg
@@ -415,7 +446,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     session.flush()
     typed = give_types(session, owner)
     return {
-        "people": len(people), "organizations": len(organizations), "organization types": len(types),
+        "people": len(people), "organizations": len(organizations), "organization types": len(types), "relation types": len(relation_types),
         "person types": len(PERSON_TYPES), "people with a type": typed["people given a type"],
         "concerts": len(concert_items), "museums": len(museum_items), "images": len(images),
     }
