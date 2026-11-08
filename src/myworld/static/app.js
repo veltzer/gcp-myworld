@@ -501,6 +501,9 @@ const SORTS = {
 const SORT_KEY = "myworld.sort";
 
 function sortFields() {
+	if (state.view === "stats") {
+		return [];
+	}
 	return SORTS[state.view in WORLDS ? state.view : "library"] || [];
 }
 
@@ -577,6 +580,9 @@ function updateTools() {
 	button.innerHTML = ARROWS[direction];
 	button.title = direction === "asc" ? "Ascending: click for descending" : "Descending: click for ascending";
 	button.setAttribute("aria-label", button.title);
+	// the stats page has nothing to search or add: both stay, disabled
+	$("world-search").disabled = state.view === "stats";
+	$("fab").disabled = state.view === "stats";
 	const cards = state.view in CARDS;
 	for (const layout of $("layouts").querySelectorAll("button")) {
 		layout.disabled = !cards;
@@ -586,6 +592,9 @@ function updateTools() {
 
 // After a change to the search, the filter or the sort: redraw what is on screen.
 function rerender() {
+	if (state.view === "stats") {
+		return;
+	}
 	if (state.view in WORLDS) {
 		renderWorld();
 	} else {
@@ -612,8 +621,7 @@ async function selectKind(kind) {
 	state.kind = kind;
 	state.view = kind;
 	window.location.hash = kind;
-	$("library-view").hidden = false;
-	$("world-view").hidden = true;
+	showSection("library-view");
 	$("world-search").value = "";
 	await fillTypeFilter(kind);
 	updateTools();
@@ -677,6 +685,8 @@ async function libraryPage() {
 	const linked = requested.match(/^(concerts|museums|people|organizations|organization-types|person-types)\/(\d+)$/);
 	if (linked) {
 		await showRow(linked[1], Number(linked[2]));
+	} else if (requested === "stats") {
+		await selectStats();
 	} else if (requested in state.config.kinds) {
 		await selectKind(requested);
 	} else {
@@ -1093,6 +1103,125 @@ function markActive() {
 		const active = a.dataset.world ? a.dataset.world === state.view : a.dataset.kind === state.view;
 		a.classList.toggle("active", active);
 	}
+	$("stats-link").classList.toggle("active", state.view === "stats");
+}
+
+// One of the three page bodies: the library table, the cards and tables, the stats.
+function showSection(id) {
+	for (const section of ["library-view", "world-view", "stats-view"]) {
+		$(section).hidden = section !== id;
+	}
+}
+
+// ─── stats ──────────────────────────────────────────────────────────────────
+
+async function selectStats() {
+	state.view = "stats";
+	window.location.hash = "stats";
+	document.title = "Stats - My World";
+	showSection("stats-view");
+	markActive();
+	renderKinds();
+	showError("");
+	$("world-search").value = "";
+	await fillTypeFilter("stats");
+	updateTools();
+	$("world-count").textContent = "";
+	const stats = await api("/api/stats");
+	if (state.view === "stats") {
+		renderStats(stats);
+	}
+}
+
+// A number with what it counts, a link to its tab when there is one.
+function statTile(label, value, sub, target) {
+	const tile = el(target ? "a" : "div", "stat-tile");
+	if (target) {
+		tile.href = `/library#${target}`;
+		tile.onclick = (event) => {
+			event.preventDefault();
+			(target in WORLDS ? selectWorld(target) : selectKind(target)).catch((e) => showError(e.message));
+		};
+	}
+	tile.append(el("span", "stat-value", value.toLocaleString()), el("span", "stat-label", label));
+	if (sub) {
+		tile.appendChild(el("span", "stat-sub", sub));
+	}
+	return tile;
+}
+
+// One series of named counts as horizontal bars, the count written beside each.
+function barChart(title, rows) {
+	const card = el("section", "chart-card");
+	card.appendChild(el("h2", null, title));
+	const max = Math.max(1, ...rows.map((r) => r.count));
+	const list = el("div", "bar-list");
+	for (const row of rows) {
+		const line = el("div", "bar-row");
+		line.title = `${row.name}: ${row.count}`;
+		const track = el("span", "bar-track");
+		const fill = el("span", "bar-fill");
+		fill.style.width = `${(100 * row.count) / max}%`;
+		track.appendChild(fill);
+		line.append(el("span", "bar-name", row.name), track, el("span", "bar-value", row.count));
+		list.appendChild(line);
+	}
+	card.appendChild(list);
+	return card;
+}
+
+// Counts per year as columns, every year in the range shown (empty ones too).
+function yearChart(title, rows, noun) {
+	const card = el("section", "chart-card");
+	card.appendChild(el("h2", null, title));
+	if (rows.length === 0) {
+		card.appendChild(el("p", "empty", "Nothing dated yet."));
+		return card;
+	}
+	const counts = new Map(rows.map((r) => [r.year, r.count]));
+	const first = rows[0].year;
+	const last = rows[rows.length - 1].year;
+	const max = Math.max(...rows.map((r) => r.count));
+	const plot = el("div", "columns");
+	const axis = el("div", "column-years");
+	const step = Math.max(1, Math.ceil((last - first + 1) / 8));
+	for (let year = first; year <= last; year++) {
+		const n = counts.get(year) || 0;
+		const column = el("span", "column");
+		column.title = `${year}: ${n} ${noun}`;
+		const fill = el("span", "column-fill");
+		fill.style.height = `${(100 * n) / max}%`;
+		column.appendChild(fill);
+		plot.appendChild(column);
+		axis.appendChild(el("span", null, (year - first) % step === 0 ? String(year) : ""));
+	}
+	card.append(plot, axis, el("p", "chart-note", `Most: ${max} ${noun} in a year. Hover a column for its year.`));
+	return card;
+}
+
+function renderStats(stats) {
+	const tiles = el("div", "stat-tiles");
+	for (const kind of stats.library) {
+		const sub = Object.entries(kind.by_status).map(([status, n]) => `${n} ${status.toLowerCase()}`).join(" · ");
+		tiles.appendChild(statTile(kind.label, kind.total, sub, kind.kind));
+	}
+	tiles.append(
+		statTile("Concerts", stats.concerts, `${stats.performers} performers`, "concerts"),
+		statTile("Museum visits", stats.museum_visits, `${stats.museums} museums`, "museums"),
+		statTile("People", stats.people, "", "people"),
+		statTile("Organizations", stats.organizations, "", "organizations"),
+		statTile("Organization types", stats.organization_types, "", "organization-types"),
+		statTile("Person types", stats.person_types, "", "person-types"),
+		statTile("Photos and logos", stats.images, "", null),
+	);
+	const charts = el("div", "stat-charts");
+	charts.append(
+		barChart("People by type (one with several types counts in each)", stats.people_by_type),
+		barChart("Organizations by type", stats.organizations_by_type),
+		yearChart("Concerts per year", stats.concerts_by_year, "concerts"),
+		yearChart("Museum visits per year", stats.museums_by_year, "visits"),
+	);
+	$("stats-view").replaceChildren(tiles, charts);
 }
 
 async function selectWorld(view) {
@@ -1100,8 +1229,7 @@ async function selectWorld(view) {
 	window.location.hash = view;
 	const [heading, path] = WORLDS[view];
 	document.title = `${heading.replace(/^My /, "")} - My World`;
-	$("library-view").hidden = true;
-	$("world-view").hidden = false;
+	showSection("world-view");
 	markActive();
 	updateTools();
 	showError("");
@@ -1148,6 +1276,10 @@ async function showRow(view, id) {
 }
 
 function setupWorlds() {
+	$("stats-link").onclick = (event) => {
+		event.preventDefault();
+		selectStats().catch((e) => showError(e.message));
+	};
 	$("world-search").oninput = rerender;
 	setupSort();
 	$("connections-close").onclick = () => $("connections-dialog").close();

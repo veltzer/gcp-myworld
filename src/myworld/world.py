@@ -18,8 +18,10 @@ from sqlalchemy.orm import selectinload
 from myworld import auth
 from myworld.api import ApiError, json_body, opt_int, text
 from myworld.models import (
+    KINDS,
     RATING_MAX,
     RATING_MIN,
+    STATUSES,
     Concert,
     Image,
     Museum,
@@ -27,6 +29,9 @@ from myworld.models import (
     OrganizationType,
     Person,
     PersonType,
+    UserWork,
+    Work,
+    concert_performers,
     person_person_types,
 )
 
@@ -469,6 +474,80 @@ def api_world_delete(what: str, row_id: int) -> flask.Response:
     _drop_unused_images()
     flask.g.db.commit()
     return flask.Response(status=204)
+
+
+# ─── stats ──────────────────────────────────────────────────────────────────
+
+def _per_year(rows: list[Concert] | list[Museum]) -> list[dict[str, int]]:
+    """ How many rows fall in each year that has any, oldest first; undated rows are left out. """
+    years: dict[int, int] = {}
+    for row in rows:
+        key = _date_json(row)["date_sort"][:4]
+        if key:
+            years[int(key)] = years.get(int(key), 0) + 1
+    return [{"year": year, "count": years[year]} for year in sorted(years)]
+
+
+def _by_type(counts: dict[str, int]) -> list[dict[str, Any]]:
+    return [{"name": name, "count": count} for name, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
+@bp.route("/api/stats", methods=["GET"])
+@auth.login_required
+def api_stats() -> flask.Response:
+    """ How many of everything the user has, and a few breakdowns. """
+    db = flask.g.db
+    me = flask.g.user.id
+
+    def count(model: Any) -> int:
+        return db.scalar(select(func.count()).select_from(model).where(model.owner_id == me)) or 0
+
+    library = []
+    rows = db.execute(
+        select(Work.kind, UserWork.status, func.count())
+        .join(Work, Work.id == UserWork.work_id)
+        .where(UserWork.user_id == me)
+        .group_by(Work.kind, UserWork.status)
+    ).all()
+    for kind, (_, plural, _) in KINDS.items():
+        by_status = {STATUSES[status]: n for k, status, n in rows if k == kind}
+        library.append({"kind": kind, "label": plural, "total": sum(by_status.values()), "by_status": by_status})
+    concerts = db.execute(select(Concert).where(Concert.owner_id == me)).scalars().all()
+    museums = db.execute(select(Museum).where(Museum.owner_id == me)).scalars().all()
+    people = db.execute(select(Person).where(Person.owner_id == me).options(selectinload(Person.types))).scalars().all()
+    organizations = db.execute(
+        select(Organization).where(Organization.owner_id == me).options(selectinload(Organization.type))
+    ).scalars().all()
+    people_by_type: dict[str, int] = {}
+    for person in people:
+        for kind in person.types or [None]:
+            name = kind.name if kind else "No type"
+            people_by_type[name] = people_by_type.get(name, 0) + 1
+    organizations_by_type: dict[str, int] = {}
+    for organization in organizations:
+        name = organization.type.name if organization.type else "No type"
+        organizations_by_type[name] = organizations_by_type.get(name, 0) + 1
+    performers = db.scalar(
+        select(func.count(func.distinct(concert_performers.c.person_id)))
+        .join(Concert, Concert.id == concert_performers.c.concert_id)
+        .where(Concert.owner_id == me)
+    ) or 0
+    return flask.jsonify({
+        "library": library,
+        "concerts": len(concerts),
+        "performers": performers,
+        "museum_visits": len(museums),
+        "museums": len({m.name for m in museums}),
+        "people": len(people),
+        "organizations": len(organizations),
+        "organization_types": count(OrganizationType),
+        "person_types": count(PersonType),
+        "images": count(Image),
+        "people_by_type": _by_type(people_by_type),
+        "organizations_by_type": _by_type(organizations_by_type),
+        "concerts_by_year": _per_year(list(concerts)),
+        "museums_by_year": _per_year(list(museums)),
+    })
 
 
 # ─── the enumerations: organization types and person types ────────────────

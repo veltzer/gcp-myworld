@@ -581,3 +581,30 @@ def test_others_cannot_touch(imported: webtest.TestApp) -> None:
     imported.put_json("/api/person-types/1", {"name": "mine now"}, status=404)
     imported.post_json("/api/people", {"first_name": "x", "type_ids": [1]}, status=400)
     imported.post_json("/api/concerts", {"name": "x", "people": [alice]}, status=400)
+
+
+# ─── stats ───────────────────────────────────────────────────────────────────
+
+def test_stats(imported: webtest.TestApp) -> None:
+    imported.post_json("/api/library", {"kind": "book", "title": "Dune", "status": "done"}, status=201)
+    stats = imported.get("/api/stats").json
+    assert (stats["concerts"], stats["museum_visits"], stats["museums"]) == (3, 3, 2)
+    assert (stats["people"], stats["organizations"], stats["images"]) == (4, 3, 3)
+    assert (stats["organization_types"], stats["person_types"]) == (7, 4)
+    # Bob, Singer and The Band performed; Bob also went with the user, he counts once
+    assert stats["performers"] == 3
+    books = next(k for k in stats["library"] if k["kind"] == "book")
+    assert books["total"] == 1
+    assert books["by_status"] == {"Done": 1}
+    assert {t["name"]: t["count"] for t in stats["people_by_type"]} == {"Co-Worker": 2, "Performer": 2}
+    assert {t["name"]: t["count"] for t in stats["organizations_by_type"]} == {"Company": 2, "University": 1}
+    assert stats["concerts_by_year"] == [{"year": 1989, "count": 1}, {"year": 2001, "count": 1}, {"year": 2020, "count": 1}]
+    assert stats["museums_by_year"] == [{"year": 2010, "count": 2}, {"year": 2011, "count": 1}]
+
+
+def test_stats_are_per_user(imported: webtest.TestApp) -> None:
+    imported.post("/auth/logout")
+    sign_in(imported, sub="someone-else")
+    stats = imported.get("/api/stats").json
+    assert (stats["concerts"], stats["people"], stats["images"], stats["performers"]) == (0, 0, 0, 0)
+    assert stats["concerts_by_year"] == []

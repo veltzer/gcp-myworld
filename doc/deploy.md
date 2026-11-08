@@ -248,6 +248,11 @@ a person is written with `type_ids`, a list.
   `YYYY-MM-DD`; a date sent back exactly as it came keeps its stored
   precision, timestamps included. `people` and `organizations` are lists of
   ids, `type_id` an organization type id.
+- `GET /api/stats`: how many of everything the user has (library entries
+  per kind and status, concerts, performers, museum visits and museums,
+  people, organizations, both kinds of types, images), people and
+  organizations by type, and concerts and museum visits per year: the
+  Stats page, linked from the top bar.
 - `GET /api/organization-types`, `GET /api/person-types`: name,
   description and `count`, how many rows are of it; `POST`,
   `PUT /api/<organization-types|person-types>/<id>` and `DELETE` (refused

@@ -15,6 +15,11 @@
 				My World
 			</a>
 			<nav id="kinds" class="kinds"></nav>
+			<!-- outside the tabs: a summary of all of them -->
+			<a id="stats-link" class="stats-link" href="/library#stats" title="How many of everything you have">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
+				Stats
+			</a>
 			<div class="whoami">
 				<img id="avatar" class="avatar" src="/static/favicon.svg" alt="">
 				<span id="who"></span>
@@ -34,6 +39,7 @@
 				<span id="world-count" class="empty"></span>
 				<div id="layouts" class="layouts" role="group" aria-label="Layout"></div>
 			</div>
+			<section id="stats-view" class="stats" hidden></section>
 			<section id="world-view" hidden>
 				<div id="cards" class="cards"></div>
 				<table id="people" class="entries" hidden>
