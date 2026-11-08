@@ -1,5 +1,5 @@
 """
-JSON API for the concerts, museum visits, people and companies of the
+JSON API for the concerts, museum visits, people and organizations of the
 signed-in user, and the images they point at: list, add, edit and delete. Every query is filtered by
 owner_id, so a user only ever sees, and only ever links to, their own rows.
 """
@@ -12,7 +12,7 @@ from typing import Any
 
 import flask
 import werkzeug
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from myworld import auth
@@ -20,10 +20,11 @@ from myworld.api import ApiError, json_body, opt_int, text
 from myworld.models import (
     RATING_MAX,
     RATING_MIN,
-    Company,
     Concert,
     Image,
     Museum,
+    Organization,
+    OrganizationType,
     Person,
 )
 
@@ -64,8 +65,8 @@ def _names(people: list[Person]) -> list[str]:
     return sorted(p.name for p in people)
 
 
-def _refs(rows: list[Person] | list[Company]) -> list[dict[str, Any]]:
-    """ Names with the ids the People and Companies views link to. """
+def _refs(rows: list[Person] | list[Organization]) -> list[dict[str, Any]]:
+    """ Names with the ids the People and Organizations views link to. """
     return [{"id": row.id, "name": row.name} for row in sorted(rows, key=lambda row: row.name)]
 
 
@@ -116,24 +117,25 @@ def person_json(person: Person) -> dict[str, Any]:
     return {
         "id": person.id,
         "name": person.name,
-        "companies": _refs(person.companies),
+        "organizations": _refs(person.organizations),
         "description": person.description,
     }
 
 
-def company_json(company: Company) -> dict[str, Any]:
+def organization_json(organization: Organization) -> dict[str, Any]:
     return {
-        "id": company.id,
-        "name": company.name,
-        "functions": company.functions,
-        "status": company.status,
-        "website": company.website,
-        "location": company.location,
-        "address": company.address,
-        "what_happened": company.what_happened,
-        "remark": company.remark,
-        "image": _image_url(company.image_id),
-        "people": _refs(company.people),
+        "id": organization.id,
+        "name": organization.name,
+        "type": None if organization.type is None else {"id": organization.type.id, "name": organization.type.name},
+        "functions": organization.functions,
+        "status": organization.status,
+        "website": organization.website,
+        "location": organization.location,
+        "address": organization.address,
+        "what_happened": organization.what_happened,
+        "remark": organization.remark,
+        "image": _image_url(organization.image_id),
+        "people": _refs(organization.people),
     }
 
 
@@ -163,24 +165,51 @@ def api_people() -> flask.Response:
     query = (
         select(Person)
         .where(Person.owner_id == flask.g.user.id)
-        .options(selectinload(Person.companies))
+        .options(selectinload(Person.organizations))
         .order_by(Person.name)
     )
     people = flask.g.db.execute(query).scalars().all()
     return flask.jsonify([person_json(p) for p in people])
 
 
-@bp.route("/api/companies", methods=["GET"])
+@bp.route("/api/organizations", methods=["GET"])
 @auth.login_required
-def api_companies() -> flask.Response:
+def api_organizations() -> flask.Response:
     query = (
-        select(Company)
-        .where(Company.owner_id == flask.g.user.id)
-        .options(selectinload(Company.people))
-        .order_by(Company.name)
+        select(Organization)
+        .where(Organization.owner_id == flask.g.user.id)
+        .options(selectinload(Organization.people), selectinload(Organization.type))
+        .order_by(Organization.name)
     )
-    companies = flask.g.db.execute(query).scalars().all()
-    return flask.jsonify([company_json(c) for c in companies])
+    organizations = flask.g.db.execute(query).scalars().all()
+    return flask.jsonify([organization_json(c) for c in organizations])
+
+
+def organization_type_json(kind: OrganizationType, used: int) -> dict[str, Any]:
+    return {"id": kind.id, "name": kind.name, "description": kind.description, "organizations": used}
+
+
+def _type_uses(kind: OrganizationType) -> int:
+    return flask.g.db.scalar(select(func.count()).select_from(Organization).where(Organization.type_id == kind.id)) or 0
+
+
+@bp.route("/api/organization-types", methods=["GET"])
+@auth.login_required
+def api_organization_types() -> flask.Response:
+    """ The user's enumeration of what an organization can be, with how many are of each. """
+    used = (
+        select(Organization.type_id, func.count().label("n"))
+        .where(Organization.owner_id == flask.g.user.id)
+        .group_by(Organization.type_id)
+        .subquery()
+    )
+    rows = flask.g.db.execute(
+        select(OrganizationType, func.coalesce(used.c.n, 0))
+        .outerjoin(used, used.c.type_id == OrganizationType.id)
+        .where(OrganizationType.owner_id == flask.g.user.id)
+        .order_by(OrganizationType.name)
+    ).all()
+    return flask.jsonify([organization_type_json(kind, n) for kind, n in rows])
 
 
 @bp.route("/api/images/<int:image_id>", methods=["GET"])
@@ -245,7 +274,7 @@ def _dates(body: dict[str, Any], current: Concert | Museum | None = None) -> dic
     return out
 
 
-def _owned_list[T: (Person, Company)](body: dict[str, Any], key: str, model: type[T]) -> list[T]:
+def _owned_list[T: (Person, Organization)](body: dict[str, Any], key: str, model: type[T]) -> list[T]:
     """ body[key], a list of ids of the user's own rows of model, as those rows. """
     ids = body.get(key) or []
     if not isinstance(ids, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
@@ -281,7 +310,7 @@ def _strings(body: dict[str, Any], key: str) -> list[str]:
     return [v.strip() for v in value if v.strip()]
 
 
-def _owned(model: type[Concert | Museum | Person | Company], row_id: int) -> Any:
+def _owned(model: type[Concert | Museum | Person | Organization | OrganizationType], row_id: int) -> Any:
     row = flask.g.db.get(model, row_id)
     if row is None or row.owner_id != flask.g.user.id:
         raise ApiError(404, "no such entry")
@@ -293,7 +322,7 @@ def _drop_unused_images() -> None:
     db = flask.g.db
     used = select(Concert.image_id).where(Concert.image_id.is_not(None)).union(
         select(Museum.image_id).where(Museum.image_id.is_not(None)),
-        select(Company.image_id).where(Company.image_id.is_not(None)),
+        select(Organization.image_id).where(Organization.image_id.is_not(None)),
     )
     for image in db.execute(select(Image).where(Image.owner_id == flask.g.user.id, Image.id.not_in(used))).scalars():
         db.delete(image)
@@ -347,28 +376,30 @@ def _apply_person(person: Person, body: dict[str, Any]) -> None:
     if clash is not None:
         raise ApiError(409, f"{name} is already in People")
     person.name = name
-    person.companies = _owned_list(body, "companies", Company)
+    person.organizations = _owned_list(body, "organizations", Organization)
     person.description = text(body, "description")
 
 
-def _apply_company(company: Company, body: dict[str, Any]) -> None:
+def _apply_organization(organization: Organization, body: dict[str, Any]) -> None:
     name = text(body, "name", required=True)
     clash = flask.g.db.execute(
-        select(Company.id).where(Company.owner_id == flask.g.user.id, Company.name == name, Company.id != company.id)
+        select(Organization.id).where(Organization.owner_id == flask.g.user.id, Organization.name == name, Organization.id != organization.id)
     ).first()
     if clash is not None:
-        raise ApiError(409, f"{name} is already in Companies")
-    company.name = name
-    company.functions = _strings(body, "functions")
-    company.status = text(body, "status")
-    company.website = text(body, "website")
-    company.location = text(body, "location")
-    company.address = text(body, "address")
-    company.what_happened = text(body, "what_happened")
-    company.remark = text(body, "remark")
+        raise ApiError(409, f"{name} is already in Organizations")
+    organization.name = name
+    type_id = opt_int(body, "type_id", 1, 2**31 - 1)
+    organization.type = None if type_id is None else _owned_type(type_id)
+    organization.functions = _strings(body, "functions")
+    organization.status = text(body, "status")
+    organization.website = text(body, "website")
+    organization.location = text(body, "location")
+    organization.address = text(body, "address")
+    organization.what_happened = text(body, "what_happened")
+    organization.remark = text(body, "remark")
     image_id = _owned_image(body)
     if image_id is not None:
-        company.image_id = image_id
+        organization.image_id = image_id
 
 
 @bp.route("/api/concerts", methods=["POST"])
@@ -432,35 +463,87 @@ def api_people_update(row_id: int) -> flask.Response:
     return flask.jsonify(person_json(person))
 
 
-@bp.route("/api/companies", methods=["POST"])
+@bp.route("/api/organizations", methods=["POST"])
 @auth.login_required
-def api_companies_add() -> tuple[flask.Response, int]:
-    company = Company(owner_id=flask.g.user.id)
-    _apply_company(company, json_body())
-    flask.g.db.add(company)
+def api_organizations_add() -> tuple[flask.Response, int]:
+    organization = Organization(owner_id=flask.g.user.id)
+    _apply_organization(organization, json_body())
+    flask.g.db.add(organization)
     flask.g.db.commit()
-    return flask.jsonify(company_json(company)), 201
+    return flask.jsonify(organization_json(organization)), 201
 
 
-@bp.route("/api/companies/<int:row_id>", methods=["PUT"])
+@bp.route("/api/organizations/<int:row_id>", methods=["PUT"])
 @auth.login_required
-def api_companies_update(row_id: int) -> flask.Response:
-    company = _owned(Company, row_id)
-    _apply_company(company, json_body())
+def api_organizations_update(row_id: int) -> flask.Response:
+    organization = _owned(Organization, row_id)
+    _apply_organization(organization, json_body())
     flask.g.db.flush()
     _drop_unused_images()
     flask.g.db.commit()
-    return flask.jsonify(company_json(company))
+    return flask.jsonify(organization_json(organization))
 
 
-@bp.route("/api/<any(concerts, museums, people, companies):what>/<int:row_id>", methods=["DELETE"])
+@bp.route("/api/<any(concerts, museums, people, organizations):what>/<int:row_id>", methods=["DELETE"])
 @auth.login_required
 def api_world_delete(what: str, row_id: int) -> flask.Response:
-    model = {"concerts": Concert, "museums": Museum, "people": Person, "companies": Company}[what]
-    # the ORM also removes the row's links (to people, to companies, to concerts and museums)
+    model = {"concerts": Concert, "museums": Museum, "people": Person, "organizations": Organization}[what]
+    # the ORM also removes the row's links (to people, to organizations, to concerts and museums)
     flask.g.db.delete(_owned(model, row_id))
     flask.g.db.flush()
     _drop_unused_images()
+    flask.g.db.commit()
+    return flask.Response(status=204)
+
+
+def _owned_type(type_id: int) -> OrganizationType:
+    kind = flask.g.db.get(OrganizationType, type_id)
+    if kind is None or kind.owner_id != flask.g.user.id:
+        raise ApiError(400, "type_id: unknown organization type")
+    return kind
+
+
+def _apply_type(kind: OrganizationType, body: dict[str, Any]) -> None:
+    name = text(body, "name", required=True)
+    clash = flask.g.db.execute(
+        select(OrganizationType.id).where(
+            OrganizationType.owner_id == flask.g.user.id, OrganizationType.name == name, OrganizationType.id != kind.id,
+        )
+    ).first()
+    if clash is not None:
+        raise ApiError(409, f"{name} is already an organization type")
+    kind.name = name
+    kind.description = text(body, "description")
+
+
+@bp.route("/api/organization-types", methods=["POST"])
+@auth.login_required
+def api_organization_types_add() -> tuple[flask.Response, int]:
+    kind = OrganizationType(owner_id=flask.g.user.id)
+    _apply_type(kind, json_body())
+    flask.g.db.add(kind)
+    flask.g.db.commit()
+    return flask.jsonify(organization_type_json(kind, 0)), 201
+
+
+@bp.route("/api/organization-types/<int:row_id>", methods=["PUT"])
+@auth.login_required
+def api_organization_types_update(row_id: int) -> flask.Response:
+    kind = _owned(OrganizationType, row_id)
+    _apply_type(kind, json_body())
+    flask.g.db.commit()
+    return flask.jsonify(organization_type_json(kind, _type_uses(kind)))
+
+
+@bp.route("/api/organization-types/<int:row_id>", methods=["DELETE"])
+@auth.login_required
+def api_organization_types_delete(row_id: int) -> flask.Response:
+    """ Only a type nothing is: an organization never silently loses its type. """
+    kind = _owned(OrganizationType, row_id)
+    used = _type_uses(kind)
+    if used:
+        raise ApiError(409, f"{used} organization{'s are' if used > 1 else ' is'} {kind.name}: change them first")
+    flask.g.db.delete(kind)
     flask.g.db.commit()
     return flask.Response(status=204)
 

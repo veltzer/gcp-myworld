@@ -34,11 +34,21 @@
 					<thead>
 						<tr>
 							<th>Name</th>
-							<th>Companies</th>
+							<th>Organizations</th>
 							<th>Description</th>
 						</tr>
 					</thead>
 					<tbody id="people-rows"></tbody>
+				</table>
+				<table id="types" class="entries" hidden>
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>Description</th>
+							<th>Organizations</th>
+						</tr>
+					</thead>
+					<tbody id="type-rows"></tbody>
 				</table>
 			</section>
 			<section id="library-view">
@@ -183,7 +193,7 @@
 					<label class="wide">Name <input name="name" required></label>
 				</div>
 				<div class="row">
-					<label class="wide">Companies <span class="chips" data-chips="companies"><input list="company-names" placeholder="Type a name from Companies" autocomplete="off"></span></label>
+					<label class="wide">Organizations <span class="chips" data-chips="organizations"><input list="organization-names" placeholder="Type a name from Organizations" autocomplete="off"></span></label>
 				</div>
 				<div class="row">
 					<label class="wide">Description <input name="description" placeholder="How you know them"></label>
@@ -194,10 +204,11 @@
 					<button type="submit">Add</button>
 				</div>
 			</form>
-			<form id="company-form" class="dialog-form" hidden>
+			<form id="organization-form" class="dialog-form" hidden>
 				<div class="row">
 					<label class="wide">Name <input name="name" required></label>
 					<label class="wide">Location <input name="location" placeholder="City, country"></label>
+					<label>Type <select name="type_id"></select></label>
 				</div>
 				<div class="row">
 					<label class="wide">What it was to me <input name="functions" placeholder="Comma separated: teaching, consulting, education, ..."></label>
@@ -224,8 +235,21 @@
 					<button type="submit">Add</button>
 				</div>
 			</form>
+			<form id="organization-type-form" class="dialog-form" hidden>
+				<div class="row">
+					<label class="wide">Name <input name="name" required placeholder="e.g. Hospital"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Description <input name="description"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
 			<datalist id="people-names"></datalist>
-			<datalist id="company-names"></datalist>
+			<datalist id="organization-names"></datalist>
 		</dialog>
 		<footer class="footer">
 			<span id="build"></span>

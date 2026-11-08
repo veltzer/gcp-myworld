@@ -1,5 +1,5 @@
 """
-The concerts, museums, people and companies: the import script and the API.
+The concerts, museums, people and organizations: the import script and the API.
 """
 
 from pathlib import Path
@@ -7,19 +7,20 @@ from pathlib import Path
 import import_world
 import pytest
 import webtest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld.models import (
-    Company,
     Concert,
     Image,
     Museum,
+    Organization,
+    OrganizationType,
     Person,
     User,
     concert_people,
-    person_companies,
+    person_organizations,
 )
 from tests.conftest import sign_in
 
@@ -48,6 +49,7 @@ items:
     sources: ["https://en.wikipedia.org/wiki/Acme"]
   - id: 2
     name: "Old School"
+    type: "University"
     slug: "old-school"
     functions: ["education"]
     status: "active"
@@ -137,12 +139,12 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
     with Session(engine) as session:
         counts = import_world.import_world(session, owner(session), write_source(tmp_path))
         session.commit()
-    assert counts == {"people": 2, "companies": 3, "organizations": 2, "concerts": 3, "museums": 3, "images": 3}
+    assert counts == {"people": 2, "organizations": 3, "organization types": 7, "concerts": 3, "museums": 3, "images": 3}
     return app
 
 
 def test_requires_login(app: webtest.TestApp) -> None:
-    for path in ("/api/concerts", "/api/museums", "/api/people", "/api/companies", "/api/images/1"):
+    for path in ("/api/concerts", "/api/museums", "/api/people", "/api/organizations", "/api/organization-types", "/api/images/1"):
         app.get(path, status=401)
 
 
@@ -188,44 +190,90 @@ def test_people(imported: webtest.TestApp) -> None:
     assert [p["name"] for p in people] == ["Alice Friend", "Bob Buddy"]
     alice, bob = people
     assert alice["description"] == "Old friend"
-    assert [c["name"] for c in alice["companies"]] == ["Startup"]
-    assert [c["name"] for c in bob["companies"]] == ["Acme", "Startup"]
-    # only the person and their companies: their concerts and museums are not listed next to them
-    assert set(alice) == {"id", "name", "companies", "description"}
+    assert [c["name"] for c in alice["organizations"]] == ["Startup"]
+    assert [c["name"] for c in bob["organizations"]] == ["Acme", "Startup"]
+    # only the person and their organizations: their concerts and museums are not listed next to them
+    assert set(alice) == {"id", "name", "organizations", "description"}
 
 
-def test_companies(imported: webtest.TestApp) -> None:
-    companies = imported.get("/api/companies").json
-    assert [c["name"] for c in companies] == ["Acme", "Old School", "Startup"]
-    acme, school, startup = companies
+def test_organizations(imported: webtest.TestApp) -> None:
+    organizations = imported.get("/api/organizations").json
+    assert [c["name"] for c in organizations] == ["Acme", "Old School", "Startup"]
+    acme, school, startup = organizations
     assert acme["functions"] == ["teaching", "consulting"]
     assert acme["status"] == "acquired"
     assert acme["what_happened"] == "Bought by Bigco"
     assert acme["website"] == "https://acme.example"
     assert [p["name"] for p in acme["people"]] == ["Bob Buddy"]
     assert [p["name"] for p in startup["people"]] == ["Alice Friend", "Bob Buddy"]
-    # a company only a person names has nothing but its name
+    # an organization only a person names has nothing but its name
     assert startup["functions"] == []
     assert startup["image"] is None
     assert school["image"] is None
     # the links point at the same rows both ways
-    ids = {c["name"]: c["id"] for c in companies}
+    ids = {c["name"]: c["id"] for c in organizations}
     for person in imported.get("/api/people").json:
-        assert all(ids[c["name"]] == c["id"] for c in person["companies"])
+        assert all(ids[c["name"]] == c["id"] for c in person["organizations"])
 
 
-def test_company_details_are_kept(imported: webtest.TestApp, engine: Engine) -> None:
+def test_organization_types(imported: webtest.TestApp) -> None:
+    types = {t["name"]: t for t in imported.get("/api/organization-types").json}
+    assert list(types) == sorted(import_world.ORGANIZATION_TYPES)
+    # Acme and Startup default to Company; the YAML names Old School's type
+    assert types["Company"]["organizations"] == 2
+    assert types["University"]["organizations"] == 1
+    assert types["Military"]["organizations"] == 0
+    by_name = {o["name"]: o for o in imported.get("/api/organizations").json}
+    assert by_name["Old School"]["type"] == {"id": types["University"]["id"], "name": "University"}
+    assert by_name["Acme"]["type"]["name"] == "Company"
+
+
+def test_give_types_fills_only_what_is_missing(imported: webtest.TestApp, engine: Engine) -> None:
     with Session(engine) as session:
-        acme = session.scalars(select(Company).where(Company.name == "Acme")).one()
+        session.execute(update(Organization).values(type_id=None))
+        session.execute(delete(OrganizationType).where(OrganizationType.name == "Military"))
+        session.commit()
+        counts = import_world.give_types(session, owner(session))
+        session.commit()
+    assert counts == {"organization types added": 1, "organizations given a type": 3}
+    by_name = {o["name"]: o["type"]["name"] for o in imported.get("/api/organizations").json}
+    # Old School's type came from the YAML, which this does not read: it gets the default
+    assert by_name == {"Acme": "Company", "Old School": "Company", "Startup": "Company"}
+    with Session(engine) as session:
+        assert import_world.give_types(session, owner(session)) == {"organization types added": 0, "organizations given a type": 0}
+
+
+def test_edit_organization_types(imported: webtest.TestApp) -> None:
+    imported.post_json("/api/organization-types", {"name": ""}, status=400)
+    imported.post_json("/api/organization-types", {"name": "Company"}, status=409)
+    lab = imported.post_json("/api/organization-types", {"name": "Lab", "description": "Research"}, status=201).json
+    assert lab["organizations"] == 0
+    acme = next(o for o in imported.get("/api/organizations").json if o["name"] == "Acme")
+    edited = imported.put_json(f"/api/organizations/{acme['id']}", dict(acme, type_id=lab["id"])).json
+    assert edited["type"]["name"] == "Lab"
+    imported.put_json(f"/api/organizations/{acme['id']}", dict(acme, type_id=999), status=400)
+    renamed = imported.put_json(f"/api/organization-types/{lab['id']}", {"name": "Laboratory"}).json
+    assert renamed["organizations"] == 1
+    assert next(o for o in imported.get("/api/organizations").json if o["name"] == "Acme")["type"]["name"] == "Laboratory"
+    # a type in use cannot go; once nothing is of it, it can
+    imported.delete(f"/api/organization-types/{lab['id']}", status=409)
+    imported.put_json(f"/api/organizations/{acme['id']}", dict(acme, type_id=None))
+    imported.delete(f"/api/organization-types/{lab['id']}", status=204)
+    assert "Laboratory" not in [t["name"] for t in imported.get("/api/organization-types").json]
+
+
+def test_organization_details_are_kept(imported: webtest.TestApp, engine: Engine) -> None:
+    with Session(engine) as session:
+        acme = session.scalars(select(Organization).where(Organization.name == "Acme")).one()
         assert acme.details["geo"]["lat"] == 32.08
         assert acme.details["sources"] == ["https://en.wikipedia.org/wiki/Acme"]
         assert acme.details["slug"] == "acme"
-        school = session.scalars(select(Company).where(Company.name == "Old School")).one()
+        school = session.scalars(select(Organization).where(Organization.name == "Old School")).one()
         assert school.details["from_date"] == "2008-03-21"
 
 
 def test_logo(imported: webtest.TestApp) -> None:
-    acme = imported.get("/api/companies").json[0]
+    acme = imported.get("/api/organizations").json[0]
     response = imported.get(acme["image"])
     assert response.content_type == "image/svg+xml"
     assert response.body == LOGO
@@ -251,7 +299,8 @@ def test_other_users_see_nothing(imported: webtest.TestApp, engine: Engine) -> N
     assert imported.get("/api/concerts").json == []
     assert imported.get("/api/museums").json == []
     assert imported.get("/api/people").json == []
-    assert imported.get("/api/companies").json == []
+    assert imported.get("/api/organizations").json == []
+    assert imported.get("/api/organization-types").json == []
     imported.get(url, status=404)
     with Session(engine) as session:
         assert session.scalar(select(func.count()).select_from(Concert)) == 3
@@ -261,10 +310,10 @@ def test_reimport_replaces(imported: webtest.TestApp, engine: Engine, tmp_path: 
     with Session(engine) as session:
         import_world.import_world(session, owner(session), tmp_path)
         session.commit()
-        for model, count in ((Concert, 3), (Museum, 3), (Person, 2), (Company, 3), (Image, 3)):
+        for model, count in ((Concert, 3), (Museum, 3), (Person, 2), (Organization, 3), (Image, 3)):
             assert session.scalar(select(func.count()).select_from(model)) == count
         assert session.scalar(select(func.count()).select_from(concert_people)) == 3
-        assert session.scalar(select(func.count()).select_from(person_companies)) == 3
+        assert session.scalar(select(func.count()).select_from(person_organizations)) == 3
     assert len(imported.get("/api/concerts").json) == 3
 
 
@@ -370,38 +419,38 @@ def test_edit_person(imported: webtest.TestApp) -> None:
     assert bob["name"] == "Robert Buddy"
     louvre = next(m for m in imported.get("/api/museums").json if m["with"])
     assert louvre["with"] == ["Robert Buddy"]
-    # no companies sent: the person is linked to none
-    assert bob["companies"] == []
+    # no organizations sent: the person is linked to none
+    assert bob["organizations"] == []
 
 
-def company_ids(app: webtest.TestApp) -> dict[str, int]:
-    return {c["name"]: c["id"] for c in app.get("/api/companies").json}
+def organization_ids(app: webtest.TestApp) -> dict[str, int]:
+    return {c["name"]: c["id"] for c in app.get("/api/organizations").json}
 
 
-def test_link_person_to_companies(imported: webtest.TestApp) -> None:
-    companies = company_ids(imported)
+def test_link_person_to_organizations(imported: webtest.TestApp) -> None:
+    organizations = organization_ids(imported)
     bob = people_ids(imported)["Bob Buddy"]
     edited = imported.put_json(f"/api/people/{bob}", {
-        "name": "Bob Buddy", "companies": [companies["Old School"], companies["Acme"]],
+        "name": "Bob Buddy", "organizations": [organizations["Old School"], organizations["Acme"]],
     }).json
-    assert [c["name"] for c in edited["companies"]] == ["Acme", "Old School"]
-    school = next(c for c in imported.get("/api/companies").json if c["name"] == "Old School")
+    assert [c["name"] for c in edited["organizations"]] == ["Acme", "Old School"]
+    school = next(c for c in imported.get("/api/organizations").json if c["name"] == "Old School")
     assert [p["name"] for p in school["people"]] == ["Bob Buddy"]
-    imported.put_json(f"/api/people/{bob}", {"name": "Bob Buddy", "companies": [999]}, status=400)
-    imported.put_json(f"/api/people/{bob}", {"name": "Bob Buddy", "companies": "Acme"}, status=400)
+    imported.put_json(f"/api/people/{bob}", {"name": "Bob Buddy", "organizations": [999]}, status=400)
+    imported.put_json(f"/api/people/{bob}", {"name": "Bob Buddy", "organizations": "Acme"}, status=400)
 
 
-def test_add_edit_delete_company(imported: webtest.TestApp, engine: Engine) -> None:
-    imported.post_json("/api/companies", {"name": ""}, status=400)
-    imported.post_json("/api/companies", {"name": "Acme"}, status=409)
+def test_add_edit_delete_organization(imported: webtest.TestApp, engine: Engine) -> None:
+    imported.post_json("/api/organizations", {"name": ""}, status=400)
+    imported.post_json("/api/organizations", {"name": "Acme"}, status=409)
     upload = imported.post("/api/images", upload_files=[("file", "logo.jpg", JPEG)]).json
-    company = imported.post_json("/api/companies", {
+    organization = imported.post_json("/api/organizations", {
         "name": "Newco", "functions": ["consulting", " "], "website": "https://newco.example", "image_id": upload["id"],
     }, status=201).json
-    assert company["functions"] == ["consulting"]
-    assert company["image"] == upload["url"]
-    acme = next(c for c in imported.get("/api/companies").json if c["name"] == "Acme")
-    edited = imported.put_json(f"/api/companies/{acme['id']}", dict(acme, name="Acme Ltd", image_id=upload["id"])).json
+    assert organization["functions"] == ["consulting"]
+    assert organization["image"] == upload["url"]
+    acme = next(c for c in imported.get("/api/organizations").json if c["name"] == "Acme")
+    edited = imported.put_json(f"/api/organizations/{acme['id']}", dict(acme, name="Acme Ltd", image_id=upload["id"])).json
     assert edited["name"] == "Acme Ltd"
     assert edited["what_happened"] == "Bought by Bigco"
     # people keep the link through a rename
@@ -409,12 +458,12 @@ def test_add_edit_delete_company(imported: webtest.TestApp, engine: Engine) -> N
     with Session(engine) as session:
         # the logo nothing shows any more is gone; the details the dialog never sends are kept
         assert "acme.svg" not in session.scalars(select(Image.filename)).all()
-        kept = session.get(Company, acme["id"])
+        kept = session.get(Organization, acme["id"])
         assert kept is not None
         assert kept.details["slug"] == "acme"
-    imported.delete(f"/api/companies/{acme['id']}", status=204)
+    imported.delete(f"/api/organizations/{acme['id']}", status=204)
     bob = next(p for p in imported.get("/api/people").json if p["name"] == "Bob Buddy")
-    assert [c["name"] for c in bob["companies"]] == ["Startup"]
+    assert [c["name"] for c in bob["organizations"]] == ["Startup"]
 
 
 def test_delete(imported: webtest.TestApp, engine: Engine) -> None:
@@ -448,8 +497,11 @@ def test_others_cannot_touch(imported: webtest.TestApp) -> None:
     imported.put_json(f"/api/concerts/{concert['id']}", {"name": "mine now"}, status=404)
     imported.delete(f"/api/concerts/{concert['id']}", status=404)
     imported.delete(f"/api/people/{alice}", status=404)
-    assert company_ids(imported) == {}
-    imported.post_json("/api/people", {"name": "x", "companies": [1]}, status=400)
-    imported.put_json("/api/companies/1", {"name": "mine now"}, status=404)
-    imported.delete("/api/companies/1", status=404)
+    assert organization_ids(imported) == {}
+    imported.post_json("/api/people", {"name": "x", "organizations": [1]}, status=400)
+    imported.put_json("/api/organizations/1", {"name": "mine now"}, status=404)
+    imported.delete("/api/organizations/1", status=404)
+    imported.put_json("/api/organization-types/1", {"name": "mine now"}, status=404)
+    imported.delete("/api/organization-types/1", status=404)
+    imported.post_json("/api/organizations", {"name": "x", "type_id": 1}, status=400)
     imported.post_json("/api/concerts", {"name": "x", "people": [alice]}, status=400)

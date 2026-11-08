@@ -157,11 +157,11 @@ Without the key the search box is hidden and the endpoints answer 503.
 - `GET /api/movies/search?q=<title>`: candidate films, most relevant first.
 - `GET /api/movies/<tmdb_id>`: one film normalized for the form.
 
-## Concerts, museums, people and companies
+## Concerts, museums, people and organizations
 
 Besides the library, the app keeps the concerts, museum visits, people and
-companies of the signed-in user: the Concerts, Museums, People and
-Companies tabs, in the same
+organizations of the signed-in user: the Concerts, Museums, People and
+Organizations tabs, in the same
 row as the library ones, with Concerts the page a sign-in lands on. They
 are private to their owner: every row carries an `owner_id`, every query
 filters on it, and another account sees nothing, images included.
@@ -172,17 +172,30 @@ opens it for editing, with a Delete that asks twice. Library entries edit
 only their per-user fields; their title, creator and year belong to the
 shared work row.
 
-A person may work at several companies: the People tab links each one to
-its card in Companies, and a company card links back to its people. The
-person dialog picks companies the way the concert dialog picks people.
+A person may be at several organizations: the People tab links each one
+to its card in Organizations, and an organization card links back to its
+people. The person dialog picks organizations the way the concert dialog
+picks people.
+
+Each organization has a type (company, university, government, ...), shown
+on its card. The types are an enumeration the user keeps on the Org types
+tab: add, rename, describe or delete them there, and pick one in the
+organization dialog. A type still in use cannot be deleted. An import
+starts the user with Company, University, College, Government, Public
+body, Military and Non-profit; `organizations.yaml` has no type field, so
+the importer types the few organizations that are not companies by name
+(`ORGANIZATION_TYPE_BY_NAME` in `scripts/import_world.py`), and a `type`
+in the YAML would win. `--only-types` imports nothing and only adds the
+starting types a user lacks and types the organizations that have none.
 
 The data came from `veltzer.github.io` (`data/yaml/concerts.yaml`,
 `museums.yaml`, `people.yaml`, `organizations.yaml`, the photos in
 `static/images/` and the logos in `data/logos/`) and is loaded with
-`scripts/import_world.py`. Companies are every organization plus every
-company a person names that is not one of them. The organization fields
+`scripts/import_world.py`. The organizations are those of
+`organizations.yaml` plus every company a person names (the `company`
+field of `people.yaml`) that is not among them. The organization fields
 the app neither shows nor edits (old websites, map points, logo sources,
-...) are kept in `companies.details`. The photos are stored in the
+...) are kept in `organizations.details`. The photos are stored in the
 database too (the `images` table), so the database, and its Cloud SQL
 backups, hold all of it. The import replaces everything the user had in
 these tables in one transaction, so it is safe to run again, and stops on
@@ -200,21 +213,26 @@ scripts/import_world_cloud.sh --email you@example.com
 and `static/images/` (default `../veltzer.github.io`); `--subject` picks
 the account when one email has several (Google and GitHub, say). The new
 tables are created by `create_all`; the one `scripts/migrate.sh` step is
-dropping the old free-text `people.company` column, before deploying.
+dropping the old free-text `people.company` column and renaming the
+first `companies` tables to `organizations`, then making
+`organization_types` and `organizations.type_id`, before deploying.
 
 - `GET /api/concerts`, `GET /api/museums`: newest first; the date comes as
   precisely as it is known (`date_precision`: time, day, month or year),
   and `people` holds the ids and names of who was there.
-- `GET /api/people`: name, description and `companies` (ids and names).
-- `GET /api/companies`: by name, with `functions` (what the organization
+- `GET /api/people`: name, description and `organizations` (ids and names).
+- `GET /api/organizations`: by name, with `type` (id and name), `functions` (what the organization
   was to the user), status, website, location, address, the logo as
   `image`, and `people` (ids and names).
 - `POST` to the same paths adds,
-  `PUT /api/<concerts|museums|people|companies>/<id>` replaces the fields,
+  `PUT /api/<concerts|museums|people|organizations>/<id>` replaces the fields,
   `DELETE` removes. The date is typed as `YYYY`, `YYYY-MM` or
   `YYYY-MM-DD`; a date sent back exactly as it came keeps its stored
-  precision, timestamps included. `people` and `companies` are lists of
-  ids.
+  precision, timestamps included. `people` and `organizations` are lists of
+  ids, `type_id` an organization type id.
+- `GET /api/organization-types`: name, description and how many
+  organizations are of it; `POST`, `PUT /api/organization-types/<id>` and
+  `DELETE` (refused while organizations are of it) edit the enumeration.
 - `POST /api/images` (multipart, field `file`, at most 8 MB, JPEG, PNG,
   GIF or WebP by content) uploads a photo; its `id` goes into `image_id`.
   A photo or logo nothing uses any more is deleted with the change that
@@ -250,10 +268,10 @@ script would use as well:
 - `user_works`: what a user thinks about a work: status, rating, dates,
   notes. All per-user queries go through this table, so users never see
   each other's entries even though the work rows are shared.
-- `concerts`, `museums` (one row per visit), `people` and `companies`,
-  linked by `concert_people`, `museum_people` and `person_companies`, and
+- `concerts`, `museums` (one row per visit), `people` and `organizations`
+  (each pointing at one of the user's `organization_types`), linked by `concert_people`, `museum_people` and `person_organizations`, and
   `images`: owned by one user each, never shared (see "Concerts, museums,
-  people and companies").
+  people and organizations").
 
 Tables are created on startup with `create_all`; there is no migration
 tool yet. Adding columns to an existing deployment needs a manual

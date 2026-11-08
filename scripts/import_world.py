@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-Load concerts, museum visits, people and companies, with their images, into
+Load concerts, museum visits, people and organizations, with their images, into
 the database for one user.
 
 The source is a directory laid out the way veltzer.github.io keeps them:
@@ -11,8 +11,9 @@ museum-<internal_id>.jpg for the first visit of each museum, which every
 later visit of the same museum shares) and the organization logos in
 data/logos/.
 
-Companies are every organization plus every company a person names that is
-not one of them; each person is linked to the companies they name.
+The organizations are those of organizations.yaml plus every one a person
+names (the company field of people.yaml) that is not among them; each person
+is linked to the organizations they name.
 
 Everything the user had in these tables is replaced, in one transaction, so
 the script is safe to run again. Unknown fields in the YAML stop the import
@@ -41,31 +42,61 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from myworld.models import (
-    Company,
     Concert,
     Image,
     Museum,
+    Organization,
+    OrganizationType,
     Person,
     User,
     concert_people,
     make_engine,
     museum_people,
-    person_companies,
+    person_organizations,
 )
 
 DATE_FIELDS = {"date_utcz", "date_ymd", "date_my", "date_y", "date_timezone"}
+# company: the name, or a list of names, of the organizations the person is at
 PERSON_FIELDS = {"name", "company", "description"}
 CONCERT_FIELDS = DATE_FIELDS | {
     "name", "performers", "event", "genre", "venue", "city", "country", "with", "tickets",
     "broadcast", "review", "remark", "image", "image_source", "image_license", "image_author",
 }
 # organization fields that have a column of their own; logo names the logo file
-ORGANIZATION_COLUMNS = {"name", "functions", "status", "website", "location", "address", "what_happened", "remark"}
-# kept as they are in companies.details
+ORGANIZATION_COLUMNS = {"name", "type", "functions", "status", "website", "location", "address", "what_happened", "remark"}
+# kept as they are in organizations.details
 ORGANIZATION_DETAILS = {
     "id", "slug", "logo_kind", "logo_source", "logo_license", "logo_note", "old_url", "location_geo",
     "israel_office", "israel_office_geo", "former_website", "former_location", "former_location_geo",
     "address_source", "geo", "sources", "from_date",
+}
+# the organization types every import starts the user with; more are added on
+# the Org types page, or by a type the YAML names
+ORGANIZATION_TYPES = {
+    "Company": "A business",
+    "University": "Grants degrees and does research",
+    "College": "A school past high school that is not a university",
+    "Government": "A ministry, office or agency of the state",
+    "Public body": "Owned or chartered by the public, not a ministry",
+    "Military": "An army unit or school",
+    "Non-profit": "A charity or other organization not run for profit",
+}
+DEFAULT_ORGANIZATION_TYPE = "Company"
+# organizations.yaml has no type field (yet): these are the ones that are not a
+# company; a type field in the YAML (a type name) wins over this list
+ORGANIZATION_TYPE_BY_NAME = {
+    "Hebrew University of Jerusalem": "University",
+    "Open University of Israel": "University",
+    "Tel Aviv University": "University",
+    "Rimon School of Music": "College",
+    "Israeli Defence Ministry": "Government",
+    "Prime ministers office": "Government",
+    "Bank of Israel": "Government",
+    "Bituach Leumi": "Government",
+    "Mifal Hapayis": "Public body",
+    "BBC Radio": "Public body",
+    "Basmach": "Military",
+    "MercyCorps": "Non-profit",
 }
 ORGANIZATION_FIELDS = ORGANIZATION_COLUMNS | ORGANIZATION_DETAILS | {"logo"}
 # internal_id only names the image file; it is not stored
@@ -107,12 +138,12 @@ def _dates(item: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _person_companies(item: dict[str, Any]) -> list[str]:
-    """ company in people.yaml: one name, or a list of names. """
+def _person_organizations(item: dict[str, Any]) -> list[str]:
+    """ company in people.yaml: one organization name, or a list of them. """
     value = item.get("company", [])
     names = [value] if isinstance(value, str) else list(value)
     if len(set(names)) != len(names):
-        raise WorldImportError(f"people.yaml: {item['name']!r} names a company twice")
+        raise WorldImportError(f"people.yaml: {item['name']!r} names an organization twice")
     return names
 
 
@@ -125,6 +156,32 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, list):
         return [_json_safe(v) for v in value]
     return value
+
+
+def type_for(name: str) -> str:
+    """ The type name an organization of organizations.yaml gets when the YAML does not say. """
+    return ORGANIZATION_TYPE_BY_NAME.get(name, DEFAULT_ORGANIZATION_TYPE)
+
+
+def give_types(session: Session, owner: User) -> dict[str, int]:
+    """
+    Add the starting organization types owner does not have yet and give every
+    organization of theirs without a type one (by name, else Company), leaving
+    everything else as it is. Does not commit.
+    """
+    types = {t.name: t for t in session.scalars(select(OrganizationType).where(OrganizationType.owner_id == owner.id))}
+    added = 0
+    for name, description in ORGANIZATION_TYPES.items():
+        if name not in types:
+            types[name] = OrganizationType(owner_id=owner.id, name=name, description=description)
+            session.add(types[name])
+            added += 1
+    typed = 0
+    for organization in session.scalars(select(Organization).where(Organization.owner_id == owner.id, Organization.type_id.is_(None))):
+        organization.type = types[type_for(organization.name)]
+        typed += 1
+    session.flush()
+    return {"organization types added": added, "organizations given a type": typed}
 
 
 def find_owner(session: Session, email: str, subject: str | None) -> User:
@@ -140,7 +197,7 @@ def find_owner(session: Session, email: str, subject: str | None) -> User:
 
 
 def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
-    """ Replace owner's concerts, museums, people, companies and images with those under source. Does not commit. """
+    """ Replace owner's concerts, museums, people, organizations and images with those under source. Does not commit. """
     people_items = _items(source, "people", PERSON_FIELDS)
     organization_items = _items(source, "organizations", ORGANIZATION_FIELDS)
     concert_items = _items(source, "concerts", CONCERT_FIELDS)
@@ -150,8 +207,8 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     # the link rows explicitly: sqlite does not enforce ON DELETE CASCADE unless asked to
     session.execute(delete(concert_people).where(concert_people.c.concert_id.in_(select(Concert.id).where(Concert.owner_id == owner.id))))
     session.execute(delete(museum_people).where(museum_people.c.museum_id.in_(select(Museum.id).where(Museum.owner_id == owner.id))))
-    session.execute(delete(person_companies).where(person_companies.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
-    for model in (Concert, Museum, Person, Company, Image):
+    session.execute(delete(person_organizations).where(person_organizations.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
+    for model in (Concert, Museum, Person, Organization, OrganizationType, Image):
         session.execute(delete(model).where(model.owner_id == owner.id))
     session.flush()
 
@@ -176,35 +233,46 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
         session.add(images[filename])
         return images[filename]
 
-    companies: dict[str, Company] = {}
+    types: dict[str, OrganizationType] = {}
+
+    def organization_type(name: str) -> OrganizationType:
+        if name not in types:
+            types[name] = OrganizationType(owner_id=owner.id, name=name, description=ORGANIZATION_TYPES.get(name, ""))
+            session.add(types[name])
+        return types[name]
+
+    for name in ORGANIZATION_TYPES:
+        organization_type(name)
+
+    organizations: dict[str, Organization] = {}
     for item in organization_items:
-        if item["name"] in companies:
+        if item["name"] in organizations:
             raise WorldImportError(f"organizations.yaml: {item['name']!r} appears twice")
-        company = Company(
+        organization = Organization(
             owner_id=owner.id,
             name=item["name"],
+            type=organization_type(item.get("type") or type_for(item["name"])),
             functions=list(item.get("functions", [])),
-            **{key: item.get(key, "") for key in sorted(ORGANIZATION_COLUMNS - {"name", "functions"})},
+            **{key: item.get(key, "") for key in sorted(ORGANIZATION_COLUMNS - {"name", "type", "functions"})},
             details={key: _json_safe(item[key]) for key in sorted(ORGANIZATION_DETAILS) if key in item},
             # logos live in data/, as logos/<slug>.svg
             image=image(source / "data" / item["logo"], required=True) if "logo" in item else None,
         )
-        companies[company.name] = company
-        session.add(company)
-    organizations = len(companies)
+        organizations[organization.name] = organization
+        session.add(organization)
 
     people: dict[str, Person] = {}
     for item in people_items:
         if item["name"] in people:
             raise WorldImportError(f"people.yaml: {item['name']!r} appears twice")
-        names = _person_companies(item)
+        names = _person_organizations(item)
         for name in names:
-            if name not in companies:
-                companies[name] = Company(owner_id=owner.id, name=name)
-                session.add(companies[name])
+            if name not in organizations:
+                organizations[name] = Organization(owner_id=owner.id, name=name, type=organization_type(DEFAULT_ORGANIZATION_TYPE))
+                session.add(organizations[name])
         person = Person(
             owner_id=owner.id, name=item["name"], description=item.get("description", ""),
-            companies=[companies[name] for name in names],
+            organizations=[organizations[name] for name in names],
         )
         people[person.name] = person
         session.add(person)
@@ -259,7 +327,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
         ))
     session.flush()
     return {
-        "people": len(people), "companies": len(companies), "organizations": organizations,
+        "people": len(people), "organizations": len(organizations), "organization types": len(types),
         "concerts": len(concert_items), "museums": len(museum_items), "images": len(images),
     }
 
@@ -269,19 +337,23 @@ def main() -> int:
     parser.add_argument("--email", required=True, help="email of the account that will own the data")
     parser.add_argument("--subject", help="the account's subject (users.google_sub) when the email has several")
     parser.add_argument("--source", type=Path, default=Path(__file__).resolve().parent.parent.parent / "veltzer.github.io")
+    parser.add_argument(
+        "--only-types", action="store_true",
+        help="import nothing: only add the starting organization types and type the organizations that have none",
+    )
     args = parser.parse_args()
     engine = make_engine()
     with Session(engine) as session:
         try:
             owner = find_owner(session, args.email, args.subject)
-            counts = import_world(session, owner, args.source)
+            counts = give_types(session, owner) if args.only_types else import_world(session, owner, args.source)
         except WorldImportError as e:
             print(f"import_world: {e}", file=sys.stderr)
             return 1
         who = f"{owner.email} ({owner.google_sub})"
         session.commit()
     summary = ", ".join(f"{count} {what}" for what, count in counts.items())
-    print(f"{engine.url.render_as_string(hide_password=True)}: imported for {who}: {summary}")
+    print(f"{engine.url.render_as_string(hide_password=True)}: {'typed' if args.only_types else 'imported'} for {who}: {summary}")
     return 0
 
 

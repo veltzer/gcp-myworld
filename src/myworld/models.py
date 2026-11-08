@@ -5,10 +5,10 @@ Works (books, films, ...) are shared rows; what a user thinks about a work
 (status, rating, dates, notes) lives in the per-user UserWork join row.
 Adding a new kind of work is a matter of adding it to KINDS.
 
-Concerts, museum visits, the people they were shared with and the companies
-those people work at are a second, separate part: each row belongs to one
-user (owner_id) and is never shared. A person may be linked to several
-companies (person_companies).
+Concerts, museum visits, the people they were shared with and the
+organizations those people work at are a second, separate part: each row
+belongs to one user (owner_id) and is never shared. A person may be linked
+to several organizations (person_organizations).
 Their photos live in the images table, so the database alone holds all of it.
 They are loaded by scripts/import_world.py.
 """
@@ -142,11 +142,11 @@ museum_people = Table(
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
 )
 
-person_companies = Table(
-    "person_companies",
+person_organizations = Table(
+    "person_organizations",
     Base.metadata,
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
-    Column("company_id", ForeignKey("companies.id", ondelete="CASCADE"), primary_key=True),
+    Column("organization_id", ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True),
 )
 
 
@@ -172,8 +172,8 @@ class Person(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
-    companies: Mapped[list[Company]] = relationship(
-        secondary=person_companies, back_populates="people",
+    organizations: Mapped[list[Organization]] = relationship(
+        secondary=person_organizations, back_populates="people",
     )
     concerts: Mapped[list[Concert]] = relationship(
         secondary=concert_people, back_populates="people",
@@ -183,7 +183,23 @@ class Person(Base):
     )
 
 
-class Company(Base):
+class OrganizationType(Base):
+    """
+    What an organization is: company, university, ... An enumeration the
+    user keeps themselves (the Org types page), so new values need no code.
+    """
+    __tablename__ = "organization_types"
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_organization_type_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    organizations: Mapped[list[Organization]] = relationship(back_populates="type")
+
+
+class Organization(Base):
     """
     An organization: one a person works at, or one the user taught at,
     consulted for, studied at, was certified by or bought media from
@@ -191,12 +207,15 @@ class Company(Base):
     (old websites, the geo points, where the logo came from, ...), are in
     details, so an import loses nothing.
     """
-    __tablename__ = "companies"
-    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_company_name"),)
+    __tablename__ = "organizations"
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_organization_name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # what it is (company, university, ...): one of the user's own organization types
+    type_id: Mapped[int | None] = mapped_column(ForeignKey("organization_types.id", ondelete="SET NULL"), nullable=True)
+    type: Mapped[OrganizationType | None] = relationship(back_populates="organizations")
     functions: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     # active, acquired, defunct, ...
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="")
@@ -209,7 +228,7 @@ class Company(Base):
     image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     image: Mapped[Image | None] = relationship()
 
-    people: Mapped[list[Person]] = relationship(secondary=person_companies, back_populates="companies")
+    people: Mapped[list[Person]] = relationship(secondary=person_organizations, back_populates="organizations")
 
 
 class _Dated:

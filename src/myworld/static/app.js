@@ -493,7 +493,7 @@ async function libraryPage() {
 	setupAddDialog();
 	renderKinds();
 	const requested = window.location.hash.slice(1);
-	const linked = requested.match(/^(people|companies)\/(\d+)$/);
+	const linked = requested.match(/^(people|organizations|organization-types)\/(\d+)$/);
 	if (linked) {
 		await showRow(linked[1], Number(linked[2]));
 	} else if (requested in state.config.kinds) {
@@ -503,15 +503,21 @@ async function libraryPage() {
 	}
 }
 
-// ─── concerts, museums, people, companies ───────────────────────────────────
+// ─── concerts, museums, people, organizations ──────────────────────────────
 
 // view -> [page title, API path, singular, tab label]; the rows are the signed-in user's own
 const WORLDS = {
 	concerts: ["My Concerts", "/api/concerts", "concert", "Concerts"],
 	museums: ["My Museums", "/api/museums", "museum", "Museums"],
 	people: ["People", "/api/people", "person", "People"],
-	companies: ["Companies", "/api/companies", "company", "Companies"],
+	organizations: ["Organizations", "/api/organizations", "organization", "Organizations"],
+	"organization-types": ["Organization types", "/api/organization-types", "organization type", "Org types"],
 };
+
+// the id of the form, row or card of a view: "organization type" -> "organization-type"
+function slug(view) {
+	return WORLDS[view][2].replace(/ /g, "-");
+}
 
 const worldCache = {};
 
@@ -565,7 +571,7 @@ function detail(list, label, value) {
 	list.appendChild(li);
 }
 
-// Names as links to their place in the People or Companies view, appended to parent.
+// Names as links to their place in the People or Organizations view, appended to parent.
 function appendLinks(parent, view, rows) {
 	rows.forEach((row, index) => {
 		if (index > 0) {
@@ -655,7 +661,7 @@ function setupLayouts() {
 // kind is "photo" or "logo" (a logo is always shown whole, never cropped)
 function cardShell(item, subtitle, kind = "photo") {
 	const card = el("article", "world-card");
-	card.id = `${WORLDS[state.view][2]}-${item.id}`;
+	card.id = `${slug(state.view)}-${item.id}`;
 	card.title = item.name;
 	if (item.image) {
 		card.classList.add("has-image", `is-${kind}`);
@@ -728,8 +734,9 @@ const FUNCTIONS = {
 	education: "I studied there",
 };
 
-function companyCard(item) {
+function organizationCard(item) {
 	const { card, list } = cardShell(item, item.location, "logo");
+	linksDetail(list, "Type", "organization-types", item.type ? [item.type] : []);
 	detail(list, "Was", item.functions.map((f) => FUNCTIONS[f] || f));
 	detail(list, "Status", item.status);
 	detail(list, "What happened", item.what_happened);
@@ -740,17 +747,32 @@ function companyCard(item) {
 	return card;
 }
 
-const CARDS = { concerts: concertCard, museums: museumCard, companies: companyCard };
+const CARDS = { concerts: concertCard, museums: museumCard, organizations: organizationCard };
 
 function personRow(person) {
 	const tr = el("tr");
 	tr.id = `person-${person.id}`;
-	const companies = el("td");
-	appendLinks(companies, "companies", person.companies);
-	tr.append(el("td", "title", person.name), companies, el("td", null, person.description));
+	const organizations = el("td");
+	appendLinks(organizations, "organizations", person.organizations);
+	tr.append(el("td", "title", person.name), organizations, el("td", null, person.description));
 	editable(tr, person);
 	return tr;
 }
+
+// The enumeration of what an organization can be, and how many are of each.
+function typeRow(kind) {
+	const tr = el("tr");
+	tr.id = `organization-type-${kind.id}`;
+	tr.append(el("td", "title", kind.name), el("td", null, kind.description), el("td", "number", kind.organizations));
+	editable(tr, kind);
+	return tr;
+}
+
+// views shown as a table rather than cards: view -> [table id, tbody id, row maker]
+const TABLES = {
+	people: ["people", "people-rows", personRow],
+	"organization-types": ["types", "type-rows", typeRow],
+};
 
 // Everything a search can match on, as one lowercase string.
 function haystack(item) {
@@ -760,6 +782,8 @@ function haystack(item) {
 			values.push(value);
 		} else if (Array.isArray(value)) {
 			values.push(...value.map((v) => (typeof v === "string" ? v : v.name)));
+		} else if (value && typeof value === "object" && typeof value.name === "string") {
+			values.push(value.name);
 		}
 	}
 	values.push(formatDate(item));
@@ -774,21 +798,19 @@ function renderWorld() {
 		const text = haystack(item);
 		return words.every((w) => text.includes(w));
 	});
-	const people = view === "people";
-	$("cards").hidden = people;
-	$("layouts").hidden = people;
-	$("people").hidden = !people || shown.length === 0;
-	if (people) {
-		$("people-rows").replaceChildren(...shown.map(personRow));
-		$("cards").replaceChildren();
-	} else {
-		$("cards").replaceChildren(...shown.map(CARDS[view]));
-		$("people-rows").replaceChildren();
+	const table = TABLES[view];
+	$("cards").hidden = Boolean(table);
+	$("layouts").hidden = Boolean(table);
+	$("cards").replaceChildren(...(table ? [] : shown.map(CARDS[view])));
+	for (const [name, [tableId, rowsId, row]] of Object.entries(TABLES)) {
+		$(tableId).hidden = name !== view || shown.length === 0;
+		$(rowsId).replaceChildren(...(name === view ? shown.map(row) : []));
 	}
+	const what = WORLDS[view][0].replace(/^My /, "").toLowerCase();
 	if (items.length === 0) {
-		$("world-count").textContent = `Nothing here yet: no ${view} have been imported for this account.`;
+		$("world-count").textContent = `Nothing here yet: no ${what} for this account.`;
 	} else {
-		$("world-count").textContent = shown.length === items.length ? `${items.length} ${view}` : `${shown.length} of ${items.length} ${view}`;
+		$("world-count").textContent = shown.length === items.length ? `${items.length} ${what}` : `${shown.length} of ${items.length} ${what}`;
 	}
 }
 
@@ -831,11 +853,11 @@ async function refreshWorld() {
 	renderWorld();
 }
 
-// Open the People or Companies view at one row or card, scrolled to and highlighted.
+// Open the People or Organizations view at one row or card, scrolled to and highlighted.
 async function showRow(view, id) {
 	await selectWorld(view);
 	window.location.hash = `${view}/${id}`;
-	const row = $(`${WORLDS[view][2]}-${id}`);
+	const row = $(`${slug(view)}-${id}`);
 	if (!row) {
 		return;
 	}
@@ -854,7 +876,7 @@ function setupWorlds() {
 // ─── the add dialog ─────────────────────────────────────────────────────────
 
 // One dialog, opened by the + button, showing the form of whatever is on screen.
-const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "person-form", "company-form"];
+const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "person-form", "organization-form", "organization-type-form"];
 const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 
 function dialogError(message) {
@@ -870,7 +892,7 @@ async function worldList(view) {
 	return worldCache[view];
 }
 
-// A picker (data-chips="people" or "companies"): names from that view become
+// A picker (data-chips="people" or "organizations"): names from that view become
 // removable chips; the ids are sent.
 function addChip(box, person) {
 	if (box.selected.has(person.id)) {
@@ -1010,13 +1032,14 @@ const WORLD_BODIES = {
 	},
 	people: async (form) => ({
 		name: form.elements.name.value,
-		companies: chosen(form, "companies"),
+		organizations: chosen(form, "organizations"),
 		description: form.elements.description.value,
 	}),
-	companies: async (form) => {
+	organizations: async (form) => {
 		const value = (name) => form.elements[name].value;
 		return {
 			name: value("name"),
+			type_id: value("type_id"),
 			functions: value("functions").split(",").map((f) => f.trim()).filter(Boolean),
 			status: value("status"),
 			website: value("website"),
@@ -1027,11 +1050,15 @@ const WORLD_BODIES = {
 			image_id: await uploadPhoto(form),
 		};
 	},
+	"organization-types": async (form) => ({
+		name: form.elements.name.value,
+		description: form.elements.description.value,
+	}),
 };
 
 function setupWorldForm(view) {
-	const [, path, singular] = WORLDS[view];
-	const form = $(`${singular}-form`);
+	const path = WORLDS[view][1];
+	const form = $(`${slug(view)}-form`);
 	form.onsubmit = async (event) => {
 		event.preventDefault();
 		dialogError("");
@@ -1073,6 +1100,9 @@ function fillWorldForm(form, item) {
 			addChip(box, row);
 		}
 	}
+	if (form.elements.type_id) {
+		form.elements.type_id.value = item.type ? item.type.id : "";
+	}
 }
 
 // The work form: a new entry starts empty (with the film search for films); an
@@ -1096,16 +1126,30 @@ function prepareWorkForm(form, entry) {
 	}
 }
 
+// The organization dialog's type list: the user's own Org types, and "none".
+async function fillTypes(select) {
+	const types = await worldList("organization-types");
+	const none = document.createElement("option");
+	none.value = "";
+	none.textContent = "(none)";
+	select.replaceChildren(none, ...types.map((t) => {
+		const option = document.createElement("option");
+		option.value = t.id;
+		option.textContent = t.name;
+		return option;
+	}));
+}
+
 // The + button (item null) or a click on an item: the dialog with the form of the view on screen.
 async function openDialog(item) {
 	state.editing = item;
 	const world = WORLDS[state.view];
-	const form = world ? $(`${world[2]}-form`) : $("add-form");
+	const form = world ? $(`${slug(state.view)}-form`) : $("add-form");
 	for (const id of DIALOG_FORMS) {
 		$(id).hidden = $(id) !== form;
 	}
 	const noun = world ? world[2] : state.config.kinds[state.kind].name.toLowerCase();
-	$("dialog-title").textContent = item ? `Edit ${noun}` : `Add a ${noun}`;
+	$("dialog-title").textContent = item ? `Edit ${noun}` : `Add ${/^[aeiou]/.test(noun) ? "an" : "a"} ${noun}`;
 	form.querySelector("button[type=submit]").textContent = item ? "Save" : "Add";
 	const remove = form.querySelector("button.delete");
 	remove.hidden = !item;
@@ -1121,7 +1165,14 @@ async function openDialog(item) {
 				return option;
 			}));
 		}
+		if (form.elements.type_id) {
+			await fillTypes(form.elements.type_id);
+		}
 		resetForm(form);
+		if (form.elements.type_id && !item) {
+			const company = worldCache["organization-types"].find((t) => t.name === "Company");
+			form.elements.type_id.value = company ? company.id : "";
+		}
 		if (item) {
 			fillWorldForm(form, item);
 		}

@@ -16,6 +16,15 @@
 #     is NOT NULL without a server default, so the app can no longer add people
 #     while it exists. Re-run scripts/import_world_cloud.sh afterwards to link
 #     the imported people to their companies.
+#   - companies renamed to organizations, person_companies to
+#     person_organizations (its company_id to organization_id), with their
+#     index and unique constraint, keeping every row. Run it before deploying
+#     the version that uses the new names: that version's create_all would
+#     otherwise make empty tables under them, which this then refuses to
+#     overwrite.
+#   - organization_types (the user's own enumeration of what an organization
+#     is) and organizations.type_id pointing at it. create_all would make the
+#     table, but the column needs it to exist first, so this makes both.
 #
 # Cloud SQL is reached with gcloud_sql_psql.sh (utils-bash): the Cloud SQL
 # Auth Proxy with your gcloud credentials and the app's own password from
@@ -55,6 +64,27 @@ people = {row[1] for row in db.execute("PRAGMA table_info(people)")}
 if "company" in people:
     db.execute("ALTER TABLE people DROP COLUMN company")
     added.append("people.company (dropped)")
+tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+if "companies" in tables:
+    if "organizations" in tables:
+        raise SystemExit(f"{path}: both companies and organizations exist; drop the empty one by hand")
+    db.execute("ALTER TABLE companies RENAME TO organizations")
+    db.execute("DROP INDEX IF EXISTS ix_companies_owner_id")
+    db.execute("CREATE INDEX ix_organizations_owner_id ON organizations (owner_id)")
+    db.execute("ALTER TABLE person_companies RENAME TO person_organizations")
+    db.execute("ALTER TABLE person_organizations RENAME COLUMN company_id TO organization_id")
+    added.append("companies -> organizations")
+    tables = (tables - {"companies"}) | {"organizations"}
+if "organizations" in tables and "type_id" not in {row[1] for row in db.execute("PRAGMA table_info(organizations)")}:
+    db.execute("""CREATE TABLE IF NOT EXISTS organization_types (
+        id INTEGER NOT NULL PRIMARY KEY,
+        owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL,
+        description TEXT NOT NULL,
+        CONSTRAINT uq_organization_type_name UNIQUE (owner_id, name))""")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_organization_types_owner_id ON organization_types (owner_id)")
+    db.execute("ALTER TABLE organizations ADD COLUMN type_id INTEGER REFERENCES organization_types (id) ON DELETE SET NULL")
+    added.append("organization_types, organizations.type_id")
 db.commit()
 if added:
     print(f"{path}: migrated {', '.join(added)}")
@@ -74,6 +104,8 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash'))
 	   OR (table_name = 'works' AND column_name IN ('imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
 	   OR (table_name = 'people' AND column_name = 'company')
+	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
+	   OR (table_name = 'organizations' AND column_name = 'type_id')
 ")"
 
 has() {
@@ -93,6 +125,27 @@ has "works.imdb_id:.*" || need works.imdb_id "ALTER TABLE works ADD COLUMN imdb_
 has "works.tmdb_id:.*" || need works.tmdb_id "ALTER TABLE works ADD COLUMN tmdb_id INTEGER"
 has "works.rotten_tomatoes_id:.*" || need works.rotten_tomatoes_id "ALTER TABLE works ADD COLUMN rotten_tomatoes_id VARCHAR(200) NOT NULL DEFAULT ''"
 ! has "people.company:.*" || need "people.company (dropped)" "ALTER TABLE people DROP COLUMN company"
+if has "companies.id:.*"; then
+	if has "organizations.id:.*"; then
+		echo "both companies and organizations exist; drop the empty one by hand" >&2
+		exit 1
+	fi
+	need "companies -> organizations" "ALTER TABLE companies RENAME TO organizations;
+		ALTER TABLE organizations RENAME CONSTRAINT uq_company_name TO uq_organization_name;
+		ALTER INDEX ix_companies_owner_id RENAME TO ix_organizations_owner_id;
+		ALTER TABLE person_companies RENAME TO person_organizations;
+		ALTER TABLE person_organizations RENAME COLUMN company_id TO organization_id"
+fi
+if { has "companies.id:.*" || has "organizations.id:.*"; } && ! has "organizations.type_id:.*"; then
+	need "organization_types, organizations.type_id" "CREATE TABLE IF NOT EXISTS organization_types (
+			id SERIAL PRIMARY KEY,
+			owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+			name VARCHAR(100) NOT NULL,
+			description TEXT NOT NULL,
+			CONSTRAINT uq_organization_type_name UNIQUE (owner_id, name));
+		CREATE INDEX IF NOT EXISTS ix_organization_types_owner_id ON organization_types (owner_id);
+		ALTER TABLE organizations ADD COLUMN type_id INTEGER REFERENCES organization_types (id) ON DELETE SET NULL"
+fi
 
 if (( ${#changed[@]} == 0 )); then
 	echo "${gcp_sql_instance}/${gcp_db_name}: up to date, nothing to migrate"
