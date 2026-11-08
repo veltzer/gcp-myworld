@@ -7,8 +7,10 @@ checks read the whole database, every account's rows, and change nothing.
 ## Running them
 
 - **In the app:** the Checks page (top bar, admins only; see
-  `accounts.md`) lists every check with a Run button and a Run all
-  button, and shows what each one found.
+  `accounts.md`) lists every check as one row of the same height: its
+  title (the description is the tooltip), what it found, and a Run
+  button; Run all runs them in turn. A failing check's count opens the
+  list of problems under its row.
 - **From the command line:** `scripts/check.py` runs the same checks
   against `DATABASE_URL` (the local sqlite file by default) and exits 1
   when one finds a problem:
@@ -49,6 +51,6 @@ A check is one function in `src/myworld/checks.py`, from a database
 session to a `Result` (how many things it looked at, and a `Problem` for
 each thing wrong: what it is about, so a person can find it, and what is
 wrong). Register it with `@check(name, title, noun)`; its docstring is
-the description the page and `--list` show. The page, the API
+the description the page (as the title's tooltip) and `--list` show. The page, the API
 (`GET /api/checks`, `GET /api/checks/<name>`) and the script pick it up
 with no other change. Give it a test in `tests/checks_test.py`.

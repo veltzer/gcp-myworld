@@ -1541,15 +1541,18 @@ async function selectChecks() {
 }
 
 // One check: what it looks at, a button to run it, and the last result under it.
+// One row per check, all the same height: the name (what it checks in full
+// is its tooltip), the result once run, and Run. A failing check's problems
+// are under a closed disclosure, so a long list does not push the rest away.
 function checkCard(check) {
 	const card = el("div", "check");
 	card.dataset.check = check.name;
-	const head = el("div", "check-head");
-	const run = el("button", null, "Run");
+	const title = el("span", "check-title", check.title);
+	title.title = check.description;
+	const run = el("button", "text", "Run");
 	run.type = "button";
 	run.onclick = () => runCheck(card).catch((e) => showError(e.message));
-	head.append(el("h3", "check-title", check.title), run);
-	card.append(head, el("p", "check-description", check.description), el("div", "check-result"));
+	card.append(title, el("span", "check-result"), run);
 	return card;
 }
 
@@ -1557,21 +1560,32 @@ async function runCheck(card) {
 	const button = card.querySelector("button");
 	const out = card.querySelector(".check-result");
 	button.disabled = true;
+	card.querySelector(".check-details")?.remove();
 	out.className = "check-result";
 	out.textContent = "Running\u2026";
 	try {
 		const result = await api(`/api/checks/${card.dataset.check}`);
 		out.classList.add(result.ok ? "pass" : "fail");
 		if (result.ok) {
-			out.textContent = `All ${result.checked} ${result.noun} pass.`;
+			out.textContent = `All ${result.checked} ${result.noun} pass`;
 		} else {
-			const list = el("ul", "check-problems");
+			// the count is the toggle of the list, which opens under the whole row
+			const list = el("ul", "check-problems check-details");
+			list.hidden = true;
 			for (const problem of result.problems) {
 				const item = el("li");
 				item.append(el("span", "check-subject", problem.subject), document.createTextNode(`: ${problem.message}`));
 				list.appendChild(item);
 			}
-			out.replaceChildren(el("p", null, `${result.problems.length} problem${result.problems.length === 1 ? "" : "s"} in ${result.checked} ${result.noun}:`), list);
+			const toggle = el("button", "text check-toggle", `${result.problems.length} problem${result.problems.length === 1 ? "" : "s"} in ${result.checked} ${result.noun}`);
+			toggle.type = "button";
+			toggle.setAttribute("aria-expanded", "false");
+			toggle.onclick = () => {
+				list.hidden = !list.hidden;
+				toggle.setAttribute("aria-expanded", String(!list.hidden));
+			};
+			out.replaceChildren(toggle);
+			card.appendChild(list);
 		}
 	} catch (e) {
 		out.classList.add("fail");

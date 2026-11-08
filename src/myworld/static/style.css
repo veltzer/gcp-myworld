@@ -1566,41 +1566,72 @@ button.text.danger:hover {
 	margin-left: 0.5rem;
 }
 
+/* one row per check: name | result | Run, every row the same height */
 .checks {
-	display: grid;
-	gap: 0.75rem;
-}
-
-.check {
 	border: 1px solid var(--line);
 	border-radius: 8px;
-	padding: 0.75rem 1rem;
 	background: #fff;
 }
 
-.check-head {
-	display: flex;
+.check {
+	display: grid;
+	grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto;
 	align-items: center;
-	justify-content: space-between;
-	gap: 1rem;
+	column-gap: 1rem;
+	padding: 0.1rem 0.75rem;
+	border-top: 1px solid var(--line);
+}
+
+.check > button.text {
+	padding: 0.25rem 0.6rem;
+}
+
+.check:first-child {
+	border-top: none;
+}
+
+.check-title,
+.check-result {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .check-title {
-	margin: 0;
-	font-size: 1rem;
-}
-
-.check-description {
-	margin: 0.4rem 0 0;
-	color: var(--muted);
-}
-
-.check-result:empty {
-	display: none;
+	font-weight: 600;
+	cursor: help;
 }
 
 .check-result {
-	margin-top: 0.6rem;
+	color: var(--muted);
+}
+
+/* a failing check's count opens its problems, under the whole row */
+button.text.check-toggle {
+	max-width: 100%;
+	padding: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: inherit;
+	font: inherit;
+}
+
+.check-toggle::after {
+	content: " \25b8";
+}
+
+.check-toggle[aria-expanded="true"]::after {
+	content: " \25be";
+}
+
+.check-details {
+	grid-column: 1 / -1;
+	margin: 0.2rem 0 0.4rem;
+}
+
+.check-details[hidden] {
+	display: none;
 }
 
 .check-result.pass {
