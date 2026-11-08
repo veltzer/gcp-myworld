@@ -177,6 +177,15 @@ who the user went with. The import makes every performer a person,
 reusing one `people.yaml` already has; `scripts/migrate.sh` did the same
 for the free-text performer names already in the database.
 
+A person has a first name and a surname (a name that is not one, a band
+say, is all first name), and names are not unique: two people of the same
+name are two rows, and the pickers show each one's type and description to
+tell them apart. Each person may have a type from the user's own Person
+types enumeration (the Person types tab; an import starts with Family,
+Girlfriend, Performer and Co-Worker and guesses them from the data: see
+`_person_type` in `scripts/import_world.py`). People and Organizations
+have a type filter next to the search.
+
 A person may be at several organizations: the People tab links each one
 to its card in Organizations, and an organization card links back to its
 people. The person dialog picks organizations the way the concert dialog
@@ -191,7 +200,8 @@ body, Military and Non-profit; `organizations.yaml` has no type field, so
 the importer types the few organizations that are not companies by name
 (`ORGANIZATION_TYPE_BY_NAME` in `scripts/import_world.py`), and a `type`
 in the YAML would win. `--only-types` imports nothing and only adds the
-starting types a user lacks and types the organizations that have none.
+starting types a user lacks and types the organizations and people that
+have none.
 
 The data came from `veltzer.github.io` (`data/yaml/concerts.yaml`,
 `museums.yaml`, `people.yaml`, `organizations.yaml`, the photos in
@@ -226,7 +236,8 @@ first `companies` tables to `organizations`, then making
   precisely as it is known (`date_precision`: time, day, month or year),
   and `people` holds the ids and names of who the user went with; a
   concert's `performers` are people too (ids and names).
-- `GET /api/people`: name, description and `organizations` (ids and names).
+- `GET /api/people`: `first_name`, `surname`, `name` (the two together),
+  `type` (id and name), description and `organizations` (ids and names).
 - `GET /api/organizations`: by name, with `type` (id and name), `functions` (what the organization
   was to the user), status, website, location, address, the logo as
   `image`, and `people` (ids and names).
@@ -236,9 +247,10 @@ first `companies` tables to `organizations`, then making
   `YYYY-MM-DD`; a date sent back exactly as it came keeps its stored
   precision, timestamps included. `people` and `organizations` are lists of
   ids, `type_id` an organization type id.
-- `GET /api/organization-types`: name, description and how many
-  organizations are of it; `POST`, `PUT /api/organization-types/<id>` and
-  `DELETE` (refused while organizations are of it) edit the enumeration.
+- `GET /api/organization-types`, `GET /api/person-types`: name,
+  description and `count`, how many rows are of it; `POST`,
+  `PUT /api/<organization-types|person-types>/<id>` and `DELETE` (refused
+  while rows are of it) edit the enumeration.
 - `POST /api/images` (multipart, field `file`, at most 8 MB, JPEG, PNG,
   GIF or WebP by content) uploads a photo; its `id` goes into `image_id`.
   A photo or logo nothing uses any more is deleted with the change that

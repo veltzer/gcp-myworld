@@ -40,7 +40,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 KINDS: dict[str, tuple[str, str, str]] = {
     "book": ("Book", "Books", "Author"),
     "film": ("Film", "Films", "Director"),
-    "series": ("Series", "Series", "Creator"),
+    "series": ("Video series", "Video series", "Creator"),
     "album": ("Album", "Albums", "Artist"),
     "game": ("Game", "Games", "Studio"),
 }
@@ -171,14 +171,35 @@ class Image(Base):
     data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
 
 
-class Person(Base):
-    __tablename__ = "people"
-    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_person_name"),)
+class PersonType(Base):
+    """ What a person is to the user: family, co-worker, ... (the Person types page). """
+    __tablename__ = "person_types"
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_person_type_name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    people: Mapped[list[Person]] = relationship(back_populates="type")
+
+
+class Person(Base):
+    """
+    Someone the user knows or saw. Names are not unique: two people may share
+    one, and they stay two rows. A name that is not a first name and a
+    surname (a band, "Oded from MAFAT") is all in first_name.
+    """
+    __tablename__ = "people"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    first_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    surname: Mapped[str] = mapped_column(String(200), nullable=False, default="", server_default="")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # family, co-worker, ...: one of the user's own person types
+    type_id: Mapped[int | None] = mapped_column(ForeignKey("person_types.id", ondelete="SET NULL"), nullable=True)
+    type: Mapped[PersonType | None] = relationship(back_populates="people")
 
     organizations: Mapped[list[Organization]] = relationship(
         secondary=person_organizations, back_populates="people",
@@ -189,6 +210,11 @@ class Person(Base):
     performed: Mapped[list[Concert]] = relationship(
         secondary=concert_performers, back_populates="performers",
     )
+
+    @property
+    def name(self) -> str:
+        """ The whole name, as shown. """
+        return f"{self.first_name} {self.surname}".strip()
     museums: Mapped[list[Museum]] = relationship(
         secondary=museum_people, back_populates="people",
     )

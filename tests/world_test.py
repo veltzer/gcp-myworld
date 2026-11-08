@@ -139,7 +139,8 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
     with Session(engine) as session:
         counts = import_world.import_world(session, owner(session), write_source(tmp_path))
         session.commit()
-    assert counts == {"people": 4, "organizations": 3, "organization types": 7, "concerts": 3, "museums": 3, "images": 3}
+    assert counts == {
+        "people": 4, "organizations": 3, "organization types": 7, "person types": 4, "people with a type": 4, "concerts": 3, "museums": 3, "images": 3}
     return app
 
 
@@ -209,7 +210,7 @@ def test_people(imported: webtest.TestApp) -> None:
     assert [c["name"] for c in alice["organizations"]] == ["Startup"]
     assert [c["name"] for c in bob["organizations"]] == ["Acme", "Startup"]
     # only the person and their organizations: their concerts and museums are not listed next to them
-    assert set(alice) == {"id", "name", "organizations", "description"}
+    assert set(alice) == {"id", "name", "first_name", "surname", "type", "organizations", "description"}
 
 
 def test_organizations(imported: webtest.TestApp) -> None:
@@ -236,12 +237,58 @@ def test_organization_types(imported: webtest.TestApp) -> None:
     types = {t["name"]: t for t in imported.get("/api/organization-types").json}
     assert list(types) == sorted(import_world.ORGANIZATION_TYPES)
     # Acme and Startup default to Company; the YAML names Old School's type
-    assert types["Company"]["organizations"] == 2
-    assert types["University"]["organizations"] == 1
-    assert types["Military"]["organizations"] == 0
+    assert types["Company"]["count"] == 2
+    assert types["University"]["count"] == 1
+    assert types["Military"]["count"] == 0
     by_name = {o["name"]: o for o in imported.get("/api/organizations").json}
     assert by_name["Old School"]["type"] == {"id": types["University"]["id"], "name": "University"}
     assert by_name["Acme"]["type"]["name"] == "Company"
+
+
+def test_person_types(imported: webtest.TestApp) -> None:
+    types = {t["name"]: t for t in imported.get("/api/person-types").json}
+    assert sorted(types) == sorted(import_world.PERSON_TYPES)
+    people = {p["name"]: p["type"] for p in imported.get("/api/people").json}
+    # Alice and Bob are at organizations; the two performers people.yaml does not have are Performers
+    assert people["Alice Friend"]["name"] == "Co-Worker"
+    assert people["Bob Buddy"]["name"] == "Co-Worker"
+    assert people["Singer"]["name"] == "Performer"
+    assert people["The Band"]["name"] == "Performer"
+    assert types["Performer"]["count"] == 2
+    friend = imported.post_json("/api/person-types", {"name": "Friend"}, status=201).json
+    alice = next(p for p in imported.get("/api/people").json if p["name"] == "Alice Friend")
+    edited = imported.put_json(f"/api/people/{alice['id']}", {"first_name": "Alice", "surname": "Friend", "type_id": friend["id"]}).json
+    assert edited["type"] == {"id": friend["id"], "name": "Friend"}
+    imported.delete(f"/api/person-types/{friend['id']}", status=409)
+    imported.put_json(f"/api/people/{alice['id']}", {"first_name": "Alice", "surname": "Friend", "type_id": 9999}, status=400)
+
+
+def test_split_name() -> None:
+    assert import_world.split_name("Doron Veltzer") == ("Doron", "Veltzer")
+    assert import_world.split_name("Yaron Ben-Ami") == ("Yaron", "Ben-Ami")
+    assert import_world.split_name("Oded from MAFAT") == ("Oded from MAFAT", "")
+    assert import_world.split_name("The Band") == ("The Band", "")
+    assert import_world.split_name("Marmir") == ("Marmir", "")
+
+
+def test_people_may_share_a_name(imported: webtest.TestApp) -> None:
+    first = imported.post_json("/api/people", {"first_name": "Dana", "surname": "Cohen", "description": "School"}, status=201).json
+    second = imported.post_json("/api/people", {"first_name": "Dana", "surname": "Cohen", "description": "Work"}, status=201).json
+    assert first["id"] != second["id"]
+    danas = [p for p in imported.get("/api/people").json if p["name"] == "Dana Cohen"]
+    assert [p["description"] for p in danas] == ["School", "Work"]
+
+
+def test_guessing_a_person_type() -> None:
+    def person(name: str, description: str = "") -> Person:
+        first_name, surname = import_world.split_name(name)
+        return Person(first_name=first_name, surname=surname, description=description)
+    assert import_world._person_type(person("Doron Veltzer")) == "Family"
+    assert import_world._person_type(person("X", "My brother")) == "Family"
+    assert import_world._person_type(person("X", "My brothers ex-girlfriend")) is None
+    assert import_world._person_type(person("X", "Ex-girlfriend")) == "Girlfriend"
+    assert import_world._person_type(person("X", "Yaron's girlfriend")) is None
+    assert import_world._person_type(person("X", "Physics guy from MAFAT")) == "Co-Worker"
 
 
 def test_give_types_fills_only_what_is_missing(imported: webtest.TestApp, engine: Engine) -> None:
@@ -251,25 +298,25 @@ def test_give_types_fills_only_what_is_missing(imported: webtest.TestApp, engine
         session.commit()
         counts = import_world.give_types(session, owner(session))
         session.commit()
-    assert counts == {"organization types added": 1, "organizations given a type": 3}
+    assert counts == {"types added": 1, "organizations given a type": 3, "people given a type": 0}
     by_name = {o["name"]: o["type"]["name"] for o in imported.get("/api/organizations").json}
     # Old School's type came from the YAML, which this does not read: it gets the default
     assert by_name == {"Acme": "Company", "Old School": "Company", "Startup": "Company"}
     with Session(engine) as session:
-        assert import_world.give_types(session, owner(session)) == {"organization types added": 0, "organizations given a type": 0}
+        assert import_world.give_types(session, owner(session)) == {"types added": 0, "organizations given a type": 0, "people given a type": 0}
 
 
 def test_edit_organization_types(imported: webtest.TestApp) -> None:
     imported.post_json("/api/organization-types", {"name": ""}, status=400)
     imported.post_json("/api/organization-types", {"name": "Company"}, status=409)
     lab = imported.post_json("/api/organization-types", {"name": "Lab", "description": "Research"}, status=201).json
-    assert lab["organizations"] == 0
+    assert lab["count"] == 0
     acme = next(o for o in imported.get("/api/organizations").json if o["name"] == "Acme")
     edited = imported.put_json(f"/api/organizations/{acme['id']}", dict(acme, type_id=lab["id"])).json
     assert edited["type"]["name"] == "Lab"
     imported.put_json(f"/api/organizations/{acme['id']}", dict(acme, type_id=999), status=400)
     renamed = imported.put_json(f"/api/organization-types/{lab['id']}", {"name": "Laboratory"}).json
-    assert renamed["organizations"] == 1
+    assert renamed["count"] == 1
     assert next(o for o in imported.get("/api/organizations").json if o["name"] == "Acme")["type"]["name"] == "Laboratory"
     # a type in use cannot go; once nothing is of it, it can
     imported.delete(f"/api/organization-types/{lab['id']}", status=409)
@@ -317,6 +364,7 @@ def test_other_users_see_nothing(imported: webtest.TestApp, engine: Engine) -> N
     assert imported.get("/api/people").json == []
     assert imported.get("/api/organizations").json == []
     assert imported.get("/api/organization-types").json == []
+    assert imported.get("/api/person-types").json == []
     imported.get(url, status=404)
     with Session(engine) as session:
         assert session.scalar(select(func.count()).select_from(Concert)) == 3
@@ -400,12 +448,12 @@ def test_add_validates(imported: webtest.TestApp) -> None:
     imported.post_json("/api/concerts", {"name": "x", "date_timezone": "Mars/Olympus"}, status=400)
     imported.post_json("/api/concerts", {"name": "x", "people": [999]}, status=400)
     imported.post_json("/api/museums", {"name": "x", "rating": 11}, status=400)
-    imported.post_json("/api/people", {"name": "Alice Friend"}, status=409)
+    imported.post_json("/api/people", {"first_name": ""}, status=400)
     imported.post("/api/images", upload_files=[("file", "x.jpg", b"not an image")], status=400)
 
 
 def test_add_museum_and_person(imported: webtest.TestApp) -> None:
-    person = imported.post_json("/api/people", {"name": "Carol", "description": "Zed"}, status=201).json
+    person = imported.post_json("/api/people", {"first_name": "Carol", "description": "Zed"}, status=201).json
     museum = imported.post_json("/api/museums", {
         "name": "Prado", "city": "Madrid", "date": "2012", "rating": 9, "people": [person["id"]],
     }, status=201).json
@@ -430,9 +478,9 @@ def test_edit_keeps_a_timestamp_sent_back_unchanged(imported: webtest.TestApp) -
 
 def test_edit_person(imported: webtest.TestApp) -> None:
     ids = people_ids(imported)
-    imported.put_json(f"/api/people/{ids['Bob Buddy']}", {"name": "Alice Friend"}, status=409)
-    bob = imported.put_json(f"/api/people/{ids['Bob Buddy']}", {"name": "Robert Buddy", "description": "x"}).json
+    bob = imported.put_json(f"/api/people/{ids['Bob Buddy']}", {"first_name": "Robert", "surname": "Buddy", "description": "x"}).json
     assert bob["name"] == "Robert Buddy"
+    assert (bob["first_name"], bob["surname"]) == ("Robert", "Buddy")
     louvre = next(m for m in imported.get("/api/museums").json if m["with"])
     assert louvre["with"] == ["Robert Buddy"]
     # no organizations sent: the person is linked to none
@@ -447,13 +495,13 @@ def test_link_person_to_organizations(imported: webtest.TestApp) -> None:
     organizations = organization_ids(imported)
     bob = people_ids(imported)["Bob Buddy"]
     edited = imported.put_json(f"/api/people/{bob}", {
-        "name": "Bob Buddy", "organizations": [organizations["Old School"], organizations["Acme"]],
+        "first_name": "Bob", "surname": "Buddy", "organizations": [organizations["Old School"], organizations["Acme"]],
     }).json
     assert [c["name"] for c in edited["organizations"]] == ["Acme", "Old School"]
     school = next(c for c in imported.get("/api/organizations").json if c["name"] == "Old School")
     assert [p["name"] for p in school["people"]] == ["Bob Buddy"]
-    imported.put_json(f"/api/people/{bob}", {"name": "Bob Buddy", "organizations": [999]}, status=400)
-    imported.put_json(f"/api/people/{bob}", {"name": "Bob Buddy", "organizations": "Acme"}, status=400)
+    imported.put_json(f"/api/people/{bob}", {"first_name": "Bob", "organizations": [999]}, status=400)
+    imported.put_json(f"/api/people/{bob}", {"first_name": "Bob", "organizations": "Acme"}, status=400)
 
 
 def test_add_edit_delete_organization(imported: webtest.TestApp, engine: Engine) -> None:
@@ -514,10 +562,12 @@ def test_others_cannot_touch(imported: webtest.TestApp) -> None:
     imported.delete(f"/api/concerts/{concert['id']}", status=404)
     imported.delete(f"/api/people/{alice}", status=404)
     assert organization_ids(imported) == {}
-    imported.post_json("/api/people", {"name": "x", "organizations": [1]}, status=400)
+    imported.post_json("/api/people", {"first_name": "x", "organizations": [1]}, status=400)
     imported.put_json("/api/organizations/1", {"name": "mine now"}, status=404)
     imported.delete("/api/organizations/1", status=404)
     imported.put_json("/api/organization-types/1", {"name": "mine now"}, status=404)
     imported.delete("/api/organization-types/1", status=404)
     imported.post_json("/api/organizations", {"name": "x", "type_id": 1}, status=400)
+    imported.put_json("/api/person-types/1", {"name": "mine now"}, status=404)
+    imported.post_json("/api/people", {"first_name": "x", "type_id": 1}, status=400)
     imported.post_json("/api/concerts", {"name": "x", "people": [alice]}, status=400)

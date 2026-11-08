@@ -26,6 +26,7 @@
 			<section id="world-view" hidden>
 				<div class="world-tools">
 					<input id="world-search" type="search" placeholder="Search" aria-label="Search">
+					<select id="type-filter" aria-label="Type" hidden></select>
 					<span id="world-count" class="empty"></span>
 					<div id="layouts" class="layouts" role="group" aria-label="Layout"></div>
 				</div>
@@ -33,7 +34,9 @@
 				<table id="people" class="entries" hidden>
 					<thead>
 						<tr>
-							<th>Name</th>
+							<th>First name</th>
+							<th>Surname</th>
+							<th>Type</th>
 							<th>Organizations</th>
 							<th>Description</th>
 						</tr>
@@ -49,6 +52,16 @@
 						</tr>
 					</thead>
 					<tbody id="type-rows"></tbody>
+				</table>
+				<table id="person-types-table" class="entries" hidden>
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>Description</th>
+							<th>People</th>
+						</tr>
+					</thead>
+					<tbody id="person-type-rows"></tbody>
 				</table>
 			</section>
 			<section id="library-view">
@@ -190,7 +203,9 @@
 			</form>
 			<form id="person-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Name <input name="name" required></label>
+					<label class="wide">First name <input name="first_name" required></label>
+					<label class="wide">Surname <input name="surname"></label>
+					<label>Type <select name="type_id"></select></label>
 				</div>
 				<div class="row">
 					<label class="wide">Organizations <span class="chips" data-chips="organizations" data-field="organizations"><input list="organization-names" placeholder="Type a name from Organizations" autocomplete="off"></span></label>
@@ -238,6 +253,19 @@
 			<form id="organization-type-form" class="dialog-form" hidden>
 				<div class="row">
 					<label class="wide">Name <input name="name" required placeholder="e.g. Hospital"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Description <input name="description"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="person-type-form" class="dialog-form" hidden>
+				<div class="row">
+					<label class="wide">Name <input name="name" required placeholder="e.g. Friend"></label>
 				</div>
 				<div class="row">
 					<label class="wide">Description <input name="description"></label>

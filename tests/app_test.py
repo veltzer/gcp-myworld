@@ -55,7 +55,7 @@ def test_config_anonymous(app: webtest.TestApp) -> None:
     assert config["google_client_id"].endswith(".apps.googleusercontent.com")
     assert config["dev_login"] is False
     assert list(config["kinds"]) == ["book", "film", "series", "album", "game"]
-    assert config["kinds"]["series"]["plural"] == "Series"
+    assert config["kinds"]["series"]["plural"] == "Video series"
     assert "done" in config["statuses"]
 
 

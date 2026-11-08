@@ -26,6 +26,7 @@ from myworld.models import (
     Organization,
     OrganizationType,
     Person,
+    PersonType,
 )
 
 bp = flask.Blueprint("world", __name__)
@@ -117,6 +118,9 @@ def person_json(person: Person) -> dict[str, Any]:
     return {
         "id": person.id,
         "name": person.name,
+        "first_name": person.first_name,
+        "surname": person.surname,
+        "type": None if person.type is None else {"id": person.type.id, "name": person.type.name},
         "organizations": _refs(person.organizations),
         "description": person.description,
     }
@@ -165,8 +169,8 @@ def api_people() -> flask.Response:
     query = (
         select(Person)
         .where(Person.owner_id == flask.g.user.id)
-        .options(selectinload(Person.organizations))
-        .order_by(Person.name)
+        .options(selectinload(Person.organizations), selectinload(Person.type))
+        .order_by(Person.first_name, Person.surname, Person.id)
     )
     people = flask.g.db.execute(query).scalars().all()
     return flask.jsonify([person_json(p) for p in people])
@@ -183,33 +187,6 @@ def api_organizations() -> flask.Response:
     )
     organizations = flask.g.db.execute(query).scalars().all()
     return flask.jsonify([organization_json(c) for c in organizations])
-
-
-def organization_type_json(kind: OrganizationType, used: int) -> dict[str, Any]:
-    return {"id": kind.id, "name": kind.name, "description": kind.description, "organizations": used}
-
-
-def _type_uses(kind: OrganizationType) -> int:
-    return flask.g.db.scalar(select(func.count()).select_from(Organization).where(Organization.type_id == kind.id)) or 0
-
-
-@bp.route("/api/organization-types", methods=["GET"])
-@auth.login_required
-def api_organization_types() -> flask.Response:
-    """ The user's enumeration of what an organization can be, with how many are of each. """
-    used = (
-        select(Organization.type_id, func.count().label("n"))
-        .where(Organization.owner_id == flask.g.user.id)
-        .group_by(Organization.type_id)
-        .subquery()
-    )
-    rows = flask.g.db.execute(
-        select(OrganizationType, func.coalesce(used.c.n, 0))
-        .outerjoin(used, used.c.type_id == OrganizationType.id)
-        .where(OrganizationType.owner_id == flask.g.user.id)
-        .order_by(OrganizationType.name)
-    ).all()
-    return flask.jsonify([organization_type_json(kind, n) for kind, n in rows])
 
 
 @bp.route("/api/images/<int:image_id>", methods=["GET"])
@@ -310,7 +287,7 @@ def _strings(body: dict[str, Any], key: str) -> list[str]:
     return [v.strip() for v in value if v.strip()]
 
 
-def _owned(model: type[Concert | Museum | Person | Organization | OrganizationType], row_id: int) -> Any:
+def _owned(model: type[Concert | Museum | Person | Organization | OrganizationType | PersonType], row_id: int) -> Any:
     row = flask.g.db.get(model, row_id)
     if row is None or row.owner_id != flask.g.user.id:
         raise ApiError(404, "no such entry")
@@ -369,14 +346,11 @@ def _apply_museum(museum: Museum, body: dict[str, Any], current: Museum | None) 
 
 
 def _apply_person(person: Person, body: dict[str, Any]) -> None:
-    name = text(body, "name", required=True)
-    clash = flask.g.db.execute(
-        select(Person.id).where(Person.owner_id == flask.g.user.id, Person.name == name, Person.id != person.id)
-    ).first()
-    if clash is not None:
-        raise ApiError(409, f"{name} is already in People")
-    person.name = name
+    # two people may share a name, so there is no clash to look for
+    person.first_name = text(body, "first_name", required=True)
+    person.surname = text(body, "surname")
     person.organizations = _owned_list(body, "organizations", Organization)
+    person.type = _owned_type(PersonType, opt_int(body, "type_id", 1, 2**31 - 1))
     person.description = text(body, "description")
 
 
@@ -389,7 +363,7 @@ def _apply_organization(organization: Organization, body: dict[str, Any]) -> Non
         raise ApiError(409, f"{name} is already in Organizations")
     organization.name = name
     type_id = opt_int(body, "type_id", 1, 2**31 - 1)
-    organization.type = None if type_id is None else _owned_type(type_id)
+    organization.type = _owned_type(OrganizationType, type_id)
     organization.functions = _strings(body, "functions")
     organization.status = text(body, "status")
     organization.website = text(body, "website")
@@ -496,53 +470,95 @@ def api_world_delete(what: str, row_id: int) -> flask.Response:
     return flask.Response(status=204)
 
 
-def _owned_type(type_id: int) -> OrganizationType:
-    kind = flask.g.db.get(OrganizationType, type_id)
+# ─── the enumerations: organization types and person types ────────────────
+
+# path -> (type model, the model whose type_id points at it, what the typed rows are called)
+TYPES: dict[str, tuple[type[OrganizationType | PersonType], type[Organization | Person], str]] = {
+    "organization-types": (OrganizationType, Organization, "organization"),
+    "person-types": (PersonType, Person, "person"),
+}
+
+
+def type_json(kind: OrganizationType | PersonType, count: int) -> dict[str, Any]:
+    return {"id": kind.id, "name": kind.name, "description": kind.description, "count": count}
+
+
+def _type_uses(what: str, kind: OrganizationType | PersonType) -> int:
+    typed = TYPES[what][1]
+    return flask.g.db.scalar(select(func.count()).select_from(typed).where(typed.type_id == kind.id)) or 0
+
+
+def _owned_type[T: (OrganizationType, PersonType)](model: type[T], type_id: int | None) -> T | None:
+    """ The user's own type type_id of model, or None for no type. """
+    if type_id is None:
+        return None
+    kind = flask.g.db.get(model, type_id)
     if kind is None or kind.owner_id != flask.g.user.id:
-        raise ApiError(400, "type_id: unknown organization type")
+        raise ApiError(400, "type_id: unknown type")
     return kind
 
 
-def _apply_type(kind: OrganizationType, body: dict[str, Any]) -> None:
+def _apply_type(model: type[OrganizationType | PersonType], kind: OrganizationType | PersonType, body: dict[str, Any]) -> None:
     name = text(body, "name", required=True)
     clash = flask.g.db.execute(
-        select(OrganizationType.id).where(
-            OrganizationType.owner_id == flask.g.user.id, OrganizationType.name == name, OrganizationType.id != kind.id,
-        )
+        select(model.id).where(model.owner_id == flask.g.user.id, model.name == name, model.id != kind.id)
     ).first()
     if clash is not None:
-        raise ApiError(409, f"{name} is already an organization type")
+        raise ApiError(409, f"{name} is already one of the types")
     kind.name = name
     kind.description = text(body, "description")
 
 
-@bp.route("/api/organization-types", methods=["POST"])
+@bp.route("/api/<any('organization-types', 'person-types'):what>", methods=["GET"])
 @auth.login_required
-def api_organization_types_add() -> tuple[flask.Response, int]:
-    kind = OrganizationType(owner_id=flask.g.user.id)
-    _apply_type(kind, json_body())
+def api_types(what: str) -> flask.Response:
+    """ The user's enumeration, with how many rows are of each type. """
+    model, typed, _ = TYPES[what]
+    used = (
+        select(typed.type_id, func.count().label("n"))
+        .where(typed.owner_id == flask.g.user.id)
+        .group_by(typed.type_id)
+        .subquery()
+    )
+    rows = flask.g.db.execute(
+        select(model, func.coalesce(used.c.n, 0))
+        .outerjoin(used, used.c.type_id == model.id)
+        .where(model.owner_id == flask.g.user.id)
+        .order_by(model.name)
+    ).all()
+    return flask.jsonify([type_json(kind, n) for kind, n in rows])
+
+
+@bp.route("/api/<any('organization-types', 'person-types'):what>", methods=["POST"])
+@auth.login_required
+def api_types_add(what: str) -> tuple[flask.Response, int]:
+    model = TYPES[what][0]
+    kind = model(owner_id=flask.g.user.id)
+    _apply_type(model, kind, json_body())
     flask.g.db.add(kind)
     flask.g.db.commit()
-    return flask.jsonify(organization_type_json(kind, 0)), 201
+    return flask.jsonify(type_json(kind, 0)), 201
 
 
-@bp.route("/api/organization-types/<int:row_id>", methods=["PUT"])
+@bp.route("/api/<any('organization-types', 'person-types'):what>/<int:row_id>", methods=["PUT"])
 @auth.login_required
-def api_organization_types_update(row_id: int) -> flask.Response:
-    kind = _owned(OrganizationType, row_id)
-    _apply_type(kind, json_body())
+def api_types_update(what: str, row_id: int) -> flask.Response:
+    model = TYPES[what][0]
+    kind = _owned(model, row_id)
+    _apply_type(model, kind, json_body())
     flask.g.db.commit()
-    return flask.jsonify(organization_type_json(kind, _type_uses(kind)))
+    return flask.jsonify(type_json(kind, _type_uses(what, kind)))
 
 
-@bp.route("/api/organization-types/<int:row_id>", methods=["DELETE"])
+@bp.route("/api/<any('organization-types', 'person-types'):what>/<int:row_id>", methods=["DELETE"])
 @auth.login_required
-def api_organization_types_delete(row_id: int) -> flask.Response:
-    """ Only a type nothing is: an organization never silently loses its type. """
-    kind = _owned(OrganizationType, row_id)
-    used = _type_uses(kind)
+def api_types_delete(what: str, row_id: int) -> flask.Response:
+    """ Only a type nothing is: a row never silently loses its type. """
+    model, _, noun = TYPES[what]
+    kind = _owned(model, row_id)
+    used = _type_uses(what, kind)
     if used:
-        raise ApiError(409, f"{used} organization{'s are' if used > 1 else ' is'} {kind.name}: change them first")
+        raise ApiError(409, f"{used} {noun}{'s are' if used > 1 else ' is'} {kind.name}: change them first")
     flask.g.db.delete(kind)
     flask.g.db.commit()
     return flask.Response(status=204)

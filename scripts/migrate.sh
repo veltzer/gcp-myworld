@@ -30,6 +30,18 @@
 #     already has that name is reused) and a concert_performers row, and only
 #     then is the column dropped. The new code no longer writes the column,
 #     which is NOT NULL, so run this right after deploying that version.
+#   - person_types (the user's own enumeration of what a person is to them)
+#     and people.type_id pointing at it, made here as for organization types.
+#     scripts/import_world_cloud.sh --only-types then types the people.
+#   - people's names: names are no longer unique (uq_person_name goes), and
+#     people.name becomes people.first_name plus a new people.surname. A name
+#     that is plainly two capitalized words is split between them, the way
+#     split_name in scripts/import_world.py does; any other stays whole in
+#     first_name. Run before deploying the version that has these columns.
+#
+# A table renamed here can come back empty if the old version of the app
+# starts (create_all) between this and the deploy; a rename finding both
+# tables drops the old one when it is empty and stops when it is not.
 #
 # Cloud SQL is reached with gcloud_sql_psql.sh (utils-bash): the Cloud SQL
 # Auth Proxy with your gcloud credentials and the app's own password from
@@ -72,7 +84,14 @@ if "company" in people:
 tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
 if "companies" in tables:
     if "organizations" in tables:
-        raise SystemExit(f"{path}: both companies and organizations exist; drop the empty one by hand")
+        if db.execute("SELECT (SELECT count(*) FROM companies) + (SELECT count(*) FROM person_companies)").fetchone()[0]:
+            raise SystemExit(f"{path}: both companies and organizations exist and companies has rows; merge them by hand")
+        # an empty pair made by an old version of the app after the rename
+        db.execute("DROP TABLE person_companies")
+        db.execute("DROP TABLE companies")
+        tables -= {"companies", "person_companies"}
+        added.append("dropped the empty companies tables left by an old version")
+if "companies" in tables:
     db.execute("ALTER TABLE companies RENAME TO organizations")
     db.execute("DROP INDEX IF EXISTS ix_companies_owner_id")
     db.execute("CREATE INDEX ix_organizations_owner_id ON organizations (owner_id)")
@@ -103,6 +122,36 @@ if "performers" in {row[1] for row in db.execute("PRAGMA table_info(concerts)")}
         JOIN people pe ON pe.owner_id = c.owner_id AND pe.name = trim(p.value)""")
     db.execute("ALTER TABLE concerts DROP COLUMN performers")
     added.append("concerts.performers -> people, concert_performers")
+people_columns = {row[1] for row in db.execute("PRAGMA table_info(people)")}
+if people_columns and "type_id" not in people_columns:
+    db.execute("""CREATE TABLE IF NOT EXISTS person_types (
+        id INTEGER NOT NULL PRIMARY KEY,
+        owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL,
+        description TEXT NOT NULL,
+        CONSTRAINT uq_person_type_name UNIQUE (owner_id, name))""")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_person_types_owner_id ON person_types (owner_id)")
+    db.execute("ALTER TABLE people ADD COLUMN type_id INTEGER REFERENCES person_types (id) ON DELETE SET NULL")
+    added.append("person_types, people.type_id")
+if "name" in people_columns:
+    import re
+    # sqlite cannot drop a constraint: the table is made again without it
+    (create,) = db.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'people'").fetchone()
+    create = re.sub(r",\s*CONSTRAINT uq_person_name UNIQUE \([^)]*\)", "", create)
+    create = re.sub(r"^CREATE TABLE \"?people\"?", "CREATE TABLE people_new", create)
+    db.execute(create)
+    db.execute("INSERT INTO people_new SELECT * FROM people")
+    db.execute("DROP TABLE people")
+    db.execute("ALTER TABLE people_new RENAME TO people")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_people_owner_id ON people (owner_id)")
+    db.execute("ALTER TABLE people RENAME COLUMN name TO first_name")
+    db.execute("ALTER TABLE people ADD COLUMN surname VARCHAR(200) NOT NULL DEFAULT ''")
+    two_words = re.compile(r"([A-Z][^ ]*) ([A-Z][^ ]*)")
+    for person_id, name in db.execute("SELECT id, first_name FROM people").fetchall():
+        match = two_words.fullmatch(name)
+        if match and match.group(1) != "The":
+            db.execute("UPDATE people SET first_name = ?, surname = ? WHERE id = ?", (match.group(1), match.group(2), person_id))
+    added.append("people.name -> first_name, surname (not unique)")
 db.commit()
 if added:
     print(f"{path}: migrated {', '.join(added)}")
@@ -125,6 +174,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
 	   OR (table_name = 'organizations' AND column_name = 'type_id')
 	   OR (table_name = 'concerts' AND column_name = 'performers')
+	   OR (table_name = 'people' AND column_name IN ('name', 'type_id'))
 ")"
 
 has() {
@@ -144,11 +194,15 @@ has "works.imdb_id:.*" || need works.imdb_id "ALTER TABLE works ADD COLUMN imdb_
 has "works.tmdb_id:.*" || need works.tmdb_id "ALTER TABLE works ADD COLUMN tmdb_id INTEGER"
 has "works.rotten_tomatoes_id:.*" || need works.rotten_tomatoes_id "ALTER TABLE works ADD COLUMN rotten_tomatoes_id VARCHAR(200) NOT NULL DEFAULT ''"
 ! has "people.company:.*" || need "people.company (dropped)" "ALTER TABLE people DROP COLUMN company"
-if has "companies.id:.*"; then
-	if has "organizations.id:.*"; then
-		echo "both companies and organizations exist; drop the empty one by hand" >&2
+if has "companies.id:.*" && has "organizations.id:.*"; then
+	rows="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "SELECT (SELECT count(*) FROM companies) + (SELECT count(*) FROM person_companies)")"
+	if [[ "${rows}" != "0" ]]; then
+		echo "both companies and organizations exist and companies has rows; merge them by hand" >&2
 		exit 1
 	fi
+	# an empty pair made by an old version of the app after the rename
+	need "dropped the empty companies tables left by an old version" "DROP TABLE person_companies; DROP TABLE companies"
+elif has "companies.id:.*"; then
 	need "companies -> organizations" "ALTER TABLE companies RENAME TO organizations;
 		ALTER TABLE organizations RENAME CONSTRAINT uq_company_name TO uq_organization_name;
 		ALTER INDEX ix_companies_owner_id RENAME TO ix_organizations_owner_id;
@@ -181,6 +235,26 @@ if has "concerts.performers:.*"; then
 			JOIN people pe ON pe.owner_id = c.owner_id AND pe.name = btrim(p.name)
 			ON CONFLICT DO NOTHING;
 		ALTER TABLE concerts DROP COLUMN performers"
+fi
+
+if ! has "people.type_id:.*"; then
+	need "person_types, people.type_id" "CREATE TABLE IF NOT EXISTS person_types (
+			id SERIAL PRIMARY KEY,
+			owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+			name VARCHAR(100) NOT NULL,
+			description TEXT NOT NULL,
+			CONSTRAINT uq_person_type_name UNIQUE (owner_id, name));
+		CREATE INDEX IF NOT EXISTS ix_person_types_owner_id ON person_types (owner_id);
+		ALTER TABLE people ADD COLUMN type_id INTEGER REFERENCES person_types (id) ON DELETE SET NULL"
+fi
+if has "people.name:.*"; then
+	need "people.name -> first_name, surname (not unique)" "ALTER TABLE people DROP CONSTRAINT IF EXISTS uq_person_name;
+		ALTER TABLE people RENAME COLUMN name TO first_name;
+		ALTER TABLE people ADD COLUMN surname VARCHAR(200) NOT NULL DEFAULT '';
+		UPDATE people
+			SET first_name = substring(first_name from '^([A-Z][^ ]*) [A-Z][^ ]*\$'),
+				surname = substring(first_name from '^[A-Z][^ ]* ([A-Z][^ ]*)\$')
+			WHERE first_name ~ '^[A-Z][^ ]* [A-Z][^ ]*\$' AND first_name NOT LIKE 'The %'"
 fi
 
 if (( ${#changed[@]} == 0 )); then

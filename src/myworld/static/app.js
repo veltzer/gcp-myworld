@@ -493,7 +493,7 @@ async function libraryPage() {
 	setupAddDialog();
 	renderKinds();
 	const requested = window.location.hash.slice(1);
-	const linked = requested.match(/^(people|organizations|organization-types)\/(\d+)$/);
+	const linked = requested.match(/^(people|organizations|organization-types|person-types)\/(\d+)$/);
 	if (linked) {
 		await showRow(linked[1], Number(linked[2]));
 	} else if (requested in state.config.kinds) {
@@ -512,7 +512,11 @@ const WORLDS = {
 	people: ["People", "/api/people", "person", "People"],
 	organizations: ["Organizations", "/api/organizations", "organization", "Organizations"],
 	"organization-types": ["Organization types", "/api/organization-types", "organization type", "Org types"],
+	"person-types": ["Person types", "/api/person-types", "person type", "Person types"],
 };
+
+// views whose rows have a type -> the view of their enumeration
+const TYPED = { people: "person-types", organizations: "organization-types" };
 
 // the id of the form, row or card of a view: "organization type" -> "organization-type"
 function slug(view) {
@@ -753,18 +757,21 @@ const CARDS = { concerts: concertCard, museums: museumCard, organizations: organ
 function personRow(person) {
 	const tr = el("tr");
 	tr.id = `person-${person.id}`;
+	const kind = el("td");
+	appendLinks(kind, "person-types", person.type ? [person.type] : []);
 	const organizations = el("td");
 	appendLinks(organizations, "organizations", person.organizations);
-	tr.append(el("td", "title", person.name), organizations, el("td", null, person.description));
+	tr.append(el("td", "title", person.first_name), el("td", "title", person.surname), kind, organizations, el("td", null, person.description));
 	editable(tr, person);
 	return tr;
 }
 
 // The enumeration of what an organization can be, and how many are of each.
+// A row of an enumeration (Org types, Person types), with how many rows are of it.
 function typeRow(kind) {
 	const tr = el("tr");
-	tr.id = `organization-type-${kind.id}`;
-	tr.append(el("td", "title", kind.name), el("td", null, kind.description), el("td", "number", kind.organizations));
+	tr.id = `${slug(state.view)}-${kind.id}`;
+	tr.append(el("td", "title", kind.name), el("td", null, kind.description), el("td", "number", kind.count));
 	editable(tr, kind);
 	return tr;
 }
@@ -773,7 +780,42 @@ function typeRow(kind) {
 const TABLES = {
 	people: ["people", "people-rows", personRow],
 	"organization-types": ["types", "type-rows", typeRow],
+	"person-types": ["person-types-table", "person-type-rows", typeRow],
 };
+
+// The type filter next to the search, for views whose rows have a type: "" is
+// everything, "none" the rows without one, else a type id. Kept per view.
+const typeFilters = {};
+
+async function fillTypeFilter(view) {
+	const select = $("type-filter");
+	const typesView = TYPED[view];
+	select.hidden = !typesView;
+	if (!typesView) {
+		return;
+	}
+	const types = await worldList(typesView);
+	const option = (value, label) => {
+		const node = document.createElement("option");
+		node.value = value;
+		node.textContent = label;
+		return node;
+	};
+	select.replaceChildren(
+		option("", "All types"),
+		...types.map((t) => option(String(t.id), `${t.name} (${t.count})`)),
+		option("none", "No type"),
+	);
+	select.value = typeFilters[view] || "";
+}
+
+function typeMatches(item) {
+	const wanted = typeFilters[state.view] || "";
+	if (!TYPED[state.view] || wanted === "") {
+		return true;
+	}
+	return wanted === "none" ? !item.type : Boolean(item.type) && String(item.type.id) === wanted;
+}
 
 // Everything a search can match on, as one lowercase string.
 function haystack(item) {
@@ -796,6 +838,9 @@ function renderWorld() {
 	const items = worldCache[view] || [];
 	const words = $("world-search").value.toLowerCase().split(/\s+/).filter(Boolean);
 	const shown = items.filter((item) => {
+		if (!typeMatches(item)) {
+			return false;
+		}
 		const text = haystack(item);
 		return words.every((w) => text.includes(w));
 	});
@@ -835,9 +880,12 @@ async function selectWorld(view) {
 	if (!worldCache[view]) {
 		$("world-count").textContent = "Loading...";
 		$("cards").replaceChildren();
-		$("people").hidden = true;
+		for (const [tableId] of Object.values(TABLES)) {
+			$(tableId).hidden = true;
+		}
 		worldCache[view] = await api(path);
 	}
+	await fillTypeFilter(view);
 	if (state.view === view) {
 		renderWorld();
 	}
@@ -851,6 +899,7 @@ async function refreshWorld() {
 	}
 	const view = state.view;
 	worldCache[view] = await api(WORLDS[view][1]);
+	await fillTypeFilter(view);
 	renderWorld();
 }
 
@@ -871,13 +920,17 @@ async function showRow(view, id) {
 
 function setupWorlds() {
 	$("world-search").oninput = renderWorld;
+	$("type-filter").onchange = () => {
+		typeFilters[state.view] = $("type-filter").value;
+		renderWorld();
+	};
 	setupLayouts();
 }
 
 // ─── the add dialog ─────────────────────────────────────────────────────────
 
 // One dialog, opened by the + button, showing the form of whatever is on screen.
-const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "person-form", "organization-form", "organization-type-form"];
+const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "person-form", "organization-form", "organization-type-form", "person-type-form"];
 const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 
 function dialogError(message) {
@@ -891,6 +944,13 @@ async function worldList(view) {
 		worldCache[view] = await api(WORLDS[view][1]);
 	}
 	return worldCache[view];
+}
+
+// What a picker suggests for a row: the name, and for people the type and
+// description too, since two people may share a name.
+function chipLabel(row) {
+	const more = [row.type?.name, row.description?.slice(0, 40)].filter(Boolean);
+	return more.length && "first_name" in row ? `${row.name} (${more.join(", ")})` : row.name;
 }
 
 // A picker (data-chips="people" or "organizations"): names from that view become
@@ -921,13 +981,22 @@ function setupChips(box) {
 			return;
 		}
 		const view = box.dataset.chips;
-		const person = (worldCache[view] || []).find((p) => p.name.toLowerCase() === name.toLowerCase());
-		if (!person) {
+		const rows = worldCache[view] || [];
+		const wanted = name.toLowerCase();
+		// a suggestion names one row exactly; a bare name only when no one else has it
+		let matches = rows.filter((row) => chipLabel(row).toLowerCase() === wanted);
+		if (matches.length === 0) {
+			matches = rows.filter((row) => row.name.toLowerCase() === wanted);
+		}
+		if (matches.length !== 1) {
 			if (!quiet) {
-				dialogError(`${name} is not in ${WORLDS[view][0]} yet: add it there first.`);
+				dialogError(matches.length
+					? `${matches.length} are called ${name}: pick one from the suggestions.`
+					: `${name} is not in ${WORLDS[view][0]} yet: add it there first.`);
 			}
 			return;
 		}
+		const person = matches[0];
 		dialogError("");
 		addChip(box, person);
 		input.value = "";
@@ -1033,7 +1102,9 @@ const WORLD_BODIES = {
 		};
 	},
 	people: async (form) => ({
-		name: form.elements.name.value,
+		first_name: form.elements.first_name.value,
+		surname: form.elements.surname.value,
+		type_id: form.elements.type_id.value,
 		organizations: chosen(form, "organizations"),
 		description: form.elements.description.value,
 	}),
@@ -1053,6 +1124,10 @@ const WORLD_BODIES = {
 		};
 	},
 	"organization-types": async (form) => ({
+		name: form.elements.name.value,
+		description: form.elements.description.value,
+	}),
+	"person-types": async (form) => ({
 		name: form.elements.name.value,
 		description: form.elements.description.value,
 	}),
@@ -1129,8 +1204,8 @@ function prepareWorkForm(form, entry) {
 }
 
 // The organization dialog's type list: the user's own Org types, and "none".
-async function fillTypes(select) {
-	const types = await worldList("organization-types");
+async function fillTypes(select, typesView) {
+	const types = await worldList(typesView);
 	const none = document.createElement("option");
 	none.value = "";
 	none.textContent = "(none)";
@@ -1163,15 +1238,15 @@ async function openDialog(item) {
 			const rows = await worldList(box.dataset.chips);
 			$(box.querySelector("input").getAttribute("list")).replaceChildren(...rows.map((row) => {
 				const option = document.createElement("option");
-				option.value = row.name;
+				option.value = chipLabel(row);
 				return option;
 			}));
 		}
 		if (form.elements.type_id) {
-			await fillTypes(form.elements.type_id);
+			await fillTypes(form.elements.type_id, TYPED[state.view]);
 		}
 		resetForm(form);
-		if (form.elements.type_id && !item) {
+		if (state.view === "organizations" && !item) {
 			const company = worldCache["organization-types"].find((t) => t.name === "Company");
 			form.elements.type_id.value = company ? company.id : "";
 		}

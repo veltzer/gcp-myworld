@@ -33,13 +33,14 @@ import argparse
 import datetime
 import hashlib
 import mimetypes
+import re
 import sys
 from pathlib import Path
 from typing import Any
 
 import yaml
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from myworld.models import (
     Concert,
@@ -48,6 +49,7 @@ from myworld.models import (
     Organization,
     OrganizationType,
     Person,
+    PersonType,
     User,
     concert_people,
     concert_performers,
@@ -83,6 +85,19 @@ ORGANIZATION_TYPES = {
     "Non-profit": "A charity or other organization not run for profit",
 }
 DEFAULT_ORGANIZATION_TYPE = "Company"
+# the person types every import starts the user with
+PERSON_TYPES = {
+    "Family": "A relative",
+    "Girlfriend": "A girlfriend, now or before",
+    "Performer": "Someone seen on stage",
+    "Co-Worker": "Someone worked with",
+}
+# what _person_type reads a person's type from
+FAMILY_NAME = "Veltzer"
+FAMILY_DESCRIPTION = re.compile(r"my (brother|sister|mother|father|son|daughter|wife|husband|cousin|uncle|aunt)\b", re.IGNORECASE)
+GIRLFRIEND_DESCRIPTION = re.compile(r"(ex-)?girlfriend\b", re.IGNORECASE)
+TWO_WORD_NAME = re.compile(r"([A-Z][^ ]*) ([A-Z][^ ]*)")
+CO_WORKER_DESCRIPTION = re.compile(r"\bMAFAT\b|\bwork(ed)? with\b")
 # organizations.yaml has no type field (yet): these are the ones that are not a
 # company; a type field in the YAML (a type name) wins over this list
 ORGANIZATION_TYPE_BY_NAME = {
@@ -164,25 +179,76 @@ def type_for(name: str) -> str:
     return ORGANIZATION_TYPE_BY_NAME.get(name, DEFAULT_ORGANIZATION_TYPE)
 
 
-def give_types(session: Session, owner: User) -> dict[str, int]:
+def split_name(name: str) -> tuple[str, str]:
     """
-    Add the starting organization types owner does not have yet and give every
-    organization of theirs without a type one (by name, else Company), leaving
-    everything else as it is. Does not commit.
+    A whole name as (first name, surname): split only when it is plainly two
+    capitalized words ("Doron Veltzer", "Yaron Ben-Ami"); anything else ("Oded
+    from MAFAT", "The Band", three words) is all first name, to split by hand.
+    scripts/migrate.sh splits the names already in a database the same way.
     """
-    types = {t.name: t for t in session.scalars(select(OrganizationType).where(OrganizationType.owner_id == owner.id))}
+    match = TWO_WORD_NAME.fullmatch(name)
+    if match is None or match.group(1) == "The":
+        return name, ""
+    return match.group(1), match.group(2)
+
+
+def _person_type(person: Person) -> str | None:
+    """
+    A first guess at what a person is, from what the data already says;
+    None when nothing does. Only ever used for people without a type.
+    """
+    if person.name.endswith(f" {FAMILY_NAME}") or FAMILY_DESCRIPTION.match(person.description):
+        return "Family"
+    if GIRLFRIEND_DESCRIPTION.match(person.description):
+        return "Girlfriend"
+    if person.organizations or CO_WORKER_DESCRIPTION.search(person.description):
+        return "Co-Worker"
+    if person.performed:
+        return "Performer"
+    return None
+
+
+def _starting_types[T: (OrganizationType, PersonType)](
+    session: Session, owner: User, model: type[T], starting: dict[str, str],
+) -> tuple[dict[str, T], int]:
+    """ owner's types of model by name, after adding those of starting they lack, and how many were added. """
+    types = {t.name: t for t in session.scalars(select(model).where(model.owner_id == owner.id))}
     added = 0
-    for name, description in ORGANIZATION_TYPES.items():
+    for name, description in starting.items():
         if name not in types:
-            types[name] = OrganizationType(owner_id=owner.id, name=name, description=description)
+            types[name] = model(owner_id=owner.id, name=name, description=description)
             session.add(types[name])
             added += 1
+    return types, added
+
+
+def give_types(session: Session, owner: User) -> dict[str, int]:
+    """
+    Add the starting organization and person types owner does not have yet,
+    and give every organization and person of theirs without a type one
+    (organizations by name, else Company; people by _person_type), leaving
+    everything else as it is. Does not commit.
+    """
+    org_types, org_added = _starting_types(session, owner, OrganizationType, ORGANIZATION_TYPES)
+    person_types, person_added = _starting_types(session, owner, PersonType, PERSON_TYPES)
+    added = org_added + person_added
     typed = 0
     for organization in session.scalars(select(Organization).where(Organization.owner_id == owner.id, Organization.type_id.is_(None))):
-        organization.type = types[type_for(organization.name)]
+        organization.type = org_types[type_for(organization.name)]
         typed += 1
+    people = session.scalars(
+        select(Person)
+        .where(Person.owner_id == owner.id, Person.type_id.is_(None))
+        .options(selectinload(Person.organizations), selectinload(Person.performed))
+    )
+    people_typed = 0
+    for person in people:
+        name = _person_type(person)
+        if name is not None:
+            person.type = person_types[name]
+            people_typed += 1
     session.flush()
-    return {"organization types added": added, "organizations given a type": typed}
+    return {"types added": added, "organizations given a type": typed, "people given a type": people_typed}
 
 
 def find_owner(session: Session, email: str, subject: str | None) -> User:
@@ -211,7 +277,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     session.execute(delete(concert_performers).where(concert_performers.c.concert_id.in_(concerts_of_owner)))
     session.execute(delete(museum_people).where(museum_people.c.museum_id.in_(select(Museum.id).where(Museum.owner_id == owner.id))))
     session.execute(delete(person_organizations).where(person_organizations.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
-    for model in (Concert, Museum, Person, Organization, OrganizationType, Image):
+    for model in (Concert, Museum, Person, Organization, OrganizationType, PersonType, Image):
         session.execute(delete(model).where(model.owner_id == owner.id))
     session.flush()
 
@@ -273,11 +339,12 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
             if name not in organizations:
                 organizations[name] = Organization(owner_id=owner.id, name=name, type=organization_type(DEFAULT_ORGANIZATION_TYPE))
                 session.add(organizations[name])
+        first_name, surname = split_name(item["name"])
         person = Person(
-            owner_id=owner.id, name=item["name"], description=item.get("description", ""),
+            owner_id=owner.id, first_name=first_name, surname=surname, description=item.get("description", ""),
             organizations=[organizations[name] for name in names],
         )
-        people[person.name] = person
+        people[item["name"]] = person
         session.add(person)
 
     listed = set(people)
@@ -295,7 +362,8 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
         names = [name.strip() for name in item.get("performers", []) if name.strip()]
         for name in names:
             if name not in people:
-                people[name] = Person(owner_id=owner.id, name=name, description="")
+                first_name, surname = split_name(name)
+                people[name] = Person(owner_id=owner.id, first_name=first_name, surname=surname, description="")
                 session.add(people[name])
         return [people[name] for name in dict.fromkeys(names)]
 
@@ -340,8 +408,10 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
             **_dates(item),
         ))
     session.flush()
+    typed = give_types(session, owner)
     return {
         "people": len(people), "organizations": len(organizations), "organization types": len(types),
+        "person types": len(PERSON_TYPES), "people with a type": typed["people given a type"],
         "concerts": len(concert_items), "museums": len(museum_items), "images": len(images),
     }
 
@@ -353,7 +423,7 @@ def main() -> int:
     parser.add_argument("--source", type=Path, default=Path(__file__).resolve().parent.parent.parent / "veltzer.github.io")
     parser.add_argument(
         "--only-types", action="store_true",
-        help="import nothing: only add the starting organization types and type the organizations that have none",
+        help="import nothing: only add the starting types and type the organizations and people that have none",
     )
     args = parser.parse_args()
     engine = make_engine()
