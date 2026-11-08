@@ -708,7 +708,7 @@ button.danger {
 	margin-bottom: 1rem;
 }
 
-.world-tools input {
+#world-search {
 	flex: 1;
 	max-width: 28rem;
 }
@@ -747,6 +747,12 @@ button.danger {
 
 .type-filter-menu[hidden] {
 	display: none;
+}
+
+.type-filter-option input {
+	flex: none;
+	margin: 0;
+	padding: 0;
 }
 
 .type-filter-option {
