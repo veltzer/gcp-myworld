@@ -34,6 +34,8 @@ uses too).
   type.
 - `organization-addresses`: every organization has an address.
 - `person-types`: every person has at least one person type.
+- `museum-dates`: every museum visit has a date (a day, a month, a year
+  or a full time).
 
 ## Adding one
 

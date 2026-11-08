@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from myworld.models import (
     Image,
+    Museum,
     Organization,
     Person,
     organization_relation_types,
@@ -213,3 +214,17 @@ def check_person_types(session: Session) -> Result:
         if person.id not in typed
     ]
     return Result(checked=len(people), problems=problems)
+
+
+# ─── museums ────────────────────────────────────────────────────────────────
+
+@check("museum-dates", "Every museum visit has a date", "museum visits")
+def check_museum_dates(session: Session) -> Result:
+    """ Every museum visit, of every account, has a date: a day, a month, a year or a full time, whichever is known. """
+    visits = session.scalars(select(Museum).order_by(Museum.owner_id, Museum.name, Museum.id)).all()
+    problems = [
+        Problem(f"{visit.name} (museum visit {visit.id}, account {visit.owner_id})", "has no date")
+        for visit in visits
+        if visit.date_utcz is None and visit.date_ymd is None and not visit.date_my and visit.date_y is None
+    ]
+    return Result(checked=len(visits), problems=problems)

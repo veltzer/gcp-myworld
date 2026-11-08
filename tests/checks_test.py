@@ -3,6 +3,7 @@ The database checks: the logo rules themselves, the registry, the admin
 API that runs them and scripts/check.py, which runs the same ones.
 """
 
+import datetime
 import os
 import subprocess
 import sys
@@ -20,6 +21,7 @@ from myworld.models import (
     ROLE_ADMIN,
     Base,
     Image,
+    Museum,
     Organization,
     Person,
     PersonType,
@@ -64,7 +66,7 @@ def test_bad_logo(data: bytes, wanted: str) -> None:
 
 
 def test_every_check_describes_itself() -> None:
-    assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "person-types"} <= set(checks.CHECKS)
+    assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "person-types", "museum-dates"} <= set(checks.CHECKS)
     for chosen in checks.CHECKS.values():
         assert chosen.title and chosen.description and chosen.noun
 
@@ -151,6 +153,25 @@ def test_organization_addresses(engine: Engine) -> None:
     assert result.checked == 3
     assert [p.subject for p in result.problems] == ["Bare (organization 2, account 1)", "Blank (organization 3, account 1)"]
     assert {p.message for p in result.problems} == {"has no address"}
+
+
+def test_museum_dates(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(google_sub="alice", email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        session.add_all([
+            # any one precision is a date
+            Museum(owner_id=alice.id, name="Louvre", date_ymd=datetime.date(2019, 5, 1)),
+            Museum(owner_id=alice.id, name="Prado", date_my="06-2018"),
+            Museum(owner_id=alice.id, name="Tate", date_y=2015),
+            Museum(owner_id=alice.id, name="MoMA", date_utcz=datetime.datetime(2020, 1, 2, 15, 0)),
+            Museum(owner_id=alice.id, name="Uffizi"),
+        ])
+        session.commit()
+        result = checks.CHECKS["museum-dates"].run(session)
+    assert result.checked == 5
+    assert [(p.subject, p.message) for p in result.problems] == [("Uffizi (museum visit 5, account 1)", "has no date")]
 
 
 def test_person_types(engine: Engine) -> None:
