@@ -12,6 +12,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld.models import (
+    AudioCourse,
     Concert,
     Image,
     Museum,
@@ -114,6 +115,28 @@ items:
 """
 
 
+AUDIO_COURSES = """
+items:
+  - name: "Famous Greeks"
+    lecturers: ["Bob Buddy"]
+    date_utcz: "2019-09-21T09:28:55Z"
+    date_timezone: "Asia/Jerusalem"
+    device: "Samsung S10"
+    location: "Night Walks"
+    rating: 8
+    review: "Pretty good"
+    great_courses_id: 337
+    great_courses_slug: "famous-greeks"
+  - name: "How to Listen to Music"
+    lecturers: ["Robert Greenberg"]
+    date_timezone: "Asia/Jerusalem"
+    device: "Samsung S7"
+    date_started_utcz: "2020-10-01T21:31:01Z"
+    progress: "4/24"
+    internal_id: 1
+"""
+
+
 # by the logo convention (doc/logos.md), so the checks pass on imported data
 LOGO = b'<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="-1 -1 12 12"><rect width="10" height="10"/></svg>'
 
@@ -122,11 +145,13 @@ def write_source(root: Path, concerts: str = CONCERTS) -> Path:
     (root / "data" / "yaml").mkdir(parents=True)
     (root / "static" / "images").mkdir(parents=True)
     (root / "data" / "logos").mkdir(parents=True)
-    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS)):
+    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES)):
         (root / "data" / "yaml" / f"{name}.yaml").write_text(text, encoding="UTF8")
     (root / "data" / "logos" / "acme.svg").write_bytes(LOGO)
     (root / "static" / "images" / "concert-the-band.jpg").write_bytes(b"\xff\xd8band")
     (root / "static" / "images" / "museum-15.jpg").write_bytes(b"\xff\xd8louvre")
+    (root / "static" / "images" / "audiocourse-gc-337.jpg").write_bytes(b"\xff\xd8greeks")
+    (root / "static" / "images" / "audiocourse-internal-1.jpg").write_bytes(b"\xff\xd8music")
     return root
 
 
@@ -141,7 +166,8 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         counts = import_world.import_world(session, owner(session), write_source(tmp_path))
         session.commit()
     assert counts == {
-        "people": 4, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 4, "people with a type": 4, "concerts": 3, "museums": 3, "images": 3}
+        "people": 5, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 5, "people with a type": 5,
+        "concerts": 3, "museums": 3, "audio courses": 2, "images": 5}
     return app
 
 
@@ -196,6 +222,55 @@ def test_museums_share_the_first_visit_photo(imported: webtest.TestApp) -> None:
     assert museums[2]["with"] == ["Bob Buddy"]
 
 
+def test_audio_courses(imported: webtest.TestApp) -> None:
+    courses = imported.get("/api/audio-courses").json
+    # finished first, then the one still in progress
+    assert [c["name"] for c in courses] == ["Famous Greeks", "How to Listen to Music"]
+    greeks, music = courses
+    assert (greeks["status"], greeks["date"], greeks["date_precision"]) == ("done", "2019-09-21T09:28:55Z", "time")
+    assert [p["name"] for p in greeks["lecturers"]] == ["Bob Buddy"]
+    assert (greeks["device"], greeks["listened_at"], greeks["rating"], greeks["review"]) == ("Samsung S10", "Night Walks", 8, "Pretty good")
+    assert greeks["url"] == "https://www.thegreatcourses.com/courses/famous-greeks"
+    assert greeks["image"] is not None
+    assert (music["status"], music["date"], music["started"], music["progress"]) == ("in_progress", None, "2020-10-01T21:31:01Z", "4/24")
+    assert music["url"] == ""
+    # a lecturer people.yaml did not have is a new person, typed Lecturer
+    people = {p["name"]: p for p in imported.get("/api/people").json}
+    assert [t["name"] for t in people["Robert Greenberg"]["types"]] == ["Lecturer"]
+    assert music["lecturers"] == [{"id": people["Robert Greenberg"]["id"], "name": "Robert Greenberg"}]
+
+
+def test_edit_audio_course(imported: webtest.TestApp) -> None:
+    music = next(c for c in imported.get("/api/audio-courses").json if c["name"] == "How to Listen to Music")
+    body = dict(music, lecturers=[p["id"] for p in music["lecturers"]], progress="24/24", date="2021-05-02", rating=9)
+    edited = imported.put_json(f"/api/audio-courses/{music['id']}", body).json
+    assert (edited["status"], edited["date"], edited["progress"], edited["rating"]) == ("done", "2021-05-02", "24/24", 9)
+    # the start sent back as it was shown keeps its time
+    assert edited["started"] == "2020-10-01T21:31:01Z"
+    added = imported.post_json("/api/audio-courses", {"name": "New Course", "started": "2024-01-02"}, status=201).json
+    assert (added["status"], added["started"]) == ("in_progress", "2024-01-02T00:00:00Z")
+    imported.post_json("/api/audio-courses", {"name": "x", "started": "soon"}, status=400)
+    imported.delete(f"/api/audio-courses/{added['id']}", status=204)
+    assert len(imported.get("/api/audio-courses").json) == 2
+
+
+def test_audio_courses_import_adds_once(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    del imported
+    source = tmp_path / "again"
+    write_source(source)
+    with Session(engine) as session:
+        # an account that has audio courses keeps them: the additive import stops
+        with pytest.raises(import_world.WorldImportError, match="has audio courses already"):
+            import_world.import_audio_courses(session, owner(session), source)
+        for course in session.scalars(select(AudioCourse)):
+            session.delete(course)
+        session.flush()
+        counts = import_world.import_audio_courses(session, owner(session), source)
+        session.commit()
+    # the lecturers are the people already there, and the covers the images already stored: nothing is added twice
+    assert counts == {"audio courses": 2, "lecturers added": 0, "images": 0}
+
+
 def test_people_links_point_at_people(imported: webtest.TestApp) -> None:
     ids = {p["name"]: p["id"] for p in imported.get("/api/people").json}
     for path in ("/api/concerts", "/api/museums"):
@@ -205,8 +280,9 @@ def test_people_links_point_at_people(imported: webtest.TestApp) -> None:
 
 def test_people(imported: webtest.TestApp) -> None:
     people = imported.get("/api/people").json
-    assert [p["name"] for p in people] == ["Alice Friend", "Bob Buddy", "Singer", "The Band"]
-    alice, bob, _, _ = people
+    # Robert Greenberg is a lecturer of audio_courses.yaml
+    assert [p["name"] for p in people] == ["Alice Friend", "Bob Buddy", "Robert Greenberg", "Singer", "The Band"]
+    alice, bob, _, _, _ = people
     assert alice["description"] == "Old friend"
     assert [c["name"] for c in alice["organizations"]] == ["Startup"]
     assert [c["name"] for c in bob["organizations"]] == ["Acme", "Startup"]
@@ -387,7 +463,7 @@ def test_reimport_replaces(imported: webtest.TestApp, engine: Engine, tmp_path: 
     with Session(engine) as session:
         import_world.import_world(session, owner(session), tmp_path)
         session.commit()
-        for model, count in ((Concert, 3), (Museum, 3), (Person, 4), (Organization, 3), (Image, 3)):
+        for model, count in ((Concert, 3), (Museum, 3), (AudioCourse, 2), (Person, 5), (Organization, 3), (Image, 5)):
             assert session.scalar(select(func.count()).select_from(model)) == count
         assert session.scalar(select(func.count()).select_from(concert_people)) == 3
         assert session.scalar(select(func.count()).select_from(person_organizations)) == 3
@@ -617,7 +693,7 @@ def test_delete(imported: webtest.TestApp, engine: Engine) -> None:
     assert imported.get("/api/concerts").json == []
     with Session(engine) as session:
         # the concert photo went with its last concert; the museum one stays
-        assert sorted(session.scalars(select(Image.filename)).all()) == ["acme.svg", "museum-15.jpg"]
+        assert sorted(session.scalars(select(Image.filename)).all()) == ["acme.svg", "audiocourse-gc-337.jpg", "audiocourse-internal-1.jpg", "museum-15.jpg"]
         assert session.scalar(select(func.count()).select_from(concert_people)) == 0
     imported.delete("/api/concerts/1", status=404)
 
@@ -656,15 +732,15 @@ def test_others_cannot_touch(imported: webtest.TestApp) -> None:
 def test_stats(imported: webtest.TestApp) -> None:
     imported.post_json("/api/library", {"kind": "book", "title": "Dune", "status": "done"}, status=201)
     stats = imported.get("/api/stats").json
-    assert (stats["concerts"], stats["museum_visits"], stats["museums"]) == (3, 3, 2)
-    assert (stats["people"], stats["organizations"], stats["images"]) == (4, 3, 3)
-    assert (stats["organization_types"], stats["person_types"]) == (7, 4)
+    assert (stats["concerts"], stats["museum_visits"], stats["museums"], stats["audio_courses"]) == (3, 3, 2, 2)
+    assert (stats["people"], stats["organizations"], stats["images"]) == (5, 3, 5)
+    assert (stats["organization_types"], stats["person_types"]) == (7, 5)
     # Bob, Singer and The Band performed; Bob also went with the user, he counts once
     assert stats["performers"] == 3
     books = next(k for k in stats["library"] if k["kind"] == "book")
     assert books["total"] == 1
     assert books["by_status"] == {"Done": 1}
-    assert {t["name"]: t["count"] for t in stats["people_by_type"]} == {"Co-Worker": 2, "Performer": 2}
+    assert {t["name"]: t["count"] for t in stats["people_by_type"]} == {"Co-Worker": 2, "Performer": 2, "Lecturer": 1}
     assert {t["name"]: t["count"] for t in stats["organizations_by_type"]} == {"Company": 2, "University": 1}
     assert stats["concerts_by_year"] == [{"year": 1989, "count": 1}, {"year": 2001, "count": 1}, {"year": 2020, "count": 1}]
     assert stats["museums_by_year"] == [{"year": 2010, "count": 2}, {"year": 2011, "count": 1}]

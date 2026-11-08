@@ -22,6 +22,7 @@ from myworld.models import (
     RATING_MAX,
     RATING_MIN,
     STATUSES,
+    AudioCourse,
     Concert,
     Image,
     Museum,
@@ -51,7 +52,7 @@ IMAGE_SIGNATURES: dict[str, tuple[bytes, ...]] = {
 IMAGE_EXTENSIONS = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp"}
 
 
-def _date_json(row: Concert | Museum) -> dict[str, Any]:
+def _date_json(row: Concert | Museum | AudioCourse) -> dict[str, Any]:
     """ The date as precisely as it is known, and a sortable key for it. """
     if row.date_utcz is not None:
         utc = row.date_utcz.replace(tzinfo=datetime.UTC)
@@ -126,6 +127,43 @@ def museum_json(museum: Museum) -> dict[str, Any]:
     }
 
 
+def _stamp_json(stamp: datetime.datetime | None) -> str:
+    return "" if stamp is None else stamp.replace(tzinfo=datetime.UTC).isoformat().replace("+00:00", "Z")
+
+
+def audio_course_json(course: AudioCourse) -> dict[str, Any]:
+    return {
+        "id": course.id,
+        "name": course.name,
+        **_date_json(course),
+        "date_timezone": course.date_timezone,
+        # finished when it has a date, in progress when it was only started
+        "status": "done" if _date_json(course)["date"] else ("in_progress" if course.started_utcz else ""),
+        "lecturers": _refs(course.lecturers),
+        "rating": course.rating,
+        "review": course.review,
+        "device": course.device,
+        "listened_at": course.listened_at,
+        "started": _stamp_json(course.started_utcz),
+        "ended": _stamp_json(course.ended_utcz),
+        "progress": course.progress,
+        "great_courses_id": course.great_courses_id,
+        "great_courses_slug": course.great_courses_slug,
+        "audible_asin": course.audible_asin,
+        "url": _course_url(course),
+        "image": _image_url(course.image_id),
+    }
+
+
+def _course_url(course: AudioCourse) -> str:
+    """ Where the course is sold: its Great Courses page, or its Audible page. """
+    if course.great_courses_slug:
+        return f"https://www.thegreatcourses.com/courses/{course.great_courses_slug}"
+    if course.audible_asin:
+        return f"https://www.audible.com/pd/{course.audible_asin}"
+    return ""
+
+
 def person_json(person: Person) -> dict[str, Any]:
     return {
         "id": person.id,
@@ -168,6 +206,15 @@ def api_concerts() -> flask.Response:
     query = select(Concert).where(Concert.owner_id == flask.g.user.id).options(selectinload(Concert.people), selectinload(Concert.performers))
     concerts = flask.g.db.execute(query).scalars().all()
     return flask.jsonify(_newest_first([concert_json(c) for c in concerts]))
+
+
+@bp.route("/api/audio-courses", methods=["GET"])
+@auth.login_required
+def api_audio_courses() -> flask.Response:
+    query = select(AudioCourse).where(AudioCourse.owner_id == flask.g.user.id).options(selectinload(AudioCourse.lecturers))
+    courses = flask.g.db.execute(query).scalars().all()
+    # finished ones newest first; those in progress (no date yet) after them
+    return flask.jsonify(_newest_first([audio_course_json(c) for c in courses]))
 
 
 @bp.route("/api/museums", methods=["GET"])
@@ -230,7 +277,7 @@ def _sniff(data: bytes) -> str | None:
     return None
 
 
-def _dates(body: dict[str, Any], current: Concert | Museum | None = None) -> dict[str, Any]:
+def _dates(body: dict[str, Any], current: Concert | Museum | AudioCourse | None = None) -> dict[str, Any]:
     """
     The date as typed: YYYY, YYYY-MM or YYYY-MM-DD, stored at that precision,
     or nothing. date_timezone is where it happened (an IANA name). On an edit
@@ -295,7 +342,7 @@ def _owned_image(body: dict[str, Any]) -> int | None:
     return image_id
 
 
-def _owned(model: type[Concert | Museum | Person | Organization | OrganizationType | PersonType | RelationType], row_id: int) -> Any:
+def _owned(model: type[Concert | Museum | AudioCourse | Person | Organization | OrganizationType | PersonType | RelationType], row_id: int) -> Any:
     row = flask.g.db.get(model, row_id)
     if row is None or row.owner_id != flask.g.user.id:
         raise ApiError(404, "no such entry")
@@ -308,6 +355,7 @@ def _drop_unused_images() -> None:
     used = select(Concert.image_id).where(Concert.image_id.is_not(None)).union(
         select(Museum.image_id).where(Museum.image_id.is_not(None)),
         select(Organization.image_id).where(Organization.image_id.is_not(None)),
+        select(AudioCourse.image_id).where(AudioCourse.image_id.is_not(None)),
     )
     for image in db.execute(select(Image).where(Image.owner_id == flask.g.user.id, Image.id.not_in(used))).scalars():
         db.delete(image)
@@ -356,6 +404,41 @@ def _apply_museum(museum: Museum, body: dict[str, Any], current: Museum | None) 
         raise ApiError(400, "a visit made alone has no one in With")
     for key, value in _dates(body, current).items():
         setattr(museum, key, value)
+
+
+def _stamp(body: dict[str, Any], key: str, current: datetime.datetime | None) -> datetime.datetime | None:
+    """ A moment as YYYY-MM-DD or a full UTC timestamp; sent back as shown, it is kept as it was. """
+    value = text(body, key)
+    if not value:
+        return None
+    if value == _stamp_json(current):
+        return current
+    try:
+        if len(value) == 10:
+            return datetime.datetime.fromisoformat(value)
+        return datetime.datetime.fromisoformat(value).astimezone(datetime.UTC).replace(tzinfo=None)
+    except ValueError as e:
+        raise ApiError(400, f"{key}: expected YYYY-MM-DD") from e
+
+
+def _apply_audio_course(course: AudioCourse, body: dict[str, Any], current: AudioCourse | None) -> None:
+    course.name = text(body, "name", required=True)
+    course.lecturers = _owned_list(body, "lecturers", Person)
+    course.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
+    course.review = text(body, "review")
+    course.device = text(body, "device")
+    course.listened_at = text(body, "listened_at")
+    course.started_utcz = _stamp(body, "started", current.started_utcz if current else None)
+    course.ended_utcz = _stamp(body, "ended", current.ended_utcz if current else None)
+    course.progress = text(body, "progress")
+    course.great_courses_id = opt_int(body, "great_courses_id", 1, 2**31 - 1)
+    course.great_courses_slug = text(body, "great_courses_slug")
+    course.audible_asin = text(body, "audible_asin")
+    image_id = _owned_image(body)
+    if image_id is not None:
+        course.image_id = image_id
+    for key, value in _dates(body, current).items():
+        setattr(course, key, value)
 
 
 def _apply_person(person: Person, body: dict[str, Any]) -> None:
@@ -439,6 +522,27 @@ def api_museums_update(row_id: int) -> flask.Response:
     return flask.jsonify(museum_json(museum))
 
 
+@bp.route("/api/audio-courses", methods=["POST"])
+@auth.login_required
+def api_audio_courses_add() -> tuple[flask.Response, int]:
+    course = AudioCourse(owner_id=flask.g.user.id)
+    _apply_audio_course(course, json_body(), None)
+    flask.g.db.add(course)
+    flask.g.db.commit()
+    return flask.jsonify(audio_course_json(course)), 201
+
+
+@bp.route("/api/audio-courses/<int:row_id>", methods=["PUT"])
+@auth.login_required
+def api_audio_courses_update(row_id: int) -> flask.Response:
+    course = _owned(AudioCourse, row_id)
+    _apply_audio_course(course, json_body(), course)
+    flask.g.db.flush()
+    _drop_unused_images()
+    flask.g.db.commit()
+    return flask.jsonify(audio_course_json(course))
+
+
 @bp.route("/api/people", methods=["POST"])
 @auth.login_required
 def api_people_add() -> tuple[flask.Response, int]:
@@ -479,10 +583,10 @@ def api_organizations_update(row_id: int) -> flask.Response:
     return flask.jsonify(organization_json(organization))
 
 
-@bp.route("/api/<any(concerts, museums, people, organizations):what>/<int:row_id>", methods=["DELETE"])
+@bp.route("/api/<any(concerts, museums, 'audio-courses', people, organizations):what>/<int:row_id>", methods=["DELETE"])
 @auth.login_required
 def api_world_delete(what: str, row_id: int) -> flask.Response:
-    model = {"concerts": Concert, "museums": Museum, "people": Person, "organizations": Organization}[what]
+    model = {"concerts": Concert, "museums": Museum, "audio-courses": AudioCourse, "people": Person, "organizations": Organization}[what]
     # the ORM also removes the row's links (to people, to organizations, to concerts and museums)
     flask.g.db.delete(_owned(model, row_id))
     flask.g.db.flush()
@@ -558,6 +662,7 @@ def api_stats() -> flask.Response:
         "performers": performers,
         "museum_visits": len(museums),
         "museums": len({m.name for m in museums}),
+        "audio_courses": count(AudioCourse),
         "people": len(people),
         "organizations": len(organizations),
         "organization_types": count(OrganizationType),

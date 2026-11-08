@@ -15,6 +15,10 @@ The organizations are those of organizations.yaml plus every one a person
 names (the company field of people.yaml) that is not among them; each person
 is linked to the organizations they name.
 
+Audio courses come from data/yaml/audio_courses.yaml, their covers from
+static/images/audiocourse-{gc-<great_courses_id>,audible-<asin>,internal-<n>}.jpg;
+each lecturer is a person (one of the same name, or a new one), typed Lecturer.
+
 Everything the user had in these tables is replaced, in one transaction, so
 the script is safe to run again. Unknown fields in the YAML stop the import
 rather than being dropped, so nothing is lost on the way in.
@@ -24,6 +28,10 @@ with (and --subject when that email has several accounts, e.g. Google and
 GitHub).
 
   scripts/import_world.py --email me@example.com [--source ../veltzer.github.io]
+
+With --audio-courses only the audio courses are imported, added to what the
+account already has and touching nothing else; it stops if the account has
+audio courses already, rather than replace what was edited since.
 
 The database is DATABASE_URL (default: the local sqlite file); for Cloud SQL
 see doc/deploy.md.
@@ -46,6 +54,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
 from myworld.models import (
+    AudioCourse,
     Concert,
     Image,
     Museum,
@@ -55,6 +64,7 @@ from myworld.models import (
     PersonType,
     RelationType,
     User,
+    audio_course_lecturers,
     concert_people,
     concert_performers,
     make_engine,
@@ -98,6 +108,7 @@ PERSON_TYPES = {
     "Girlfriend": "A girlfriend, now or before",
     "Performer": "Someone seen on stage",
     "Co-Worker": "Someone worked with",
+    "Lecturer": "Someone who taught a course I took",
 }
 # the relation types (how an organization is related to the user) every import
 # starts the user with, by the word organizations.yaml uses in its functions
@@ -133,6 +144,11 @@ ORGANIZATION_TYPE_BY_NAME = {
     "MercyCorps": "Non-profit",
 }
 ORGANIZATION_FIELDS = ORGANIZATION_COLUMNS | ORGANIZATION_DETAILS | {"logo"}
+# internal_id only names the image file; it is not stored
+AUDIO_COURSE_FIELDS = DATE_FIELDS | {
+    "name", "lecturers", "rating", "review", "device", "location", "date_started_utcz", "date_ended_utcz", "progress",
+    "great_courses_id", "great_courses_slug", "audible_asin", "internal_id",
+}
 # internal_id only names the image file; it is not stored
 MUSEUM_FIELDS = DATE_FIELDS | {
     "name", "city", "rating", "review", "remark", "url", "tickets", "with", "internal_id",
@@ -223,6 +239,8 @@ def _person_type(person: Person) -> str | None:
         return "Co-Worker"
     if person.performed:
         return "Performer"
+    if person.lectured:
+        return "Lecturer"
     return None
 
 
@@ -258,7 +276,7 @@ def give_types(session: Session, owner: User) -> dict[str, int]:
     people = session.scalars(
         select(Person)
         .where(Person.owner_id == owner.id, ~Person.types.any())
-        .options(selectinload(Person.organizations), selectinload(Person.performed))
+        .options(selectinload(Person.organizations), selectinload(Person.performed), selectinload(Person.lectured))
     )
     people_typed = 0
     for person in people:
@@ -295,12 +313,15 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     session.execute(delete(concert_people).where(concert_people.c.concert_id.in_(concerts_of_owner)))
     session.execute(delete(concert_performers).where(concert_performers.c.concert_id.in_(concerts_of_owner)))
     session.execute(delete(museum_people).where(museum_people.c.museum_id.in_(select(Museum.id).where(Museum.owner_id == owner.id))))
+    session.execute(delete(audio_course_lecturers).where(
+        audio_course_lecturers.c.audio_course_id.in_(select(AudioCourse.id).where(AudioCourse.owner_id == owner.id)),
+    ))
     session.execute(delete(person_person_types).where(person_person_types.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
     session.execute(delete(person_organizations).where(person_organizations.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
     session.execute(delete(organization_relation_types).where(
         organization_relation_types.c.organization_id.in_(select(Organization.id).where(Organization.owner_id == owner.id)),
     ))
-    for model in (Concert, Museum, Person, Organization, OrganizationType, PersonType, RelationType, Image):
+    for model in (AudioCourse, Concert, Museum, Person, Organization, OrganizationType, PersonType, RelationType, Image):
         session.execute(delete(model).where(model.owner_id == owner.id))
     session.flush()
 
@@ -444,12 +465,102 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
             **_dates(item),
         ))
     session.flush()
+    courses = import_audio_courses(session, owner, source)
     typed = give_types(session, owner)
     return {
-        "people": len(people), "organizations": len(organizations), "organization types": len(types), "relation types": len(relation_types),
-        "person types": len(PERSON_TYPES), "people with a type": typed["people given a type"],
-        "concerts": len(concert_items), "museums": len(museum_items), "images": len(images),
+        "people": len(people) + courses["lecturers added"], "organizations": len(organizations), "organization types": len(types),
+        "relation types": len(relation_types), "person types": len(PERSON_TYPES), "people with a type": typed["people given a type"],
+        "concerts": len(concert_items), "museums": len(museum_items), "audio courses": courses["audio courses"],
+        "images": len(images) + courses["images"],
     }
+
+
+def _stamp(item: dict[str, Any], key: str) -> datetime.datetime | None:
+    """ A UTC timestamp field of the YAML, as the naive UTC the columns keep. """
+    if key not in item:
+        return None
+    return datetime.datetime.fromisoformat(str(item[key])).astimezone(datetime.UTC).replace(tzinfo=None)
+
+
+def _course_cover(item: dict[str, Any]) -> str:
+    """ The file name of a course's cover, by the ids veltzer.github.io names it with. """
+    if "great_courses_id" in item:
+        return f"audiocourse-gc-{item['great_courses_id']}.jpg"
+    if "audible_asin" in item:
+        return f"audiocourse-audible-{item['audible_asin']}.jpg"
+    if "internal_id" in item:
+        return f"audiocourse-internal-{item['internal_id']}.jpg"
+    raise WorldImportError(f"audio_courses.yaml: {item['name']!r} has no id to find its cover by")
+
+
+def import_audio_courses(session: Session, owner: User, source: Path) -> dict[str, int]:
+    """
+    Add owner's audio courses from source, with their covers; each lecturer
+    is owner's person of that name, or a new person when there is none.
+    Stops when owner has audio courses already. Does not commit.
+    """
+    items = _items(source, "audio_courses", AUDIO_COURSE_FIELDS)
+    if session.scalar(select(AudioCourse.id).where(AudioCourse.owner_id == owner.id).limit(1)) is not None:
+        raise WorldImportError("this account has audio courses already: delete them first, or run the full import")
+    session.flush()
+    by_name: dict[str, list[Person]] = {}
+    for person in session.scalars(select(Person).where(Person.owner_id == owner.id)):
+        by_name.setdefault(person.name, []).append(person)
+    added = 0
+
+    def lecturer(name: str) -> Person:
+        nonlocal added
+        found = by_name.get(name, [])
+        if len(found) > 1:
+            raise WorldImportError(f"audio_courses.yaml: {len(found)} people are called {name!r}; make the names differ first")
+        if not found:
+            first_name, surname = split_name(name)
+            found = [Person(owner_id=owner.id, first_name=first_name, surname=surname, description="")]
+            session.add(found[0])
+            by_name[name] = found
+            added += 1
+        return found[0]
+
+    image_dir = source / "static" / "images"
+    # a cover already stored (an earlier import of courses since deleted) is used again
+    stored = {image.filename: image for image in session.scalars(select(Image).where(Image.owner_id == owner.id))}
+    images = 0
+    for item in items:
+        names = [name.strip() for name in item["lecturers"] if name.strip()]
+        if len(set(names)) != len(names):
+            raise WorldImportError(f"audio_courses.yaml: {item['name']!r} names a lecturer twice")
+        path = image_dir / _course_cover(item)
+        if not path.exists():
+            raise WorldImportError(f"missing image {path}")
+        data = path.read_bytes()
+        sha256 = hashlib.sha256(data).hexdigest()
+        cover = stored.get(path.name)
+        if cover is not None and cover.sha256 != sha256:
+            raise WorldImportError(f"{path}: an image of that name is stored already, with other contents")
+        if cover is None:
+            cover = Image(owner_id=owner.id, filename=path.name, content_type="image/jpeg", sha256=sha256, data=data)
+            session.add(cover)
+            stored[path.name] = cover
+            images += 1
+        session.add(AudioCourse(
+            owner_id=owner.id,
+            name=item["name"],
+            lecturers=[lecturer(name) for name in names],
+            rating=item.get("rating"),
+            review=item.get("review", ""),
+            device=item.get("device", ""),
+            listened_at=item.get("location", ""),
+            started_utcz=_stamp(item, "date_started_utcz"),
+            ended_utcz=_stamp(item, "date_ended_utcz"),
+            progress=str(item.get("progress", "")),
+            great_courses_id=item.get("great_courses_id"),
+            great_courses_slug=item.get("great_courses_slug", ""),
+            audible_asin=item.get("audible_asin", ""),
+            image=cover,
+            **_dates(item),
+        ))
+    session.flush()
+    return {"audio courses": len(items), "lecturers added": added, "images": images}
 
 
 def main() -> int:
@@ -457,6 +568,11 @@ def main() -> int:
     parser.add_argument("--email", required=True, help="email of the account that will own the data")
     parser.add_argument("--subject", help="the account's subject (users.google_sub) when the email has several")
     parser.add_argument("--source", type=Path, default=Path(__file__).resolve().parent.parent.parent / "veltzer.github.io")
+    parser.add_argument("--dry-run", action="store_true", help="do it all and print what was done, then roll it back")
+    parser.add_argument(
+        "--audio-courses", action="store_true",
+        help="import only the audio courses, adding them to what the account has (stops if it has audio courses already)",
+    )
     parser.add_argument(
         "--only-types", action="store_true",
         help="import nothing: only add the starting types and type the organizations and people that have none",
@@ -466,14 +582,24 @@ def main() -> int:
     with Session(engine) as session:
         try:
             owner = find_owner(session, args.email, args.subject)
-            counts = give_types(session, owner) if args.only_types else import_world(session, owner, args.source)
+            if args.only_types:
+                counts = give_types(session, owner)
+            elif args.audio_courses:
+                counts = import_audio_courses(session, owner, args.source)
+                counts["people given a type"] = give_types(session, owner)["people given a type"]
+            else:
+                counts = import_world(session, owner, args.source)
         except WorldImportError as e:
             print(f"import_world: {e}", file=sys.stderr)
             return 1
         who = f"{owner.email} ({owner.google_sub})"
-        session.commit()
+        if args.dry_run:
+            session.rollback()
+        else:
+            session.commit()
     summary = ", ".join(f"{count} {what}" for what, count in counts.items())
-    print(f"{engine.url.render_as_string(hide_password=True)}: {'typed' if args.only_types else 'imported'} for {who}: {summary}")
+    done = "typed" if args.only_types else "imported"
+    print(f"{engine.url.render_as_string(hide_password=True)}: {done} for {who}: {summary}{' (dry run: rolled back)' if args.dry_run else ''}")
     return 0
 
 

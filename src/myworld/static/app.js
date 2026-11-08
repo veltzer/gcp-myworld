@@ -538,6 +538,13 @@ const SORTS = {
 		["rating", "Rating", (m) => m.rating, "desc"],
 		["tickets", "Tickets", (m) => m.tickets, "desc"],
 	],
+	"audio-courses": [
+		["date", "Finished", (c) => c.date_sort, "desc"],
+		["name", "Name", (c) => c.name, "asc"],
+		["lecturer", "Lecturer", (c) => c.lecturers[0]?.name, "asc"],
+		["rating", "Rating", (c) => c.rating, "desc"],
+		["started", "Started", (c) => c.started, "desc"],
+	],
 	people: [
 		["first_name", "First name", (p) => p.first_name, "asc"],
 		["surname", "Surname", (p) => p.surname, "asc"],
@@ -814,7 +821,7 @@ async function openHash() {
 
 // Open what an address-bar hash names: a tab, a page, or one row of a view.
 async function route(requested) {
-	const linked = requested.match(/^(concerts|museums|people|organizations|organization-types|person-types|relation-types)\/(\d+)$/);
+	const linked = requested.match(/^(concerts|museums|audio-courses|people|organizations|organization-types|person-types|relation-types)\/(\d+)$/);
 	if (linked) {
 		await showRow(linked[1], Number(linked[2]));
 	} else if (requested === "stats") {
@@ -908,6 +915,7 @@ function updateNavButtons() {
 const WORLDS = {
 	concerts: ["My Concerts", "/api/concerts", "concert", "Concerts"],
 	museums: ["My Museums", "/api/museums", "museum", "Museums"],
+	"audio-courses": ["Audio courses", "/api/audio-courses", "audio course", "Audio courses"],
 	people: ["People", "/api/people", "person", "People"],
 	organizations: ["Organizations", "/api/organizations", "organization", "Organizations"],
 	"organization-types": ["Organization types", "/api/organization-types", "organization type", "Org types"],
@@ -1307,26 +1315,45 @@ function organizationCard(item) {
 	return card;
 }
 
-const CARDS = { concerts: concertCard, museums: museumCard, organizations: organizationCard };
+function audioCourseCard(item) {
+	const { card, list } = cardShell(item, item.lecturers.map((p) => p.name).join(", "));
+	linksDetail(list, "Lecturer", "people", item.lecturers);
+	if (item.status === "in_progress") {
+		detail(list, "Status", ["In progress", item.progress].filter(Boolean).join(", "));
+		detail(list, "Started", item.started.slice(0, 10));
+	} else {
+		detail(list, "Finished", formatDate(item));
+	}
+	if (item.rating !== null) {
+		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
+	}
+	detail(list, "Review", item.review);
+	detail(list, "Listened", [item.listened_at, item.device].filter(Boolean).join(", on "));
+	websiteDetail(list, item.url);
+	return card;
+}
+
+const CARDS = { concerts: concertCard, museums: museumCard, "audio-courses": audioCourseCard, organizations: organizationCard };
 
 // Material "link"
 const LINK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>';
 
 // Everything that ties a person to the user, grouped, each entry a link to its card.
 async function showConnections(person) {
-	const [concerts, museums] = await Promise.all([worldList("concerts"), worldList("museums")]);
+	const [concerts, museums, courses] = await Promise.all([worldList("concerts"), worldList("museums"), worldList("audio-courses")]);
 	const has = (list) => list.some((p) => p.id === person.id);
 	const groups = [
 		["Concerts you went to together", "concerts", concerts.filter((c) => has(c.people))],
 		["Concerts they performed at", "concerts", concerts.filter((c) => has(c.performers))],
 		["Museums you visited together", "museums", museums.filter((m) => has(m.people))],
+		["Audio courses they taught", "audio-courses", courses.filter((c) => has(c.lecturers))],
 		["Organizations", "organizations", person.organizations],
 	].filter(([, , items]) => items.length > 0);
 	$("connections-title").textContent = person.name;
 	const body = $("connections-body");
 	body.replaceChildren();
 	if (groups.length === 0) {
-		body.appendChild(el("p", "empty", "No concerts, museums or organizations link you yet."));
+		body.appendChild(el("p", "empty", "No concerts, museums, courses or organizations link you yet."));
 	}
 	for (const [label, view, items] of groups) {
 		body.appendChild(el("h3", null, `${label} (${items.length})`));
@@ -1793,6 +1820,7 @@ function renderStats(stats) {
 	tiles.append(
 		statTile("Concerts", stats.concerts, `${stats.performers} performers`, "concerts"),
 		statTile("Museum visits", stats.museum_visits, `${stats.museums} museums`, "museums"),
+		statTile("Audio courses", stats.audio_courses, "", "audio-courses"),
 		statTile("People", stats.people, "", "people"),
 		statTile("Organizations", stats.organizations, "", "organizations"),
 		statTile("Organization types", stats.organization_types, "", "organization-types"),
@@ -1940,7 +1968,7 @@ function setupWorlds() {
 // ─── the add dialog ─────────────────────────────────────────────────────────
 
 // One dialog, opened by the + button, showing the form of whatever is on screen.
-const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "person-form", "organization-form", "organization-type-form", "person-type-form", "relation-type-form"];
+const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "person-form", "organization-form", "organization-type-form", "person-type-form", "relation-type-form"];
 const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 
 function dialogError(message) {
@@ -2104,6 +2132,26 @@ function where() {
 
 // view -> what its form posts
 const WORLD_BODIES = {
+	"audio-courses": async (form) => {
+		const value = (name) => form.elements[name].value;
+		return {
+			name: value("name"),
+			lecturers: chosen(form, "lecturers"),
+			date: value("date"),
+			date_timezone: state.editing?.date_timezone || where(),
+			rating: value("rating"),
+			review: value("review"),
+			device: value("device"),
+			listened_at: value("listened_at"),
+			started: value("started"),
+			ended: state.editing?.ended || "",
+			progress: value("progress"),
+			great_courses_id: value("great_courses_id"),
+			great_courses_slug: value("great_courses_slug"),
+			audible_asin: value("audible_asin"),
+			image_id: await uploadPhoto(form),
+		};
+	},
 	concerts: async (form) => {
 		const value = (name) => form.elements[name].value;
 		return {
@@ -2353,6 +2401,8 @@ function setupAddDialog() {
 	const { rating_min, rating_max } = state.config;
 	$("museum-form").elements.rating.min = rating_min;
 	$("museum-form").elements.rating.max = rating_max;
+	$("audio-course-form").elements.rating.min = rating_min;
+	$("audio-course-form").elements.rating.max = rating_max;
 	for (const view of Object.keys(WORLDS)) {
 		setupWorldForm(view);
 	}

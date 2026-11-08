@@ -173,6 +173,14 @@ concert_performers = Table(
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
 )
 
+# who taught an audio course, as people
+audio_course_lecturers = Table(
+    "audio_course_lecturers",
+    Base.metadata,
+    Column("audio_course_id", ForeignKey("audio_courses.id", ondelete="CASCADE"), primary_key=True),
+    Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
+)
+
 # what a person is to the user: any number of their person types (a neighbor and a friend)
 person_person_types = Table(
     "person_person_types",
@@ -249,6 +257,9 @@ class Person(Base):
         return f"{self.first_name} {self.surname}".strip() or self.description
     museums: Mapped[list[Museum]] = relationship(
         secondary=museum_people, back_populates="people",
+    )
+    lectured: Mapped[list[AudioCourse]] = relationship(
+        secondary=audio_course_lecturers, back_populates="lecturers",
     )
 
 
@@ -400,6 +411,40 @@ class Museum(_Dated, _Located, Base):
     image: Mapped[Image | None] = relationship()
 
     people: Mapped[list[Person]] = relationship(secondary=museum_people, back_populates="museums")
+
+
+class AudioCourse(_Dated, Base):
+    """
+    An audio course listened to (The Great Courses, Audible, ...). The date
+    (_Dated) is when it was finished; one still in progress has none, only
+    started_utcz and progress. Imported from veltzer.github.io's
+    audio_courses.yaml, which it keeps field for field.
+    """
+    __tablename__ = "audio_courses"
+    __table_args__ = (
+        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_audio_course_rating_range"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    review: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # what it was played on ("Samsung S10") and where it was listened to ("Night Walks", "Car")
+    device: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    listened_at: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    # still in progress: when it was started, and how far it got ("4/24" lectures)
+    started_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    ended_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    progress: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    # where it is sold: The Great Courses (id and URL slug) or Audible (ASIN)
+    great_courses_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    great_courses_slug: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    audible_asin: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
+    image: Mapped[Image | None] = relationship()
+
+    lecturers: Mapped[list[Person]] = relationship(secondary=audio_course_lecturers, back_populates="lectured")
 
 
 def database_url() -> str:

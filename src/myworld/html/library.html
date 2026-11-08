@@ -270,6 +270,40 @@
 					<button type="submit">Add</button>
 				</div>
 			</form>
+			<form id="audio-course-form" class="dialog-form" hidden>
+				<div class="row">
+					<label class="wide">Name <input name="name" required></label>
+				</div>
+				<div class="row">
+					<label class="wide">Lecturers <span class="chips" data-chips="people" data-field="lecturers"><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
+				</div>
+				<div class="row">
+					<label>Finished <input name="date" pattern="\d{4}(-\d{2}(-\d{2}(T[0-9:.]+Z)?)?)?" placeholder="YYYY-MM-DD, YYYY-MM or YYYY"></label>
+					<label>Started <input name="started" pattern="\d{4}-\d{2}-\d{2}(T[0-9:.]+Z)?" placeholder="YYYY-MM-DD"></label>
+					<label>Progress <input name="progress" placeholder="e.g. 4/24"></label>
+					<label>Rating <input name="rating" type="number"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Review <input name="review"></label>
+				</div>
+				<div class="row">
+					<label>Device <input name="device" placeholder="e.g. Samsung S10"></label>
+					<label>Where <input name="listened_at" placeholder="e.g. Night Walks, Car"></label>
+				</div>
+				<div class="row">
+					<label>Great Courses id <input name="great_courses_id" type="number" min="1"></label>
+					<label class="wide">Great Courses slug <input name="great_courses_slug"></label>
+					<label>Audible ASIN <input name="audible_asin"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Cover <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
 			<form id="person-form" class="dialog-form" hidden>
 				<div class="row">
 					<label class="wide">First name <input name="first_name"></label>
