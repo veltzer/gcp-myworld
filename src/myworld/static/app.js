@@ -451,7 +451,7 @@ async function loadEntries() {
 // The library table: searched and sorted with the same toolbar as every other tab.
 function renderEntries() {
 	const { plural } = state.config.kinds[state.kind];
-	const shown = sortItems(state.entries.filter(searchMatches));
+	const shown = rankBySearch(sortItems(state.entries.filter(searchMatches)));
 	$("rows").replaceChildren(...shown.map(renderRow));
 	$("entries").hidden = shown.length === 0;
 	$("empty").hidden = state.entries.length !== 0;
@@ -461,6 +461,45 @@ function renderEntries() {
 
 function showCount(shown, total, what) {
 	$("world-count").textContent = total === 0 ? "" : shown === total ? `${total} ${what}` : `${shown} of ${total} ${what}`;
+}
+
+function searchWords() {
+	return $("world-search").value.toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+// How well a row matches the search, best first: its name is the search,
+// starts with it, has every word at the start of one of its words, has every
+// word in it; then every word starts a word somewhere else in the row; then
+// only inside other words ("mer" in "America"). Rows of the same rank keep the
+// order picked with Sort.
+function searchRank(item, words) {
+	const name = String(item.name ?? item.title ?? "").toLowerCase();
+	const query = words.join(" ");
+	if (name === query) {
+		return 0;
+	}
+	if (name.startsWith(query)) {
+		return 1;
+	}
+	const wordStart = (text, word) => new RegExp(`(^|[^\\p{L}\\p{N}])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "u").test(text);
+	if (words.every((word) => wordStart(name, word))) {
+		return 2;
+	}
+	if (words.every((word) => name.includes(word))) {
+		return 3;
+	}
+	const text = haystack(item);
+	return words.every((word) => wordStart(text, word)) ? 4 : 5;
+}
+
+function rankBySearch(items) {
+	const words = searchWords();
+	if (words.length === 0) {
+		return items;
+	}
+	const ranks = new Map(items.map((item) => [item, searchRank(item, words)]));
+	// a stable sort: within a rank, the Sort order stays
+	return [...items].sort((a, b) => ranks.get(a) - ranks.get(b));
 }
 
 function searchMatches(item) {
@@ -1452,7 +1491,7 @@ function haystack(item) {
 function renderWorld() {
 	const view = state.view;
 	const items = worldCache[view] || [];
-	const shown = sortItems(items.filter((item) => typeMatches(item) && searchMatches(item)));
+	const shown = rankBySearch(sortItems(items.filter((item) => typeMatches(item) && searchMatches(item))));
 	const table = TABLES[view];
 	const map = !table && showsMap();
 	$("cards").hidden = Boolean(table) || map;
