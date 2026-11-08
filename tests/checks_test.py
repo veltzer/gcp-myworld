@@ -104,6 +104,9 @@ def test_checks_cover_every_account(engine: Engine) -> None:
         missing = checks.CHECKS["organization-logos"].run(session)
         assert missing.checked == 3
         assert [p.subject for p in missing.problems] == ["Bare (organization 3, account 2)"]
+        # each problem says where its row is in the app, and whose it is
+        assert [(p.link, p.owner) for p in logos.problems] == [("organizations/2", 2)]
+        assert [(p.link, p.owner) for p in missing.problems] == [("organizations/3", 2)]
 
 
 def test_checks_api_is_for_admins(app: webtest.TestApp, engine: Engine) -> None:
@@ -118,6 +121,7 @@ def test_checks_api_is_for_admins(app: webtest.TestApp, engine: Engine) -> None:
     assert [c["name"] for c in listed] == list(checks.CHECKS)
     result = app.get("/api/checks/logos").json
     assert (result["ok"], result["checked"], len(result["problems"])) == (False, 2, 1)
+    assert set(result["problems"][0]) == {"subject", "message", "link", "owner"}
     app.get("/api/checks/nonesuch", status=404)
 
 
@@ -237,6 +241,7 @@ def test_person_types(engine: Engine) -> None:
         ("Eli (person 2, account 1)", "has no type"),
         ("the guide at the Louvre (person 3, account 2)", "has no type"),
     ]
+    assert [(p.link, p.owner) for p in result.problems] == [("people/2", 1), ("people/3", 2)]
 
 
 def run_script(url: str, *args: str) -> subprocess.CompletedProcess[str]:

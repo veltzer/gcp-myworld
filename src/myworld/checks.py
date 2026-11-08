@@ -32,9 +32,17 @@ from myworld.models import (
 
 @dataclasses.dataclass(frozen=True)
 class Problem:
-    """ One thing wrong: what it is about (a row a person can find) and what is wrong with it. """
+    """
+    One thing wrong: what it is about (a row a person can find), what is
+    wrong with it, and where the row is in the app, when it has a place
+    there: "<view>/<id>" ("organizations/121"), opened as /library#<link>
+    by the account that owns it.
+    """
     subject: str
     message: str
+    link: str = ""
+    # the account the row belongs to: the app opens only the viewer's own rows
+    owner: int | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -151,17 +159,20 @@ def check_logos(session: Session) -> Result:
     and no scripts, event handlers, embedded images or links outside the
     file. The margin and centering are not checked.
     """
-    users_of: dict[int | None, list[str]] = {}
-    for image_id, name in session.execute(select(Organization.image_id, Organization.name)):
-        users_of.setdefault(image_id, []).append(name)
+    users_of: dict[int | None, list[tuple[str, int]]] = {}
+    for image_id, name, organization_id in session.execute(select(Organization.image_id, Organization.name, Organization.id).order_by(Organization.name)):
+        users_of.setdefault(image_id, []).append((name, organization_id))
     images = session.execute(
         select(Image.id, Image.owner_id, Image.filename, Image.data).where(Image.content_type == "image/svg+xml").order_by(Image.id),
     ).all()
     problems = []
     for image_id, owner_id, filename, data in images:
-        names = ", ".join(sorted(users_of.get(image_id, []))) or "no organization"
+        users = users_of.get(image_id, [])
+        names = ", ".join(name for name, _ in users) or "no organization"
         subject = f"{filename} (image {image_id}, account {owner_id}: {names})"
-        problems.extend(Problem(subject, message) for message in logo_problems(data))
+        # an image no organization uses has no place in the app to go to
+        link = f"organizations/{users[0][1]}" if users else ""
+        problems.extend(Problem(subject, message, link, owner_id) for message in logo_problems(data))
     return Result(checked=len(images), problems=problems)
 
 
@@ -170,7 +181,7 @@ def check_organization_logos(session: Session) -> Result:
     """ Every organization, of every account, has a logo. """
     organizations = session.execute(select(Organization.id, Organization.owner_id, Organization.name, Organization.image_id).order_by(Organization.name)).all()
     problems = [
-        Problem(f"{name} (organization {organization_id}, account {owner_id})", "has no logo")
+        Problem(f"{name} (organization {organization_id}, account {owner_id})", "has no logo", f"organizations/{organization_id}", owner_id)
         for organization_id, owner_id, name, image_id in organizations
         if image_id is None
     ]
@@ -183,7 +194,7 @@ def check_organization_relations(session: Session) -> Result:
     related = set(session.scalars(select(organization_relation_types.c.organization_id)))
     organizations = session.execute(select(Organization.id, Organization.owner_id, Organization.name).order_by(Organization.name)).all()
     problems = [
-        Problem(f"{name} (organization {organization_id}, account {owner_id})", "has no relation type")
+        Problem(f"{name} (organization {organization_id}, account {owner_id})", "has no relation type", f"organizations/{organization_id}", owner_id)
         for organization_id, owner_id, name in organizations
         if organization_id not in related
     ]
@@ -195,7 +206,7 @@ def check_organization_addresses(session: Session) -> Result:
     """ Every organization, of every account, has an address (the office you knew, not only the city). """
     organizations = session.execute(select(Organization.id, Organization.owner_id, Organization.name, Organization.address).order_by(Organization.name)).all()
     problems = [
-        Problem(f"{name} (organization {organization_id}, account {owner_id})", "has no address")
+        Problem(f"{name} (organization {organization_id}, account {owner_id})", "has no address", f"organizations/{organization_id}", owner_id)
         for organization_id, owner_id, name, address in organizations
         if not address.strip()
     ]
@@ -209,7 +220,7 @@ def check_organization_locations(session: Session) -> Result:
         select(Organization.id, Organization.owner_id, Organization.name, Organization.latitude, Organization.longitude).order_by(Organization.name),
     ).all()
     problems = [
-        Problem(f"{name} (organization {organization_id}, account {owner_id})", "has no latitude and longitude")
+        Problem(f"{name} (organization {organization_id}, account {owner_id})", "has no latitude and longitude", f"organizations/{organization_id}", owner_id)
         for organization_id, owner_id, name, latitude, longitude in organizations
         if latitude is None or longitude is None
     ]
@@ -224,7 +235,7 @@ def check_person_types(session: Session) -> Result:
     typed = set(session.scalars(select(person_person_types.c.person_id)))
     people = session.scalars(select(Person).order_by(Person.owner_id, Person.first_name, Person.surname, Person.id)).all()
     problems = [
-        Problem(f"{person.name} (person {person.id}, account {person.owner_id})", "has no type")
+        Problem(f"{person.name} (person {person.id}, account {person.owner_id})", "has no type", f"people/{person.id}", person.owner_id)
         for person in people
         if person.id not in typed
     ]
@@ -238,7 +249,7 @@ def check_museum_dates(session: Session) -> Result:
     """ Every museum visit, of every account, has a date: a day, a month, a year or a full time, whichever is known. """
     visits = session.scalars(select(Museum).order_by(Museum.owner_id, Museum.name, Museum.id)).all()
     problems = [
-        Problem(f"{visit.name} (museum visit {visit.id}, account {visit.owner_id})", "has no date")
+        Problem(f"{visit.name} (museum visit {visit.id}, account {visit.owner_id})", "has no date", f"museums/{visit.id}", visit.owner_id)
         for visit in visits
         if visit.date_utcz is None and visit.date_ymd is None and not visit.date_my and visit.date_y is None
     ]
@@ -250,7 +261,7 @@ def check_museum_addresses(session: Session) -> Result:
     """ Every museum visit, of every account, has the museum's street address. """
     visits = session.scalars(select(Museum).order_by(Museum.owner_id, Museum.name, Museum.id)).all()
     problems = [
-        Problem(f"{visit.name} (museum visit {visit.id}, account {visit.owner_id})", "has no address")
+        Problem(f"{visit.name} (museum visit {visit.id}, account {visit.owner_id})", "has no address", f"museums/{visit.id}", visit.owner_id)
         for visit in visits
         if not visit.address.strip()
     ]
@@ -262,7 +273,7 @@ def check_museum_locations(session: Session) -> Result:
     """ Every museum visit, of every account, has a latitude and a longitude (scripts/geocode.py finds them from the address). """
     visits = session.scalars(select(Museum).order_by(Museum.owner_id, Museum.name, Museum.id)).all()
     problems = [
-        Problem(f"{visit.name} (museum visit {visit.id}, account {visit.owner_id})", "has no latitude and longitude")
+        Problem(f"{visit.name} (museum visit {visit.id}, account {visit.owner_id})", "has no latitude and longitude", f"museums/{visit.id}", visit.owner_id)
         for visit in visits
         if visit.latitude is None or visit.longitude is None
     ]
@@ -282,7 +293,7 @@ def check_museum_company(session: Session) -> Result:
     for visit in visits:
         subject = f"{visit.name} (museum visit {visit.id}, account {visit.owner_id})"
         if visit.alone and visit.id in with_people:
-            problems.append(Problem(subject, "is marked alone but has people in With"))
+            problems.append(Problem(subject, "is marked alone but has people in With", f"museums/{visit.id}", visit.owner_id))
         elif not visit.alone and visit.id not in with_people:
-            problems.append(Problem(subject, "has no one in With and is not marked alone"))
+            problems.append(Problem(subject, "has no one in With and is not marked alone", f"museums/{visit.id}", visit.owner_id))
     return Result(checked=len(visits), problems=problems)

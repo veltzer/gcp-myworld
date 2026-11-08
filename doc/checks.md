@@ -10,7 +10,8 @@ checks read the whole database, every account's rows, and change nothing.
   `accounts.md`) lists every check as one row of the same height: its
   title (the description is the tooltip), what it found, and a Run
   button; Run all runs them in turn. A failing check's count opens the
-  list of problems under its row.
+  list of problems under its row; a problem with a row of your own in the
+  app (an organization, a person, a museum visit) links to it.
 - **From the command line:** `scripts/check.py` runs the same checks
   against `DATABASE_URL` (the local sqlite file by default) and exits 1
   when one finds a problem:

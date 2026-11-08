@@ -1566,6 +1566,22 @@ function checkCard(check) {
 	return card;
 }
 
+// What a problem is about: a link to the row when it has a place in the app
+// and is the viewer's own (the app opens only those), plain text otherwise.
+function problemSubject(problem) {
+	const match = problem.link.match(/^([a-z-]+)\/(\d+)$/);
+	if (!match || problem.owner !== state.config.user.id || !(match[1] in WORLDS)) {
+		return el("span", "check-subject", problem.subject);
+	}
+	const a = el("a", "check-subject", problem.subject);
+	a.href = `/library#${problem.link}`;
+	a.onclick = (event) => {
+		event.preventDefault();
+		showRow(match[1], Number(match[2])).catch((e) => showError(e.message));
+	};
+	return a;
+}
+
 async function runCheck(card) {
 	const button = card.querySelector("button");
 	const out = card.querySelector(".check-result");
@@ -1584,7 +1600,7 @@ async function runCheck(card) {
 			list.hidden = true;
 			for (const problem of result.problems) {
 				const item = el("li");
-				item.append(el("span", "check-subject", problem.subject), document.createTextNode(`: ${problem.message}`));
+				item.append(problemSubject(problem), document.createTextNode(`: ${problem.message}`));
 				list.appendChild(item);
 			}
 			const toggle = el("button", "text check-toggle", `${result.problems.length} problem${result.problems.length === 1 ? "" : "s"} in ${result.checked} ${result.noun}`);
