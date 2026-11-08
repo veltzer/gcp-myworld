@@ -81,6 +81,12 @@ COLUMNS = [
     ("works", "tmdb_id", "INTEGER"),
     ("works", "rotten_tomatoes_id", "VARCHAR(200) NOT NULL DEFAULT ''"),
     ("users", "role", "VARCHAR(20) NOT NULL DEFAULT 'user'"),
+    ("museums", "address", "VARCHAR(500) NOT NULL DEFAULT ''"),
+    ("museums", "latitude", "REAL"),
+    ("museums", "longitude", "REAL"),
+    ("organizations", "latitude", "REAL"),
+    ("organizations", "longitude", "REAL"),
+    ("museums", "alone", "BOOLEAN NOT NULL DEFAULT 0"),
 ]
 
 url = os.environ.get("DATABASE_URL", "sqlite:///db.gi/myworld.sqlite")
@@ -258,6 +264,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'concerts' AND column_name = 'performers')
 	   OR (table_name = 'people' AND column_name IN ('name', 'type_id'))
 	   OR (table_name = 'person_types' AND column_name = 'id')
+	   OR (table_name IN ('museums', 'organizations') AND column_name IN ('address', 'latitude', 'longitude', 'alone'))
 ")"
 
 has() {
@@ -397,6 +404,15 @@ if ! has "users.role:.*" || [[ "$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1
 	need "the oldest account made the first admin" "UPDATE users SET role = 'admin'
 		WHERE id = (SELECT min(id) FROM users) AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'admin')"
 fi
+# where a museum or an organization is (adding columns: run before the deploy)
+has "museums.address:.*" || need museums.address "ALTER TABLE museums ADD COLUMN address VARCHAR(500) NOT NULL DEFAULT ''"
+for table in museums organizations; do
+	for column in latitude longitude; do
+		has "${table}.${column}:.*" || need "${table}.${column}" "ALTER TABLE ${table} ADD COLUMN ${column} DOUBLE PRECISION"
+	done
+done
+# a museum visit made alone, told apart from one whose company is not filled in
+has "museums.alone:.*" || need museums.alone "ALTER TABLE museums ADD COLUMN alone BOOLEAN NOT NULL DEFAULT false"
 
 if (( ${#changed[@]} == 0 )); then
 	echo "${gcp_sql_instance}/${gcp_db_name}: up to date, nothing to migrate"

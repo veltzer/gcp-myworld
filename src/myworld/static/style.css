@@ -1620,3 +1620,38 @@ button.text.danger:hover {
 .check-subject {
 	font-weight: 600;
 }
+
+/* ─── the map layout ─────────────────────────────────────────────────────── */
+
+.world-map {
+	height: calc(100dvh - 16rem);
+	min-height: 20rem;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+}
+
+.world-map[hidden] {
+	display: none;
+}
+
+.map-popup {
+	display: grid;
+	gap: 0.25rem;
+	justify-items: start;
+}
+
+.map-popup p {
+	margin: 0;
+}
+
+/* ─── history arrows ─────────────────────────────────────────────────────── */
+
+.history {
+	display: inline-flex;
+	gap: 0.125rem;
+}
+
+/* "I went alone" ticked: the With picker is disabled, and looks it */
+.chips.disabled {
+	opacity: 0.5;
+}

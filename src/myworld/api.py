@@ -54,6 +54,30 @@ def opt_int(body: dict[str, Any], key: str, low: int, high: int) -> int | None:
     return number
 
 
+def opt_float(body: dict[str, Any], key: str, low: float, high: float) -> float | None:
+    value = body.get(key)
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        raise ApiError(400, f"{key}: expected a number")
+    try:
+        number = float(value)
+    except ValueError as e:
+        raise ApiError(400, f"{key}: expected a number") from e
+    if not low <= number <= high:
+        raise ApiError(400, f"{key}: must be between {low:g} and {high:g}")
+    return number
+
+
+def coordinates(body: dict[str, Any]) -> tuple[float | None, float | None]:
+    """ latitude and longitude: both, or neither. """
+    latitude = opt_float(body, "latitude", -90, 90)
+    longitude = opt_float(body, "longitude", -180, 180)
+    if (latitude is None) != (longitude is None):
+        raise ApiError(400, "latitude and longitude: give both or neither")
+    return latitude, longitude
+
+
 def opt_date(body: dict[str, Any], key: str) -> datetime.date | None:
     value = text(body, key)
     if not value:

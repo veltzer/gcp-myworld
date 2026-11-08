@@ -24,6 +24,7 @@ from myworld.models import (
     Museum,
     Organization,
     Person,
+    museum_people,
     organization_relation_types,
     person_person_types,
 )
@@ -201,6 +202,20 @@ def check_organization_addresses(session: Session) -> Result:
     return Result(checked=len(organizations), problems=problems)
 
 
+@check("organization-locations", "Every organization is on the map", "organizations")
+def check_organization_locations(session: Session) -> Result:
+    """ Every organization, of every account, has a latitude and a longitude (scripts/geocode.py finds them from the address). """
+    organizations = session.execute(
+        select(Organization.id, Organization.owner_id, Organization.name, Organization.latitude, Organization.longitude).order_by(Organization.name),
+    ).all()
+    problems = [
+        Problem(f"{name} (organization {organization_id}, account {owner_id})", "has no latitude and longitude")
+        for organization_id, owner_id, name, latitude, longitude in organizations
+        if latitude is None or longitude is None
+    ]
+    return Result(checked=len(organizations), problems=problems)
+
+
 # ─── people ─────────────────────────────────────────────────────────────────
 
 @check("person-types", "Every person has a type", "people")
@@ -227,4 +242,47 @@ def check_museum_dates(session: Session) -> Result:
         for visit in visits
         if visit.date_utcz is None and visit.date_ymd is None and not visit.date_my and visit.date_y is None
     ]
+    return Result(checked=len(visits), problems=problems)
+
+
+@check("museum-addresses", "Every museum visit has an address", "museum visits")
+def check_museum_addresses(session: Session) -> Result:
+    """ Every museum visit, of every account, has the museum's street address. """
+    visits = session.scalars(select(Museum).order_by(Museum.owner_id, Museum.name, Museum.id)).all()
+    problems = [
+        Problem(f"{visit.name} (museum visit {visit.id}, account {visit.owner_id})", "has no address")
+        for visit in visits
+        if not visit.address.strip()
+    ]
+    return Result(checked=len(visits), problems=problems)
+
+
+@check("museum-locations", "Every museum visit is on the map", "museum visits")
+def check_museum_locations(session: Session) -> Result:
+    """ Every museum visit, of every account, has a latitude and a longitude (scripts/geocode.py finds them from the address). """
+    visits = session.scalars(select(Museum).order_by(Museum.owner_id, Museum.name, Museum.id)).all()
+    problems = [
+        Problem(f"{visit.name} (museum visit {visit.id}, account {visit.owner_id})", "has no latitude and longitude")
+        for visit in visits
+        if visit.latitude is None or visit.longitude is None
+    ]
+    return Result(checked=len(visits), problems=problems)
+
+
+@check("museum-company", "Every museum visit says who you were with", "museum visits")
+def check_museum_company(session: Session) -> Result:
+    """
+    Every museum visit, of every account, either has the people you went
+    with or is marked "I went alone", so an empty With is never a gap
+    nobody filled in; and none is both.
+    """
+    with_people = set(session.scalars(select(museum_people.c.museum_id)))
+    visits = session.scalars(select(Museum).order_by(Museum.owner_id, Museum.name, Museum.id)).all()
+    problems = []
+    for visit in visits:
+        subject = f"{visit.name} (museum visit {visit.id}, account {visit.owner_id})"
+        if visit.alone and visit.id in with_people:
+            problems.append(Problem(subject, "is marked alone but has people in With"))
+        elif not visit.alone and visit.id not in with_people:
+            problems.append(Problem(subject, "has no one in With and is not marked alone"))
     return Result(checked=len(visits), problems=problems)

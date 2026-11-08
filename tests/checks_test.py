@@ -66,7 +66,7 @@ def test_bad_logo(data: bytes, wanted: str) -> None:
 
 
 def test_every_check_describes_itself() -> None:
-    assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "person-types", "museum-dates"} <= set(checks.CHECKS)
+    assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "person-types", "museum-dates", "organization-locations", "museum-addresses", "museum-locations", "museum-company"} <= set(checks.CHECKS)
     for chosen in checks.CHECKS.values():
         assert chosen.title and chosen.description and chosen.noun
 
@@ -172,6 +172,49 @@ def test_museum_dates(engine: Engine) -> None:
         result = checks.CHECKS["museum-dates"].run(session)
     assert result.checked == 5
     assert [(p.subject, p.message) for p in result.problems] == [("Uffizi (museum visit 5, account 1)", "has no date")]
+
+
+def test_locations(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(google_sub="alice", email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        session.add_all([
+            Organization(owner_id=alice.id, name="Acme", latitude=32.8, longitude=35.0),
+            Organization(owner_id=alice.id, name="Lost"),
+            Museum(owner_id=alice.id, name="Louvre", address="Rue de Rivoli, 75001 Paris, France", latitude=48.86, longitude=2.34),
+            Museum(owner_id=alice.id, name="Prado", address="Calle de Ruiz de Alarcón 23, Madrid, Spain"),
+            Museum(owner_id=alice.id, name="Tate", address=" "),
+        ])
+        session.commit()
+        organizations = checks.CHECKS["organization-locations"].run(session)
+        addresses = checks.CHECKS["museum-addresses"].run(session)
+        locations = checks.CHECKS["museum-locations"].run(session)
+    assert [p.subject for p in organizations.problems] == ["Lost (organization 2, account 1)"]
+    assert [p.subject for p in addresses.problems] == ["Tate (museum visit 3, account 1)"]
+    assert [p.subject for p in locations.problems] == ["Prado (museum visit 2, account 1)", "Tate (museum visit 3, account 1)"]
+
+
+def test_museum_company(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(google_sub="alice", email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        friend = Person(owner_id=alice.id, first_name="Dana")
+        session.add_all([
+            Museum(owner_id=alice.id, name="Louvre", people=[friend]),
+            Museum(owner_id=alice.id, name="Prado", alone=True),
+            Museum(owner_id=alice.id, name="Tate"),
+            Museum(owner_id=alice.id, name="Uffizi", alone=True, people=[friend]),
+        ])
+        session.commit()
+        result = checks.CHECKS["museum-company"].run(session)
+    assert result.checked == 4
+    # the ids follow the order the session flushes in, so only the names are compared
+    assert [(p.subject.split(" (")[0], p.message) for p in result.problems] == [
+        ("Tate", "has no one in With and is not marked alone"),
+        ("Uffizi", "is marked alone but has people in With"),
+    ]
 
 
 def test_person_types(engine: Engine) -> None:

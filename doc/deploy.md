@@ -244,12 +244,14 @@ first `companies` tables to `organizations`, then making
 - `GET /api/concerts`, `GET /api/museums`: newest first; the date comes as
   precisely as it is known (`date_precision`: time, day, month or year),
   and `people` holds the ids and names of who the user went with; a
-  concert's `performers` are people too (ids and names).
+  concert's `performers` are people too (ids and names). A museum visit
+  also has `address`, `latitude` and `longitude` (`maps.md`), and `alone`:
+  true when the user went alone, which is never sent with people.
 - `GET /api/people`: `first_name`, `surname`, `name` (the two together),
   `types` (ids and names), description and `organizations` (ids and names);
 a person is written with `type_ids`, a list.
 - `GET /api/organizations`: by name, with `type` (id and name), `relations`
-  (how it is related to the user: ids and names of relation types), status, website, location, address, the logo as
+  (how it is related to the user: ids and names of relation types), status, website, location, address, `latitude` and `longitude`, the logo as
   `image`, and `people` (ids and names).
 - `POST` to the same paths adds,
   `PUT /api/<concerts|museums|people|organizations>/<id>` replaces the fields,

@@ -47,6 +47,10 @@
 			<p id="error" class="warning" hidden></p>
 			<!-- one toolbar for every tab: a control that does not apply is disabled, never hidden -->
 			<div class="world-tools">
+				<span class="history" role="group" aria-label="History">
+					<button id="nav-back" type="button" class="icon-button" title="Back: the view or card you were at before" aria-label="Back" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></button>
+					<button id="nav-forward" type="button" class="icon-button" title="Forward" aria-label="Forward" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg></button>
+				</span>
 				<input id="world-search" type="search" placeholder="Search" aria-label="Search">
 				<span class="type-filter">
 					<button id="type-filter" type="button" class="filter-button" aria-haspopup="true" aria-expanded="false" aria-controls="type-filter-menu" disabled>All types</button>
@@ -78,6 +82,7 @@
 			</section>
 			<section id="world-view" hidden>
 				<div id="cards" class="cards"></div>
+				<div id="world-map" class="world-map" hidden></div>
 				<table id="people" class="entries" hidden>
 					<thead>
 						<tr>
@@ -239,10 +244,16 @@
 					<label>Tickets <input name="tickets" type="number" min="0" max="1000"></label>
 				</div>
 				<div class="row">
+					<label class="wide">Address <input name="address" placeholder="Street, city, country"></label>
+					<label>Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
+					<label>Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
+				</div>
+				<div class="row">
 					<label class="wide">Website <input name="url" type="url" placeholder="https://"></label>
 				</div>
 				<div class="row">
 					<label class="wide">With <span class="chips" data-chips="people" data-field="people"><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
+					<label class="check"><input name="alone" type="checkbox"> I went alone</label>
 				</div>
 				<div class="row">
 					<label class="wide">Review <input name="review"></label>
@@ -295,6 +306,8 @@
 				</div>
 				<div class="row">
 					<label class="wide">Address <input name="address"></label>
+					<label>Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
+					<label>Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
 				</div>
 				<div class="row">
 					<label class="wide">Remark <input name="remark"></label>

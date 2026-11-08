@@ -461,6 +461,10 @@ def test_add_validates(imported: webtest.TestApp) -> None:
     imported.post_json("/api/concerts", {"name": "x", "date_timezone": "Mars/Olympus"}, status=400)
     imported.post_json("/api/concerts", {"name": "x", "people": [999]}, status=400)
     imported.post_json("/api/museums", {"name": "x", "rating": 11}, status=400)
+    imported.post_json("/api/museums", {"name": "x", "latitude": 91, "longitude": 0}, status=400)
+    imported.post_json("/api/museums", {"name": "x", "latitude": "north", "longitude": 0}, status=400)
+    # one coordinate without the other is no place
+    imported.post_json("/api/organizations", {"name": "x", "latitude": 32.1}, status=400)
     imported.post_json("/api/people", {"first_name": ""}, status=400)
     imported.post_json("/api/people", {"first_name": " ", "surname": " "}, status=400)
     imported.post("/api/images", upload_files=[("file", "x.jpg", b"not an image")], status=400)
@@ -491,6 +495,28 @@ def test_add_museum_and_person(imported: webtest.TestApp) -> None:
     assert museum["date"] == "2012"
     assert museum["with"] == ["Carol"]
     assert museum["image"] is None
+
+
+def test_museum_alone(imported: webtest.TestApp) -> None:
+    alone = imported.post_json("/api/museums", {"name": "Prado", "alone": True}, status=201).json
+    assert alone["alone"] is True
+    assert alone["with"] == []
+    assert imported.post_json("/api/museums", {"name": "Tate"}, status=201).json["alone"] is False
+    # alone with company is a contradiction
+    person = imported.post_json("/api/people", {"first_name": "Carol"}, status=201).json
+    imported.post_json("/api/museums", {"name": "Uffizi", "alone": True, "people": [person["id"]]}, status=400)
+
+
+def test_addresses_and_coordinates(imported: webtest.TestApp) -> None:
+    museum = imported.post_json("/api/museums", {
+        "name": "Prado", "address": "Calle de Ruiz de Alarcón 23, Madrid, Spain", "latitude": "40.4138", "longitude": -3.6921,
+    }, status=201).json
+    assert (museum["address"], museum["latitude"], museum["longitude"]) == ("Calle de Ruiz de Alarcón 23, Madrid, Spain", 40.4138, -3.6921)
+    # a dialog with the coordinates cleared leaves the place off the map
+    cleared = imported.put_json(f"/api/museums/{museum['id']}", dict(museum, people=[], latitude="", longitude="")).json
+    assert (cleared["latitude"], cleared["longitude"]) == (None, None)
+    organization = imported.post_json("/api/organizations", {"name": "Glil", "address": "Kibbutz Glil Yam, Israel", "latitude": 32.15556, "longitude": 34.82361}, status=201).json
+    assert (organization["latitude"], organization["longitude"]) == (32.15556, 34.82361)
 
 
 def test_edit_keeps_a_timestamp_sent_back_unchanged(imported: webtest.TestApp) -> None:

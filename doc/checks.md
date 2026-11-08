@@ -33,9 +33,15 @@ uses too).
 - `organization-relations`: every organization has at least one relation
   type.
 - `organization-addresses`: every organization has an address.
+- `organization-locations`: every organization has a latitude and a
+  longitude, so it is on the map.
 - `person-types`: every person has at least one person type.
 - `museum-dates`: every museum visit has a date (a day, a month, a year
   or a full time).
+- `museum-addresses`: every museum visit has an address.
+- `museum-locations`: every museum visit has a latitude and a longitude.
+- `museum-company`: every museum visit has people in With or is marked
+  "I went alone", and none is both.
 
 ## Adding one
 

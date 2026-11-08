@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from myworld import auth
-from myworld.api import ApiError, json_body, opt_int, text
+from myworld.api import ApiError, coordinates, json_body, opt_int, text
 from myworld.models import (
     KINDS,
     RATING_MAX,
@@ -111,11 +111,15 @@ def museum_json(museum: Museum) -> dict[str, Any]:
         **_date_json(museum),
         "date_timezone": museum.date_timezone,
         "city": museum.city,
+        "address": museum.address,
+        "latitude": museum.latitude,
+        "longitude": museum.longitude,
         "rating": museum.rating,
         "review": museum.review,
         "remark": museum.remark,
         "url": museum.url,
         "tickets": museum.tickets,
+        "alone": museum.alone,
         "with": _names(museum.people),
         "people": _refs(museum.people),
         "image": _image_url(museum.image_id),
@@ -145,6 +149,8 @@ def organization_json(organization: Organization) -> dict[str, Any]:
         "website": organization.website,
         "location": organization.location,
         "address": organization.address,
+        "latitude": organization.latitude,
+        "longitude": organization.longitude,
         "what_happened": organization.what_happened,
         "remark": organization.remark,
         "image": _image_url(organization.image_id),
@@ -334,6 +340,8 @@ def _apply_concert(concert: Concert, body: dict[str, Any], current: Concert | No
 def _apply_museum(museum: Museum, body: dict[str, Any], current: Museum | None) -> None:
     museum.name = text(body, "name", required=True)
     museum.city = text(body, "city")
+    museum.address = text(body, "address")
+    museum.latitude, museum.longitude = coordinates(body)
     museum.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
     museum.review = text(body, "review")
     museum.remark = text(body, "remark")
@@ -343,6 +351,9 @@ def _apply_museum(museum: Museum, body: dict[str, Any], current: Museum | None) 
     if image_id is not None:
         museum.image_id = image_id
     museum.people = _owned_people(body)
+    museum.alone = body.get("alone") is True
+    if museum.alone and museum.people:
+        raise ApiError(400, "a visit made alone has no one in With")
     for key, value in _dates(body, current).items():
         setattr(museum, key, value)
 
@@ -379,6 +390,7 @@ def _apply_organization(organization: Organization, body: dict[str, Any]) -> Non
     organization.website = text(body, "website")
     organization.location = text(body, "location")
     organization.address = text(body, "address")
+    organization.latitude, organization.longitude = coordinates(body)
     organization.what_happened = text(body, "what_happened")
     organization.remark = text(body, "remark")
     if image_id is not None:

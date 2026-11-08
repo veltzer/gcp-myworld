@@ -24,6 +24,7 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
+    Double,
     ForeignKey,
     Integer,
     LargeBinary,
@@ -32,6 +33,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    false,
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -291,7 +293,16 @@ class RelationType(Base):
     organizations: Mapped[list[Organization]] = relationship(secondary=organization_relation_types, back_populates="relations")
 
 
-class Organization(Base):
+class _Located:
+    """
+    Where it is on a map, in WGS 84 degrees: both or neither. Found from the
+    address by scripts/geocode.py, or typed in the dialog.
+    """
+    latitude: Mapped[float | None] = mapped_column(Double, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Double, nullable=True)
+
+
+class Organization(_Located, Base):
     """
     An organization: one a person works at, or one the user taught at,
     consulted for, studied at, was certified by or bought media from
@@ -365,7 +376,7 @@ class Concert(_Dated, Base):
     performers: Mapped[list[Person]] = relationship(secondary=concert_performers, back_populates="performed")
 
 
-class Museum(_Dated, Base):
+class Museum(_Dated, _Located, Base):
     """ One visit to a museum; a museum visited twice is two rows. """
     __tablename__ = "museums"
     __table_args__ = (
@@ -376,11 +387,15 @@ class Museum(_Dated, Base):
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(300), nullable=False)
     city: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    # the street address of the museum, as for an organization
+    address: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     review: Mapped[str] = mapped_column(Text, nullable=False, default="")
     remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
     url: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     tickets: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # went alone: no one is missing from people, there was no one; never true with people
+    alone: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     image: Mapped[Image | None] = relationship()
 

@@ -184,7 +184,7 @@ async function indexPage() {
 
 // view is a kind of work ("book", ...) or one of WORLDS ("concerts", ...)
 // editing is the item open in the dialog, null when adding
-const state = { config: null, kind: "book", view: "concerts", entries: [], editing: null };
+const state = { config: null, kind: "book", view: "concerts", entries: [], editing: null, layout: "cards" };
 
 function fillStatuses(select, selected) {
 	select.replaceChildren();
@@ -615,7 +615,7 @@ function updateTools() {
 	$("fab").disabled = PAGES.has(state.view);
 	const cards = state.view in CARDS;
 	for (const layout of $("layouts").querySelectorAll("button")) {
-		layout.disabled = !cards;
+		layout.disabled = !cards || (layout.dataset.layout === "map" && !MAPPED.has(state.view));
 	}
 	$("layouts").setAttribute("aria-disabled", String(!cards));
 }
@@ -650,7 +650,7 @@ function setupSort() {
 async function selectKind(kind) {
 	state.kind = kind;
 	state.view = kind;
-	window.location.hash = kind;
+	navigate(kind);
 	showSection("library-view");
 	$("world-search").value = "";
 	await fillTypeFilter(kind);
@@ -758,7 +758,22 @@ async function libraryPage() {
 	setupWorlds();
 	setupAddDialog();
 	renderKinds();
-	const requested = window.location.hash.slice(1);
+	startHistory();
+	await openHash();
+}
+
+// Open what the address bar says, without adding a history entry.
+async function openHash() {
+	nav.replacing = true;
+	try {
+		await route(window.location.hash.slice(1));
+	} finally {
+		nav.replacing = false;
+	}
+}
+
+// Open what an address-bar hash names: a tab, a page, or one row of a view.
+async function route(requested) {
 	const linked = requested.match(/^(concerts|museums|people|organizations|organization-types|person-types|relation-types)\/(\d+)$/);
 	if (linked) {
 		await showRow(linked[1], Number(linked[2]));
@@ -773,6 +788,69 @@ async function libraryPage() {
 	} else {
 		await selectWorld(requested in WORLDS ? requested : "concerts");
 	}
+}
+
+// ─── history: Back and Forward inside the page ─────────────────────────────
+
+// The app is one page: each view, and each row a link opened, is a history
+// entry with its own #hash, so the browser's Back and Forward and the two
+// arrows in the toolbar walk through them. The entries are numbered (in
+// history.state) to know when there is nothing further back or forward.
+const NAV_TOP_KEY = "myworld.nav-top";
+// replacing: while the page opens what the address bar already says (at start,
+// on Back or Forward), a view that fills in its own hash ("" -> "#concerts")
+// corrects the entry it is on rather than adding one
+const nav = { index: 0, top: 0, replacing: false };
+
+function navigate(hash) {
+	if (window.location.hash === `#${hash}`) {
+		return;
+	}
+	if (nav.replacing) {
+		window.history.replaceState({ nav: nav.index }, "", `#${hash}`);
+		return;
+	}
+	nav.index += 1;
+	nav.top = nav.index;
+	saveNavTop();
+	window.history.pushState({ nav: nav.index }, "", `#${hash}`);
+	updateNavButtons();
+}
+
+function saveNavTop() {
+	try {
+		window.sessionStorage.setItem(NAV_TOP_KEY, String(nav.top));
+	} catch (e) {
+		// blocked storage: after a reload Forward may stay disabled; Back still works
+	}
+}
+
+function startHistory() {
+	const known = window.history.state && Number.isInteger(window.history.state.nav);
+	nav.index = known ? window.history.state.nav : 0;
+	let top = 0;
+	try {
+		top = Number(window.sessionStorage.getItem(NAV_TOP_KEY)) || 0;
+	} catch (e) {
+		top = 0;
+	}
+	nav.top = Math.max(top, nav.index);
+	if (!known) {
+		window.history.replaceState({ nav: nav.index }, "", window.location.href);
+	}
+	window.addEventListener("popstate", (event) => {
+		nav.index = event.state && Number.isInteger(event.state.nav) ? event.state.nav : 0;
+		updateNavButtons();
+		openHash().catch((e) => showError(e.message));
+	});
+	$("nav-back").onclick = () => window.history.back();
+	$("nav-forward").onclick = () => window.history.forward();
+	updateNavButtons();
+}
+
+function updateNavButtons() {
+	$("nav-back").disabled = nav.index <= 0;
+	$("nav-forward").disabled = nav.index >= nav.top;
 }
 
 // ─── concerts, museums, people, organizations ──────────────────────────────
@@ -895,6 +973,7 @@ const LAYOUTS = {
 	cards: "Cards",
 	tiles: "Tiles",
 	gallery: "Gallery",
+	map: "Map",
 };
 const LAYOUT_KEY = "myworld.layout";
 
@@ -908,6 +987,7 @@ function savedLayout() {
 }
 
 function applyLayout(layout) {
+	state.layout = layout;
 	for (const name of Object.keys(LAYOUTS)) {
 		$("cards").classList.toggle(`layout-${name}`, name === layout);
 	}
@@ -924,6 +1004,7 @@ function setupLayouts() {
 		button.dataset.layout = name;
 		button.onclick = () => {
 			applyLayout(name);
+			rerender();
 			try {
 				window.localStorage.setItem(LAYOUT_KEY, name);
 			} catch (e) {
@@ -936,6 +1017,111 @@ function setupLayouts() {
 }
 
 // kind is "photo" or "logo" (a logo is always shown whole, never cropped)
+// ─── the map layout ─────────────────────────────────────────────────────────
+
+// The views whose items have a latitude and longitude; on the others the Map button is disabled.
+const MAPPED = new Set(["museums", "organizations"]);
+// Leaflet, from cdnjs, loaded the first time a map is shown
+const LEAFLET = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/";
+const LEAFLET_JS = ["leaflet.js", "sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH"];
+const LEAFLET_CSS = ["leaflet.css", "sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H"];
+let leafletLoading = null;
+let worldMap = null;
+let mapMarkers = null;
+
+function showsMap() {
+	return state.layout === "map" && MAPPED.has(state.view);
+}
+
+function loadLeaflet() {
+	if (!leafletLoading) {
+		leafletLoading = new Promise((resolve, reject) => {
+			const css = document.createElement("link");
+			css.rel = "stylesheet";
+			css.href = LEAFLET + LEAFLET_CSS[0];
+			css.integrity = LEAFLET_CSS[1];
+			css.crossOrigin = "anonymous";
+			document.head.appendChild(css);
+			const script = document.createElement("script");
+			script.src = LEAFLET + LEAFLET_JS[0];
+			script.integrity = LEAFLET_JS[1];
+			script.crossOrigin = "anonymous";
+			script.onload = () => resolve(window.L);
+			script.onerror = () => {
+				leafletLoading = null;
+				reject(new Error("The map library could not be loaded"));
+			};
+			document.head.appendChild(script);
+		});
+	}
+	return leafletLoading;
+}
+
+// One marker per place: two visits of the same museum share a pin, and its popup lists both.
+async function renderMap(items) {
+	const L = await loadLeaflet();
+	if (!showsMap()) {
+		return;
+	}
+	if (!worldMap) {
+		worldMap = L.map("world-map", { worldCopyJump: true });
+		L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+			maxZoom: 19,
+			attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+		}).addTo(worldMap);
+		mapMarkers = L.layerGroup().addTo(worldMap);
+	}
+	// the box was hidden while the map was made or last drawn: let Leaflet measure it again
+	worldMap.invalidateSize();
+	mapMarkers.clearLayers();
+	const places = new Map();
+	for (const item of items) {
+		if (item.latitude === null || item.longitude === null) {
+			continue;
+		}
+		const key = `${item.latitude},${item.longitude}`;
+		if (!places.has(key)) {
+			places.set(key, []);
+		}
+		places.get(key).push(item);
+	}
+	const points = [];
+	for (const group of places.values()) {
+		const point = [group[0].latitude, group[0].longitude];
+		points.push(point);
+		const marker = L.circleMarker(point, { radius: 8, weight: 2, color: "#1d4ed8", fillColor: "#3b82f6", fillOpacity: 0.85 });
+		marker.bindTooltip(group[0].name);
+		marker.bindPopup(() => mapPopup(group));
+		mapMarkers.addLayer(marker);
+	}
+	if (points.length > 0) {
+		worldMap.fitBounds(points, { padding: [32, 32], maxZoom: 15 });
+	} else {
+		worldMap.setView([20, 0], 2);
+	}
+	const unplaced = items.filter((item) => item.latitude === null || item.longitude === null).length;
+	if (unplaced > 0) {
+		$("world-count").textContent += ` (${unplaced} with no location, not on the map)`;
+	}
+}
+
+function mapPopup(group) {
+	const box = el("div", "map-popup");
+	const first = group[0];
+	box.appendChild(el("strong", null, first.name));
+	const where = first.address || first.city || first.location;
+	if (where) {
+		box.appendChild(el("p", null, where));
+	}
+	for (const item of group) {
+		const open = el("button", "text", group.length > 1 ? `Edit: ${formatDate(item) || item.name}` : "Edit");
+		open.type = "button";
+		open.onclick = () => openDialog(item).catch((e) => showError(e.message));
+		box.appendChild(open);
+	}
+	return box;
+}
+
 function cardShell(item, subtitle, kind = "photo") {
 	const card = el("article", "world-card");
 	card.id = `${slug(state.view)}-${item.id}`;
@@ -994,8 +1180,12 @@ function concertCard(item) {
 function museumCard(item) {
 	const { card, list } = cardShell(item, item.city);
 	detail(list, "Date", formatDate(item));
+	detail(list, "Address", item.address);
 	if (item.rating !== null) {
 		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
+	}
+	if (item.alone) {
+		detail(list, "With", "alone");
 	}
 	linksDetail(list, "With", "people", item.people);
 	detail(list, "Tickets", item.tickets);
@@ -1207,8 +1397,10 @@ function renderWorld() {
 	const items = worldCache[view] || [];
 	const shown = sortItems(items.filter((item) => typeMatches(item) && searchMatches(item)));
 	const table = TABLES[view];
-	$("cards").hidden = Boolean(table);
-	$("cards").replaceChildren(...(table ? [] : shown.map(CARDS[view])));
+	const map = !table && showsMap();
+	$("cards").hidden = Boolean(table) || map;
+	$("cards").replaceChildren(...(table || map ? [] : shown.map(CARDS[view])));
+	$("world-map").hidden = !map;
 	for (const [name, [tableId, rowsId, row]] of Object.entries(TABLES)) {
 		$(tableId).hidden = name !== view || shown.length === 0;
 		$(rowsId).replaceChildren(...(name === view ? shown.map(row) : []));
@@ -1218,6 +1410,9 @@ function renderWorld() {
 		$("world-count").textContent = `Nothing here yet: no ${what} for this account.`;
 	} else {
 		showCount(shown.length, items.length, what);
+	}
+	if (map) {
+		renderMap(shown).catch((e) => showError(e.message));
 	}
 }
 
@@ -1242,7 +1437,7 @@ function showSection(id) {
 
 async function selectStats() {
 	state.view = "stats";
-	window.location.hash = "stats";
+	navigate("stats");
 	document.title = "Stats - My World";
 	showSection("stats-view");
 	markActive();
@@ -1266,7 +1461,7 @@ function isAdmin() {
 
 async function selectUsers() {
 	state.view = "users";
-	window.location.hash = "users";
+	navigate("users");
 	document.title = "Users - My World";
 	showSection("users-view");
 	markActive();
@@ -1329,7 +1524,7 @@ function renderUsers(users) {
 
 async function selectChecks() {
 	state.view = "checks";
-	window.location.hash = "checks";
+	navigate("checks");
 	document.title = "Checks - My World";
 	showSection("checks-view");
 	markActive();
@@ -1490,9 +1685,10 @@ function renderStats(stats) {
 	$("stats-view").replaceChildren(tiles, charts);
 }
 
-async function selectWorld(view) {
+// hash: where the address bar points, the view itself unless one of its rows is wanted
+async function selectWorld(view, hash = view) {
 	state.view = view;
-	window.location.hash = view;
+	navigate(hash);
 	const [heading, path] = WORLDS[view];
 	document.title = `${heading.replace(/^My /, "")} - My World`;
 	showSection("world-view");
@@ -1528,8 +1724,7 @@ async function refreshWorld() {
 
 // Open the People or Organizations view at one row or card, scrolled to and highlighted.
 async function showRow(view, id) {
-	await selectWorld(view);
-	window.location.hash = `${view}/${id}`;
+	await selectWorld(view, `${view}/${id}`);
 	const row = $(`${slug(view)}-${id}`);
 	if (!row) {
 		return;
@@ -1631,9 +1826,24 @@ function addChip(box, person) {
 	remove.onclick = () => {
 		box.selected.delete(person.id);
 		chip.remove();
+		syncAlone(box.closest("form"));
 	};
 	chip.appendChild(remove);
 	box.insertBefore(chip, box.querySelector("input"));
+	syncAlone(box.closest("form"));
+}
+
+// "I went alone" and the With picker exclude each other: with people chosen the
+// box is disabled, and with the box ticked the picker is.
+function syncAlone(form) {
+	const alone = form?.elements.alone;
+	if (!alone) {
+		return;
+	}
+	const box = form.querySelector("[data-field=people]");
+	alone.disabled = box.selected.size > 0;
+	box.querySelector("input").disabled = alone.checked;
+	box.classList.toggle("disabled", alone.checked);
 }
 
 function setupChips(box) {
@@ -1705,6 +1915,7 @@ function resetForm(form) {
 			chip.remove();
 		}
 	}
+	syncAlone(form);
 }
 
 async function uploadPhoto(form) {
@@ -1768,12 +1979,16 @@ const WORLD_BODIES = {
 		return {
 			name: value("name"),
 			city: value("city"),
+			address: value("address"),
+			latitude: value("latitude"),
+			longitude: value("longitude"),
 			date: value("date"),
 			date_timezone: state.editing?.date_timezone || where(),
 			rating: value("rating"),
 			tickets: value("tickets"),
 			url: value("url"),
 			people: chosen(form, "people"),
+			alone: form.elements.alone.checked,
 			review: value("review"),
 			remark: value("remark"),
 			image_id: await uploadPhoto(form),
@@ -1796,6 +2011,8 @@ const WORLD_BODIES = {
 			website: value("website"),
 			location: value("location"),
 			address: value("address"),
+			latitude: value("latitude"),
+			longitude: value("longitude"),
 			what_happened: value("what_happened"),
 			remark: value("remark"),
 			image_id: await uploadPhoto(form),
@@ -1938,6 +2155,7 @@ async function openDialog(item) {
 		if (item) {
 			fillWorldForm(form, item);
 		}
+		syncAlone(form);
 	} else {
 		prepareWorkForm(form, item);
 	}
@@ -1978,6 +2196,7 @@ function setupAddDialog() {
 	for (const box of dialog.querySelectorAll("[data-chips]")) {
 		setupChips(box);
 	}
+	$("museum-form").elements.alone.onchange = () => syncAlone($("museum-form"));
 	const { rating_min, rating_max } = state.config;
 	$("museum-form").elements.rating.min = rating_min;
 	$("museum-form").elements.rating.max = rating_max;
