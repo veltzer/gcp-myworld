@@ -235,6 +235,23 @@ if "functions" in {row[1] for row in db.execute("PRAGMA table_info(organizations
             db.execute("INSERT OR IGNORE INTO organization_relation_types (organization_id, relation_type_id) VALUES (?, ?)", (organization_id, type_id))
     db.execute("ALTER TABLE organizations DROP COLUMN functions")
     added.append("organizations.functions -> relation_types, organization_relation_types")
+courses = {row[1] for row in db.execute("PRAGMA table_info(audio_courses)")}
+if "device" in courses:
+    # the device names become the account's own devices, each course pointing to its one
+    db.execute("""CREATE TABLE IF NOT EXISTS devices (
+        id INTEGER NOT NULL PRIMARY KEY,
+        owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL,
+        description TEXT NOT NULL,
+        CONSTRAINT uq_device_name UNIQUE (owner_id, name))""")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_devices_owner_id ON devices (owner_id)")
+    db.execute("INSERT OR IGNORE INTO devices (owner_id, name, description) SELECT DISTINCT owner_id, device, '' FROM audio_courses WHERE device <> ''")
+    if "device_id" not in courses:
+        db.execute("ALTER TABLE audio_courses ADD COLUMN device_id INTEGER REFERENCES devices (id) ON DELETE SET NULL")
+    db.execute("""UPDATE audio_courses SET device_id = (
+        SELECT d.id FROM devices d WHERE d.owner_id = audio_courses.owner_id AND d.name = audio_courses.device) WHERE device <> ''""")
+    db.execute("ALTER TABLE audio_courses DROP COLUMN device")
+    added.append("audio_courses.device -> devices, audio_courses.device_id")
 if not db.execute("SELECT 1 FROM users WHERE role = 'admin'").fetchone():
     oldest = db.execute("SELECT min(id) FROM users").fetchone()[0]
     if oldest is not None:
@@ -265,6 +282,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'people' AND column_name IN ('name', 'type_id'))
 	   OR (table_name = 'person_types' AND column_name = 'id')
 	   OR (table_name IN ('museums', 'organizations') AND column_name IN ('address', 'latitude', 'longitude', 'alone'))
+	   OR (table_name = 'audio_courses' AND column_name IN ('device', 'device_id'))
 ")"
 
 has() {
@@ -413,6 +431,24 @@ for table in museums organizations; do
 done
 # a museum visit made alone, told apart from one whose company is not filled in
 has "museums.alone:.*" || need museums.alone "ALTER TABLE museums ADD COLUMN alone BOOLEAN NOT NULL DEFAULT false"
+# an audio course's device name -> the account's own devices (drops the name
+# column the new code no longer has: deploy first, then run this right away)
+if has "audio_courses.device:.*"; then
+	need "audio_courses.device -> devices, audio_courses.device_id" "CREATE TABLE IF NOT EXISTS devices (
+			id SERIAL PRIMARY KEY,
+			owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+			name VARCHAR(100) NOT NULL,
+			description TEXT NOT NULL,
+			CONSTRAINT uq_device_name UNIQUE (owner_id, name));
+		CREATE INDEX IF NOT EXISTS ix_devices_owner_id ON devices (owner_id);
+		INSERT INTO devices (owner_id, name, description)
+			SELECT DISTINCT owner_id, device, '' FROM audio_courses WHERE device <> ''
+			ON CONFLICT DO NOTHING;
+		ALTER TABLE audio_courses ADD COLUMN IF NOT EXISTS device_id INTEGER REFERENCES devices (id) ON DELETE SET NULL;
+		UPDATE audio_courses c SET device_id = d.id FROM devices d
+			WHERE d.owner_id = c.owner_id AND d.name = c.device AND c.device <> '';
+		ALTER TABLE audio_courses DROP COLUMN device"
+fi
 
 if (( ${#changed[@]} == 0 )); then
 	echo "${gcp_sql_instance}/${gcp_db_name}: up to date, nothing to migrate"

@@ -126,6 +126,16 @@
 					</thead>
 					<tbody id="relation-type-rows"></tbody>
 				</table>
+				<table id="devices-table" class="entries" hidden>
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>Description</th>
+							<th>Audio courses</th>
+						</tr>
+					</thead>
+					<tbody id="device-rows"></tbody>
+				</table>
 			</section>
 			<section id="library-view">
 				<p id="empty" class="empty" hidden></p>
@@ -287,7 +297,7 @@
 					<label class="wide">Review <input name="review"></label>
 				</div>
 				<div class="row">
-					<label>Device <input name="device" placeholder="e.g. Samsung S10"></label>
+					<label>Device <select name="device_id"></select></label>
 					<label>Where <input name="listened_at" placeholder="e.g. Night Walks, Car"></label>
 				</div>
 				<div class="row">
@@ -384,6 +394,19 @@
 			<form id="relation-type-form" class="dialog-form" hidden>
 				<div class="row">
 					<label class="wide">Name <input name="name" required placeholder="e.g. Taught there"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Description <input name="description"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="device-form" class="dialog-form" hidden>
+				<div class="row">
+					<label class="wide">Name <input name="name" required placeholder="e.g. Samsung S10"></label>
 				</div>
 				<div class="row">
 					<label class="wide">Description <input name="description"></label>

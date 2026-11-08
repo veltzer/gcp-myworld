@@ -17,7 +17,8 @@ is linked to the organizations they name.
 
 Audio courses come from data/yaml/audio_courses.yaml, their covers from
 static/images/audiocourse-{gc-<great_courses_id>,audible-<asin>,internal-<n>}.jpg;
-each lecturer is a person (one of the same name, or a new one), typed Lecturer.
+each lecturer is a person (one of the same name, or a new one), typed Lecturer,
+and each device one of the account's devices (made when first named).
 
 Everything the user had in these tables is replaced, in one transaction, so
 the script is safe to run again. Unknown fields in the YAML stop the import
@@ -56,6 +57,7 @@ from sqlalchemy.orm import Session, selectinload
 from myworld.models import (
     AudioCourse,
     Concert,
+    Device,
     Image,
     Museum,
     Organization,
@@ -321,7 +323,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     session.execute(delete(organization_relation_types).where(
         organization_relation_types.c.organization_id.in_(select(Organization.id).where(Organization.owner_id == owner.id)),
     ))
-    for model in (AudioCourse, Concert, Museum, Person, Organization, OrganizationType, PersonType, RelationType, Image):
+    for model in (AudioCourse, Device, Concert, Museum, Person, Organization, OrganizationType, PersonType, RelationType, Image):
         session.execute(delete(model).where(model.owner_id == owner.id))
     session.flush()
 
@@ -470,7 +472,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     return {
         "people": len(people) + courses["lecturers added"], "organizations": len(organizations), "organization types": len(types),
         "relation types": len(relation_types), "person types": len(PERSON_TYPES), "people with a type": typed["people given a type"],
-        "concerts": len(concert_items), "museums": len(museum_items), "audio courses": courses["audio courses"],
+        "concerts": len(concert_items), "museums": len(museum_items), "audio courses": courses["audio courses"], "devices": courses["devices added"],
         "images": len(images) + courses["images"],
     }
 
@@ -521,6 +523,20 @@ def import_audio_courses(session: Session, owner: User, source: Path) -> dict[st
             added += 1
         return found[0]
 
+    devices = {d.name: d for d in session.scalars(select(Device).where(Device.owner_id == owner.id))}
+    devices_added = 0
+
+    def device(name: str) -> Device | None:
+        """ owner's device of that name, made the first time it is named. """
+        nonlocal devices_added
+        if not name:
+            return None
+        if name not in devices:
+            devices[name] = Device(owner_id=owner.id, name=name, description="")
+            session.add(devices[name])
+            devices_added += 1
+        return devices[name]
+
     image_dir = source / "static" / "images"
     # a cover already stored (an earlier import of courses since deleted) is used again
     stored = {image.filename: image for image in session.scalars(select(Image).where(Image.owner_id == owner.id))}
@@ -548,7 +564,7 @@ def import_audio_courses(session: Session, owner: User, source: Path) -> dict[st
             lecturers=[lecturer(name) for name in names],
             rating=item.get("rating"),
             review=item.get("review", ""),
-            device=item.get("device", ""),
+            device=device(item.get("device", "")),
             listened_at=item.get("location", ""),
             started_utcz=_stamp(item, "date_started_utcz"),
             ended_utcz=_stamp(item, "date_ended_utcz"),
@@ -560,7 +576,7 @@ def import_audio_courses(session: Session, owner: User, source: Path) -> dict[st
             **_dates(item),
         ))
     session.flush()
-    return {"audio courses": len(items), "lecturers added": added, "images": images}
+    return {"audio courses": len(items), "lecturers added": added, "devices added": devices_added, "images": images}
 
 
 def main() -> int:

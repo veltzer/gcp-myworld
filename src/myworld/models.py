@@ -413,6 +413,23 @@ class Museum(_Dated, _Located, Base):
     people: Mapped[list[Person]] = relationship(secondary=museum_people, back_populates="museums")
 
 
+class Device(Base):
+    """
+    What something was played on: "Samsung S10", "Sansa Clip 2". An
+    enumeration the user keeps themselves (the Devices page); an audio course
+    points to one.
+    """
+    __tablename__ = "devices"
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_device_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    audio_courses: Mapped[list[AudioCourse]] = relationship(back_populates="device")
+
+
 class AudioCourse(_Dated, Base):
     """
     An audio course listened to (The Great Courses, Audible, ...). The date
@@ -430,8 +447,10 @@ class AudioCourse(_Dated, Base):
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     review: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    # what it was played on ("Samsung S10") and where it was listened to ("Night Walks", "Car")
-    device: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    # what it was played on: one of the user's own devices
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id", ondelete="SET NULL"), nullable=True)
+    device: Mapped[Device | None] = relationship(back_populates="audio_courses")
+    # where it was listened to ("Night Walks", "Car")
     listened_at: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     # still in progress: when it was started, and how far it got ("4/24" lectures)
     started_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)

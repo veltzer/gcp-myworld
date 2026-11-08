@@ -570,6 +570,10 @@ const SORTS = {
 		["name", "Name", (t) => t.name, "asc"],
 		["count", "Organizations", (t) => t.count, "desc"],
 	],
+	devices: [
+		["name", "Name", (t) => t.name, "asc"],
+		["count", "Audio courses", (t) => t.count, "desc"],
+	],
 };
 const SORT_KEY = "myworld.sort";
 
@@ -821,7 +825,7 @@ async function openHash() {
 
 // Open what an address-bar hash names: a tab, a page, or one row of a view.
 async function route(requested) {
-	const linked = requested.match(/^(concerts|museums|audio-courses|people|organizations|organization-types|person-types|relation-types)\/(\d+)$/);
+	const linked = requested.match(/^(concerts|museums|audio-courses|people|organizations|organization-types|person-types|relation-types|devices)\/(\d+)$/);
 	if (linked) {
 		await showRow(linked[1], Number(linked[2]));
 	} else if (requested === "stats") {
@@ -921,6 +925,7 @@ const WORLDS = {
 	"organization-types": ["Organization types", "/api/organization-types", "organization type", "Org types"],
 	"person-types": ["Person types", "/api/person-types", "person type", "Person types"],
 	"relation-types": ["Relation types", "/api/relation-types", "relation type", "Relations"],
+	devices: ["Devices", "/api/devices", "device", "Devices"],
 };
 
 // views whose rows have a type -> the view of their enumeration
@@ -1328,7 +1333,8 @@ function audioCourseCard(item) {
 		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
 	}
 	detail(list, "Review", item.review);
-	detail(list, "Listened", [item.listened_at, item.device].filter(Boolean).join(", on "));
+	detail(list, "Where", item.listened_at);
+	linksDetail(list, "Device", "devices", item.device ? [item.device] : []);
 	websiteDetail(list, item.url);
 	return card;
 }
@@ -1414,6 +1420,7 @@ const TABLES = {
 	"organization-types": ["types", "type-rows", typeRow],
 	"person-types": ["person-types-table", "person-type-rows", typeRow],
 	"relation-types": ["relation-types-table", "relation-type-rows", typeRow],
+	devices: ["devices-table", "device-rows", typeRow],
 };
 
 // The type filter next to the search, for views whose rows have a type: a set
@@ -1826,6 +1833,7 @@ function renderStats(stats) {
 		statTile("Organization types", stats.organization_types, "", "organization-types"),
 		statTile("Person types", stats.person_types, "", "person-types"),
 		statTile("Relation types", stats.relation_types, "", "relation-types"),
+		statTile("Devices", stats.devices, "", "devices"),
 		statTile("Photos and logos", stats.images, "", null),
 	);
 	const charts = el("div", "stat-charts");
@@ -1968,7 +1976,7 @@ function setupWorlds() {
 // ─── the add dialog ─────────────────────────────────────────────────────────
 
 // One dialog, opened by the + button, showing the form of whatever is on screen.
-const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "person-form", "organization-form", "organization-type-form", "person-type-form", "relation-type-form"];
+const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "person-form", "organization-form", "organization-type-form", "person-type-form", "relation-type-form", "device-form"];
 const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 
 function dialogError(message) {
@@ -2141,7 +2149,7 @@ const WORLD_BODIES = {
 			date_timezone: state.editing?.date_timezone || where(),
 			rating: value("rating"),
 			review: value("review"),
-			device: value("device"),
+			device_id: value("device_id"),
 			listened_at: value("listened_at"),
 			started: value("started"),
 			ended: state.editing?.ended || "",
@@ -2228,6 +2236,10 @@ const WORLD_BODIES = {
 		description: form.elements.description.value,
 	}),
 	"relation-types": async (form) => ({
+		name: form.elements.name.value,
+		description: form.elements.description.value,
+	}),
+	devices: async (form) => ({
 		name: form.elements.name.value,
 		description: form.elements.description.value,
 	}),
@@ -2348,6 +2360,9 @@ async function openDialog(item) {
 		if (form.elements.type_id) {
 			await fillTypes(form.elements.type_id, TYPED[state.view]);
 		}
+		if (form.elements.device_id) {
+			await fillTypes(form.elements.device_id, "devices");
+		}
 		resetForm(form);
 		if (state.view === "organizations" && !item) {
 			const company = worldCache["organization-types"].find((t) => t.name === "Company");
@@ -2355,6 +2370,9 @@ async function openDialog(item) {
 		}
 		if (item) {
 			fillWorldForm(form, item);
+		}
+		if (form.elements.device_id) {
+			form.elements.device_id.value = item?.device ? item.device.id : "";
 		}
 		syncAlone(form);
 	} else {

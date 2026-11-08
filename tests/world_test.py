@@ -167,7 +167,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         session.commit()
     assert counts == {
         "people": 5, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 5, "people with a type": 5,
-        "concerts": 3, "museums": 3, "audio courses": 2, "images": 5}
+        "concerts": 3, "museums": 3, "audio courses": 2, "devices": 2, "images": 5}
     return app
 
 
@@ -229,7 +229,7 @@ def test_audio_courses(imported: webtest.TestApp) -> None:
     greeks, music = courses
     assert (greeks["status"], greeks["date"], greeks["date_precision"]) == ("done", "2019-09-21T09:28:55Z", "time")
     assert [p["name"] for p in greeks["lecturers"]] == ["Bob Buddy"]
-    assert (greeks["device"], greeks["listened_at"], greeks["rating"], greeks["review"]) == ("Samsung S10", "Night Walks", 8, "Pretty good")
+    assert (greeks["device"]["name"], greeks["listened_at"], greeks["rating"], greeks["review"]) == ("Samsung S10", "Night Walks", 8, "Pretty good")
     assert greeks["url"] == "https://www.thegreatcourses.com/courses/famous-greeks"
     assert greeks["image"] is not None
     assert (music["status"], music["date"], music["started"], music["progress"]) == ("in_progress", None, "2020-10-01T21:31:01Z", "4/24")
@@ -254,6 +254,26 @@ def test_edit_audio_course(imported: webtest.TestApp) -> None:
     assert len(imported.get("/api/audio-courses").json) == 2
 
 
+def test_devices(imported: webtest.TestApp) -> None:
+    devices = imported.get("/api/devices").json
+    # a list kept like the types: each with how many audio courses point to it
+    assert [(d["name"], d["count"]) for d in devices] == [("Samsung S10", 1), ("Samsung S7", 1)]
+    s10, s7 = devices
+    music = next(c for c in imported.get("/api/audio-courses").json if c["name"] == "How to Listen to Music")
+    body = dict(music, lecturers=[p["id"] for p in music["lecturers"]], device_id=s10["id"])
+    assert imported.put_json(f"/api/audio-courses/{music['id']}", body).json["device"] == {"id": s10["id"], "name": "Samsung S10"}
+    # a device in use is not deleted; an unused one is
+    imported.delete(f"/api/devices/{s10['id']}", status=409)
+    imported.delete(f"/api/devices/{s7['id']}", status=204)
+    sansa = imported.post_json("/api/devices", {"name": "Sansa Clip 2", "description": "MP3 player"}, status=201).json
+    imported.post_json("/api/devices", {"name": "Sansa Clip 2"}, status=409)
+    edited = imported.put_json(f"/api/audio-courses/{music['id']}", dict(body, device_id=sansa["id"])).json
+    assert edited["device"]["name"] == "Sansa Clip 2"
+    # no device, and a device of no one's
+    assert imported.put_json(f"/api/audio-courses/{music['id']}", dict(body, device_id="")).json["device"] is None
+    imported.put_json(f"/api/audio-courses/{music['id']}", dict(body, device_id=99999), status=400)
+
+
 def test_audio_courses_import_adds_once(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
     del imported
     source = tmp_path / "again"
@@ -268,7 +288,7 @@ def test_audio_courses_import_adds_once(imported: webtest.TestApp, engine: Engin
         counts = import_world.import_audio_courses(session, owner(session), source)
         session.commit()
     # the lecturers are the people already there, and the covers the images already stored: nothing is added twice
-    assert counts == {"audio courses": 2, "lecturers added": 0, "images": 0}
+    assert counts == {"audio courses": 2, "lecturers added": 0, "devices added": 0, "images": 0}
 
 
 def test_people_links_point_at_people(imported: webtest.TestApp) -> None:

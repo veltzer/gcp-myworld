@@ -24,6 +24,7 @@ from myworld.models import (
     STATUSES,
     AudioCourse,
     Concert,
+    Device,
     Image,
     Museum,
     Organization,
@@ -142,7 +143,7 @@ def audio_course_json(course: AudioCourse) -> dict[str, Any]:
         "lecturers": _refs(course.lecturers),
         "rating": course.rating,
         "review": course.review,
-        "device": course.device,
+        "device": None if course.device is None else {"id": course.device.id, "name": course.device.name},
         "listened_at": course.listened_at,
         "started": _stamp_json(course.started_utcz),
         "ended": _stamp_json(course.ended_utcz),
@@ -211,7 +212,7 @@ def api_concerts() -> flask.Response:
 @bp.route("/api/audio-courses", methods=["GET"])
 @auth.login_required
 def api_audio_courses() -> flask.Response:
-    query = select(AudioCourse).where(AudioCourse.owner_id == flask.g.user.id).options(selectinload(AudioCourse.lecturers))
+    query = select(AudioCourse).where(AudioCourse.owner_id == flask.g.user.id).options(selectinload(AudioCourse.lecturers), selectinload(AudioCourse.device))
     courses = flask.g.db.execute(query).scalars().all()
     # finished ones newest first; those in progress (no date yet) after them
     return flask.jsonify(_newest_first([audio_course_json(c) for c in courses]))
@@ -342,7 +343,7 @@ def _owned_image(body: dict[str, Any]) -> int | None:
     return image_id
 
 
-def _owned(model: type[Concert | Museum | AudioCourse | Person | Organization | OrganizationType | PersonType | RelationType], row_id: int) -> Any:
+def _owned(model: type[Concert | Museum | AudioCourse | Person | Organization | OrganizationType | PersonType | RelationType | Device], row_id: int) -> Any:
     row = flask.g.db.get(model, row_id)
     if row is None or row.owner_id != flask.g.user.id:
         raise ApiError(404, "no such entry")
@@ -426,7 +427,7 @@ def _apply_audio_course(course: AudioCourse, body: dict[str, Any], current: Audi
     course.lecturers = _owned_list(body, "lecturers", Person)
     course.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
     course.review = text(body, "review")
-    course.device = text(body, "device")
+    course.device = _owned_type(Device, opt_int(body, "device_id", 1, 2**31 - 1))
     course.listened_at = text(body, "listened_at")
     course.started_utcz = _stamp(body, "started", current.started_utcz if current else None)
     course.ended_utcz = _stamp(body, "ended", current.ended_utcz if current else None)
@@ -668,6 +669,7 @@ def api_stats() -> flask.Response:
         "organization_types": count(OrganizationType),
         "person_types": count(PersonType),
         "relation_types": count(RelationType),
+        "devices": count(Device),
         "images": count(Image),
         "people_by_type": _by_type(people_by_type),
         "organizations_by_type": _by_type(organizations_by_type),
@@ -679,7 +681,7 @@ def api_stats() -> flask.Response:
 
 # ─── the enumerations: organization, person and relation types ────────────
 
-type TypeModel = OrganizationType | PersonType | RelationType
+type TypeModel = OrganizationType | PersonType | RelationType | Device
 
 # path -> (type model, what the typed rows are called); an organization has one
 # type (organizations.type_id) and any number of relation types
@@ -688,6 +690,8 @@ TYPES: dict[str, tuple[type[TypeModel], str]] = {
     "organization-types": (OrganizationType, "organization"),
     "person-types": (PersonType, "person"),
     "relation-types": (RelationType, "organization"),
+    # not a type of a thing, but kept the same way: a list of the user's own, each used by some rows
+    "devices": (Device, "audio course"),
 }
 
 
@@ -695,6 +699,8 @@ def _type_links(what: str) -> Any:
     """ One row per typed row of the user and one of its types: (type_id). """
     if what == "organization-types":
         return select(Organization.type_id.label("type_id")).where(Organization.owner_id == flask.g.user.id)
+    if what == "devices":
+        return select(AudioCourse.device_id.label("type_id")).where(AudioCourse.owner_id == flask.g.user.id)
     if what == "relation-types":
         return (
             select(organization_relation_types.c.relation_type_id.label("type_id"))
@@ -717,7 +723,7 @@ def _type_uses(what: str, kind: TypeModel) -> int:
     return flask.g.db.scalar(select(func.count()).select_from(links).where(links.c.type_id == kind.id)) or 0
 
 
-def _owned_type[T: (OrganizationType, PersonType)](model: type[T], type_id: int | None) -> T | None:
+def _owned_type[T: (OrganizationType, PersonType, Device)](model: type[T], type_id: int | None) -> T | None:
     """ The user's own type type_id of model, or None for no type. """
     if type_id is None:
         return None
@@ -738,7 +744,7 @@ def _apply_type(model: type[TypeModel], kind: TypeModel, body: dict[str, Any]) -
     kind.description = text(body, "description")
 
 
-@bp.route("/api/<any('organization-types', 'person-types', 'relation-types'):what>", methods=["GET"])
+@bp.route("/api/<any('organization-types', 'person-types', 'relation-types', devices):what>", methods=["GET"])
 @auth.login_required
 def api_types(what: str) -> flask.Response:
     """ The user's enumeration, with how many rows are of each type. """
@@ -754,7 +760,7 @@ def api_types(what: str) -> flask.Response:
     return flask.jsonify([type_json(kind, n) for kind, n in rows])
 
 
-@bp.route("/api/<any('organization-types', 'person-types', 'relation-types'):what>", methods=["POST"])
+@bp.route("/api/<any('organization-types', 'person-types', 'relation-types', devices):what>", methods=["POST"])
 @auth.login_required
 def api_types_add(what: str) -> tuple[flask.Response, int]:
     model = TYPES[what][0]
@@ -765,7 +771,7 @@ def api_types_add(what: str) -> tuple[flask.Response, int]:
     return flask.jsonify(type_json(kind, 0)), 201
 
 
-@bp.route("/api/<any('organization-types', 'person-types', 'relation-types'):what>/<int:row_id>", methods=["PUT"])
+@bp.route("/api/<any('organization-types', 'person-types', 'relation-types', devices):what>/<int:row_id>", methods=["PUT"])
 @auth.login_required
 def api_types_update(what: str, row_id: int) -> flask.Response:
     model = TYPES[what][0]
@@ -775,7 +781,7 @@ def api_types_update(what: str, row_id: int) -> flask.Response:
     return flask.jsonify(type_json(kind, _type_uses(what, kind)))
 
 
-@bp.route("/api/<any('organization-types', 'person-types', 'relation-types'):what>/<int:row_id>", methods=["DELETE"])
+@bp.route("/api/<any('organization-types', 'person-types', 'relation-types', devices):what>/<int:row_id>", methods=["DELETE"])
 @auth.login_required
 def api_types_delete(what: str, row_id: int) -> flask.Response:
     """ Only a type nothing is: a row never silently loses its type. """
