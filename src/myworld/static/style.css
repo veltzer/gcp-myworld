@@ -557,7 +557,19 @@ button.danger {
 	text-align: center;
 	color: var(--muted);
 	font-size: 0.8rem;
-	padding: 2rem 0;
+	padding: 2rem 1rem;
+}
+
+.footer p {
+	margin: 0.2rem 0;
+}
+
+.footer a {
+	color: inherit;
+}
+
+.footer .inscription {
+	font-size: 0.75rem;
 }
 
 /* ─── film search (library page) ───────────────────────────────────────── */
