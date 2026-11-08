@@ -459,7 +459,16 @@ def test_add_validates(imported: webtest.TestApp) -> None:
     imported.post_json("/api/concerts", {"name": "x", "people": [999]}, status=400)
     imported.post_json("/api/museums", {"name": "x", "rating": 11}, status=400)
     imported.post_json("/api/people", {"first_name": ""}, status=400)
+    imported.post_json("/api/people", {"first_name": " ", "surname": " "}, status=400)
     imported.post("/api/images", upload_files=[("file", "x.jpg", b"not an image")], status=400)
+
+
+def test_person_with_one_name(imported: webtest.TestApp) -> None:
+    surname_only = imported.post_json("/api/people", {"surname": "Cohen"}, status=201).json
+    assert (surname_only["first_name"], surname_only["surname"], surname_only["name"]) == ("", "Cohen", "Cohen")
+    first_only = imported.post_json("/api/people", {"first_name": "Dana", "surname": ""}, status=201).json
+    assert first_only["name"] == "Dana"
+    imported.put_json(f"/api/people/{first_only['id']}", {"first_name": "", "surname": ""}, status=400)
 
 
 def test_add_museum_and_person(imported: webtest.TestApp) -> None:

@@ -196,13 +196,14 @@ class Person(Base):
     """
     Someone the user knows or saw. Names are not unique: two people may share
     one, and they stay two rows. A name that is not a first name and a
-    surname (a band, "Oded from MAFAT") is all in first_name.
+    surname (a band, "Oded from MAFAT") is all in first_name. Either part
+    may be empty, but not both.
     """
     __tablename__ = "people"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    first_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    first_name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     surname: Mapped[str] = mapped_column(String(200), nullable=False, default="", server_default="")
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     # family, co-worker, ...: any number of the user's own person types
