@@ -1115,6 +1115,51 @@ async function renderMap(items) {
 	}
 }
 
+// Material "place"
+const PIN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>';
+
+// The pin on a museum or organization card: opens a map of that one place.
+// Without coordinates it is there, disabled.
+function placeButton(item) {
+	const button = el("button", "icon-button place-button");
+	button.type = "button";
+	button.innerHTML = PIN;
+	const placed = item.latitude !== null && item.longitude !== null;
+	button.disabled = !placed;
+	button.title = placed ? `${item.name} on the map` : "No location: add an address and its latitude and longitude";
+	button.setAttribute("aria-label", button.title);
+	button.onclick = () => openPlace(item).catch((e) => showError(e.message));
+	return button;
+}
+
+let placeMap = null;
+let placeMarker = null;
+
+async function openPlace(item) {
+	const L = await loadLeaflet();
+	const point = [item.latitude, item.longitude];
+	$("place-title").textContent = item.name;
+	$("place-address").textContent = item.address || item.location || item.city || "";
+	$("place-osm").href = `https://www.openstreetmap.org/?mlat=${item.latitude}&mlon=${item.longitude}#map=17/${item.latitude}/${item.longitude}`;
+	$("place-dialog").showModal();
+	if (!placeMap) {
+		placeMap = L.map("place-map");
+		L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+			maxZoom: 19,
+			attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+		}).addTo(placeMap);
+		$("place-close").onclick = () => $("place-dialog").close();
+	}
+	// the box was not laid out until the dialog opened: let Leaflet measure it
+	placeMap.invalidateSize();
+	placeMap.setView(point, 16);
+	if (placeMarker) {
+		placeMarker.remove();
+	}
+	placeMarker = L.circleMarker(point, { radius: 10, weight: 3, color: "#1d4ed8", fillColor: "#3b82f6", fillOpacity: 0.85 }).addTo(placeMap);
+	placeMarker.bindTooltip(item.name, { permanent: true, direction: "top", offset: [0, -10] });
+}
+
 function mapPopup(group) {
 	const box = el("div", "map-popup");
 	const first = group[0];
@@ -1189,6 +1234,7 @@ function concertCard(item) {
 
 function museumCard(item) {
 	const { card, list } = cardShell(item, item.city);
+	card.appendChild(placeButton(item));
 	detail(list, "Date", formatDate(item));
 	detail(list, "Address", item.address);
 	if (item.rating !== null) {
@@ -1207,6 +1253,7 @@ function museumCard(item) {
 
 function organizationCard(item) {
 	const { card, list } = cardShell(item, item.location, "logo");
+	card.appendChild(placeButton(item));
 	linksDetail(list, "Type", "organization-types", item.type ? [item.type] : []);
 	// how it is related to me: links to the Relation types page
 	linksDetail(list, "Relation", "relation-types", item.relations);

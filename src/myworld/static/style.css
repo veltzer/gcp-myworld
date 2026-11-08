@@ -856,6 +856,7 @@ button.danger {
 }
 
 .world-card {
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	background: #fff;
@@ -1685,4 +1686,39 @@ button.text.check-toggle {
 /* "I went alone" ticked: the With picker is disabled, and looks it */
 .chips.disabled {
 	opacity: 0.5;
+}
+
+/* ─── one place on a map ─────────────────────────────────────────────────── */
+
+/* the pin on a card, in its top right corner in every layout */
+.place-button {
+	position: absolute;
+	top: 0.35rem;
+	right: 0.35rem;
+	background: rgb(255 255 255 / 85%);
+}
+
+.place-dialog {
+	width: min(56rem, calc(100vw - 2rem));
+}
+
+.place-address {
+	margin: 0 0 0.75rem;
+	color: var(--muted);
+}
+
+.place-map {
+	height: min(60vh, 32rem);
+	border: 1px solid var(--line);
+	border-radius: 8px;
+}
+
+.place-dialog .dialog-actions {
+	align-items: center;
+	justify-content: space-between;
+}
+
+/* the title keeps clear of the pin */
+.world-card .world-title {
+	padding-right: 2.25rem;
 }

@@ -10,6 +10,11 @@ the count says how many rows have no location and so are not on it. On
 the views with no places (concerts, people, the types) the Map button is
 there but disabled.
 
+Each museum and organization card also has a pin in its top right
+corner: it opens that one place on a map, zoomed in to its street, with
+a link to the same spot on openstreetmap.org (for directions and the
+like). A row without coordinates has the pin too, disabled.
+
 The map is Leaflet, loaded from cdnjs (with its integrity hash) the
 first time a map is shown, so the other layouts never load it. The tiles
 come from `tile.openstreetmap.org`, under its tile usage policy: light,
