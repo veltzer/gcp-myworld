@@ -1371,6 +1371,12 @@ button.text.danger:hover {
 	padding: 0.25rem 0.35rem;
 }
 
+/* text in a picker that names nothing that exists */
+.chips input.invalid {
+	color: #b91c1c;
+	text-decoration: underline wavy #b91c1c;
+}
+
 .chips input:focus {
 	outline: none;
 }

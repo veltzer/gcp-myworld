@@ -1363,10 +1363,13 @@ function addChip(box, person) {
 function setupChips(box) {
 	box.selected = new Map();
 	const input = box.querySelector("input");
+	// Only rows that exist can be picked: text that names none stays, marked
+	// invalid, and the form will not save while it is there (pendingChipsOk).
 	const pick = (quiet) => {
 		const name = input.value.trim();
+		input.classList.remove("invalid");
 		if (!name) {
-			return;
+			return true;
 		}
 		const view = box.dataset.chips;
 		const rows = worldCache[view] || [];
@@ -1377,18 +1380,21 @@ function setupChips(box) {
 			matches = rows.filter((row) => row.name.toLowerCase() === wanted);
 		}
 		if (matches.length !== 1) {
+			input.classList.add("invalid");
 			if (!quiet) {
 				dialogError(matches.length
 					? `${matches.length} are called ${name}: pick one from the suggestions.`
-					: `${name} is not in ${WORLDS[view][0]} yet: add it there first.`);
+					: `${name} is not in ${WORLDS[view][0]}: pick one from the suggestions, or add it to ${WORLDS[view][0]} first.`);
 			}
-			return;
+			return false;
 		}
 		const person = matches[0];
 		dialogError("");
 		addChip(box, person);
 		input.value = "";
+		return true;
 	};
+	box.pick = pick;
 	input.onkeydown = (event) => {
 		if (event.key === "Enter" || event.key === ",") {
 			event.preventDefault();
@@ -1404,13 +1410,21 @@ function setupChips(box) {
 			pick(true);
 		}
 	};
-	input.onblur = () => pick(true);
+	// leaving the box with a name that matches nothing says so at once
+	input.onblur = () => pick(false);
+}
+
+// Before saving: every picker's leftover text must turn into a chip; false
+// (with the reason shown) when some text names nothing that exists.
+function pendingChipsOk(form) {
+	return [...form.querySelectorAll("[data-chips]")].every((box) => box.pick(false));
 }
 
 function resetForm(form) {
 	form.reset();
 	for (const box of form.querySelectorAll("[data-chips]")) {
 		box.selected.clear();
+		box.querySelector("input").classList.remove("invalid");
 		for (const chip of box.querySelectorAll(".chip")) {
 			chip.remove();
 		}
@@ -1527,6 +1541,9 @@ function setupWorldForm(view) {
 	form.onsubmit = async (event) => {
 		event.preventDefault();
 		dialogError("");
+		if (!pendingChipsOk(form)) {
+			return;
+		}
 		const submit = form.querySelector("button[type=submit]");
 		submit.disabled = true;
 		try {
