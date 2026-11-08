@@ -687,8 +687,9 @@ function concertCard(item) {
 	const { body, card, list } = cardShell(item, item.event);
 	detail(list, "Date", formatDate(item));
 	detail(list, "Where", [item.venue, item.city, item.country].filter(Boolean).join(", "));
-	const performers = item.performers.length === 1 && item.performers[0] === item.name ? [] : item.performers;
-	detail(list, "Performers", performers);
+	// a show named after its one performer does not repeat the name
+	const performers = item.performers.length === 1 && item.performers[0].name === item.name ? [] : item.performers;
+	linksDetail(list, "Performers", "people", performers);
 	detail(list, "Genre", item.genre);
 	linksDetail(list, "With", "people", item.people);
 	detail(list, "Tickets", item.tickets);
@@ -977,8 +978,9 @@ async function uploadPhoto(form) {
 	return result.id;
 }
 
-function chosen(form, view) {
-	return [...form.querySelector(`[data-chips=${view}]`).selected.keys()];
+// the ids picked in the chips box of field ("people", "performers", "organizations")
+function chosen(form, field) {
+	return [...form.querySelector(`[data-field=${field}]`).selected.keys()];
 }
 
 function where() {
@@ -996,7 +998,7 @@ const WORLD_BODIES = {
 		return {
 			name: value("name"),
 			event: value("event"),
-			performers: value("performers").split(",").map((p) => p.trim()).filter(Boolean),
+			performers: chosen(form, "performers"),
 			genre: value("genre"),
 			date: value("date"),
 			date_timezone: state.editing?.date_timezone || where(),
@@ -1096,7 +1098,7 @@ function fillWorldForm(form, item) {
 		}
 	}
 	for (const box of form.querySelectorAll("[data-chips]")) {
-		for (const row of item[box.dataset.chips]) {
+		for (const row of item[box.dataset.field]) {
 			addChip(box, row);
 		}
 	}

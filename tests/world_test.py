@@ -71,7 +71,7 @@ items:
     image_license: "CC BY-SA 3.0"
     image_author: "Someone"
   - name: "Late Show"
-    performers: ["Singer"]
+    performers: ["Singer", "Bob Buddy", " Singer "]
     date_utcz: "2020-01-01T22:30:00Z"
     date_timezone: "Asia/Jerusalem"
     with: ["Alice Friend", "Bob Buddy"]
@@ -139,7 +139,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
     with Session(engine) as session:
         counts = import_world.import_world(session, owner(session), write_source(tmp_path))
         session.commit()
-    assert counts == {"people": 2, "organizations": 3, "organization types": 7, "concerts": 3, "museums": 3, "images": 3}
+    assert counts == {"people": 4, "organizations": 3, "organization types": 7, "concerts": 3, "museums": 3, "images": 3}
     return app
 
 
@@ -168,6 +168,22 @@ def test_concerts(imported: webtest.TestApp) -> None:
     assert band["image"] == late["image"]
 
 
+def test_performers_are_people(imported: webtest.TestApp) -> None:
+    concerts = {c["name"]: c for c in imported.get("/api/concerts").json}
+    people = {p["name"]: p["id"] for p in imported.get("/api/people").json}
+    # a performer people.yaml does not have becomes a person; one it has is that person
+    assert "The Band" in people
+    assert "Singer" in people
+    assert concerts["Late Show"]["performers"] == [
+        {"id": people["Bob Buddy"], "name": "Bob Buddy"}, {"id": people["Singer"], "name": "Singer"},
+    ]
+    # performers and the people the user went with are separate lists
+    assert concerts["Late Show"]["with"] == ["Alice Friend", "Bob Buddy"]
+    assert concerts["Some Month"]["performers"] == []
+    imported.post_json("/api/concerts", {"name": "x", "performers": [999]}, status=400)
+    imported.post_json("/api/concerts", {"name": "x", "performers": ["Singer"]}, status=400)
+
+
 def test_museums_share_the_first_visit_photo(imported: webtest.TestApp) -> None:
     museums = imported.get("/api/museums").json
     assert [m["name"] for m in museums] == ["No Photo Museum", "The Louvre", "The Louvre"]
@@ -187,8 +203,8 @@ def test_people_links_point_at_people(imported: webtest.TestApp) -> None:
 
 def test_people(imported: webtest.TestApp) -> None:
     people = imported.get("/api/people").json
-    assert [p["name"] for p in people] == ["Alice Friend", "Bob Buddy"]
-    alice, bob = people
+    assert [p["name"] for p in people] == ["Alice Friend", "Bob Buddy", "Singer", "The Band"]
+    alice, bob, _, _ = people
     assert alice["description"] == "Old friend"
     assert [c["name"] for c in alice["organizations"]] == ["Startup"]
     assert [c["name"] for c in bob["organizations"]] == ["Acme", "Startup"]
@@ -310,7 +326,7 @@ def test_reimport_replaces(imported: webtest.TestApp, engine: Engine, tmp_path: 
     with Session(engine) as session:
         import_world.import_world(session, owner(session), tmp_path)
         session.commit()
-        for model, count in ((Concert, 3), (Museum, 3), (Person, 2), (Organization, 3), (Image, 3)):
+        for model, count in ((Concert, 3), (Museum, 3), (Person, 4), (Organization, 3), (Image, 3)):
             assert session.scalar(select(func.count()).select_from(model)) == count
         assert session.scalar(select(func.count()).select_from(concert_people)) == 3
         assert session.scalar(select(func.count()).select_from(person_organizations)) == 3
@@ -364,11 +380,11 @@ def test_add_concert_with_photo(imported: webtest.TestApp) -> None:
     upload = imported.post("/api/images", upload_files=[("file", "show.jpg", JPEG)]).json
     ids = people_ids(imported)
     concert = imported.post_json("/api/concerts", {
-        "name": "New Show", "performers": ["A", " B ", ""], "date": "2024-05",
+        "name": "New Show", "performers": [ids["Alice Friend"]], "date": "2024-05",
         "date_timezone": "Asia/Jerusalem", "people": [ids["Bob Buddy"]], "tickets": "2",
         "broadcast": True, "image_id": upload["id"],
     }, status=201).json
-    assert concert["performers"] == ["A", "B"]
+    assert [p["name"] for p in concert["performers"]] == ["Alice Friend"]
     assert concert["date"] == "2024-05"
     assert concert["date_precision"] == "month"
     assert concert["with"] == ["Bob Buddy"]
@@ -400,7 +416,7 @@ def test_add_museum_and_person(imported: webtest.TestApp) -> None:
 
 def test_edit_keeps_a_timestamp_sent_back_unchanged(imported: webtest.TestApp) -> None:
     late = next(c for c in imported.get("/api/concerts").json if c["name"] == "Late Show")
-    body = dict(late, name="Late Late Show", people=[p["id"] for p in late["people"]][:1])
+    body = dict(late, name="Late Late Show", people=[p["id"] for p in late["people"]][:1], performers=[p["id"] for p in late["performers"]])
     edited = imported.put_json(f"/api/concerts/{late['id']}", body).json
     assert edited["name"] == "Late Late Show"
     assert edited["date"] == "2020-01-01T22:30:00Z"
@@ -484,7 +500,7 @@ def test_edit_replaces_photo_and_drops_the_old_one(imported: webtest.TestApp, en
     upload = imported.post("/api/images", upload_files=[("file", "new.jpg", JPEG)]).json
     for concert in imported.get("/api/concerts").json:
         if concert["image"]:
-            imported.put_json(f"/api/concerts/{concert['id']}", dict(concert, image_id=upload["id"], people=[]))
+            imported.put_json(f"/api/concerts/{concert['id']}", dict(concert, image_id=upload["id"], people=[], performers=[]))
     with Session(engine) as session:
         assert "concert-the-band.jpg" not in session.scalars(select(Image.filename)).all()
 

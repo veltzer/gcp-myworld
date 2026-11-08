@@ -25,6 +25,11 @@
 #   - organization_types (the user's own enumeration of what an organization
 #     is) and organizations.type_id pointing at it. create_all would make the
 #     table, but the column needs it to exist first, so this makes both.
+#   - concert performers become people: every name in concerts.performers (a
+#     JSON list of names) becomes a person of the concert's owner (one who
+#     already has that name is reused) and a concert_performers row, and only
+#     then is the column dropped. The new code no longer writes the column,
+#     which is NOT NULL, so run this right after deploying that version.
 #
 # Cloud SQL is reached with gcloud_sql_psql.sh (utils-bash): the Cloud SQL
 # Auth Proxy with your gcloud credentials and the app's own password from
@@ -85,6 +90,19 @@ if "organizations" in tables and "type_id" not in {row[1] for row in db.execute(
     db.execute("CREATE INDEX IF NOT EXISTS ix_organization_types_owner_id ON organization_types (owner_id)")
     db.execute("ALTER TABLE organizations ADD COLUMN type_id INTEGER REFERENCES organization_types (id) ON DELETE SET NULL")
     added.append("organization_types, organizations.type_id")
+if "performers" in {row[1] for row in db.execute("PRAGMA table_info(concerts)")}:
+    db.execute("""CREATE TABLE IF NOT EXISTS concert_performers (
+        concert_id INTEGER NOT NULL REFERENCES concerts (id) ON DELETE CASCADE,
+        person_id INTEGER NOT NULL REFERENCES people (id) ON DELETE CASCADE,
+        PRIMARY KEY (concert_id, person_id))""")
+    db.execute("""INSERT OR IGNORE INTO people (owner_id, name, description)
+        SELECT DISTINCT c.owner_id, trim(p.value), '' FROM concerts c, json_each(c.performers) p
+        WHERE trim(p.value) <> ''""")
+    db.execute("""INSERT OR IGNORE INTO concert_performers (concert_id, person_id)
+        SELECT DISTINCT c.id, pe.id FROM concerts c, json_each(c.performers) p
+        JOIN people pe ON pe.owner_id = c.owner_id AND pe.name = trim(p.value)""")
+    db.execute("ALTER TABLE concerts DROP COLUMN performers")
+    added.append("concerts.performers -> people, concert_performers")
 db.commit()
 if added:
     print(f"{path}: migrated {', '.join(added)}")
@@ -106,6 +124,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'people' AND column_name = 'company')
 	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
 	   OR (table_name = 'organizations' AND column_name = 'type_id')
+	   OR (table_name = 'concerts' AND column_name = 'performers')
 ")"
 
 has() {
@@ -147,10 +166,28 @@ if { has "companies.id:.*" || has "organizations.id:.*"; } && ! has "organizatio
 		ALTER TABLE organizations ADD COLUMN type_id INTEGER REFERENCES organization_types (id) ON DELETE SET NULL"
 fi
 
+if has "concerts.performers:.*"; then
+	need "concerts.performers -> people, concert_performers" "CREATE TABLE IF NOT EXISTS concert_performers (
+			concert_id INTEGER NOT NULL REFERENCES concerts (id) ON DELETE CASCADE,
+			person_id INTEGER NOT NULL REFERENCES people (id) ON DELETE CASCADE,
+			PRIMARY KEY (concert_id, person_id));
+		INSERT INTO people (owner_id, name, description)
+			SELECT DISTINCT c.owner_id, btrim(p.name), '' FROM concerts c, json_array_elements_text(c.performers::json) AS p (name)
+			WHERE btrim(p.name) <> ''
+			ON CONFLICT ON CONSTRAINT uq_person_name DO NOTHING;
+		INSERT INTO concert_performers (concert_id, person_id)
+			SELECT DISTINCT c.id, pe.id FROM concerts c
+			CROSS JOIN LATERAL json_array_elements_text(c.performers::json) AS p (name)
+			JOIN people pe ON pe.owner_id = c.owner_id AND pe.name = btrim(p.name)
+			ON CONFLICT DO NOTHING;
+		ALTER TABLE concerts DROP COLUMN performers"
+fi
+
 if (( ${#changed[@]} == 0 )); then
 	echo "${gcp_sql_instance}/${gcp_db_name}: up to date, nothing to migrate"
 else
-	printf '%s\n' "${statements[@]}" | gcloud_sql_psql.sh -q -v ON_ERROR_STOP=1 > /dev/null
+	# one transaction: a failing statement stops psql and leaves the database as it was
+	printf '%s\n' "BEGIN;" "${statements[@]}" "COMMIT;" | gcloud_sql_psql.sh -q -v ON_ERROR_STOP=1 > /dev/null
 	echo "${gcp_sql_instance}/${gcp_db_name}: migrated ${changed[*]}"
 	echo "deploy with gcloud_run_deploy.sh"
 fi

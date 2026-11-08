@@ -172,6 +172,11 @@ opens it for editing, with a Delete that asks twice. Library entries edit
 only their per-user fields; their title, creator and year belong to the
 shared work row.
 
+A concert links two lists of people: who was on stage (performers) and
+who the user went with. The import makes every performer a person,
+reusing one `people.yaml` already has; `scripts/migrate.sh` did the same
+for the free-text performer names already in the database.
+
 A person may be at several organizations: the People tab links each one
 to its card in Organizations, and an organization card links back to its
 people. The person dialog picks organizations the way the concert dialog
@@ -219,7 +224,8 @@ first `companies` tables to `organizations`, then making
 
 - `GET /api/concerts`, `GET /api/museums`: newest first; the date comes as
   precisely as it is known (`date_precision`: time, day, month or year),
-  and `people` holds the ids and names of who was there.
+  and `people` holds the ids and names of who the user went with; a
+  concert's `performers` are people too (ids and names).
 - `GET /api/people`: name, description and `organizations` (ids and names).
 - `GET /api/organizations`: by name, with `type` (id and name), `functions` (what the organization
   was to the user), status, website, location, address, the logo as

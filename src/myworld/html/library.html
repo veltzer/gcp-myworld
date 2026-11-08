@@ -121,7 +121,7 @@
 					<label class="wide">Event <input name="event" placeholder="Festival, tour, occasion"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Performers <input name="performers" placeholder="Comma separated"></label>
+					<label class="wide">Performers <span class="chips" data-chips="people" data-field="performers"><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
 					<label>Genre <input name="genre" placeholder="jazz, rock, ..."></label>
 				</div>
 				<div class="row">
@@ -131,7 +131,7 @@
 					<label>Country <input name="country"></label>
 				</div>
 				<div class="row">
-					<label class="wide">With <span class="chips" data-chips="people"><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
+					<label class="wide">With <span class="chips" data-chips="people" data-field="people"><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
 				</div>
 				<div class="row">
 					<label>Tickets <input name="tickets" type="number" min="0" max="1000"></label>
@@ -171,7 +171,7 @@
 					<label class="wide">Website <input name="url" type="url" placeholder="https://"></label>
 				</div>
 				<div class="row">
-					<label class="wide">With <span class="chips" data-chips="people"><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
+					<label class="wide">With <span class="chips" data-chips="people" data-field="people"><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
 				</div>
 				<div class="row">
 					<label class="wide">Review <input name="review"></label>
@@ -193,7 +193,7 @@
 					<label class="wide">Name <input name="name" required></label>
 				</div>
 				<div class="row">
-					<label class="wide">Organizations <span class="chips" data-chips="organizations"><input list="organization-names" placeholder="Type a name from Organizations" autocomplete="off"></span></label>
+					<label class="wide">Organizations <span class="chips" data-chips="organizations" data-field="organizations"><input list="organization-names" placeholder="Type a name from Organizations" autocomplete="off"></span></label>
 				</div>
 				<div class="row">
 					<label class="wide">Description <input name="description" placeholder="How you know them"></label>

@@ -142,6 +142,14 @@ museum_people = Table(
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
 )
 
+# who was on stage, as people (with: concert_people is who the user went with)
+concert_performers = Table(
+    "concert_performers",
+    Base.metadata,
+    Column("concert_id", ForeignKey("concerts.id", ondelete="CASCADE"), primary_key=True),
+    Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
+)
+
 person_organizations = Table(
     "person_organizations",
     Base.metadata,
@@ -177,6 +185,9 @@ class Person(Base):
     )
     concerts: Mapped[list[Concert]] = relationship(
         secondary=concert_people, back_populates="people",
+    )
+    performed: Mapped[list[Concert]] = relationship(
+        secondary=concert_performers, back_populates="performers",
     )
     museums: Mapped[list[Museum]] = relationship(
         secondary=museum_people, back_populates="people",
@@ -250,8 +261,6 @@ class Concert(_Dated, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(300), nullable=False)
-    # free text names of who was on stage
-    performers: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     event: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     genre: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     venue: Mapped[str] = mapped_column(String(300), nullable=False, default="")
@@ -269,7 +278,10 @@ class Concert(_Dated, Base):
     image_license: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     image_author: Mapped[str] = mapped_column(String(300), nullable=False, default="")
 
+    # who the user went with
     people: Mapped[list[Person]] = relationship(secondary=concert_people, back_populates="concerts")
+    # who was on stage
+    performers: Mapped[list[Person]] = relationship(secondary=concert_performers, back_populates="performed")
 
 
 class Museum(_Dated, Base):

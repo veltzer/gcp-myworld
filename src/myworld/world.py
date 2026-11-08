@@ -74,7 +74,7 @@ def concert_json(concert: Concert) -> dict[str, Any]:
     return {
         "id": concert.id,
         "name": concert.name,
-        "performers": concert.performers,
+        "performers": _refs(concert.performers),
         "event": concert.event,
         "genre": concert.genre,
         **_date_json(concert),
@@ -146,7 +146,7 @@ def _newest_first(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 @bp.route("/api/concerts", methods=["GET"])
 @auth.login_required
 def api_concerts() -> flask.Response:
-    query = select(Concert).where(Concert.owner_id == flask.g.user.id).options(selectinload(Concert.people))
+    query = select(Concert).where(Concert.owner_id == flask.g.user.id).options(selectinload(Concert.people), selectinload(Concert.performers))
     concerts = flask.g.db.execute(query).scalars().all()
     return flask.jsonify(_newest_first([concert_json(c) for c in concerts]))
 
@@ -330,7 +330,7 @@ def _drop_unused_images() -> None:
 
 def _apply_concert(concert: Concert, body: dict[str, Any], current: Concert | None) -> None:
     concert.name = text(body, "name", required=True)
-    concert.performers = _strings(body, "performers")
+    concert.performers = _owned_list(body, "performers", Person)
     concert.event = text(body, "event")
     concert.genre = text(body, "genre")
     concert.venue = text(body, "venue")

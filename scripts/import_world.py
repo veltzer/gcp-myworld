@@ -50,6 +50,7 @@ from myworld.models import (
     Person,
     User,
     concert_people,
+    concert_performers,
     make_engine,
     museum_people,
     person_organizations,
@@ -205,7 +206,9 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     image_dir = source / "static" / "images"
 
     # the link rows explicitly: sqlite does not enforce ON DELETE CASCADE unless asked to
-    session.execute(delete(concert_people).where(concert_people.c.concert_id.in_(select(Concert.id).where(Concert.owner_id == owner.id))))
+    concerts_of_owner = select(Concert.id).where(Concert.owner_id == owner.id)
+    session.execute(delete(concert_people).where(concert_people.c.concert_id.in_(concerts_of_owner)))
+    session.execute(delete(concert_performers).where(concert_performers.c.concert_id.in_(concerts_of_owner)))
     session.execute(delete(museum_people).where(museum_people.c.museum_id.in_(select(Museum.id).where(Museum.owner_id == owner.id))))
     session.execute(delete(person_organizations).where(person_organizations.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
     for model in (Concert, Museum, Person, Organization, OrganizationType, Image):
@@ -277,19 +280,30 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
         people[person.name] = person
         session.add(person)
 
+    listed = set(people)
+
     def with_people(item: dict[str, Any]) -> list[Person]:
         if len(set(item["with"])) != len(item["with"]):
             raise WorldImportError(f"{item['name']!r}: a name appears twice in with")
-        missing = [name for name in item["with"] if name not in people]
+        missing = [name for name in item["with"] if name not in listed]
         if missing:
             raise WorldImportError(f"{item['name']!r}: with names not in people.yaml: {missing}")
         return [people[name] for name in item["with"]]
+
+    def performers(item: dict[str, Any]) -> list[Person]:
+        """ Who was on stage, as people: a name people.yaml does not have becomes a new person. """
+        names = [name.strip() for name in item.get("performers", []) if name.strip()]
+        for name in names:
+            if name not in people:
+                people[name] = Person(owner_id=owner.id, name=name, description="")
+                session.add(people[name])
+        return [people[name] for name in dict.fromkeys(names)]
 
     for item in concert_items:
         session.add(Concert(
             owner_id=owner.id,
             name=item["name"],
-            performers=list(item.get("performers", [])),
+            performers=performers(item),
             event=item.get("event", ""),
             genre=item.get("genre", ""),
             venue=item.get("venue", ""),
