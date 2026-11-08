@@ -789,3 +789,16 @@ button.danger {
 	font-size: 0.85rem;
 	vertical-align: top;
 }
+
+.person-link {
+	color: var(--accent);
+	text-decoration: none;
+}
+
+.person-link:hover {
+	text-decoration: underline;
+}
+
+#people-rows tr.highlight td {
+	background: #eff6ff;
+}

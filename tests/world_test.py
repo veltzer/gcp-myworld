@@ -117,6 +117,7 @@ def test_concerts(imported: webtest.TestApp) -> None:
     assert late["date"] == "2020-01-01T22:30:00Z"
     assert late["date_precision"] == "time"
     assert late["with"] == ["Alice Friend", "Bob Buddy"]
+    assert [p["name"] for p in late["people"]] == ["Alice Friend", "Bob Buddy"]
     assert late["tickets"] == 2
     assert late["broadcast"] is True
     assert month["date"] == "2001-03"
@@ -136,6 +137,13 @@ def test_museums_share_the_first_visit_photo(imported: webtest.TestApp) -> None:
     assert museums[1]["image"] == museums[2]["image"]
     assert museums[2]["rating"] == 9
     assert museums[2]["with"] == ["Bob Buddy"]
+
+
+def test_people_links_point_at_people(imported: webtest.TestApp) -> None:
+    ids = {p["name"]: p["id"] for p in imported.get("/api/people").json}
+    for path in ("/api/concerts", "/api/museums"):
+        for item in imported.get(path).json:
+            assert [ids[p["name"]] for p in item["people"]] == [p["id"] for p in item["people"]]
 
 
 def test_people(imported: webtest.TestApp) -> None:

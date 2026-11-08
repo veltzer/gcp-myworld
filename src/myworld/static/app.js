@@ -524,7 +524,10 @@ async function libraryPage() {
 	setupWorlds();
 	renderKinds();
 	const requested = window.location.hash.slice(1);
-	if (requested in state.config.kinds) {
+	const person = requested.match(/^people\/(\d+)$/);
+	if (person) {
+		await showPerson(Number(person[1]));
+	} else if (requested in state.config.kinds) {
 		await selectKind(requested);
 	} else {
 		await selectWorld(requested in WORLDS ? requested : "concerts");
@@ -592,6 +595,28 @@ function detail(list, label, value) {
 	list.appendChild(li);
 }
 
+// The people who were there, each a link to their row in the People view.
+function peopleDetail(list, people) {
+	if (people.length === 0) {
+		return;
+	}
+	const li = el("li");
+	li.appendChild(el("span", "label", "With"));
+	people.forEach((person, index) => {
+		if (index > 0) {
+			li.append(", ");
+		}
+		const a = el("a", "person-link", person.name);
+		a.href = `/library#people/${person.id}`;
+		a.onclick = (event) => {
+			event.preventDefault();
+			showPerson(person.id).catch((e) => showError(e.message));
+		};
+		li.appendChild(a);
+	});
+	list.appendChild(li);
+}
+
 function cardShell(item, subtitle) {
 	const card = el("article", "world-card");
 	if (item.image) {
@@ -621,7 +646,7 @@ function concertCard(item) {
 	const performers = item.performers.length === 1 && item.performers[0] === item.name ? [] : item.performers;
 	detail(list, "Performers", performers);
 	detail(list, "Genre", item.genre);
-	detail(list, "With", item.with);
+	peopleDetail(list, item.people);
 	detail(list, "Tickets", item.tickets);
 	if (item.broadcast) {
 		detail(list, "Seen", "on TV");
@@ -647,7 +672,7 @@ function museumCard(item) {
 	if (item.rating !== null) {
 		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
 	}
-	detail(list, "With", item.with);
+	peopleDetail(list, item.people);
 	detail(list, "Tickets", item.tickets);
 	detail(list, "Review", item.review);
 	detail(list, "Remark", item.remark);
@@ -674,6 +699,7 @@ function outingList(outings) {
 
 function personRow(person) {
 	const tr = el("tr");
+	tr.id = `person-${person.id}`;
 	tr.append(
 		el("td", "title", person.name),
 		el("td", null, person.company),
@@ -750,6 +776,21 @@ async function selectWorld(view) {
 	if (state.view === view) {
 		renderWorld();
 	}
+}
+
+// Open the People view at one person, scrolled to and highlighted.
+async function showPerson(id) {
+	await selectWorld("people");
+	window.location.hash = `people/${id}`;
+	const row = $(`person-${id}`);
+	if (!row) {
+		return;
+	}
+	for (const old of document.querySelectorAll("#people-rows tr.highlight")) {
+		old.classList.remove("highlight");
+	}
+	row.classList.add("highlight");
+	row.scrollIntoView({ block: "center" });
 }
 
 function setupWorlds() {

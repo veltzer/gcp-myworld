@@ -44,6 +44,11 @@ def _names(people: list[Person]) -> list[str]:
     return sorted(p.name for p in people)
 
 
+def _people_refs(people: list[Person]) -> list[dict[str, Any]]:
+    """ Who was there, with the ids the People view links to. """
+    return [{"id": p.id, "name": p.name} for p in sorted(people, key=lambda p: p.name)]
+
+
 def concert_json(concert: Concert) -> dict[str, Any]:
     return {
         "id": concert.id,
@@ -61,6 +66,7 @@ def concert_json(concert: Concert) -> dict[str, Any]:
         "review": concert.review,
         "remark": concert.remark,
         "with": _names(concert.people),
+        "people": _people_refs(concert.people),
         "image": _image_url(concert.image_id),
         "image_source": concert.image_source,
         "image_license": concert.image_license,
@@ -81,6 +87,7 @@ def museum_json(museum: Museum) -> dict[str, Any]:
         "url": museum.url,
         "tickets": museum.tickets,
         "with": _names(museum.people),
+        "people": _people_refs(museum.people),
         "image": _image_url(museum.image_id),
     }
 
