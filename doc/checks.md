@@ -52,8 +52,9 @@ uses too).
 - `audio-course-reviews`: every finished audio course has a rating and a
   review.
 - `audio-course-covers`: every audio course has a cover.
-- `audio-course-links`: every audio course has a Great Courses slug or an
-  Audible ASIN, so its card links to where it is sold.
+- `audio-course-links`: every audio course has a Great Courses slug, an
+  Audible ASIN or a link (any page about it, for a course no longer
+  sold), so its card links to its page.
 - `audio-course-stalled`: no audio course has been in progress for more
   than a year.
 - `audio-course-duplicates`: no account has two audio courses of the same

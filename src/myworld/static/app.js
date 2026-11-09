@@ -2157,6 +2157,7 @@ const WORLD_BODIES = {
 			great_courses_id: value("great_courses_id"),
 			great_courses_slug: value("great_courses_slug"),
 			audible_asin: value("audible_asin"),
+			link: value("link"),
 			image_id: await uploadPhoto(form),
 		};
 	},

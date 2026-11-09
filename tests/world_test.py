@@ -250,6 +250,13 @@ def test_edit_audio_course(imported: webtest.TestApp) -> None:
     added = imported.post_json("/api/audio-courses", {"name": "New Course", "started": "2024-01-02"}, status=201).json
     assert (added["status"], added["started"]) == ("in_progress", "2024-01-02T00:00:00Z")
     imported.post_json("/api/audio-courses", {"name": "x", "started": "soon"}, status=400)
+    # a course no longer sold links to any page about it; a store page comes first
+    linked = imported.post_json("/api/audio-courses", {"name": "Old Course", "link": "https://example.org/old"}, status=201).json
+    assert (linked["link"], linked["url"]) == ("https://example.org/old", "https://example.org/old")
+    both = imported.put_json(f"/api/audio-courses/{linked['id']}", dict(linked, lecturers=[], audible_asin="B000000000")).json
+    assert both["url"] == "https://www.audible.com/pd/B000000000"
+    imported.post_json("/api/audio-courses", {"name": "x", "link": "javascript:alert(1)"}, status=400)
+    imported.delete(f"/api/audio-courses/{linked['id']}", status=204)
     imported.delete(f"/api/audio-courses/{added['id']}", status=204)
     assert len(imported.get("/api/audio-courses").json) == 2
 

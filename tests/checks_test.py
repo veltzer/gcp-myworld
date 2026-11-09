@@ -240,6 +240,11 @@ def test_audio_courses(engine: Engine) -> None:
             AudioCourse(owner_id=alice.id, name="Good", date_ymd=datetime.date(2020, 1, 1), rating=8, review="Fine", **good),
             # in progress a month: not stalled, and not asked for a review
             AudioCourse(owner_id=alice.id, name="Running", started_utcz=now - datetime.timedelta(days=30), **good),
+            # no longer sold: a link to any page about it will do
+            AudioCourse(
+                owner_id=alice.id, name="Out of print", date_y=2016, rating=7, review="ok",
+                **dict(good, great_courses_slug="", link="https://example.org/course"),
+            ),
             # each of these breaks one rule (or two)
             AudioCourse(owner_id=alice.id, name="Bare", date_y=2019, rating=7, review="ok"),
             AudioCourse(owner_id=alice.id, name="Limbo", **good),
@@ -256,7 +261,7 @@ def test_audio_courses(engine: Engine) -> None:
         assert found("audio-course-lecturers") == [("Bare", "has no lecturer")]
         assert found("audio-course-devices") == [("Bare", "has no device")]
         assert found("audio-course-covers") == [("Bare", "has no cover")]
-        assert found("audio-course-links") == [("Bare", "has neither a Great Courses slug nor an Audible ASIN")]
+        assert found("audio-course-links") == [("Bare", "has no Great Courses slug, Audible ASIN or link")]
         assert found("audio-course-status") == [("Limbo", "has neither a finished date nor a start: is it finished or in progress?")]
         assert found("audio-course-reviews") == [("Unrated", "is finished but has no rating")]
         stalled = checks.CHECKS["audio-course-stalled"].run(session)

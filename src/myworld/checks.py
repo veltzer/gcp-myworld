@@ -370,14 +370,18 @@ def check_audio_course_covers(session: Session) -> Result:
     return Result(checked=len(courses), problems=[_course_problem(c, "has no cover") for c in courses if c.image_id is None])
 
 
-@check("audio-course-links", "Every audio course links to where it is sold", "audio courses")
+@check("audio-course-links", "Every audio course links to its page", "audio courses")
 def check_audio_course_links(session: Session) -> Result:
-    """ Every audio course, of every account, has a Great Courses slug or an Audible ASIN, so its card links to its page. """
+    """
+    Every audio course, of every account, has a Great Courses slug, an
+    Audible ASIN or a link (any page about it, for one no longer sold), so
+    its card links to its page.
+    """
     courses = _courses(session)
     problems = [
-        _course_problem(c, "has neither a Great Courses slug nor an Audible ASIN")
+        _course_problem(c, "has no Great Courses slug, Audible ASIN or link")
         for c in courses
-        if not c.great_courses_slug.strip() and not c.audible_asin.strip()
+        if not c.great_courses_slug.strip() and not c.audible_asin.strip() and not c.link.strip()
     ]
     return Result(checked=len(courses), problems=problems)
 

@@ -460,6 +460,8 @@ class AudioCourse(_Dated, Base):
     great_courses_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     great_courses_slug: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     audible_asin: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    # any other page about the course, for one that is no longer sold
+    link: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     image: Mapped[Image | None] = relationship()
 

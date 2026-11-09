@@ -151,18 +151,19 @@ def audio_course_json(course: AudioCourse) -> dict[str, Any]:
         "great_courses_id": course.great_courses_id,
         "great_courses_slug": course.great_courses_slug,
         "audible_asin": course.audible_asin,
+        "link": course.link,
         "url": _course_url(course),
         "image": _image_url(course.image_id),
     }
 
 
 def _course_url(course: AudioCourse) -> str:
-    """ Where the course is sold: its Great Courses page, or its Audible page. """
+    """ The course's page: where it is sold (The Great Courses, Audible), or else any page about it. """
     if course.great_courses_slug:
         return f"https://www.thegreatcourses.com/courses/{course.great_courses_slug}"
     if course.audible_asin:
         return f"https://www.audible.com/pd/{course.audible_asin}"
-    return ""
+    return course.link
 
 
 def person_json(person: Person) -> dict[str, Any]:
@@ -435,6 +436,9 @@ def _apply_audio_course(course: AudioCourse, body: dict[str, Any], current: Audi
     course.great_courses_id = opt_int(body, "great_courses_id", 1, 2**31 - 1)
     course.great_courses_slug = text(body, "great_courses_slug")
     course.audible_asin = text(body, "audible_asin")
+    course.link = text(body, "link")
+    if course.link and not course.link.startswith(("https://", "http://")):
+        raise ApiError(400, "link: expected an http(s) URL")
     image_id = _owned_image(body)
     if image_id is not None:
         course.image_id = image_id

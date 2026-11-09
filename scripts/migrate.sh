@@ -87,6 +87,7 @@ COLUMNS = [
     ("organizations", "latitude", "REAL"),
     ("organizations", "longitude", "REAL"),
     ("museums", "alone", "BOOLEAN NOT NULL DEFAULT 0"),
+    ("audio_courses", "link", "VARCHAR(1000) NOT NULL DEFAULT ''"),
 ]
 
 url = os.environ.get("DATABASE_URL", "sqlite:///db.gi/myworld.sqlite")
@@ -282,7 +283,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'people' AND column_name IN ('name', 'type_id'))
 	   OR (table_name = 'person_types' AND column_name = 'id')
 	   OR (table_name IN ('museums', 'organizations') AND column_name IN ('address', 'latitude', 'longitude', 'alone'))
-	   OR (table_name = 'audio_courses' AND column_name IN ('device', 'device_id'))
+	   OR (table_name = 'audio_courses' AND column_name IN ('device', 'device_id', 'link'))
 ")"
 
 has() {
@@ -431,6 +432,8 @@ for table in museums organizations; do
 done
 # a museum visit made alone, told apart from one whose company is not filled in
 has "museums.alone:.*" || need museums.alone "ALTER TABLE museums ADD COLUMN alone BOOLEAN NOT NULL DEFAULT false"
+# a page about an audio course that is not sold any more (adding a column: run before the deploy)
+has "audio_courses.link:.*" || need audio_courses.link "ALTER TABLE audio_courses ADD COLUMN link VARCHAR(1000) NOT NULL DEFAULT ''"
 # an audio course's device name -> the account's own devices (drops the name
 # column the new code no longer has: deploy first, then run this right away)
 if has "audio_courses.device:.*"; then
