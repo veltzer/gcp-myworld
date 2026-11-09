@@ -26,6 +26,7 @@ from myworld.models import (
     AudioCourse,
     Concert,
     Device,
+    Group,
     Image,
     Museum,
     Organization,
@@ -79,7 +80,7 @@ def _names(people: list[Person]) -> list[str]:
     return sorted(p.name for p in people)
 
 
-def _refs(rows: list[Person] | list[Organization] | list[PersonType] | list[RelationType]) -> list[dict[str, Any]]:
+def _refs(rows: list[Person] | list[Organization] | list[PersonType] | list[RelationType] | list[Group] | list[Concert]) -> list[dict[str, Any]]:
     """ Names with the ids the People and Organizations views link to. """
     return [{"id": row.id, "name": row.name} for row in sorted(rows, key=lambda row: row.name)]
 
@@ -89,6 +90,8 @@ def concert_json(concert: Concert) -> dict[str, Any]:
         "id": concert.id,
         "name": concert.name,
         "performers": _refs(concert.performers),
+        # the groups (bands) that performed
+        "groups": _refs(concert.groups),
         "event": concert.event,
         "genre": concert.genre,
         **_date_json(concert),
@@ -123,6 +126,18 @@ def place_json(place: Place) -> dict[str, Any]:
         "website": place.website,
         "remark": place.remark,
         "concerts": [{"id": c["id"], "name": c["name"]} for c in concerts],
+    }
+
+
+def group_json(group: Group) -> dict[str, Any]:
+    return {
+        "id": group.id,
+        "name": group.name,
+        "description": group.description,
+        "website": group.website,
+        "members": _refs(group.members),
+        # the concerts it performed at, newest first
+        "concerts": [{"id": c["id"], "name": c["name"]} for c in _newest_first([{"id": c.id, "name": c.name, **_date_json(c)} for c in group.concerts])],
     }
 
 
@@ -249,7 +264,7 @@ def _newest_first(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 @auth.login_required
 def api_concerts() -> flask.Response:
     query = select(Concert).where(Concert.owner_id == flask.g.user.id).options(
-        selectinload(Concert.people), selectinload(Concert.performers), selectinload(Concert.place),
+        selectinload(Concert.people), selectinload(Concert.performers), selectinload(Concert.place), selectinload(Concert.groups),
     )
     concerts = flask.g.db.execute(query).scalars().all()
     return flask.jsonify(_newest_first([concert_json(c) for c in concerts]))
@@ -314,6 +329,14 @@ def api_places() -> flask.Response:
     return flask.jsonify([place_json(p) for p in places])
 
 
+@bp.route("/api/groups", methods=["GET"])
+@auth.login_required
+def api_groups() -> flask.Response:
+    query = select(Group).where(Group.owner_id == flask.g.user.id).options(selectinload(Group.members), selectinload(Group.concerts)).order_by(Group.name)
+    groups = flask.g.db.execute(query).scalars().all()
+    return flask.jsonify([group_json(g) for g in groups])
+
+
 @bp.route("/api/images/<int:image_id>", methods=["GET"])
 @auth.login_required
 def api_image(image_id: int) -> werkzeug.Response:
@@ -376,7 +399,7 @@ def _dates(body: dict[str, Any], current: Concert | Museum | AudioCourse | YouTu
     return out
 
 
-def owned_list[T: (Person, Organization, PersonType, RelationType)](body: dict[str, Any], key: str, model: type[T]) -> list[T]:
+def owned_list[T: (Person, Organization, PersonType, RelationType, Group)](body: dict[str, Any], key: str, model: type[T]) -> list[T]:
     """ body[key], a list of ids of the user's own rows of model, as those rows. """
     ids = body.get(key) or []
     if not isinstance(ids, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
@@ -405,7 +428,7 @@ def owned_image(body: dict[str, Any]) -> int | None:
     return image_id
 
 
-def _owned(model: type[Concert | Museum | AudioCourse | YouTubeVideo | Person | Organization | Place | OrganizationType | PersonType | RelationType | Device], row_id: int) -> Any:
+def _owned(model: type[Concert | Museum | AudioCourse | YouTubeVideo | Person | Organization | Place | Group | OrganizationType | PersonType | RelationType | Device], row_id: int) -> Any:
     row = flask.g.db.get(model, row_id)
     if row is None or row.owner_id != flask.g.user.id:
         raise ApiError(404, "no such entry")
@@ -428,6 +451,7 @@ def drop_unused_images() -> None:
 def _apply_concert(concert: Concert, body: dict[str, Any], current: Concert | None) -> None:
     concert.name = text(body, "name", required=True)
     concert.performers = owned_list(body, "performers", Person)
+    concert.groups = owned_list(body, "groups", Group)
     concert.event = text(body, "event")
     concert.genre = text(body, "genre")
     concert.place = _owned_place(body)
@@ -473,6 +497,19 @@ def _apply_place(place: Place, body: dict[str, Any]) -> None:
     place.latitude, place.longitude = coordinates(body)
     place.website = text(body, "website")
     place.remark = text(body, "remark")
+
+
+def _apply_group(group: Group, body: dict[str, Any]) -> None:
+    name = text(body, "name", required=True)
+    clash = flask.g.db.execute(select(Group.id).where(Group.owner_id == flask.g.user.id, Group.name == name, Group.id != group.id)).first()
+    if clash is not None:
+        raise ApiError(409, f"{name} is already in Groups")
+    # looked up before anything is set on a new group, which is not in the session yet
+    members = owned_list(body, "members", Person)
+    group.name = name
+    group.members = members
+    group.description = text(body, "description")
+    group.website = text(body, "website")
 
 
 def _apply_museum(museum: Museum, body: dict[str, Any], current: Museum | None) -> None:
@@ -751,10 +788,29 @@ def api_places_update(row_id: int) -> flask.Response:
     return flask.jsonify(place_json(place))
 
 
-@bp.route("/api/<any('concert-visits', 'museum-visits', 'audio-courses', 'youtube-videos', people, organizations, places):what>/<int:row_id>", methods=["DELETE"])
+@bp.route("/api/groups", methods=["POST"])
+@auth.login_required
+def api_groups_add() -> tuple[flask.Response, int]:
+    group = Group(owner_id=flask.g.user.id)
+    _apply_group(group, json_body())
+    flask.g.db.add(group)
+    flask.g.db.commit()
+    return flask.jsonify(group_json(group)), 201
+
+
+@bp.route("/api/groups/<int:row_id>", methods=["PUT"])
+@auth.login_required
+def api_groups_update(row_id: int) -> flask.Response:
+    group = _owned(Group, row_id)
+    _apply_group(group, json_body())
+    flask.g.db.commit()
+    return flask.jsonify(group_json(group))
+
+
+@bp.route("/api/<any('concert-visits', 'museum-visits', 'audio-courses', 'youtube-videos', people, organizations, places, groups):what>/<int:row_id>", methods=["DELETE"])
 @auth.login_required
 def api_world_delete(what: str, row_id: int) -> flask.Response:
-    model = {"concert-visits": Concert, "museum-visits": Museum, "audio-courses": AudioCourse, "youtube-videos": YouTubeVideo, "people": Person, "organizations": Organization, "places": Place}[what]
+    model = {"concert-visits": Concert, "museum-visits": Museum, "audio-courses": AudioCourse, "youtube-videos": YouTubeVideo, "people": Person, "organizations": Organization, "places": Place, "groups": Group}[what]
     # the ORM also removes the row's links (to people, to organizations, to concerts and museums);
     # the concerts at a deleted place are kept, with no place
     flask.g.db.delete(_owned(model, row_id))
@@ -849,6 +905,7 @@ def api_stats() -> flask.Response:
         "people": len(people),
         "organizations": len(organizations),
         "places": count(Place),
+        "groups": count(Group),
         "organization_types": count(OrganizationType),
         "person_types": count(PersonType),
         "relation_types": count(RelationType),

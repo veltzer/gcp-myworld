@@ -235,6 +235,7 @@
 					<label class="wide">Event <input name="event" placeholder="Festival, tour, occasion"></label>
 				</div>
 				<div class="row">
+					<label class="wide">Groups <span class="chips" data-chips="groups" data-field="groups"><input list="group-names" placeholder="Type a name from Groups" autocomplete="off"></span></label>
 					<label class="wide">Performers <span class="chips" data-chips="people" data-field="performers"><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
 					<label>Genre <input name="genre" placeholder="jazz, rock, ..."></label>
 				</div>
@@ -419,6 +420,25 @@
 					<button type="submit">Add</button>
 				</div>
 			</form>
+			<form id="group-form" class="dialog-form" hidden>
+				<div class="row">
+					<label class="wide">Name <input name="name" required placeholder="Pink Floyd"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Members <span class="chips" data-chips="people" data-field="members"><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
+				</div>
+				<div class="row">
+					<label class="wide">Description <input name="description" placeholder="jazz trio, rock band, ..."></label>
+				</div>
+				<div class="row">
+					<label class="wide">Website <input name="website" type="url" placeholder="https://"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
 			<form id="place-form" class="dialog-form" hidden>
 				<div class="row">
 					<label class="wide">Name <input name="name" required placeholder="Tmuna Theater"></label>
@@ -496,6 +516,7 @@
 			</form>
 			<datalist id="people-names"></datalist>
 			<datalist id="organization-names"></datalist>
+			<datalist id="group-names"></datalist>
 			<datalist id="person-type-names"></datalist>
 			<datalist id="relation-type-names"></datalist>
 		</dialog>

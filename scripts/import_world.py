@@ -81,6 +81,7 @@ from myworld.models import (
     AudioCourse,
     Concert,
     Device,
+    Group,
     Image,
     Museum,
     Organization,
@@ -95,7 +96,9 @@ from myworld.models import (
     YouTubeVideo,
     audio_course_lecturers,
     concert_companions,
+    concert_groups,
     concert_performers,
+    group_members,
     library_entry_authors,
     make_engine,
     museum_companions,
@@ -357,6 +360,8 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     concerts_of_owner = select(Concert.id).where(Concert.owner_id == owner.id)
     session.execute(delete(concert_companions).where(concert_companions.c.concert_id.in_(concerts_of_owner)))
     session.execute(delete(concert_performers).where(concert_performers.c.concert_id.in_(concerts_of_owner)))
+    session.execute(delete(concert_groups).where(concert_groups.c.concert_id.in_(concerts_of_owner)))
+    session.execute(delete(group_members).where(group_members.c.group_id.in_(select(Group.id).where(Group.owner_id == owner.id))))
     session.execute(delete(museum_companions).where(museum_companions.c.museum_id.in_(select(Museum.id).where(Museum.owner_id == owner.id))))
     session.execute(delete(audio_course_lecturers).where(
         audio_course_lecturers.c.audio_course_id.in_(select(AudioCourse.id).where(AudioCourse.owner_id == owner.id)),
@@ -375,7 +380,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     for entry in session.scalars(select(UserWork).where(UserWork.user_id == owner.id, UserWork.image_id.is_not(None))):
         entry.image_id = None
     session.flush()
-    for model in (AudioCourse, YouTubeVideo, Device, Concert, Place, Museum, Person, Organization, OrganizationType, PersonType, RelationType, Image):
+    for model in (AudioCourse, YouTubeVideo, Device, Concert, Place, Group, Museum, Person, Organization, OrganizationType, PersonType, RelationType, Image):
         session.execute(delete(model).where(model.owner_id == owner.id))
     session.flush()
 

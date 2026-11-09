@@ -26,6 +26,7 @@ from myworld.models import (
     Concert,
     Device,
     DisabledCheck,
+    Group,
     Image,
     Museum,
     Organization,
@@ -525,6 +526,30 @@ def test_concerts(engine: Engine) -> None:
         assert found("concert-photos") == [("Bare", "has no photo")]
         assert [name for name, _ in found("concert-duplicates")] == ["Twice", "twice "]
         assert checks.CHECKS["concert-photos"].run(session).problems[0].link.startswith("concerts/")
+
+
+def test_groups(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(google_sub="alice", email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        roger = Person(owner_id=alice.id, first_name="Roger")
+        floyd = Group(owner_id=alice.id, name="Pink Floyd", members=[roger])
+        session.add_all([
+            # every rule kept: members, and a concert it performed at
+            Concert(owner_id=alice.id, name="The Wall", groups=[floyd]),
+            # each of these breaks rules
+            Group(owner_id=alice.id, name="pink  floyd"),
+        ])
+        session.commit()
+
+        def found(name: str) -> list[tuple[str, str]]:
+            return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS[name].run(session).problems]
+
+        assert found("group-members") == [("pink  floyd", "has no members")]
+        assert found("group-used") == [("pink  floyd", "performed at no concert")]
+        assert [subject for subject, _ in found("group-duplicates")] == ["Pink Floyd", "pink  floyd"]
+        assert checks.CHECKS["group-members"].run(session).problems[0].link == "groups/2"
 
 
 def test_places(engine: Engine) -> None:

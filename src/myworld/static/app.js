@@ -423,7 +423,7 @@ function libraryCard(entry) {
 // The library kinds (books) come first in Datasets, ahead of these
 const NAV_GROUPS = [
 	["Datasets", ["concerts", "museums", "audio-courses", "youtube", "places"]],
-	["People", ["people", "organizations"]],
+	["People", ["people", "groups", "organizations"]],
 	["Types", ["organization-types", "person-types", "relation-types", "devices"]],
 ];
 
@@ -480,7 +480,7 @@ async function loadCounts() {
 	}
 	const keys = {
 		concerts: "concerts", museums: "museum_visits", "audio-courses": "audio_courses", youtube: "youtube_videos",
-		places: "places", people: "people", organizations: "organizations", "organization-types": "organization_types",
+		places: "places", people: "people", groups: "groups", organizations: "organizations", "organization-types": "organization_types",
 		"person-types": "person_types", "relation-types": "relation_types", devices: "devices",
 	};
 	for (const [view, key] of Object.entries(keys)) {
@@ -656,6 +656,11 @@ const SORTS = {
 		["views", "Views", (v) => v.views, "desc"],
 		["duration", "Length", (v) => v.duration, "desc"],
 		["uploaded", "Uploaded", (v) => v.uploaded, "desc"],
+	],
+	groups: [
+		["name", "Name", (g) => g.name, "asc"],
+		["members", "Members", (g) => g.members.length, "desc"],
+		["concerts", "Concerts", (g) => g.concerts.length, "desc"],
 	],
 	places: [
 		["name", "Name", (p) => p.name, "asc"],
@@ -1051,6 +1056,7 @@ const WORLDS = {
 	youtube: ["YouTube videos", "/api/youtube-videos", "YouTube video", "YouTube"],
 	places: ["Places", "/api/places", "place", "Places"],
 	people: ["People", "/api/people", "person", "People"],
+	groups: ["Groups", "/api/groups", "group", "Groups"],
 	organizations: ["Organizations", "/api/organizations", "organization", "Organizations"],
 	"organization-types": ["Organization types", "/api/organization-types", "organization type", "Org"],
 	"person-types": ["Person types", "/api/person-types", "person type", "Person"],
@@ -1408,6 +1414,7 @@ function concertCard(item) {
 	linksDetail(list, "Where", "places", item.place ? [{ id: item.place.id, name: placeName(item.place) }] : []);
 	// a show named after its one performer does not repeat the name
 	const performers = item.performers.length === 1 && item.performers[0].name === item.name ? [] : item.performers;
+	linksDetail(list, "Groups", "groups", item.groups);
 	linksDetail(list, "Performers", "people", performers);
 	detail(list, "Genre", item.genre);
 	linksDetail(list, "With", "people", item.people);
@@ -1443,6 +1450,16 @@ function placeCard(item) {
 	detail(list, "Concerts", String(item.concerts.length));
 	linksDetail(list, "Seen there", "concerts", item.concerts);
 	detail(list, "Remark", item.remark);
+	websiteDetail(list, item.website);
+	return card;
+}
+
+function groupCard(item) {
+	const { card, list } = cardShell(item, item.description);
+	// how many people are in it, always shown (0 too), then who they are
+	detail(list, "Members", String(item.members.length));
+	linksDetail(list, "Who", "people", item.members);
+	linksDetail(list, "Performed at", "concerts", item.concerts);
 	websiteDetail(list, item.website);
 	return card;
 }
@@ -1543,15 +1560,15 @@ function youtubeCard(item) {
 	return card;
 }
 
-const CARDS = { concerts: concertCard, museums: museumCard, "audio-courses": audioCourseCard, youtube: youtubeCard, places: placeCard, organizations: organizationCard };
+const CARDS = { concerts: concertCard, museums: museumCard, "audio-courses": audioCourseCard, youtube: youtubeCard, places: placeCard, groups: groupCard, organizations: organizationCard };
 
 // Material "link"
 const LINK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>';
 
 // Everything that ties a person to the user, grouped, each entry a link to its card.
 async function showConnections(person) {
-	const [concerts, museums, courses, books] = await Promise.all([
-		worldList("concerts"), worldList("museums"), worldList("audio-courses"), api("/api/library-entries?kind=book"),
+	const [concerts, museums, courses, books, bands] = await Promise.all([
+		worldList("concerts"), worldList("museums"), worldList("audio-courses"), api("/api/library-entries?kind=book"), worldList("groups"),
 	]);
 	const has = (list) => list.some((p) => p.id === person.id);
 	// a book is known by its work: #book/<work id>
@@ -1562,13 +1579,14 @@ async function showConnections(person) {
 		["Museums you visited together", "museums", museums.filter((m) => has(m.people))],
 		["Audio courses they taught", "audio-courses", courses.filter((c) => has(c.lecturers))],
 		["Books they wrote", "book", wrote],
+		["Groups they are in", "groups", bands.filter((g) => has(g.members))],
 		["Organizations", "organizations", person.organizations],
 	].filter(([, , items]) => items.length > 0);
 	$("connections-title").textContent = person.name;
 	const body = $("connections-body");
 	body.replaceChildren();
 	if (groups.length === 0) {
-		body.appendChild(el("p", "empty", "No concerts, museums, courses, books or organizations link you yet."));
+		body.appendChild(el("p", "empty", "No concerts, museums, courses, books, groups or organizations link you yet."));
 	}
 	for (const [label, view, items] of groups) {
 		body.appendChild(el("h3", null, `${label} (${items.length})`));
@@ -2403,6 +2421,7 @@ function renderStats(stats) {
 		statTile("YouTube videos", stats.youtube_videos, "", "youtube"),
 		statTile("Places", stats.places, "", "places"),
 		statTile("People", stats.people, "", "people"),
+		statTile("Groups", stats.groups, "", "groups"),
 		statTile("Organizations", stats.organizations, "", "organizations"),
 		statTile("Organization types", stats.organization_types, "", "organization-types"),
 		statTile("Person types", stats.person_types, "", "person-types"),
@@ -2570,7 +2589,7 @@ function setupWorlds() {
 // ─── the add dialog ─────────────────────────────────────────────────────────
 
 // One dialog, opened by the + button, showing the form of whatever is on screen.
-const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "youtube-video-form", "place-form", "person-form", "organization-form", "organization-type-form", "person-type-form", "relation-type-form", "device-form"];
+const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "youtube-video-form", "place-form", "person-form", "group-form", "organization-form", "organization-type-form", "person-type-form", "relation-type-form", "device-form"];
 const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 
 function dialogError(message) {
@@ -2804,6 +2823,7 @@ const WORLD_BODIES = {
 			name: value("name"),
 			event: value("event"),
 			performers: chosen(form, "performers"),
+			groups: chosen(form, "groups"),
 			genre: value("genre"),
 			date: value("date"),
 			date_timezone: state.editing?.date_timezone || where(),
@@ -2839,6 +2859,12 @@ const WORLD_BODIES = {
 			image_id: await uploadPhoto(form),
 		};
 	},
+	groups: async (form) => ({
+		name: form.elements.name.value,
+		members: chosen(form, "members"),
+		description: form.elements.description.value,
+		website: form.elements.website.value,
+	}),
 	places: async (form) => {
 		const value = (name) => form.elements[name].value;
 		return {

@@ -206,6 +206,22 @@ concert_performers = Table(
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
 )
 
+# the groups (bands) that performed at a concert
+concert_groups = Table(
+    "concert_groups",
+    Base.metadata,
+    Column("concert_id", ForeignKey("concert_visits.id", ondelete="CASCADE"), primary_key=True),
+    Column("group_id", ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
+)
+
+# the people a group is made of
+group_members = Table(
+    "group_members",
+    Base.metadata,
+    Column("group_id", ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
+    Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
+)
+
 # who taught an audio course, as people
 audio_course_lecturers = Table(
     "audio_course_lecturers",
@@ -285,6 +301,7 @@ class Person(Base):
     performed: Mapped[list[Concert]] = relationship(
         secondary=concert_performers, back_populates="performers",
     )
+    groups: Mapped[list[Group]] = relationship(secondary=group_members, back_populates="members")
 
     @property
     def name(self) -> str:
@@ -447,6 +464,27 @@ class Concert(_Dated, Base):
     people: Mapped[list[Person]] = relationship(secondary=concert_companions, back_populates="concerts")
     # who was on stage
     performers: Mapped[list[Person]] = relationship(secondary=concert_performers, back_populates="performed")
+    # the groups that performed, each a collection of people
+    groups: Mapped[list[Group]] = relationship(secondary=concert_groups, back_populates="concerts")
+
+
+class Group(Base):
+    """
+    A group of people known by its own name: a band ("Pink Floyd"), a trio,
+    a choir. Its members are the user's people; a concert points to the
+    groups that performed at it.
+    """
+    __tablename__ = "groups"
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_group_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    website: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+
+    members: Mapped[list[Person]] = relationship(secondary=group_members, back_populates="groups", order_by=lambda: Person.id)
+    concerts: Mapped[list[Concert]] = relationship(secondary=concert_groups, back_populates="groups")
 
 
 class Museum(_Dated, _Located, Base):

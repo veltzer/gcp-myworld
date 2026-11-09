@@ -108,6 +108,13 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `youtube-reviews`: every YouTube video has a rating and a review.
 - `youtube-devices`: every YouTube video has the device it was watched on.
 
+### Groups (`groups`)
+
+- `group-members`: every group has at least one member (a person).
+- `group-used`: every group performed at at least one concert.
+- `group-duplicates`: no account has two groups of the same name
+  (ignoring case and spaces).
+
 ### Places (`places`)
 
 - `place-used`: every place has at least one concert that was there.

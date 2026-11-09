@@ -256,7 +256,8 @@ first `companies` tables to `organizations`, then making
 - `GET /api/concert-visits`, `GET /api/museum-visits`: newest first; the date comes as
   precisely as it is known (`date_precision`: time, day, month or year),
   and `people` holds the ids and names of who the user went with; a
-  concert's `performers` are people too (ids and names), and its `place`
+  concert's `performers` are people too (ids and names), its `groups` the
+  groups (bands) that performed (ids and names, written as a list of ids), and its `place`
   is where it was (id, name, city and country; written as `place_id`). A museum visit
   also has `address`, `latitude` and `longitude` (`maps.md`), and `alone`:
   true when the user went alone, which is never sent with people.
@@ -290,6 +291,10 @@ first `companies` tables to `organizations`, then making
 - `GET /api/people`: `first_name`, `surname`, `name` (the two together),
   `types` (ids and names), description and `organizations` (ids and names);
 a person is written with `type_ids`, a list.
+- `GET /api/groups`: by name, with description, website, `members` (the
+  people in it: ids and names, written as a list of ids) and `concerts`
+  (ids and names, newest first). A name is a group once (409 for a
+  second). Deleting a group keeps its people and its concerts.
 - `GET /api/places`: by name, with city, country, address, `latitude`,
   `longitude`, website, remark and `concerts` (ids and names, newest
   first). A name is a place once in each city (409 for a second). Deleting
@@ -298,7 +303,7 @@ a person is written with `type_ids`, a list.
   (how it is related to the user: ids and names of relation types), status, website, location, address, `latitude` and `longitude`, the logo as
   `image`, and `people` (ids and names).
 - `POST` to the same paths adds,
-  `PUT /api/<concert-visits|museum-visits|audio-courses|youtube-videos|places|people|organizations>/<id>` replaces the fields,
+  `PUT /api/<concert-visits|museum-visits|audio-courses|youtube-videos|places|groups|people|organizations>/<id>` replaces the fields,
   `DELETE` removes. The date is sent as `YYYY`, `YYYY-MM` or
   `YYYY-MM-DD` (the add and edit forms pick it with a date picker and a Day, Month
   only or Year only choice, so it is always a real date); a date sent back exactly as it came keeps its stored
@@ -380,14 +385,15 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   one row per thing done (see "Concerts, museums, people and
   organizations").
     - `places` (where things happened: a concert's `place_id` points to
-  one), `people`, `organizations`, `images`.
+  one), `groups` (named groups of people: a band), `people`,
+  `organizations`, `images`.
     - `disabled_checks`: the database checks an admin turned off for
   themselves (see `checks.md`).
     - the user's own enumerations: `organization_types`, `person_types`,
   `relation_types`, `devices`.
     - link tables, named `<row>_<what it links to>`: `concert_companions`
   and `museum_companions` (who the user went with),
-  `concert_performers`, `audio_course_lecturers`, `library_entry_authors`,
+  `concert_performers`, `concert_groups`, `group_members`, `audio_course_lecturers`, `library_entry_authors`,
   `person_organizations`, `person_type_links`,
   `organization_relation_types`.
 

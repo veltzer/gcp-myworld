@@ -302,6 +302,30 @@ def test_concerts(imported: webtest.TestApp) -> None:
     assert late["place"] is None
 
 
+def test_groups(imported: webtest.TestApp) -> None:
+    people = {p["name"]: p["id"] for p in imported.get("/api/people").json}
+    floyd = imported.post_json("/api/groups", {"name": "Pink Floyd", "members": [people["Alice Friend"], people["Bob Buddy"]], "description": "rock band"}, status=201).json
+    assert [m["name"] for m in floyd["members"]] == ["Alice Friend", "Bob Buddy"]
+    assert floyd["concerts"] == []
+    imported.post_json("/api/groups", {"name": "Pink Floyd"}, status=409)
+    imported.post_json("/api/groups", {"name": "Other", "members": [9999]}, status=400)
+    imported.post_json("/api/groups", {"description": "no name"}, status=400)
+    # a concert points to the groups that performed, the user's own only
+    band = next(c for c in imported.get("/api/concert-visits").json if c["name"] == "The Band")
+    concert = imported.put_json(f"/api/concert-visits/{band['id']}", {"name": "The Band", "date": band["date"], "groups": [floyd["id"]]}).json
+    assert concert["groups"] == [{"id": floyd["id"], "name": "Pink Floyd"}]
+    imported.put_json(f"/api/concert-visits/{band['id']}", {"name": "The Band", "groups": [9999]}, status=400)
+    [listed] = imported.get("/api/groups").json
+    assert [c["name"] for c in listed["concerts"]] == ["The Band"]
+    # a member leaving keeps the group; deleting the group keeps the concert and the people
+    imported.put_json(f"/api/groups/{floyd['id']}", {"name": "Pink Floyd", "members": [people["Bob Buddy"]]})
+    assert [m["name"] for m in imported.get("/api/groups").json[0]["members"]] == ["Bob Buddy"]
+    assert imported.get("/api/stats").json["groups"] == 1
+    imported.delete(f"/api/groups/{floyd['id']}", status=204)
+    assert next(c for c in imported.get("/api/concert-visits").json if c["name"] == "The Band")["groups"] == []
+    assert "Bob Buddy" in {p["name"] for p in imported.get("/api/people").json}
+
+
 def test_places(imported: webtest.TestApp) -> None:
     [hall] = imported.get("/api/places").json
     assert (hall["name"], hall["country"], [c["name"] for c in hall["concerts"]]) == ("The Hall", "Israel", ["The Band"])

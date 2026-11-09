@@ -27,6 +27,7 @@ from myworld.models import (
     AudioCourse,
     Concert,
     Device,
+    Group,
     Image,
     Museum,
     Organization,
@@ -39,7 +40,9 @@ from myworld.models import (
     Work,
     YouTubeVideo,
     audio_course_lecturers,
+    concert_groups,
     concert_performers,
+    group_members,
     library_entry_authors,
     museum_companions,
     organization_relation_types,
@@ -94,6 +97,7 @@ DATASETS: dict[str, str] = {
     "audio-courses": "Audio courses",
     "youtube": "YouTube",
     "people": "People",
+    "groups": "Groups",
     "places": "Places",
     "organizations": "Organizations",
     "organization-types": "Org types",
@@ -615,6 +619,46 @@ def check_concert_duplicates(session: Session) -> Result:
 # ─── the user's enumerations: org, person and relation types, devices ───────
 
 type _Enumeration = type[OrganizationType | PersonType | RelationType | Device]
+
+
+# ─── groups ─────────────────────────────────────────────────────────────────
+
+def _groups(session: Session) -> list[Group]:
+    return list(session.scalars(select(Group).order_by(Group.owner_id, Group.name, Group.id)))
+
+
+def _group_problem(group: Group, message: str) -> Problem:
+    return Problem(f"{group.name} (group {group.id}, account {group.owner_id})", message, f"groups/{group.id}", group.owner_id)
+
+
+@check("group-members", "Every group has its members", "groups", "groups")
+def check_group_members(session: Session) -> Result:
+    """ Every group, of every account, has at least one member (a person). """
+    groups, with_members = _groups(session), _ids(session, group_members.c.group_id)
+    return Result(checked=len(groups), problems=[_group_problem(group, "has no members") for group in groups if group.id not in with_members])
+
+
+@check("group-used", "Every group performed somewhere", "groups", "groups")
+def check_group_used(session: Session) -> Result:
+    """ Every group, of every account, performed at at least one concert. """
+    groups, used = _groups(session), _ids(session, concert_groups.c.group_id)
+    return Result(checked=len(groups), problems=[_group_problem(group, "performed at no concert") for group in groups if group.id not in used])
+
+
+@check("group-duplicates", "No group is listed twice", "groups", "groups")
+def check_group_duplicates(session: Session) -> Result:
+    """ No account has two groups of the same name (ignoring case and spaces). """
+    groups = _groups(session)
+    seen: dict[tuple[int, str], list[Group]] = {}
+    for group in groups:
+        seen.setdefault((group.owner_id, " ".join(group.name.lower().split())), []).append(group)
+    problems = [
+        _group_problem(group, f"has the same name as {len(same) - 1} other group{'s' if len(same) > 2 else ''} of the account")
+        for same in seen.values()
+        if len(same) > 1
+        for group in same
+    ]
+    return Result(checked=len(groups), problems=problems)
 
 
 # ─── places ─────────────────────────────────────────────────────────────────
