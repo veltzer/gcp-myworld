@@ -88,6 +88,12 @@ COLUMNS = [
     ("organizations", "longitude", "REAL"),
     ("museums", "alone", "BOOLEAN NOT NULL DEFAULT 0"),
     ("audio_courses", "link", "VARCHAR(1000) NOT NULL DEFAULT ''"),
+    ("youtube_videos", "channel", "VARCHAR(200) NOT NULL DEFAULT ''"),
+    ("youtube_videos", "category", "VARCHAR(100) NOT NULL DEFAULT ''"),
+    ("youtube_videos", "duration", "INTEGER"),
+    ("youtube_videos", "uploaded", "DATE"),
+    ("youtube_videos", "views", "BIGINT"),
+    ("youtube_videos", "unavailable", "BOOLEAN NOT NULL DEFAULT 0"),
 ]
 
 url = os.environ.get("DATABASE_URL", "sqlite:///db.gi/myworld.sqlite")
@@ -102,7 +108,8 @@ db.execute("BEGIN")
 added = []
 for table, column, kind in COLUMNS:
     existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
-    if column not in existing:
+    # a table not there yet is made by the app, with all its columns
+    if existing and column not in existing:
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
         added.append(f"{table}.{column}")
 people = {row[1] for row in db.execute("PRAGMA table_info(people)")}
@@ -284,6 +291,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'person_types' AND column_name = 'id')
 	   OR (table_name IN ('museums', 'organizations') AND column_name IN ('address', 'latitude', 'longitude', 'alone'))
 	   OR (table_name = 'audio_courses' AND column_name IN ('device', 'device_id', 'link'))
+	   OR (table_name = 'youtube_videos' AND column_name IN ('youtube_id', 'channel', 'category', 'duration', 'uploaded', 'views', 'unavailable'))
 ")"
 
 has() {
@@ -434,6 +442,15 @@ done
 has "museums.alone:.*" || need museums.alone "ALTER TABLE museums ADD COLUMN alone BOOLEAN NOT NULL DEFAULT false"
 # a page about an audio course that is not sold any more (adding a column: run before the deploy)
 has "audio_courses.link:.*" || need audio_courses.link "ALTER TABLE audio_courses ADD COLUMN link VARCHAR(1000) NOT NULL DEFAULT ''"
+# what YouTube says about a video (the watch history): adding columns, run before the deploy
+if has "youtube_videos.youtube_id:.*"; then
+	has "youtube_videos.channel:.*" || need youtube_videos.channel "ALTER TABLE youtube_videos ADD COLUMN channel VARCHAR(200) NOT NULL DEFAULT ''"
+	has "youtube_videos.category:.*" || need youtube_videos.category "ALTER TABLE youtube_videos ADD COLUMN category VARCHAR(100) NOT NULL DEFAULT ''"
+	has "youtube_videos.duration:.*" || need youtube_videos.duration "ALTER TABLE youtube_videos ADD COLUMN duration INTEGER"
+	has "youtube_videos.uploaded:.*" || need youtube_videos.uploaded "ALTER TABLE youtube_videos ADD COLUMN uploaded DATE"
+	has "youtube_videos.views:.*" || need youtube_videos.views "ALTER TABLE youtube_videos ADD COLUMN views BIGINT"
+	has "youtube_videos.unavailable:.*" || need youtube_videos.unavailable "ALTER TABLE youtube_videos ADD COLUMN unavailable BOOLEAN NOT NULL DEFAULT false"
+fi
 # an audio course's device name -> the account's own devices (drops the name
 # column the new code no longer has: deploy first, then run this right away)
 if has "audio_courses.device:.*"; then

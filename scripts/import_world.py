@@ -20,9 +20,11 @@ static/images/audiocourse-{gc-<great_courses_id>,audible-<asin>,internal-<n>}.jp
 each lecturer is a person (one of the same name, or a new one), typed Lecturer,
 and each device one of the account's devices (made when first named).
 
-YouTube videos come from data/yaml/video_youtube.yaml; their thumbnails are
-YouTube's own, so there is no image to import. Their devices are the same
-list as the audio courses'.
+YouTube videos come from data/yaml/video_youtube.yaml (the reviewed ones)
+and static/data/youtube.json.gz (the watch history: what YouTube says about
+each video, no date or review); a video in both is one row. Their
+thumbnails are YouTube's own, so there is no image to import. Their devices
+are the same list as the audio courses'.
 
 Everything the user had in these tables is replaced, in one transaction, so
 the script is safe to run again. Unknown fields in the YAML stop the import
@@ -37,7 +39,10 @@ GitHub).
 With --audio-courses only the audio courses are imported, added to what the
 account already has and touching nothing else; it stops if the account has
 audio courses already, rather than replace what was edited since. --youtube
-does the same for the YouTube videos.
+does the same for the YouTube videos. --youtube-history adds the watch
+history to the videos there are: the ones not there yet as new rows, and
+YouTube's details (channel, category, ...) on those already there; it can
+run again.
 
 The database is DATABASE_URL (default: the local sqlite file); for Cloud SQL
 see doc/deploy.md.
@@ -45,7 +50,9 @@ see doc/deploy.md.
 
 import argparse
 import datetime
+import gzip
 import hashlib
+import json
 import mimetypes
 import re
 import sys
@@ -158,6 +165,9 @@ AUDIO_COURSE_FIELDS = DATE_FIELDS | {
     "great_courses_id", "great_courses_slug", "audible_asin", "internal_id",
 }
 YOUTUBE_FIELDS = DATE_FIELDS | {"id", "name", "rating", "review", "device", "location"}
+# the watch history: yt-dlp's names; status "missing" (with video_id) is a video YouTube no longer has
+YOUTUBE_HISTORY_FIELDS = {"title", "webpage_url", "channel", "categories", "duration", "upload_date", "view_count", "status", "video_id"}
+YOUTUBE_WATCH = re.compile(r"https://www\.youtube\.com/watch\?v=([A-Za-z0-9_-]{11})")
 # internal_id only names the image file; it is not stored
 MUSEUM_FIELDS = DATE_FIELDS | {
     "name", "city", "rating", "review", "remark", "url", "tickets", "with", "internal_id",
@@ -476,12 +486,13 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     session.flush()
     courses = import_audio_courses(session, owner, source)
     videos = import_youtube(session, owner, source)
+    history = import_youtube_history(session, owner, source)
     typed = give_types(session, owner)
     return {
         "people": len(people) + courses["lecturers added"], "organizations": len(organizations), "organization types": len(types),
         "relation types": len(relation_types), "person types": len(PERSON_TYPES), "people with a type": typed["people given a type"],
         "concerts": len(concert_items), "museums": len(museum_items), "audio courses": courses["audio courses"],
-        "YouTube videos": videos["YouTube videos"], "devices": courses["devices added"] + videos["devices added"],
+        "YouTube videos": videos["YouTube videos"] + history["YouTube videos added"], "devices": courses["devices added"] + videos["devices added"],
         "images": len(images) + courses["images"],
     }
 
@@ -600,6 +611,65 @@ def import_youtube(session: Session, owner: User, source: Path) -> dict[str, int
     return {"YouTube videos": len(items), "devices added": device.added}
 
 
+def _history_items(source: Path) -> list[dict[str, Any]]:
+    path = source / "static" / "data" / "youtube.json.gz"
+    with gzip.open(path, "rt", encoding="UTF8") as fp:
+        items = json.load(fp)["items"]
+    for item in items:
+        unknown = set(item) - YOUTUBE_HISTORY_FIELDS
+        if unknown:
+            raise WorldImportError(f"{path}: {item.get('webpage_url')!r} has fields this import does not know: {sorted(unknown)}")
+        found = YOUTUBE_WATCH.fullmatch(item["webpage_url"])
+        if found is None:
+            raise WorldImportError(f"{path}: {item['webpage_url']!r} is not a YouTube video link")
+        item["id"] = found.group(1)
+        if item.get("status") not in (None, "missing"):
+            raise WorldImportError(f"{path}: {item['id']}: unknown status {item['status']!r}")
+    return items
+
+
+def _history_details(item: dict[str, Any]) -> dict[str, Any]:
+    """ What YouTube says about a video, as YouTubeVideo columns. """
+    if item.get("status") == "missing":
+        return {"unavailable": True}
+    upload = item.get("upload_date")
+    return {
+        "channel": item.get("channel") or "",
+        "category": item.get("categories") or "",
+        "duration": item.get("duration"),
+        "uploaded": datetime.date.fromisoformat(upload) if upload else None,
+        "views": item.get("view_count"),
+        "unavailable": False,
+    }
+
+
+def import_youtube_history(session: Session, owner: User, source: Path) -> dict[str, int]:
+    """
+    Add owner's YouTube watch history: a new row for each video owner does
+    not have, YouTube's details on each one owner has. Safe to run again. Does not commit.
+    """
+    items = _history_items(source)
+    ids = [item["id"] for item in items]
+    if len(set(ids)) != len(ids):
+        raise WorldImportError("youtube.json.gz: a video is listed twice")
+    have = {v.youtube_id: v for v in session.scalars(select(YouTubeVideo).where(YouTubeVideo.owner_id == owner.id))}
+    added = updated = 0
+    for item in items:
+        details = _history_details(item)
+        video = have.get(item["id"])
+        if video is None:
+            # "Metadata unavailable" is not a name: a video YouTube no longer has keeps none
+            name = "" if details["unavailable"] else item["title"]
+            session.add(YouTubeVideo(owner_id=owner.id, youtube_id=item["id"], name=name, review="", watched_at="", **details))
+            added += 1
+        else:
+            for key, value in details.items():
+                setattr(video, key, value)
+            updated += 1
+    session.flush()
+    return {"YouTube videos added": added, "YouTube videos given details": updated}
+
+
 class Devices:
     """ owner's devices by name: device(name) is the one of that name, made the first time it is named. """
 
@@ -634,6 +704,10 @@ def main() -> int:
         help="import only the YouTube videos, adding them to what the account has (stops if it has YouTube videos already)",
     )
     parser.add_argument(
+        "--youtube-history", action="store_true",
+        help="add the YouTube watch history to the videos the account has (new ones, and details on those there); safe to run again",
+    )
+    parser.add_argument(
         "--only-types", action="store_true",
         help="import nothing: only add the starting types and type the organizations and people that have none",
     )
@@ -644,6 +718,8 @@ def main() -> int:
             owner = find_owner(session, args.email, args.subject)
             if args.only_types:
                 counts = give_types(session, owner)
+            elif args.youtube_history:
+                counts = import_youtube_history(session, owner, args.source)
             elif args.youtube:
                 counts = import_youtube(session, owner, args.source)
             elif args.audio_courses:

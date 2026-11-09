@@ -460,7 +460,8 @@ function renderEntries() {
 }
 
 function showCount(shown, total, what) {
-	$("world-count").textContent = total === 0 ? "" : shown === total ? `${total} ${what}` : `${shown} of ${total} ${what}`;
+	const n = (count) => count.toLocaleString();
+	$("world-count").textContent = total === 0 ? "" : shown === total ? `${n(total)} ${what}` : `${n(shown)} of ${n(total)} ${what}`;
 }
 
 function searchWords() {
@@ -549,6 +550,10 @@ const SORTS = {
 		["date", "Watched", (v) => v.date_sort, "desc"],
 		["name", "Name", (v) => v.name, "asc"],
 		["rating", "Rating", (v) => v.rating, "desc"],
+		["channel", "Channel", (v) => v.channel, "asc"],
+		["views", "Views", (v) => v.views, "desc"],
+		["duration", "Length", (v) => v.duration, "desc"],
+		["uploaded", "Uploaded", (v) => v.uploaded, "desc"],
 	],
 	people: [
 		["first_name", "First name", (p) => p.first_name, "asc"],
@@ -925,7 +930,7 @@ const WORLDS = {
 	concerts: ["My Concerts", "/api/concerts", "concert", "Concerts"],
 	museums: ["My Museums", "/api/museums", "museum", "Museums"],
 	"audio-courses": ["Audio courses", "/api/audio-courses", "audio course", "Audio courses"],
-	youtube: ["YouTube", "/api/youtube", "YouTube video", "YouTube"],
+	youtube: ["YouTube videos", "/api/youtube", "YouTube video", "YouTube"],
 	people: ["People", "/api/people", "person", "People"],
 	organizations: ["Organizations", "/api/organizations", "organization", "Organizations"],
 	"organization-types": ["Organization types", "/api/organization-types", "organization type", "Org types"],
@@ -1345,16 +1350,44 @@ function audioCourseCard(item) {
 	return card;
 }
 
+// 3725 -> "1:02:05", 391 -> "6:31"
+function formatDuration(seconds) {
+	if (seconds === null) {
+		return "";
+	}
+	const [h, m, s] = [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60];
+	const two = (n) => String(n).padStart(2, "0");
+	return h ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
+}
+
 function youtubeCard(item) {
-	const { card, list } = cardShell(item, "");
+	// YouTube's own thumbnail (a grey one when the video is gone); one YouTube
+	// no longer has may have no name: it goes by its id
+	const shown = {
+		...item,
+		name: item.name || `Unavailable video ${item.youtube_id}`,
+		image: `https://i.ytimg.com/vi/${item.youtube_id}/hqdefault.jpg`,
+	};
+	const { card, list } = cardShell(shown, item.channel);
+	// the dialog edits the row as it is, with no name made up for it
+	editable(card, item);
+	if (item.unavailable) {
+		detail(list, "Status", "No longer on YouTube");
+	}
 	detail(list, "Watched", formatDate(item));
+	detail(list, "Category", item.category);
+	detail(list, "Length", formatDuration(item.duration));
+	detail(list, "Uploaded", item.uploaded);
+	if (item.views !== null) {
+		detail(list, "Views", item.views.toLocaleString());
+	}
 	if (item.rating !== null) {
 		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
 	}
 	detail(list, "Review", item.review);
 	detail(list, "Where", item.watched_at);
 	linksDetail(list, "Device", "devices", item.device ? [item.device] : []);
-	websiteDetail(list, item.url);
+	websiteDetail(list, `https://www.youtube.com/watch?v=${item.youtube_id}`);
 	return card;
 }
 
@@ -1526,7 +1559,17 @@ function typeMatches(item) {
 }
 
 // Everything a search can match on, as one lowercase string.
+// what a row is searched by, worked out once per row: there can be 30,000 of them
+const haystacks = new WeakMap();
+
 function haystack(item) {
+	if (!haystacks.has(item)) {
+		haystacks.set(item, buildHaystack(item));
+	}
+	return haystacks.get(item);
+}
+
+function buildHaystack(item) {
 	const values = [];
 	for (const value of Object.values(item)) {
 		if (typeof value === "string") {
@@ -1541,20 +1584,44 @@ function haystack(item) {
 	return values.join(" ").toLowerCase();
 }
 
+// cards drawn at a time: a long list (30,000 YouTube videos) gets a Show more at its end
+const CARDS_PAGE = 200;
+const paging = { key: "", limit: CARDS_PAGE, shown: [] };
+
 function renderWorld() {
 	const view = state.view;
 	const items = worldCache[view] || [];
 	const shown = rankBySearch(sortItems(items.filter((item) => typeMatches(item) && searchMatches(item))));
+	// a new view, search, sort or filter starts again at the first page
+	const sort = currentSort();
+	const key = JSON.stringify([view, $("world-search").value, sort?.field[0], sort?.direction, [...pickedTypes(view)], state.layout]);
+	if (key !== paging.key) {
+		paging.key = key;
+		paging.limit = CARDS_PAGE;
+	}
+	paging.shown = shown;
 	const table = TABLES[view];
 	const map = !table && showsMap();
 	$("cards").hidden = Boolean(table) || map;
-	$("cards").replaceChildren(...(table || map ? [] : shown.map(CARDS[view])));
+	const cards = table || map ? [] : shown.slice(0, paging.limit).map(CARDS[view]);
+	if (!table && !map && shown.length > paging.limit) {
+		const more = el("button", "text show-more", `Show ${Math.min(CARDS_PAGE, shown.length - paging.limit)} more (${shown.length - paging.limit} not shown)`);
+		more.type = "button";
+		more.onclick = () => {
+			paging.limit += CARDS_PAGE;
+			renderWorld();
+		};
+		cards.push(more);
+	}
+	$("cards").replaceChildren(...cards);
 	$("world-map").hidden = !map;
 	for (const [name, [tableId, rowsId, row]] of Object.entries(TABLES)) {
 		$(tableId).hidden = name !== view || shown.length === 0;
 		$(rowsId).replaceChildren(...(name === view ? shown.map(row) : []));
 	}
-	const what = WORLDS[view][0].replace(/^My /, "").toLowerCase();
+	// "Audio courses" -> "audio courses"; a name with capitals inside ("YouTube videos") stays
+	const title = WORLDS[view][0].replace(/^My /, "");
+	const what = /^.+[A-Z]/.test(title) ? title : title.toLowerCase();
 	if (items.length === 0) {
 		$("world-count").textContent = `Nothing here yet: no ${what} for this account.`;
 	} else {
@@ -1742,7 +1809,12 @@ async function runCheck(card) {
 				item.append(problemSubject(problem), document.createTextNode(`: ${problem.message}`));
 				list.appendChild(item);
 			}
-			const toggle = el("button", "text check-toggle", `${result.problems.length} problem${result.problems.length === 1 ? "" : "s"} in ${result.checked} ${result.noun}`);
+			// the server sends the first few hundred of a long list
+			const count = result.problem_count;
+			if (count > result.problems.length) {
+				list.appendChild(el("li", "check-more", `and ${(count - result.problems.length).toLocaleString()} more`));
+			}
+			const toggle = el("button", "text check-toggle", `${count.toLocaleString()} problem${count === 1 ? "" : "s"} in ${result.checked.toLocaleString()} ${result.noun}`);
 			toggle.type = "button";
 			toggle.setAttribute("aria-expanded", "false");
 			toggle.onclick = () => {
@@ -1863,6 +1935,8 @@ function renderStats(stats) {
 		barChart("Organizations by relation (one with several relations counts in each)", stats.organizations_by_relation),
 		yearChart("Concerts per year", stats.concerts_by_year, "concerts"),
 		yearChart("Museum visits per year", stats.museums_by_year, "visits"),
+		barChart("YouTube videos by channel (the most watched)", stats.youtube_by_channel),
+		barChart("YouTube videos by category", stats.youtube_by_category),
 	);
 	$("stats-view").replaceChildren(tiles, charts);
 }
@@ -1934,6 +2008,12 @@ async function refreshWorld() {
 // Open the People or Organizations view at one row or card, scrolled to and highlighted.
 async function showRow(view, id) {
 	await selectWorld(view, `${view}/${id}`);
+	// a card past the pages drawn: draw up to it
+	const at = paging.shown.findIndex((item) => item.id === id);
+	if (!$(`${slug(view)}-${id}`) && at >= paging.limit) {
+		paging.limit = at + 1;
+		renderWorld();
+	}
 	const row = $(`${slug(view)}-${id}`);
 	if (!row) {
 		return;

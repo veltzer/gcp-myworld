@@ -84,6 +84,11 @@ def check(name: str, title: str, noun: str) -> Callable[[Callable[[Session], Res
     return register
 
 
+# the most problems a check sends to the page: enough to work through, not
+# thousands of rows (problem_count still says how many there are)
+PROBLEMS_SHOWN = 500
+
+
 def result_json(chosen: Check, result: Result) -> dict[str, Any]:
     return {
         "name": chosen.name,
@@ -91,7 +96,8 @@ def result_json(chosen: Check, result: Result) -> dict[str, Any]:
         "noun": chosen.noun,
         "checked": result.checked,
         "ok": result.ok,
-        "problems": [dataclasses.asdict(p) for p in result.problems],
+        "problem_count": len(result.problems),
+        "problems": [dataclasses.asdict(p) for p in result.problems[:PROBLEMS_SHOWN]],
     }
 
 

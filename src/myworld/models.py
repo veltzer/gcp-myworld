@@ -19,6 +19,7 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     Column,
@@ -496,6 +497,15 @@ class YouTubeVideo(_Dated, Base):
     device: Mapped[Device | None] = relationship(back_populates="youtube_videos")
     # where it was watched ("Home")
     watched_at: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    # what YouTube says about it (from the watch history): channel, category,
+    # length in seconds, the day it was uploaded and how many views it had
+    channel: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    category: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    uploaded: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    views: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # YouTube no longer has it (deleted or private): only its id is known
+    unavailable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
 
 
 def database_url() -> str:

@@ -247,14 +247,20 @@ first `companies` tables to `organizations`, then making
   concert's `performers` are people too (ids and names). A museum visit
   also has `address`, `latitude` and `longitude` (`maps.md`), and `alone`:
   true when the user went alone, which is never sent with people.
-- `GET /api/youtube`: the YouTube videos watched, newest first, with
-  `youtube_id`, rating, review, `device` (id and name), `watched_at`,
-  and YouTube's own page (`url`) and thumbnail (`image`, from
-  `i.ytimg.com`). `youtube_id` is written as an id or as a link to the
+- `GET /api/youtube`: the YouTube videos watched, newest first (the
+  watch history, with no dates, after), with `youtube_id`, rating,
+  review, `device` (id and name), `watched_at`, and what YouTube says
+  about it: `channel`, `category`, `duration` (seconds), `uploaded`,
+  `views`, and `unavailable` (YouTube no longer has it; such a video may
+  have no name). The page builds YouTube's own page and thumbnail
+  (`i.ytimg.com`) from the id, and draws the cards 200 at a time. `youtube_id` is written as an id or as a link to the
   video (`youtube.com/watch?v=`, `youtu.be/`, `/shorts/`, `/embed/`, `/live/`),
   which is taken apart; an account lists a video once (409). Imported
   from `video_youtube.yaml` in `veltzer.github.io` by
-  `scripts/import_world.py --youtube`.
+  `scripts/import_world.py --youtube`, and the watch history (about
+  30,000 videos, `static/data/youtube.json.gz`) by `--youtube-history`,
+  which can run again.
+- JSON longer than 4 KB is sent gzipped to a client that takes it.
 - `GET /api/people`: `first_name`, `surname`, `name` (the two together),
   `types` (ids and names), description and `organizations` (ids and names);
 a person is written with `type_ids`, a list.

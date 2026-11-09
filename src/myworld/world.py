@@ -179,9 +179,14 @@ def youtube_video_json(video: YouTubeVideo) -> dict[str, Any]:
         "review": video.review,
         "device": None if video.device is None else {"id": video.device.id, "name": video.device.name},
         "watched_at": video.watched_at,
-        # YouTube's own page and thumbnail (a grey one when the video is gone)
-        "url": f"https://www.youtube.com/watch?v={video.youtube_id}",
-        "image": f"https://i.ytimg.com/vi/{video.youtube_id}/hqdefault.jpg",
+        "channel": video.channel,
+        "category": video.category,
+        "duration": video.duration,
+        "uploaded": video.uploaded.isoformat() if video.uploaded else "",
+        "views": video.views,
+        "unavailable": video.unavailable,
+        # the page and the thumbnail are YouTube's, by youtube_id: the page
+        # builds their URLs itself, which keeps 30,000 rows a quarter shorter
     }
 
 
@@ -495,7 +500,8 @@ def _apply_youtube_video(video: YouTubeVideo, body: dict[str, Any], current: You
     )).first()
     if clash is not None:
         raise ApiError(409, "that video is in your list already")
-    video.name = text(body, "name", required=True)
+    # one YouTube no longer has may have no name: only its id is known
+    video.name = text(body, "name", required=not video.unavailable)
     video.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
     video.review = text(body, "review")
     video.device = _owned_type(Device, opt_int(body, "device_id", 1, 2**31 - 1))
@@ -693,6 +699,19 @@ def _by_type(counts: dict[str, int]) -> list[dict[str, Any]]:
     return [{"name": name, "count": count} for name, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
+# the YouTube channels on the Stats page: the ones watched most
+TOP_CHANNELS = 15
+
+
+def _youtube_by(column: Any, limit: int | None = None) -> list[dict[str, Any]]:
+    """ The user's YouTube videos counted by column (channel, category), most first; those without one are left out. """
+    rows = flask.g.db.execute(
+        select(column, func.count()).where(YouTubeVideo.owner_id == flask.g.user.id, column != "")
+        .group_by(column).order_by(func.count().desc(), column).limit(limit),
+    ).all()
+    return [{"name": name, "count": count} for name, count in rows]
+
+
 @bp.route("/api/stats", methods=["GET"])
 @auth.login_required
 def api_stats() -> flask.Response:
@@ -758,6 +777,8 @@ def api_stats() -> flask.Response:
         "organizations_by_relation": _by_type(organizations_by_relation),
         "concerts_by_year": _per_year(list(concerts)),
         "museums_by_year": _per_year(list(museums)),
+        "youtube_by_channel": _youtube_by(YouTubeVideo.channel, TOP_CHANNELS),
+        "youtube_by_category": _youtube_by(YouTubeVideo.category),
     })
 
 

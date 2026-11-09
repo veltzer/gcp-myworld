@@ -855,6 +855,13 @@ button.danger {
 	display: none;
 }
 
+/* the end of a long list: the rest, a page at a time; across the whole grid */
+.show-more {
+	grid-column: 1 / -1;
+	justify-self: center;
+	white-space: nowrap;
+}
+
 .world-card {
 	position: relative;
 	display: flex;
@@ -1651,6 +1658,11 @@ button.text.check-toggle {
 
 .check-subject {
 	font-weight: 600;
+}
+
+.check-more {
+	list-style: none;
+	color: var(--muted);
 }
 
 /* ─── the map layout ─────────────────────────────────────────────────────── */

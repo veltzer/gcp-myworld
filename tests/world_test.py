@@ -2,8 +2,11 @@
 The concerts, museums, people and organizations: the import script and the API.
 """
 
+import gzip
+import json
 from pathlib import Path
 
+import flask
 import import_world
 import pytest
 import webtest
@@ -157,6 +160,20 @@ items:
 """
 
 
+# the watch history, as yt-dlp left it: one also in YOUTUBE, one new, one YouTube no longer has
+YOUTUBE_HISTORY = {"items": [
+    {
+        "categories": "News & Politics", "channel": "OxfordUnion", "duration": 3725, "title": "BDS Movement Debate",
+        "upload_date": "2015-11-10", "view_count": 123456, "webpage_url": "https://www.youtube.com/watch?v=5jqXEzplxeo",
+    },
+    {
+        "categories": "Entertainment", "channel": "agadmator's Chess Channel", "duration": 391, "title": "Carlsen Crushes a GM",
+        "upload_date": "2017-09-28", "view_count": 1000, "webpage_url": "https://www.youtube.com/watch?v=-0-EI_f9oXs",
+    },
+    {"status": "missing", "title": "Metadata unavailable", "video_id": "-0dYmE1lyw4", "webpage_url": "https://www.youtube.com/watch?v=-0dYmE1lyw4"},
+]}
+
+
 # by the logo convention (doc/logos.md), so the checks pass on imported data
 LOGO = b'<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="-1 -1 12 12"><rect width="10" height="10"/></svg>'
 
@@ -168,6 +185,9 @@ def write_source(root: Path, concerts: str = CONCERTS) -> Path:
     for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("video_youtube", YOUTUBE)):
         (root / "data" / "yaml" / f"{name}.yaml").write_text(text, encoding="UTF8")
     (root / "data" / "logos" / "acme.svg").write_bytes(LOGO)
+    (root / "static" / "data").mkdir(parents=True)
+    with gzip.open(root / "static" / "data" / "youtube.json.gz", "wt", encoding="UTF8") as fp:
+        json.dump(YOUTUBE_HISTORY, fp)
     (root / "static" / "images" / "concert-the-band.jpg").write_bytes(b"\xff\xd8band")
     (root / "static" / "images" / "museum-15.jpg").write_bytes(b"\xff\xd8louvre")
     (root / "static" / "images" / "audiocourse-gc-337.jpg").write_bytes(b"\xff\xd8greeks")
@@ -187,7 +207,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         session.commit()
     assert counts == {
         "people": 5, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 5, "people with a type": 5,
-        "concerts": 3, "museums": 3, "audio courses": 2, "YouTube videos": 2, "devices": 3, "images": 5}
+        "concerts": 3, "museums": 3, "audio courses": 2, "YouTube videos": 4, "devices": 3, "images": 5}
     return app
 
 
@@ -322,12 +342,19 @@ def test_audio_courses_import_adds_once(imported: webtest.TestApp, engine: Engin
 
 def test_youtube(imported: webtest.TestApp) -> None:
     videos = imported.get("/api/youtube").json
-    # newest first
-    assert [v["youtube_id"] for v in videos] == ["5jqXEzplxeo", "VNIRUigPxA8"]
-    debate = videos[0]
+    # newest first; the watch history has no dates, so comes after, by name
+    assert [v["youtube_id"] for v in videos] == ["5jqXEzplxeo", "VNIRUigPxA8", "-0-EI_f9oXs", "-0dYmE1lyw4"]
+    debate, _, chess, gone = videos
+    # in both files: one row, with the review and YouTube's details
+    assert (debate["review"], debate["channel"], debate["category"], debate["duration"], debate["uploaded"], debate["views"]) == (
+        "interesting debate", "OxfordUnion", "News & Politics", 3725, "2015-11-10", 123456)
+    assert (chess["name"], chess["date"], chess["review"], chess["unavailable"]) == ("Carlsen Crushes a GM", None, "", False)
+    # one YouTube no longer has: only its id, no name, and it can be edited without one
+    assert (gone["name"], gone["unavailable"], gone["channel"]) == ("", True, "")
+    assert imported.put_json(f"/api/youtube/{gone['id']}", dict(gone, device_id="", rating=5)).json["rating"] == 5
     assert (debate["date"], debate["rating"], debate["watched_at"], debate["device"]["name"]) == ("2015-11-30T16:24:31Z", 7, "Home", "Desktop")
-    assert debate["url"] == "https://www.youtube.com/watch?v=5jqXEzplxeo"
-    assert debate["image"] == "https://i.ytimg.com/vi/5jqXEzplxeo/hqdefault.jpg"
+    # the page builds YouTube's URLs from the id
+    assert "url" not in debate and "image" not in debate
     # a link pasted in place of the id is taken apart
     added = imported.post_json("/api/youtube", {"name": "Talk", "youtube_id": "https://youtu.be/JbNJoHFsQnc?t=10", "date": "2024-05-01"}, status=201).json
     assert added["youtube_id"] == "JbNJoHFsQnc"
@@ -338,7 +365,33 @@ def test_youtube(imported: webtest.TestApp) -> None:
     imported.put_json(f"/api/youtube/{added['id']}", dict(body, youtube_id="JbNJoHFsQncS"), status=400)
     imported.post_json("/api/youtube", {"name": "Again", "youtube_id": "5jqXEzplxeo"}, status=409)
     imported.delete(f"/api/youtube/{added['id']}", status=204)
-    assert len(imported.get("/api/youtube").json) == 2
+    assert len(imported.get("/api/youtube").json) == 4
+
+
+def test_youtube_history_runs_again(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    del imported
+    source = tmp_path / "again"
+    write_source(source)
+    with Session(engine) as session:
+        counts = import_world.import_youtube_history(session, owner(session), source)
+        session.commit()
+    # nothing new: every video is there, and gets its details again
+    assert counts == {"YouTube videos added": 0, "YouTube videos given details": 3}
+
+
+def test_long_json_is_gzipped(imported: webtest.TestApp) -> None:
+    # small: sent as it is
+    small = imported.get("/api/youtube", headers={"Accept-Encoding": "gzip"})
+    assert "Accept-Encoding" not in small.headers.get("Vary", "")
+    # long: gzipped (WebTest takes the gzip apart again, so what is left to see is the Vary)
+    flask_app = imported.app
+    assert isinstance(flask_app, flask.Flask)
+    flask_app.config["GZIP_MIN_BYTES"] = 10
+    zipped = imported.get("/api/youtube", headers={"Accept-Encoding": "gzip"})
+    assert "Accept-Encoding" in zipped.headers["Vary"]
+    assert len(zipped.json) == 4
+    # a client that does not take gzip gets it plain
+    assert "Accept-Encoding" not in imported.get("/api/youtube").headers.get("Vary", "")
 
 
 def test_youtube_import_adds_once(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
