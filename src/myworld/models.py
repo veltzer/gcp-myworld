@@ -304,6 +304,13 @@ class Person(Base):
         secondary=concert_performers, back_populates="performers",
     )
     groups: Mapped[list[Group]] = relationship(secondary=group_members, back_populates="members")
+    # how this person is related to other people ("Mother of" Dana), and how others are related to them
+    relations: Mapped[list[PersonRelation]] = relationship(
+        foreign_keys=lambda: PersonRelation.person_id, back_populates="person", cascade="all, delete-orphan", order_by=lambda: PersonRelation.id,
+    )
+    related: Mapped[list[PersonRelation]] = relationship(
+        foreign_keys=lambda: PersonRelation.other_id, back_populates="other", cascade="all, delete-orphan", order_by=lambda: PersonRelation.id,
+    )
 
     @property
     def name(self) -> str:
@@ -343,6 +350,43 @@ organization_relation_types = Table(
     Column("organization_id", ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True),
     Column("relation_type_id", ForeignKey("relation_types.id", ondelete="CASCADE"), primary_key=True),
 )
+
+
+class PersonRelationType(Base):
+    """
+    How one person is related to another: "Mother of", "Brother of", "Wife
+    of". An enumeration the user keeps themselves (the Person relations
+    page). The inverse is how it reads from the other person's side ("Child
+    of"); empty when it reads the same both ways ("Friend of").
+    """
+    __tablename__ = "person_relation_types"
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_person_relation_type_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    inverse: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    @property
+    def inverse_name(self) -> str:
+        """ How the relation reads from the other side. """
+        return self.inverse or self.name
+
+
+class PersonRelation(Base):
+    """ One person's relation to another: person is relation_type of other ("Ruth" is "Mother of" "Dana"). """
+    __tablename__ = "person_relations"
+    __table_args__ = (UniqueConstraint("person_id", "relation_type_id", "other_id", name="uq_person_relation"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    person_id: Mapped[int] = mapped_column(ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+    relation_type_id: Mapped[int] = mapped_column(ForeignKey("person_relation_types.id", ondelete="CASCADE"), nullable=False, index=True)
+    other_id: Mapped[int] = mapped_column(ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    person: Mapped[Person] = relationship(foreign_keys=[person_id], back_populates="relations")
+    relation_type: Mapped[PersonRelationType] = relationship()
+    other: Mapped[Person] = relationship(foreign_keys=[other_id], back_populates="related")
 
 
 class RelationType(Base):

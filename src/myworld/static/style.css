@@ -1227,6 +1227,16 @@ button.danger {
 	white-space: nowrap;
 }
 
+/* a relation with its person ("Mother of Dana") is one value: never split */
+.nowrap {
+	white-space: nowrap;
+}
+
+/* the relations in the person form: chips, or a quiet "None yet" */
+#person-relations .empty {
+	color: var(--muted);
+}
+
 /* names and types in the people and type tables stay on one line too */
 #world-view .entries td.title {
 	white-space: nowrap;

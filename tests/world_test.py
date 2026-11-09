@@ -302,6 +302,37 @@ def test_concerts(imported: webtest.TestApp) -> None:
     assert late["place"] is None
 
 
+def test_person_relations(imported: webtest.TestApp) -> None:
+    kinds = {k["name"]: k for k in imported.get("/api/person-relation-types").json}
+    # the import starts the user with the family relations, each with how it reads the other way
+    assert (kinds["Mother of"]["inverse"], kinds["Wife of"]["inverse"]) == ("Child of", "Spouse of")
+    people = {p["name"]: p["id"] for p in imported.get("/api/people").json}
+    alice, bob = people["Alice Friend"], people["Bob Buddy"]
+    ann = imported.post_json("/api/people", {"first_name": "Ann", "relations": [{"type_id": kinds["Mother of"]["id"], "person_id": alice}]}, status=201).json
+    assert [r["name"] for r in ann["relations"]] == ["Mother of Alice Friend"]
+    # from the other side it reads the other way
+    listed = {p["name"]: p for p in imported.get("/api/people").json}
+    assert [(r["type"], r["person"]["id"]) for r in listed["Alice Friend"]["related"]] == [("Child of", ann["id"])]
+    # one that reads the same both ways has no inverse
+    friend = imported.post_json("/api/person-relation-types", {"name": "Friend of", "description": "A friend"}, status=201).json
+    imported.put_json(f"/api/people/{bob}", {"first_name": "Bob", "surname": "Buddy", "relations": [{"type_id": friend["id"], "person_id": alice}]})
+    assert "Friend of Bob Buddy" in [r["name"] for r in next(p for p in imported.get("/api/people").json if p["id"] == alice)["related"]]
+    # an edit without relations keeps them; the user's own types and people only, never oneself
+    imported.put_json(f"/api/people/{ann['id']}", {"first_name": "Ann", "description": "x"})
+    assert len(next(p for p in imported.get("/api/people").json if p["id"] == ann["id"])["relations"]) == 1
+    for bad in ([{"type_id": 9999, "person_id": alice}], [{"type_id": friend["id"], "person_id": 9999}], [{"type_id": friend["id"], "person_id": ann["id"]}], "Alice", [{"type_id": "1"}]):
+        imported.put_json(f"/api/people/{ann['id']}", {"first_name": "Ann", "relations": bad}, status=400)
+    # a relation type in use cannot go; its count says how many relations are of it
+    assert next(k for k in imported.get("/api/person-relation-types").json if k["name"] == "Mother of")["count"] == 1
+    imported.delete(f"/api/person-relation-types/{kinds['Mother of']['id']}", status=409)
+    # deleting a person takes their relations, both ways, with them
+    imported.delete(f"/api/people/{ann['id']}", status=204)
+    assert next(p for p in imported.get("/api/people").json if p["id"] == alice)["related"] == [
+        {"type_id": friend["id"], "type": "Friend of", "person": {"id": bob, "name": "Bob Buddy"}, "name": "Friend of Bob Buddy"},
+    ]
+    imported.delete(f"/api/person-relation-types/{kinds['Mother of']['id']}", status=204)
+
+
 def test_groups(imported: webtest.TestApp) -> None:
     people = {p["name"]: p["id"] for p in imported.get("/api/people").json}
     floyd = imported.post_json("/api/groups", {"name": "Pink Floyd", "members": [people["Alice Friend"], people["Bob Buddy"]], "description": "rock band"}, status=201).json
@@ -640,7 +671,7 @@ def test_people(imported: webtest.TestApp) -> None:
     assert [c["name"] for c in alice["organizations"]] == ["Startup"]
     assert [c["name"] for c in bob["organizations"]] == ["Acme", "Startup"]
     # only the person and their organizations: their concerts and museums are not listed next to them
-    assert set(alice) == {"id", "name", "honorific", "first_name", "middle_name", "surname", "types", "organizations", "description"}
+    assert set(alice) == {"id", "name", "honorific", "first_name", "middle_name", "surname", "relations", "related", "types", "organizations", "description"}
 
 
 def test_organizations(imported: webtest.TestApp) -> None:

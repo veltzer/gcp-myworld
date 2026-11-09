@@ -87,6 +87,8 @@ from myworld.models import (
     Organization,
     OrganizationType,
     Person,
+    PersonRelation,
+    PersonRelationType,
     PersonType,
     Place,
     RelationType,
@@ -151,6 +153,18 @@ PERSON_TYPES = {
     "Co-Worker": "Someone worked with",
     "Lecturer": "Someone who taught a course I took",
     "Book Author": "Someone who wrote a book I read or own",
+}
+# how people are related to each other, every import starts the user with:
+# name -> (inverse, how it reads from the other side; description)
+PERSON_RELATION_TYPES = {
+    "Mother of": ("Child of", "She gave birth to them or raised them"),
+    "Father of": ("Child of", "He fathered them or raised them"),
+    "Son of": ("Parent of", "He is their son"),
+    "Daughter of": ("Parent of", "She is their daughter"),
+    "Brother of": ("Sibling of", "He shares a parent with them"),
+    "Sister of": ("Sibling of", "She shares a parent with them"),
+    "Husband of": ("Spouse of", "He is married to them"),
+    "Wife of": ("Spouse of", "She is married to them"),
 }
 # the relation types (how an organization is related to the user) every import
 # starts the user with, by the word organizations.yaml uses in its functions
@@ -306,7 +320,8 @@ def _starting_types[T: (OrganizationType, PersonType, RelationType)](
 
 def give_types(session: Session, owner: User) -> dict[str, int]:
     """
-    Add the starting organization and person types owner does not have yet,
+    Add the starting organization and person types, organization relation
+    types and person relation types owner does not have yet,
     and give every organization and person of theirs without a type one
     (organizations by name, else Company; people by _person_type), leaving
     everything else as it is. Does not commit.
@@ -314,7 +329,13 @@ def give_types(session: Session, owner: User) -> dict[str, int]:
     org_types, org_added = _starting_types(session, owner, OrganizationType, ORGANIZATION_TYPES)
     person_types, person_added = _starting_types(session, owner, PersonType, PERSON_TYPES)
     _, relation_added = _starting_types(session, owner, RelationType, dict(RELATION_TYPES.values()))
-    added = org_added + person_added + relation_added
+    have = set(session.scalars(select(PersonRelationType.name).where(PersonRelationType.owner_id == owner.id)))
+    person_relation_added = 0
+    for name, (inverse, description) in PERSON_RELATION_TYPES.items():
+        if name not in have:
+            session.add(PersonRelationType(owner_id=owner.id, name=name, inverse=inverse, description=description))
+            person_relation_added += 1
+    added = org_added + person_added + relation_added + person_relation_added
     typed = 0
     for organization in session.scalars(select(Organization).where(Organization.owner_id == owner.id, Organization.type_id.is_(None))):
         organization.type = org_types[type_for(organization.name)]
@@ -366,6 +387,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     session.execute(delete(audio_course_lecturers).where(
         audio_course_lecturers.c.audio_course_id.in_(select(AudioCourse.id).where(AudioCourse.owner_id == owner.id)),
     ))
+    session.execute(delete(PersonRelation).where(PersonRelation.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
     session.execute(delete(person_type_links).where(person_type_links.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
     session.execute(delete(person_organizations).where(person_organizations.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
     session.execute(delete(organization_relation_types).where(
@@ -380,7 +402,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     for entry in session.scalars(select(UserWork).where(UserWork.user_id == owner.id, UserWork.image_id.is_not(None))):
         entry.image_id = None
     session.flush()
-    for model in (AudioCourse, YouTubeVideo, Device, Concert, Place, Group, Museum, Person, Organization, OrganizationType, PersonType, RelationType, Image):
+    for model in (AudioCourse, YouTubeVideo, Device, Concert, Place, Group, Museum, Person, Organization, OrganizationType, PersonType, RelationType, PersonRelationType, Image):
         session.execute(delete(model).where(model.owner_id == owner.id))
     session.flush()
 

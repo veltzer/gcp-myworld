@@ -162,7 +162,7 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `person-type-duplicates`: no account has two person types of the same
   name (ignoring case and spaces at the ends).
 
-### Relation types (`relation-types`)
+### Org relation types (`relation-types`)
 
 - `relation-type-used`: every relation type, of every account, is used
   by at least one row; one used by nothing can go.
@@ -170,6 +170,15 @@ By dataset: the key is the page's name in the app (`#book`) and what
   has a description, so its tooltip and page say what it means.
 - `relation-type-duplicates`: no account has two relation types of the
   same name (ignoring case and spaces at the ends).
+
+### Person relation types (`person-relation-types`)
+
+- `person-relation-type-used`: every person relation type, of every
+  account, is used by at least one relation; one used by nothing can go.
+- `person-relation-type-descriptions`: every person relation type, of
+  every account, has a description.
+- `person-relation-type-duplicates`: no account has two person relation
+  types of the same name (ignoring case and spaces at the ends).
 
 ### Devices (`devices`)
 

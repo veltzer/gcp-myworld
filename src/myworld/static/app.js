@@ -424,7 +424,7 @@ function libraryCard(entry) {
 const NAV_GROUPS = [
 	["Datasets", ["concerts", "museums", "audio-courses", "youtube", "places"]],
 	["People", ["people", "groups", "organizations"]],
-	["Types", ["organization-types", "person-types", "relation-types", "devices"]],
+	["Types", ["organization-types", "person-types", "relation-types", "person-relation-types", "devices"]],
 ];
 
 function sideLink(label, key, open) {
@@ -481,7 +481,7 @@ async function loadCounts() {
 	const keys = {
 		concerts: "concerts", museums: "museum_visits", "audio-courses": "audio_courses", youtube: "youtube_videos",
 		places: "places", people: "people", groups: "groups", organizations: "organizations", "organization-types": "organization_types",
-		"person-types": "person_types", "relation-types": "relation_types", devices: "devices",
+		"person-types": "person_types", "relation-types": "relation_types", "person-relation-types": "person_relation_types", devices: "devices",
 	};
 	for (const [view, key] of Object.entries(keys)) {
 		setCount(view, stats[key]);
@@ -694,6 +694,11 @@ const SORTS = {
 	"relation-types": [
 		["name", "Name", (t) => t.name, "asc"],
 		["count", "Organizations", (t) => t.count, "desc"],
+	],
+	"person-relation-types": [
+		["name", "Name", (t) => t.name, "asc"],
+		["inverse", "Other way", (t) => t.inverse, "asc"],
+		["count", "Relations", (t) => t.count, "desc"],
 	],
 	devices: [
 		["name", "Name", (t) => t.name, "asc"],
@@ -1061,7 +1066,8 @@ const WORLDS = {
 	organizations: ["Organizations", "/api/organizations", "organization", "Organizations"],
 	"organization-types": ["Organization types", "/api/organization-types", "organization type", "Org"],
 	"person-types": ["Person types", "/api/person-types", "person type", "Person"],
-	"relation-types": ["Relation types", "/api/relation-types", "relation type", "Relations"],
+	"relation-types": ["Relation types", "/api/relation-types", "relation type", "Org relations"],
+	"person-relation-types": ["Person relation types", "/api/person-relation-types", "person relation type", "Person relations"],
 	devices: ["Devices", "/api/devices", "device", "Devices"],
 };
 
@@ -1581,6 +1587,8 @@ async function showConnections(person) {
 		["Audio courses they taught", "audio-courses", courses.filter((c) => has(c.lecturers))],
 		["Books they wrote", "book", wrote],
 		["Groups they are in", "groups", bands.filter((g) => has(g.members))],
+		// how they are related to other people, both ways; each links to the other person
+		["Related people", "people", [...person.relations, ...person.related].map((r) => ({ id: r.person.id, name: r.name }))],
 		["Organizations", "organizations", person.organizations],
 	].filter(([, , items]) => items.length > 0);
 	$("connections-title").textContent = person.name;
@@ -1620,6 +1628,8 @@ function personRow(person) {
 	appendLinks(kind, "person-types", person.types);
 	const organizations = el("td");
 	appendLinks(organizations, "organizations", person.organizations);
+	const relations = el("td");
+	appendRelations(relations, person);
 	const links = el("td", "actions");
 	const button = el("button", "icon-button");
 	button.type = "button";
@@ -1628,7 +1638,7 @@ function personRow(person) {
 	button.innerHTML = LINK_ICON;
 	button.onclick = () => showConnections(person).catch((e) => showError(e.message));
 	links.appendChild(button);
-	tr.append(el("td", "title", person.honorific), el("td", "title", person.first_name), el("td", "title", person.middle_name), el("td", "title", person.surname), kind, organizations, el("td", null, person.description), links);
+	tr.append(el("td", "title", person.honorific), el("td", "title", person.first_name), el("td", "title", person.middle_name), el("td", "title", person.surname), kind, organizations, relations, el("td", null, person.description), links);
 	editable(tr, person);
 	return tr;
 }
@@ -1642,12 +1652,34 @@ function typeRow(kind) {
 	return tr;
 }
 
+// A person relation type, with how it reads the other way ("Mother of" / "Child of")
+function personRelationTypeRow(kind) {
+	const tr = el("tr");
+	tr.id = `${slug(state.view)}-${kind.id}`;
+	tr.append(el("td", "title", kind.name), el("td", "title", kind.inverse || kind.name), el("td", null, kind.description), el("td", "number", kind.count));
+	editable(tr, kind);
+	return tr;
+}
+
+// A person's relations to other people, both ways: "Mother of Dana, Child of Ruth"
+function appendRelations(parent, person) {
+	[...person.relations, ...person.related].forEach((relation, index) => {
+		if (index > 0) {
+			parent.append(", ");
+		}
+		const tie = el("span", "nowrap", `${relation.type} `);
+		appendLinks(tie, "people", [relation.person]);
+		parent.appendChild(tie);
+	});
+}
+
 // views shown as a table rather than cards: view -> [table id, tbody id, row maker]
 const TABLES = {
 	people: ["people", "people-rows", personRow],
 	"organization-types": ["types", "type-rows", typeRow],
 	"person-types": ["person-types-table", "person-type-rows", typeRow],
 	"relation-types": ["relation-types-table", "relation-type-rows", typeRow],
+	"person-relation-types": ["person-relation-types-table", "person-relation-type-rows", personRelationTypeRow],
 	devices: ["devices-table", "device-rows", typeRow],
 };
 
@@ -2426,7 +2458,8 @@ function renderStats(stats) {
 		statTile("Organizations", stats.organizations, "", "organizations"),
 		statTile("Organization types", stats.organization_types, "", "organization-types"),
 		statTile("Person types", stats.person_types, "", "person-types"),
-		statTile("Relation types", stats.relation_types, "", "relation-types"),
+		statTile("Org relation types", stats.relation_types, "", "relation-types"),
+		statTile("Person relation types", stats.person_relation_types, "", "person-relation-types"),
 		statTile("Devices", stats.devices, "", "devices"),
 		statTile("Photos and logos", stats.images, "", null),
 	);
@@ -2590,7 +2623,7 @@ function setupWorlds() {
 // ─── the add dialog ─────────────────────────────────────────────────────────
 
 // One dialog, opened by the + button, showing the form of whatever is on screen.
-const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "youtube-video-form", "place-form", "person-form", "group-form", "organization-form", "organization-type-form", "person-type-form", "relation-type-form", "device-form"];
+const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "youtube-video-form", "place-form", "person-form", "group-form", "organization-form", "organization-type-form", "person-type-form", "relation-type-form", "person-relation-type-form", "device-form"];
 const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 
 function dialogError(message) {
@@ -2737,6 +2770,75 @@ function setupDatePicks() {
 		picker.addEventListener("input", update);
 		precision.addEventListener("change", update);
 	}
+}
+
+// ─── a person's relations to other people, in the person form ──────────────
+
+// the relations of the person being edited: [{type_id, type, person: {id, name}}]
+let editingRelations = [];
+
+function renderEditingRelations() {
+	const box = $("person-relations");
+	box.replaceChildren();
+	if (editingRelations.length === 0) {
+		box.appendChild(el("span", "empty", "None yet"));
+	}
+	editingRelations.forEach((relation, index) => {
+		const chip = el("span", "chip", `${relation.type} ${relation.person.name}`);
+		const remove = el("button", "chip-remove", "\u00d7");
+		remove.type = "button";
+		remove.setAttribute("aria-label", `Remove ${relation.type} ${relation.person.name}`);
+		remove.onclick = () => {
+			editingRelations.splice(index, 1);
+			renderEditingRelations();
+		};
+		chip.appendChild(remove);
+		box.appendChild(chip);
+	});
+}
+
+// The person picked in the relation row: one of People by its picker label, never the person edited
+function relationPerson(people) {
+	const label = $("relation-person").value.trim();
+	return people.find((p) => chipLabel(p) === label && p.id !== state.editing?.id) || null;
+}
+
+async function prepareRelations(item) {
+	const [kinds, people] = await Promise.all([worldList("person-relation-types"), worldList("people")]);
+	editingRelations = (item?.relations || []).map((r) => ({ ...r }));
+	$("relation-type").replaceChildren(...kinds.map((k) => {
+		const option = document.createElement("option");
+		option.value = k.id;
+		option.textContent = k.name;
+		return option;
+	}));
+	// the person form has no people picker of its own: the names the Of box suggests come from here
+	$("people-names").replaceChildren(...people.filter((p) => p.id !== item?.id).map((p) => {
+		const option = document.createElement("option");
+		option.value = chipLabel(p);
+		return option;
+	}));
+	$("relation-person").value = "";
+	const add = $("relation-add");
+	const sync = () => {
+		add.disabled = !kinds.length || !relationPerson(people);
+	};
+	$("relation-person").oninput = sync;
+	add.onclick = () => {
+		const other = relationPerson(people);
+		const kind = kinds.find((k) => String(k.id) === $("relation-type").value);
+		if (!other || !kind) {
+			return;
+		}
+		if (!editingRelations.some((r) => r.type_id === kind.id && r.person.id === other.id)) {
+			editingRelations.push({ type_id: kind.id, type: kind.name, person: { id: other.id, name: other.name } });
+		}
+		$("relation-person").value = "";
+		sync();
+		renderEditingRelations();
+	};
+	sync();
+	renderEditingRelations();
 }
 
 function resetForm(form) {
@@ -2886,6 +2988,7 @@ const WORLD_BODIES = {
 		surname: form.elements.surname.value,
 		type_ids: chosen(form, "types"),
 		organizations: chosen(form, "organizations"),
+		relations: editingRelations.map((r) => ({ type_id: r.type_id, person_id: r.person.id })),
 		description: form.elements.description.value,
 	}),
 	organizations: async (form) => {
@@ -2915,6 +3018,11 @@ const WORLD_BODIES = {
 	}),
 	"relation-types": async (form) => ({
 		name: form.elements.name.value,
+		description: form.elements.description.value,
+	}),
+	"person-relation-types": async (form) => ({
+		name: form.elements.name.value,
+		inverse: form.elements.inverse.value,
 		description: form.elements.description.value,
 	}),
 	devices: async (form) => ({
@@ -3059,6 +3167,9 @@ async function openDialog(item) {
 		}
 		if (form.elements.place_id) {
 			form.elements.place_id.value = item?.place ? item.place.id : "";
+		}
+		if (form.id === "person-form") {
+			await prepareRelations(item);
 		}
 		syncAlone(form);
 	} else {

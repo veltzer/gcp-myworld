@@ -129,6 +129,7 @@
 							<th>Surname</th>
 							<th>Type</th>
 							<th>Organizations</th>
+							<th>Relations</th>
 							<th>Description</th>
 							<th><span class="visually-hidden">Connections</span></th>
 						</tr>
@@ -164,6 +165,17 @@
 						</tr>
 					</thead>
 					<tbody id="relation-type-rows"></tbody>
+				</table>
+				<table id="person-relation-types-table" class="entries" hidden>
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>Other way</th>
+							<th>Description</th>
+							<th>Relations</th>
+						</tr>
+					</thead>
+					<tbody id="person-relation-type-rows"></tbody>
 				</table>
 				<table id="devices-table" class="entries" hidden>
 					<thead>
@@ -381,6 +393,14 @@
 					<label class="wide">Organizations <span class="chips" data-chips="organizations" data-field="organizations"><input list="organization-names" placeholder="Type a name from Organizations" autocomplete="off"></span></label>
 				</div>
 				<div class="row">
+					<label class="wide">Relations <span class="chips" id="person-relations"></span></label>
+				</div>
+				<div class="row">
+					<label>Relation <select id="relation-type" aria-label="Relation"></select></label>
+					<label class="wide">Of <input id="relation-person" list="people-names" placeholder="Type a name from People" autocomplete="off"></label>
+					<button type="button" class="text relation-add" id="relation-add" disabled>Add relation</button>
+				</div>
+				<div class="row">
 					<label class="wide">Description <input name="description" placeholder="How you know them"></label>
 				</div>
 				<div class="dialog-actions">
@@ -493,6 +513,20 @@
 			<form id="relation-type-form" class="dialog-form" hidden>
 				<div class="row">
 					<label class="wide">Name <input name="name" required placeholder="e.g. Taught there"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Description <input name="description"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="person-relation-type-form" class="dialog-form" hidden>
+				<div class="row">
+					<label class="wide">Name <input name="name" required placeholder="e.g. Mother of"></label>
+					<label class="wide">Other way <input name="inverse" placeholder="e.g. Child of" title="How it reads from the other person's side; empty when it reads the same both ways (Friend of)"></label>
 				</div>
 				<div class="row">
 					<label class="wide">Description <input name="description"></label>

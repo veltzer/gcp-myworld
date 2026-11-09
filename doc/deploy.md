@@ -195,7 +195,15 @@ the user's own person types enumeration (sidebar, Types, Person; an import start
 Girlfriend, Performer, Co-Worker, Lecturer and Book Author and guesses them from the data: see
 `_person_type` in `scripts/import_world.py`). A book's authors are people
 too (Book Authors): the book's card links to them, and their Connections
-list the books they wrote. People and Organizations
+list the books they wrote. People are related to each other through the
+user's person relation types (sidebar, Types, Person relations; an import
+starts with Mother of, Father of, Son of, Daughter of, Brother of, Sister
+of, Husband of and Wife of): a relation is stored once ("Ruth" is "Mother
+of" "Dana") and reads the other way from the other side, by the type's
+inverse ("Child of"; a type without one, "Friend of", reads the same both
+ways). The person form adds and removes a person's own relations; the
+People list and Connections show both ways. The Relation types page,
+how an organization is related to the user, is Org relations in the sidebar. People and Organizations
 have a type filter next to the search; on a library kind (Books) the same control filters by status and by whether an entry has a
 cover, together (Done and No cover: the books read that have no cover).
 
@@ -327,10 +335,17 @@ a person is written with `type_ids`, a list.
   organizations by type, and concerts and museum visits per year: the
   Stats page, in the sidebar.
 - `GET /api/organization-types`, `GET /api/person-types`,
-  `GET /api/relation-types`: name, description and `count`, how many rows
-  are of it; `POST`,
-  `PUT /api/<organization-types|person-types|relation-types>/<id>` and `DELETE` (refused
+  `GET /api/relation-types`, `GET /api/person-relation-types`: name,
+  description and `count`, how many rows are of it (a person relation type
+  also has `inverse`); `POST`,
+  `PUT /api/<organization-types|person-types|relation-types|person-relation-types>/<id>` and `DELETE` (refused
   while rows are of it) edit the enumeration.
+- A person's `relations` are their own relations to other people and
+  `related` the other people's relations to them, each read from the
+  person's side: `type_id`, `type` ("Mother of", or the inverse "Child
+  of"), `person` (id and name) and `name` ("Mother of Dana"). A person is
+  written with `relations`, a list of `{type_id, person_id}` that replaces
+  their own; left out, they stay as they are.
 - `POST /api/images` (multipart, field `file`, at most 8 MB, JPEG, PNG,
   GIF or WebP by content) uploads a photo; its `id` goes into `image_id`.
   A photo or logo nothing uses any more is deleted with the change that
@@ -391,7 +406,9 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
     - `disabled_checks`: the database checks an admin turned off for
   themselves (see `checks.md`).
     - the user's own enumerations: `organization_types`, `person_types`,
-  `relation_types`, `devices`.
+  `relation_types`, `person_relation_types`, `devices`.
+    - `person_relations`: one person's relation to another (`person_id`
+  is `relation_type_id` of `other_id`).
     - link tables, named `<row>_<what it links to>`: `concert_companions`
   and `museum_companions` (who the user went with),
   `concert_performers`, `concert_groups`, `group_members`, `audio_course_lecturers`, `library_entry_authors`,
