@@ -66,8 +66,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
 
 - `concert-dates`: every concert, of every account, has a date (a day, a
   month, a year or a full time).
-- `concert-places`: every concert, of every account, has a venue and a
-  city; one seen on TV need not.
+- `concert-places`: every concert, of every account, points to the place
+  it was at (the Places page); one seen on TV need not.
 - `concert-performers`: every concert, of every account, has at least
   one performer (a person).
 - `concert-photos`: every concert, of every account, has a photo.
@@ -107,6 +107,15 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `youtube-dates`: every YouTube video has the date it was watched.
 - `youtube-reviews`: every YouTube video has a rating and a review.
 - `youtube-devices`: every YouTube video has the device it was watched on.
+
+### Places (`places`)
+
+- `place-used`: every place has at least one concert that was there.
+- `place-cities`: every place says which city and country it is in.
+- `place-locations`: every place has a latitude and a longitude, so the
+  Map layout shows it.
+- `place-duplicates`: no account has two places of the same name in the
+  same city (ignoring case and spaces).
 
 ### People (`people`)
 

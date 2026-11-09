@@ -71,6 +71,12 @@
 #   - people.middle_name, between the first name and the surname: adding a
 #     column, run before the deploy; then scripts/tidy_names.py (through
 #     scripts/with_cloud_db.sh for Cloud SQL) moves the middle names into it.
+#   - places: every concert's venue, city and country become a row of places
+#     (one per account, name and city; a concert with a city but no venue
+#     gives a place named after the city), concert_visits.place_id points to
+#     it, and only then are the three columns dropped. The new code no longer
+#     writes them, and they are NOT NULL, so run this right after deploying
+#     that version (its create_all makes the places table).
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -320,6 +326,29 @@ for table, column, kind in [
     if existing and column not in existing:
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
         added.append(f"{table}.{column}")
+concert_columns = {row[1] for row in db.execute("PRAGMA table_info(concert_visits)")}
+if "venue" in concert_columns:
+    db.execute("""CREATE TABLE IF NOT EXISTS places (
+        id INTEGER PRIMARY KEY,
+        owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        name VARCHAR(300) NOT NULL, city VARCHAR(100) NOT NULL, country VARCHAR(100) NOT NULL,
+        address VARCHAR(500) NOT NULL, latitude FLOAT, longitude FLOAT,
+        website VARCHAR(1000) NOT NULL, remark TEXT NOT NULL,
+        CONSTRAINT uq_place_name UNIQUE (owner_id, name, city))""")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_places_owner_id ON places (owner_id)")
+    db.execute("""INSERT OR IGNORE INTO places (owner_id, name, city, country, address, website, remark)
+        SELECT owner_id, coalesce(nullif(trim(venue), ''), trim(city)), trim(city), trim(country), '', '', ''
+        FROM concert_visits WHERE trim(venue) <> '' OR trim(city) <> '' ORDER BY id""")
+    if "place_id" not in concert_columns:
+        db.execute("ALTER TABLE concert_visits ADD COLUMN place_id INTEGER REFERENCES places (id) ON DELETE SET NULL")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_concert_visits_place_id ON concert_visits (place_id)")
+    db.execute("""UPDATE concert_visits SET place_id = (
+        SELECT p.id FROM places p WHERE p.owner_id = concert_visits.owner_id
+            AND p.name = coalesce(nullif(trim(concert_visits.venue), ''), trim(concert_visits.city)) AND p.city = trim(concert_visits.city))
+        WHERE trim(venue) <> '' OR trim(city) <> ''""")
+    for column in ("venue", "city", "country"):
+        db.execute(f"ALTER TABLE concert_visits DROP COLUMN {column}")
+    added.append("concert venues -> places, concert_visits.place_id")
 if not db.execute("SELECT 1 FROM users WHERE role = 'admin'").fetchone():
     oldest = db.execute("SELECT min(id) FROM users").fetchone()[0]
     if oldest is not None:
@@ -351,6 +380,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'organizations' AND column_name IN ('type_id', 'functions'))
 	   OR (table_name = 'concerts' AND column_name = 'performers')
 	   OR (table_name = 'people' AND column_name IN ('name', 'type_id', 'middle_name'))
+	   OR (table_name = 'concert_visits' AND column_name = 'venue')
 	   OR (table_name = 'person_types' AND column_name = 'id')
 	   OR (table_name IN ('museums', 'organizations') AND column_name IN ('address', 'latitude', 'longitude', 'alone'))
 	   OR (table_name = 'audio_courses' AND column_name IN ('device', 'device_id', 'link'))
@@ -646,6 +676,28 @@ if has "works.id:.*" || has "library_works.id:.*"; then
 fi
 # people.middle_name (adding a column: run before the deploy)
 has "people.middle_name:.*" || need people.middle_name "ALTER TABLE people ADD COLUMN middle_name VARCHAR(200) NOT NULL DEFAULT ''"
+# concert venues become places (right after deploying the version that has them)
+if has "concert_visits.venue:.*"; then
+	need "concert venues -> places, concert_visits.place_id" "CREATE TABLE IF NOT EXISTS places (
+			id SERIAL PRIMARY KEY,
+			owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+			name VARCHAR(300) NOT NULL, city VARCHAR(100) NOT NULL, country VARCHAR(100) NOT NULL,
+			address VARCHAR(500) NOT NULL, latitude DOUBLE PRECISION, longitude DOUBLE PRECISION,
+			website VARCHAR(1000) NOT NULL, remark TEXT NOT NULL,
+			CONSTRAINT uq_place_name UNIQUE (owner_id, name, city));
+		CREATE INDEX IF NOT EXISTS ix_places_owner_id ON places (owner_id);
+		INSERT INTO places (owner_id, name, city, country, address, website, remark)
+			SELECT DISTINCT ON (owner_id, coalesce(nullif(btrim(venue), ''), btrim(city)), btrim(city))
+				owner_id, coalesce(nullif(btrim(venue), ''), btrim(city)), btrim(city), btrim(country), '', '', ''
+			FROM concert_visits WHERE btrim(venue) <> '' OR btrim(city) <> ''
+			ORDER BY owner_id, coalesce(nullif(btrim(venue), ''), btrim(city)), btrim(city), id
+			ON CONFLICT ON CONSTRAINT uq_place_name DO NOTHING;
+		ALTER TABLE concert_visits ADD COLUMN IF NOT EXISTS place_id INTEGER REFERENCES places (id) ON DELETE SET NULL;
+		CREATE INDEX IF NOT EXISTS ix_concert_visits_place_id ON concert_visits (place_id);
+		UPDATE concert_visits c SET place_id = p.id FROM places p
+			WHERE p.owner_id = c.owner_id AND p.name = coalesce(nullif(btrim(c.venue), ''), btrim(c.city)) AND p.city = btrim(c.city);
+		ALTER TABLE concert_visits DROP COLUMN venue, DROP COLUMN city, DROP COLUMN country"
+fi
 
 if (( ${#changed[@]} == 0 )); then
 	echo "${gcp_sql_instance}/${gcp_db_name}: up to date, nothing to migrate"

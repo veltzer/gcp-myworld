@@ -422,7 +422,7 @@ function libraryCard(entry) {
 // the sidebar's groups of views (the library's kinds come first, from the config)
 // The library kinds (books) come first in Datasets, ahead of these
 const NAV_GROUPS = [
-	["Datasets", ["concerts", "museums", "audio-courses", "youtube"]],
+	["Datasets", ["concerts", "museums", "audio-courses", "youtube", "places"]],
 	["People", ["people", "organizations"]],
 	["Types", ["organization-types", "person-types", "relation-types", "devices"]],
 ];
@@ -480,7 +480,7 @@ async function loadCounts() {
 	}
 	const keys = {
 		concerts: "concerts", museums: "museum_visits", "audio-courses": "audio_courses", youtube: "youtube_videos",
-		people: "people", organizations: "organizations", "organization-types": "organization_types",
+		places: "places", people: "people", organizations: "organizations", "organization-types": "organization_types",
 		"person-types": "person_types", "relation-types": "relation_types", devices: "devices",
 	};
 	for (const [view, key] of Object.entries(keys)) {
@@ -629,8 +629,8 @@ const SORTS = {
 	concerts: [
 		["date", "Date", (c) => c.date_sort, "desc"],
 		["name", "Name", (c) => c.name, "asc"],
-		["venue", "Venue", (c) => c.venue, "asc"],
-		["city", "City", (c) => c.city, "asc"],
+		["place", "Place", (c) => c.place?.name, "asc"],
+		["city", "City", (c) => c.place?.city, "asc"],
 		["genre", "Genre", (c) => c.genre, "asc"],
 		["tickets", "Tickets", (c) => c.tickets, "desc"],
 	],
@@ -656,6 +656,12 @@ const SORTS = {
 		["views", "Views", (v) => v.views, "desc"],
 		["duration", "Length", (v) => v.duration, "desc"],
 		["uploaded", "Uploaded", (v) => v.uploaded, "desc"],
+	],
+	places: [
+		["name", "Name", (p) => p.name, "asc"],
+		["city", "City", (p) => p.city, "asc"],
+		["country", "Country", (p) => p.country, "asc"],
+		["concerts", "Concerts", (p) => p.concerts.length, "desc"],
 	],
 	people: [
 		["first_name", "First name", (p) => p.first_name, "asc"],
@@ -1043,6 +1049,7 @@ const WORLDS = {
 	museums: ["My Museums", "/api/museum-visits", "museum", "Museums"],
 	"audio-courses": ["Audio courses", "/api/audio-courses", "audio course", "Audio courses"],
 	youtube: ["YouTube videos", "/api/youtube-videos", "YouTube video", "YouTube"],
+	places: ["Places", "/api/places", "place", "Places"],
 	people: ["People", "/api/people", "person", "People"],
 	organizations: ["Organizations", "/api/organizations", "organization", "Organizations"],
 	"organization-types": ["Organization types", "/api/organization-types", "organization type", "Org"],
@@ -1210,7 +1217,7 @@ function setupLayouts() {
 // ─── the map layout ─────────────────────────────────────────────────────────
 
 // The views whose items have a latitude and longitude; on the others the Map button is disabled.
-const MAPPED = new Set(["museums", "organizations"]);
+const MAPPED = new Set(["museums", "organizations", "places"]);
 // Leaflet, from cdnjs, loaded the first time a map is shown
 const LEAFLET = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/";
 const LEAFLET_JS = ["leaflet.js", "sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH"];
@@ -1397,7 +1404,8 @@ function cardShell(item, subtitle, kind = "photo") {
 function concertCard(item) {
 	const { body, card, list } = cardShell(item, item.event);
 	detail(list, "Date", formatDate(item));
-	detail(list, "Where", [item.venue, item.city, item.country].filter(Boolean).join(", "));
+	// where it was: a link to the place on the Places page
+	linksDetail(list, "Where", "places", item.place ? [{ id: item.place.id, name: placeName(item.place) }] : []);
 	// a show named after its one performer does not repeat the name
 	const performers = item.performers.length === 1 && item.performers[0].name === item.name ? [] : item.performers;
 	linksDetail(list, "Performers", "people", performers);
@@ -1419,6 +1427,23 @@ function concertCard(item) {
 		credit.append(a, who ? `: ${who}` : "");
 		body.appendChild(credit);
 	}
+	return card;
+}
+
+// "Tmuna Theater, Tel-Aviv": a place's name with its city, when it has one
+function placeName(place) {
+	return [place.name, place.city].filter(Boolean).join(", ");
+}
+
+function placeCard(item) {
+	const { card, list } = cardShell(item, [item.city, item.country].filter(Boolean).join(", "));
+	card.appendChild(placeButton(item));
+	detail(list, "Address", item.address);
+	// how many concerts were there, always shown (0 too), then which
+	detail(list, "Concerts", String(item.concerts.length));
+	linksDetail(list, "Seen there", "concerts", item.concerts);
+	detail(list, "Remark", item.remark);
+	websiteDetail(list, item.website);
 	return card;
 }
 
@@ -1518,7 +1543,7 @@ function youtubeCard(item) {
 	return card;
 }
 
-const CARDS = { concerts: concertCard, museums: museumCard, "audio-courses": audioCourseCard, youtube: youtubeCard, organizations: organizationCard };
+const CARDS = { concerts: concertCard, museums: museumCard, "audio-courses": audioCourseCard, youtube: youtubeCard, places: placeCard, organizations: organizationCard };
 
 // Material "link"
 const LINK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>';
@@ -2376,6 +2401,7 @@ function renderStats(stats) {
 		statTile("Museum visits", stats.museum_visits, `${stats.museums} museums`, "museums"),
 		statTile("Audio courses", stats.audio_courses, "", "audio-courses"),
 		statTile("YouTube videos", stats.youtube_videos, "", "youtube"),
+		statTile("Places", stats.places, "", "places"),
 		statTile("People", stats.people, "", "people"),
 		statTile("Organizations", stats.organizations, "", "organizations"),
 		statTile("Organization types", stats.organization_types, "", "organization-types"),
@@ -2544,7 +2570,7 @@ function setupWorlds() {
 // ─── the add dialog ─────────────────────────────────────────────────────────
 
 // One dialog, opened by the + button, showing the form of whatever is on screen.
-const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "youtube-video-form", "person-form", "organization-form", "organization-type-form", "person-type-form", "relation-type-form", "device-form"];
+const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "youtube-video-form", "place-form", "person-form", "organization-form", "organization-type-form", "person-type-form", "relation-type-form", "device-form"];
 const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 
 function dialogError(message) {
@@ -2781,9 +2807,7 @@ const WORLD_BODIES = {
 			genre: value("genre"),
 			date: value("date"),
 			date_timezone: state.editing?.date_timezone || where(),
-			venue: value("venue"),
-			city: value("city"),
-			country: value("country"),
+			place_id: value("place_id"),
 			people: chosen(form, "people"),
 			tickets: value("tickets"),
 			broadcast: form.elements.broadcast.checked,
@@ -2813,6 +2837,19 @@ const WORLD_BODIES = {
 			review: value("review"),
 			remark: value("remark"),
 			image_id: await uploadPhoto(form),
+		};
+	},
+	places: async (form) => {
+		const value = (name) => form.elements[name].value;
+		return {
+			name: value("name"),
+			city: value("city"),
+			country: value("country"),
+			address: value("address"),
+			latitude: value("latitude"),
+			longitude: value("longitude"),
+			website: value("website"),
+			remark: value("remark"),
 		};
 	},
 	people: async (form) => ({
@@ -2933,7 +2970,7 @@ function prepareWorkForm(form, entry) {
 }
 
 // The organization dialog's type list: the user's own organization types, and "none".
-async function fillTypes(select, typesView) {
+async function fillTypes(select, typesView, label = (t) => t.name) {
 	const types = await worldList(typesView);
 	const none = document.createElement("option");
 	none.value = "";
@@ -2941,7 +2978,7 @@ async function fillTypes(select, typesView) {
 	select.replaceChildren(none, ...types.map((t) => {
 		const option = document.createElement("option");
 		option.value = t.id;
-		option.textContent = t.name;
+		option.textContent = label(t);
 		return option;
 	}));
 }
@@ -2977,6 +3014,9 @@ async function openDialog(item) {
 		if (form.elements.device_id) {
 			await fillTypes(form.elements.device_id, "devices");
 		}
+		if (form.elements.place_id) {
+			await fillTypes(form.elements.place_id, "places", placeName);
+		}
 		resetForm(form);
 		if (state.view === "organizations" && !item) {
 			const company = worldCache["organization-types"].find((t) => t.name === "Company");
@@ -2988,6 +3028,9 @@ async function openDialog(item) {
 		syncDatePicks(form);
 		if (form.elements.device_id) {
 			form.elements.device_id.value = item?.device ? item.device.id : "";
+		}
+		if (form.elements.place_id) {
+			form.elements.place_id.value = item?.place ? item.place.id : "";
 		}
 		syncAlone(form);
 	} else {

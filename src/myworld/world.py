@@ -1,5 +1,5 @@
 """
-JSON API for the concerts, museum visits, people and organizations of the
+JSON API for the concerts, museum visits, places, people and organizations of the
 signed-in user, and the images they point at: list, add, edit and delete. Every query is filtered by
 owner_id, so a user only ever sees, and only ever links to, their own rows.
 """
@@ -32,6 +32,7 @@ from myworld.models import (
     OrganizationType,
     Person,
     PersonType,
+    Place,
     RelationType,
     UserWork,
     Work,
@@ -92,9 +93,8 @@ def concert_json(concert: Concert) -> dict[str, Any]:
         "genre": concert.genre,
         **_date_json(concert),
         "date_timezone": concert.date_timezone,
-        "venue": concert.venue,
-        "city": concert.city,
-        "country": concert.country,
+        # where it was, a row of the Places page
+        "place": None if concert.place is None else _place_ref(concert.place),
         "tickets": concert.tickets,
         "broadcast": concert.broadcast,
         "review": concert.review,
@@ -105,6 +105,24 @@ def concert_json(concert: Concert) -> dict[str, Any]:
         "image_source": concert.image_source,
         "image_license": concert.image_license,
         "image_author": concert.image_author,
+    }
+
+
+def _place_ref(place: Place) -> dict[str, Any]:
+    return {"id": place.id, "name": place.name, "city": place.city, "country": place.country}
+
+
+def place_json(place: Place) -> dict[str, Any]:
+    # the concerts that were there, newest first
+    concerts = _newest_first([{"id": c.id, "name": c.name, **_date_json(c)} for c in place.concerts])
+    return {
+        **_place_ref(place),
+        "address": place.address,
+        "latitude": place.latitude,
+        "longitude": place.longitude,
+        "website": place.website,
+        "remark": place.remark,
+        "concerts": [{"id": c["id"], "name": c["name"]} for c in concerts],
     }
 
 
@@ -230,7 +248,9 @@ def _newest_first(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 @bp.route("/api/concert-visits", methods=["GET"])
 @auth.login_required
 def api_concerts() -> flask.Response:
-    query = select(Concert).where(Concert.owner_id == flask.g.user.id).options(selectinload(Concert.people), selectinload(Concert.performers))
+    query = select(Concert).where(Concert.owner_id == flask.g.user.id).options(
+        selectinload(Concert.people), selectinload(Concert.performers), selectinload(Concert.place),
+    )
     concerts = flask.g.db.execute(query).scalars().all()
     return flask.jsonify(_newest_first([concert_json(c) for c in concerts]))
 
@@ -284,6 +304,14 @@ def api_organizations() -> flask.Response:
     )
     organizations = flask.g.db.execute(query).scalars().all()
     return flask.jsonify([organization_json(c) for c in organizations])
+
+
+@bp.route("/api/places", methods=["GET"])
+@auth.login_required
+def api_places() -> flask.Response:
+    query = select(Place).where(Place.owner_id == flask.g.user.id).options(selectinload(Place.concerts)).order_by(Place.name, Place.city, Place.id)
+    places = flask.g.db.execute(query).scalars().all()
+    return flask.jsonify([place_json(p) for p in places])
 
 
 @bp.route("/api/images/<int:image_id>", methods=["GET"])
@@ -377,7 +405,7 @@ def owned_image(body: dict[str, Any]) -> int | None:
     return image_id
 
 
-def _owned(model: type[Concert | Museum | AudioCourse | YouTubeVideo | Person | Organization | OrganizationType | PersonType | RelationType | Device], row_id: int) -> Any:
+def _owned(model: type[Concert | Museum | AudioCourse | YouTubeVideo | Person | Organization | Place | OrganizationType | PersonType | RelationType | Device], row_id: int) -> Any:
     row = flask.g.db.get(model, row_id)
     if row is None or row.owner_id != flask.g.user.id:
         raise ApiError(404, "no such entry")
@@ -402,9 +430,7 @@ def _apply_concert(concert: Concert, body: dict[str, Any], current: Concert | No
     concert.performers = owned_list(body, "performers", Person)
     concert.event = text(body, "event")
     concert.genre = text(body, "genre")
-    concert.venue = text(body, "venue")
-    concert.city = text(body, "city")
-    concert.country = text(body, "country")
+    concert.place = _owned_place(body)
     concert.tickets = opt_int(body, "tickets", 0, 1000)
     concert.broadcast = body.get("broadcast") is True
     concert.review = text(body, "review")
@@ -419,6 +445,34 @@ def _apply_concert(concert: Concert, body: dict[str, Any], current: Concert | No
     concert.people = _owned_people(body)
     for key, value in _dates(body, current).items():
         setattr(concert, key, value)
+
+
+def _owned_place(body: dict[str, Any]) -> Place | None:
+    """ body's place_id, one of the user's own places, or None for no place. """
+    place_id = opt_int(body, "place_id", 1, 2**31 - 1)
+    if place_id is None:
+        return None
+    place = flask.g.db.get(Place, place_id)
+    if place is None or place.owner_id != flask.g.user.id:
+        raise ApiError(400, "place_id: unknown place")
+    return place
+
+
+def _apply_place(place: Place, body: dict[str, Any]) -> None:
+    name = text(body, "name", required=True)
+    city = text(body, "city")
+    clash = flask.g.db.execute(
+        select(Place.id).where(Place.owner_id == flask.g.user.id, Place.name == name, Place.city == city, Place.id != place.id)
+    ).first()
+    if clash is not None:
+        raise ApiError(409, f"{name}{', ' + city if city else ''} is already in Places")
+    place.name = name
+    place.city = city
+    place.country = text(body, "country")
+    place.address = text(body, "address")
+    place.latitude, place.longitude = coordinates(body)
+    place.website = text(body, "website")
+    place.remark = text(body, "remark")
 
 
 def _apply_museum(museum: Museum, body: dict[str, Any], current: Museum | None) -> None:
@@ -678,11 +732,31 @@ def api_organizations_update(row_id: int) -> flask.Response:
     return flask.jsonify(organization_json(organization))
 
 
-@bp.route("/api/<any('concert-visits', 'museum-visits', 'audio-courses', 'youtube-videos', people, organizations):what>/<int:row_id>", methods=["DELETE"])
+@bp.route("/api/places", methods=["POST"])
+@auth.login_required
+def api_places_add() -> tuple[flask.Response, int]:
+    place = Place(owner_id=flask.g.user.id)
+    _apply_place(place, json_body())
+    flask.g.db.add(place)
+    flask.g.db.commit()
+    return flask.jsonify(place_json(place)), 201
+
+
+@bp.route("/api/places/<int:row_id>", methods=["PUT"])
+@auth.login_required
+def api_places_update(row_id: int) -> flask.Response:
+    place = _owned(Place, row_id)
+    _apply_place(place, json_body())
+    flask.g.db.commit()
+    return flask.jsonify(place_json(place))
+
+
+@bp.route("/api/<any('concert-visits', 'museum-visits', 'audio-courses', 'youtube-videos', people, organizations, places):what>/<int:row_id>", methods=["DELETE"])
 @auth.login_required
 def api_world_delete(what: str, row_id: int) -> flask.Response:
-    model = {"concert-visits": Concert, "museum-visits": Museum, "audio-courses": AudioCourse, "youtube-videos": YouTubeVideo, "people": Person, "organizations": Organization}[what]
-    # the ORM also removes the row's links (to people, to organizations, to concerts and museums)
+    model = {"concert-visits": Concert, "museum-visits": Museum, "audio-courses": AudioCourse, "youtube-videos": YouTubeVideo, "people": Person, "organizations": Organization, "places": Place}[what]
+    # the ORM also removes the row's links (to people, to organizations, to concerts and museums);
+    # the concerts at a deleted place are kept, with no place
     flask.g.db.delete(_owned(model, row_id))
     flask.g.db.flush()
     drop_unused_images()
@@ -774,6 +848,7 @@ def api_stats() -> flask.Response:
         "youtube_videos": count(YouTubeVideo),
         "people": len(people),
         "organizations": len(organizations),
+        "places": count(Place),
         "organization_types": count(OrganizationType),
         "person_types": count(PersonType),
         "relation_types": count(RelationType),

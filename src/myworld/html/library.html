@@ -240,9 +240,7 @@
 				</div>
 				<div class="row">
 					<label>Date <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
-					<label class="wide">Venue <input name="venue"></label>
-					<label>City <input name="city"></label>
-					<label>Country <input name="country"></label>
+					<label class="wide">Place <select name="place_id" title="Where it was: add a new one on the Places page"></select></label>
 				</div>
 				<div class="row">
 					<label class="wide">With <span class="chips" data-chips="people" data-field="people"><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
@@ -414,6 +412,29 @@
 				</div>
 				<div class="row">
 					<label class="wide">Logo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="place-form" class="dialog-form" hidden>
+				<div class="row">
+					<label class="wide">Name <input name="name" required placeholder="Tmuna Theater"></label>
+					<label>City <input name="city"></label>
+					<label>Country <input name="country"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Address <input name="address"></label>
+					<label>Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
+					<label>Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Website <input name="website" type="url" placeholder="https://"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Remark <input name="remark"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>

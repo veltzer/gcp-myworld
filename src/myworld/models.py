@@ -397,6 +397,29 @@ class _Dated:
     date_timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="")
 
 
+class Place(Base):
+    """
+    Where something happened: a hall, a club, a park ("Tmuna Theater",
+    Tel-Aviv). A concert points to the place it was at. The same name may be
+    a place in two cities, but only once in each.
+    """
+    __tablename__ = "places"
+    __table_args__ = (UniqueConstraint("owner_id", "name", "city", name="uq_place_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    city: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    country: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    address: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    latitude: Mapped[float | None] = mapped_column(Double, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Double, nullable=True)
+    website: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    concerts: Mapped[list[Concert]] = relationship(back_populates="place")
+
+
 class Concert(_Dated, Base):
     __tablename__ = "concert_visits"
 
@@ -405,9 +428,9 @@ class Concert(_Dated, Base):
     name: Mapped[str] = mapped_column(String(300), nullable=False)
     event: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     genre: Mapped[str] = mapped_column(String(50), nullable=False, default="")
-    venue: Mapped[str] = mapped_column(String(300), nullable=False, default="")
-    city: Mapped[str] = mapped_column(String(100), nullable=False, default="")
-    country: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    # where it was (the Places page); none when not known
+    place_id: Mapped[int | None] = mapped_column(ForeignKey("places.id", ondelete="SET NULL"), nullable=True, index=True)
+    place: Mapped[Place | None] = relationship(back_populates="concerts")
     tickets: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # seen on TV rather than in the hall
     broadcast: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

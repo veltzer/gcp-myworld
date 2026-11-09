@@ -31,6 +31,7 @@ from myworld.models import (
     Organization,
     Person,
     PersonType,
+    Place,
     RelationType,
     User,
     UserWork,
@@ -499,14 +500,15 @@ def test_concerts(engine: Engine) -> None:
         session.flush()
         band = Person(owner_id=alice.id, first_name="The Band")
         photo = Image(owner_id=alice.id, filename="p.jpg", content_type="image/jpeg", sha256="0" * 64, data=b"\xff\xd8")
-        good = {"venue": "Barby", "city": "Tel Aviv", "performers": [band], "image": photo}
+        barby = Place(owner_id=alice.id, name="Barby", city="Tel Aviv")
+        good = {"place": barby, "performers": [band], "image": photo}
         session.add_all([
             # every rule kept
             Concert(owner_id=alice.id, name="Good", date_y=2010, **good),
-            # seen on TV: no venue or city asked for
-            Concert(owner_id=alice.id, name="On TV", date_y=2011, broadcast=True, **dict(good, venue="", city="")),
+            # seen on TV: no place asked for
+            Concert(owner_id=alice.id, name="On TV", date_y=2011, broadcast=True, **dict(good, place=None)),
             # each of these breaks rules
-            Concert(owner_id=alice.id, name="Bare", venue="Barby"),
+            Concert(owner_id=alice.id, name="Bare"),
             Concert(owner_id=alice.id, name="Twice", date_y=2012, **good),
             Concert(owner_id=alice.id, name="twice ", date_y=2012, **good),
             # the same name on another date is another concert
@@ -518,11 +520,36 @@ def test_concerts(engine: Engine) -> None:
             return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS[name].run(session).problems]
 
         assert found("concert-dates") == [("Bare", "has no date")]
-        assert found("concert-places") == [("Bare", "has no city")]
+        assert found("concert-places") == [("Bare", "has no place")]
         assert found("concert-performers") == [("Bare", "has no performer")]
         assert found("concert-photos") == [("Bare", "has no photo")]
         assert [name for name, _ in found("concert-duplicates")] == ["Twice", "twice "]
         assert checks.CHECKS["concert-photos"].run(session).problems[0].link.startswith("concerts/")
+
+
+def test_places(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(google_sub="alice", email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        barby = Place(owner_id=alice.id, name="Barby", city="Tel Aviv", country="Israel", latitude=32.05, longitude=34.76)
+        session.add_all([
+            # every rule kept: something happened there, a city and a country, on the map
+            Concert(owner_id=alice.id, name="Show", place=barby),
+            # each of these breaks rules
+            Place(owner_id=alice.id, name="Somewhere"),
+            Place(owner_id=alice.id, name="barby ", city="tel aviv", country="Israel", latitude=1, longitude=1),
+        ])
+        session.commit()
+
+        def found(name: str) -> list[tuple[str, str]]:
+            return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS[name].run(session).problems]
+
+        assert found("place-used") == [("Somewhere", "nothing happened there"), ("barby , tel aviv", "nothing happened there")]
+        assert found("place-cities") == [("Somewhere", "has no city and no country")]
+        assert found("place-locations") == [("Somewhere", "has no latitude and longitude")]
+        assert [subject for subject, _ in found("place-duplicates")] == ["Barby, Tel Aviv", "barby , tel aviv"]
+        assert checks.CHECKS["place-used"].run(session).problems[0].link == "places/2"
 
 
 def test_enumerations(engine: Engine) -> None:

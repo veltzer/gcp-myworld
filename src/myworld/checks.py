@@ -33,6 +33,7 @@ from myworld.models import (
     OrganizationType,
     Person,
     PersonType,
+    Place,
     RelationType,
     UserWork,
     Work,
@@ -93,6 +94,7 @@ DATASETS: dict[str, str] = {
     "audio-courses": "Audio courses",
     "youtube": "YouTube",
     "people": "People",
+    "places": "Places",
     "organizations": "Organizations",
     "organization-types": "Org types",
     "person-types": "Person types",
@@ -572,13 +574,9 @@ def check_concert_dates(session: Session) -> Result:
 
 @check("concert-places", "Every concert says where it was", "concerts", "concerts")
 def check_concert_places(session: Session) -> Result:
-    """ Every concert, of every account, has a venue and a city; one seen on TV need not. """
+    """ Every concert, of every account, points to the place it was at (the Places page); one seen on TV need not. """
     concerts = _concerts(session)
-    problems = []
-    for concert in concerts:
-        missing = [what for what, absent in (("venue", not concert.venue.strip()), ("city", not concert.city.strip())) if absent]
-        if missing and not concert.broadcast:
-            problems.append(_concert_problem(concert, f"has no {' and no '.join(missing)}"))
+    problems = [_concert_problem(concert, "has no place") for concert in concerts if concert.place_id is None and not concert.broadcast]
     return Result(checked=len(concerts), problems=problems)
 
 
@@ -617,6 +615,60 @@ def check_concert_duplicates(session: Session) -> Result:
 # ─── the user's enumerations: org, person and relation types, devices ───────
 
 type _Enumeration = type[OrganizationType | PersonType | RelationType | Device]
+
+
+# ─── places ─────────────────────────────────────────────────────────────────
+
+def _places(session: Session) -> list[Place]:
+    return list(session.scalars(select(Place).order_by(Place.owner_id, Place.name, Place.city, Place.id)))
+
+
+def _place_problem(place: Place, message: str) -> Problem:
+    where = f"{place.name}, {place.city}" if place.city else place.name
+    return Problem(f"{where} (place {place.id}, account {place.owner_id})", message, f"places/{place.id}", place.owner_id)
+
+
+@check("place-used", "Every place has something that happened there", "places", "places")
+def check_place_used(session: Session) -> Result:
+    """ Every place, of every account, has at least one concert that was there. """
+    places, used = _places(session), _ids(session, Concert.place_id)
+    return Result(checked=len(places), problems=[_place_problem(place, "nothing happened there") for place in places if place.id not in used])
+
+
+@check("place-cities", "Every place has a city and a country", "places", "places")
+def check_place_cities(session: Session) -> Result:
+    """ Every place, of every account, says which city and country it is in. """
+    places = _places(session)
+    problems = []
+    for place in places:
+        missing = [what for what, value in (("city", place.city), ("country", place.country)) if not value.strip()]
+        if missing:
+            problems.append(_place_problem(place, f"has no {' and no '.join(missing)}"))
+    return Result(checked=len(places), problems=problems)
+
+
+@check("place-locations", "Every place is on the map", "places", "places")
+def check_place_locations(session: Session) -> Result:
+    """ Every place, of every account, has a latitude and a longitude, so the Map layout shows it. """
+    places = _places(session)
+    problems = [_place_problem(place, "has no latitude and longitude") for place in places if place.latitude is None or place.longitude is None]
+    return Result(checked=len(places), problems=problems)
+
+
+@check("place-duplicates", "No place is listed twice", "places", "places")
+def check_place_duplicates(session: Session) -> Result:
+    """ No account has two places of the same name in the same city (ignoring case and spaces). """
+    places = _places(session)
+    seen: dict[tuple[int, str, str], list[Place]] = {}
+    for place in places:
+        seen.setdefault((place.owner_id, " ".join(place.name.lower().split()), " ".join(place.city.lower().split())), []).append(place)
+    problems = [
+        _place_problem(place, f"has the same name and city as {len(same) - 1} other place{'s' if len(same) > 2 else ''} of the account")
+        for same in seen.values()
+        if len(same) > 1
+        for place in same
+    ]
+    return Result(checked=len(places), problems=problems)
 
 
 def _enumeration_checks(dataset: str, model: _Enumeration, used: Callable[[Session], set[int]]) -> None:

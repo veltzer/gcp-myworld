@@ -270,7 +270,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         session.commit()
     assert counts == {
         "people": 7, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 6, "people with a type": 5,
-        "concerts": 3, "museums": 3, "audio courses": 2, "YouTube videos": 4, "devices": 3, "books": 3, "images": 7}
+        "concerts": 3, "places": 1, "museums": 3, "audio courses": 2, "YouTube videos": 4, "devices": 3, "books": 3, "images": 7}
     return app
 
 
@@ -297,6 +297,30 @@ def test_concerts(imported: webtest.TestApp) -> None:
     assert band["image_license"] == "CC BY-SA 3.0"
     # the two shows share one photo
     assert band["image"] == late["image"]
+    # where it was is a place; a show without a venue is at none
+    assert {k: v for k, v in band["place"].items() if k != "id"} == {"name": "The Hall", "city": "", "country": "Israel"}
+    assert late["place"] is None
+
+
+def test_places(imported: webtest.TestApp) -> None:
+    [hall] = imported.get("/api/places").json
+    assert (hall["name"], hall["country"], [c["name"] for c in hall["concerts"]]) == ("The Hall", "Israel", ["The Band"])
+    barby = imported.post_json("/api/places", {"name": "Barby", "city": "Tel-Aviv", "country": "Israel", "latitude": 32.05, "longitude": 34.76}, status=201).json
+    assert (barby["latitude"], barby["concerts"]) == (32.05, [])
+    # one name once in a city; in another city it is another place
+    imported.post_json("/api/places", {"name": "Barby", "city": "Tel-Aviv"}, status=409)
+    imported.post_json("/api/places", {"name": "Barby", "city": "Haifa"}, status=201)
+    imported.post_json("/api/places", {"city": "Haifa"}, status=400)
+    # a concert points to one of the user's own places
+    late = next(c for c in imported.get("/api/concert-visits").json if c["name"] == "Late Show")
+    moved = imported.put_json(f"/api/concert-visits/{late['id']}", {"name": "Late Show", "date": late["date"], "place_id": barby["id"]}).json
+    assert moved["place"] == {"id": barby["id"], "name": "Barby", "city": "Tel-Aviv", "country": "Israel"}
+    imported.put_json(f"/api/concert-visits/{late['id']}", {"name": "Late Show", "place_id": 9999}, status=400)
+    assert [c["name"] for c in next(p for p in imported.get("/api/places").json if p["id"] == barby["id"])["concerts"]] == ["Late Show"]
+    # deleting a place keeps its concerts, with no place
+    imported.delete(f"/api/places/{barby['id']}", status=204)
+    assert next(c for c in imported.get("/api/concert-visits").json if c["name"] == "Late Show")["place"] is None
+    assert imported.get("/api/stats").json["places"] == 2
 
 
 def test_performers_are_people(imported: webtest.TestApp) -> None:

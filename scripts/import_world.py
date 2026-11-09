@@ -87,6 +87,7 @@ from myworld.models import (
     OrganizationType,
     Person,
     PersonType,
+    Place,
     RelationType,
     User,
     UserWork,
@@ -374,7 +375,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     for entry in session.scalars(select(UserWork).where(UserWork.user_id == owner.id, UserWork.image_id.is_not(None))):
         entry.image_id = None
     session.flush()
-    for model in (AudioCourse, YouTubeVideo, Device, Concert, Museum, Person, Organization, OrganizationType, PersonType, RelationType, Image):
+    for model in (AudioCourse, YouTubeVideo, Device, Concert, Place, Museum, Person, Organization, OrganizationType, PersonType, RelationType, Image):
         session.execute(delete(model).where(model.owner_id == owner.id))
     session.flush()
 
@@ -477,6 +478,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
                 session.add(people[name])
         return [people[name] for name in dict.fromkeys(names)]
 
+    place = Places(session, owner)
     for item in concert_items:
         session.add(Concert(
             owner_id=owner.id,
@@ -484,9 +486,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
             performers=performers(item),
             event=item.get("event", ""),
             genre=item.get("genre", ""),
-            venue=item.get("venue", ""),
-            city=item.get("city", ""),
-            country=item.get("country", ""),
+            place=place(item.get("venue", ""), item.get("city", ""), item.get("country", "")),
             tickets=item.get("tickets"),
             broadcast=bool(item.get("broadcast", False)),
             review=item.get("review", ""),
@@ -526,7 +526,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     return {
         "people": len(people) + courses["lecturers added"] + books["authors added"], "organizations": len(organizations), "organization types": len(types),
         "relation types": len(relation_types), "person types": len(PERSON_TYPES), "people with a type": typed["people given a type"],
-        "concerts": len(concert_items), "museums": len(museum_items), "audio courses": courses["audio courses"],
+        "concerts": len(concert_items), "places": place.added, "museums": len(museum_items), "audio courses": courses["audio courses"],
         "YouTube videos": videos["YouTube videos"] + history["YouTube videos added"], "devices": courses["devices added"] + videos["devices added"],
         "books": books["books"], "images": len(images) + courses["images"] + books["covers"],
     }
@@ -943,6 +943,30 @@ class Devices:
             self.session.add(self.by_name[name])
             self.added += 1
         return self.by_name[name]
+
+
+class Places:
+    """
+    owner's places by name and city: place(venue, city, country) is the one
+    there, made the first time it is named; a concert with a city but no
+    venue is at a place named after the city, one with neither at none.
+    """
+
+    def __init__(self, session: Session, owner: User) -> None:
+        self.session = session
+        self.owner = owner
+        self.by_name = {(p.name, p.city): p for p in session.scalars(select(Place).where(Place.owner_id == owner.id))}
+        self.added = 0
+
+    def __call__(self, venue: str, city: str, country: str) -> Place | None:
+        name, city = venue.strip() or city.strip(), city.strip()
+        if not name:
+            return None
+        if (name, city) not in self.by_name:
+            self.by_name[name, city] = Place(owner_id=self.owner.id, name=name, city=city, country=country.strip())
+            self.session.add(self.by_name[name, city])
+            self.added += 1
+        return self.by_name[name, city]
 
 
 def main() -> int:
