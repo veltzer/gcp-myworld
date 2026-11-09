@@ -78,6 +78,13 @@
 #     before the deploy; then scripts/import_world_cloud.sh --only-types makes
 #     that person and turns the person types that are relations (Friend,
 #     Co-Worker, ...) into person relations to it.
+#   - a kind for every link of a person to an organization: person_organizations
+#     gets relation_type_id (to person_organization_types, which create_all
+#     makes), every link already there becomes "Worked at" (made for each
+#     owner that has links), and the key becomes (person_id, organization_id,
+#     relation_type_id), so two people-organization links may differ by kind.
+#     The new code writes the kind and the old code cannot, so run this right
+#     after deploying that version; then --only-types adds the other kinds.
 #   - places: every concert's venue, city and country become a row of places
 #     (one per account, name and city; a concert with a city but no venue
 #     gives a place named after the city), concert_visits.place_id points to
@@ -358,6 +365,32 @@ if "venue" in concert_columns:
     for column in ("venue", "city", "country"):
         db.execute(f"ALTER TABLE concert_visits DROP COLUMN {column}")
     added.append("concert venues -> places, concert_visits.place_id")
+link_columns = {row[1] for row in db.execute("PRAGMA table_info(person_organizations)")}
+if link_columns and "relation_type_id" not in link_columns:
+    db.execute("""CREATE TABLE IF NOT EXISTS person_organization_types (
+        id INTEGER PRIMARY KEY,
+        owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL, description TEXT NOT NULL,
+        CONSTRAINT uq_person_organization_type_name UNIQUE (owner_id, name))""")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_person_organization_types_owner_id ON person_organization_types (owner_id)")
+    db.execute("""INSERT OR IGNORE INTO person_organization_types (owner_id, name, description)
+        SELECT DISTINCT p.owner_id, 'Worked at', 'Was employed there' FROM person_organizations po JOIN people p ON p.id = po.person_id""")
+    # sqlite cannot change a primary key: the table is made again, with the kind, and the rows copied
+    db.execute("""CREATE TABLE person_organizations_new (
+        person_id INTEGER NOT NULL REFERENCES people (id) ON DELETE CASCADE,
+        organization_id INTEGER NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+        relation_type_id INTEGER NOT NULL REFERENCES person_organization_types (id) ON DELETE CASCADE,
+        PRIMARY KEY (person_id, organization_id, relation_type_id))""")
+    db.execute("""INSERT INTO person_organizations_new (person_id, organization_id, relation_type_id)
+        SELECT po.person_id, po.organization_id, t.id FROM person_organizations po
+        JOIN people p ON p.id = po.person_id
+        JOIN person_organization_types t ON t.owner_id = p.owner_id AND t.name = 'Worked at'""")
+    copied = db.execute("SELECT (SELECT count(*) FROM person_organizations) - (SELECT count(*) FROM person_organizations_new)").fetchone()[0]
+    if copied:
+        raise SystemExit(f"{path}: {copied} person-organization links would be lost; nothing changed")
+    db.execute("DROP TABLE person_organizations")
+    db.execute("ALTER TABLE person_organizations_new RENAME TO person_organizations")
+    added.append("person_organizations.relation_type_id (every link Worked at)")
 if not db.execute("SELECT 1 FROM users WHERE role = 'admin'").fetchone():
     oldest = db.execute("SELECT min(id) FROM users").fetchone()[0]
     if oldest is not None:
@@ -390,6 +423,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'concerts' AND column_name = 'performers')
 	   OR (table_name = 'people' AND column_name IN ('name', 'type_id', 'middle_name', 'honorific', 'is_self'))
 	   OR (table_name = 'concert_visits' AND column_name = 'venue')
+	   OR (table_name = 'person_organizations' AND column_name IN ('person_id', 'relation_type_id'))
 	   OR (table_name = 'person_types' AND column_name = 'id')
 	   OR (table_name IN ('museums', 'organizations') AND column_name IN ('address', 'latitude', 'longitude', 'alone'))
 	   OR (table_name = 'audio_courses' AND column_name IN ('device', 'device_id', 'link'))
@@ -710,6 +744,30 @@ if has "concert_visits.venue:.*"; then
 		UPDATE concert_visits c SET place_id = p.id FROM places p
 			WHERE p.owner_id = c.owner_id AND p.name = coalesce(nullif(btrim(c.venue), ''), btrim(c.city)) AND p.city = btrim(c.city);
 		ALTER TABLE concert_visits DROP COLUMN venue, DROP COLUMN city, DROP COLUMN country"
+fi
+# a kind for every person-organization link (right after deploying the version that has them)
+if has "person_organizations.person_id:.*" && ! has "person_organizations.relation_type_id:.*"; then
+	need "person_organizations.relation_type_id (every link Worked at)" "CREATE TABLE IF NOT EXISTS person_organization_types (
+			id SERIAL PRIMARY KEY,
+			owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+			name VARCHAR(100) NOT NULL, description TEXT NOT NULL,
+			CONSTRAINT uq_person_organization_type_name UNIQUE (owner_id, name));
+		CREATE INDEX IF NOT EXISTS ix_person_organization_types_owner_id ON person_organization_types (owner_id);
+		INSERT INTO person_organization_types (owner_id, name, description)
+			SELECT DISTINCT p.owner_id, 'Worked at', 'Was employed there' FROM person_organizations po JOIN people p ON p.id = po.person_id
+			ON CONFLICT ON CONSTRAINT uq_person_organization_type_name DO NOTHING;
+		ALTER TABLE person_organizations ADD COLUMN relation_type_id INTEGER REFERENCES person_organization_types (id) ON DELETE CASCADE;
+		UPDATE person_organizations po SET relation_type_id = t.id FROM people p, person_organization_types t
+			WHERE p.id = po.person_id AND t.owner_id = p.owner_id AND t.name = 'Worked at';
+		ALTER TABLE person_organizations ALTER COLUMN relation_type_id SET NOT NULL;
+		DO \$\$
+		DECLARE pk text;
+		BEGIN
+			SELECT conname INTO pk FROM pg_constraint WHERE conrelid = 'person_organizations'::regclass AND contype = 'p';
+			EXECUTE format('ALTER TABLE person_organizations DROP CONSTRAINT %I', pk);
+		END
+		\$\$;
+		ALTER TABLE person_organizations ADD CONSTRAINT person_organizations_pkey PRIMARY KEY (person_id, organization_id, relation_type_id)"
 fi
 
 if (( ${#changed[@]} == 0 )); then

@@ -180,6 +180,16 @@
 					</thead>
 					<tbody id="person-relation-type-rows"></tbody>
 				</table>
+				<table id="person-organization-types-table" class="entries" hidden>
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>Description</th>
+							<th>Links</th>
+						</tr>
+					</thead>
+					<tbody id="person-organization-type-rows"></tbody>
+				</table>
 				<table id="devices-table" class="entries" hidden>
 					<thead>
 						<tr>
@@ -393,7 +403,6 @@
 				</div>
 				<div class="row">
 					<label class="wide">Professions <select multiple data-chips="person-types" data-field="types" data-placeholder="Type a profession"><option value=""></option></select></label>
-					<label class="wide">Organizations <select multiple data-chips="organizations" data-field="organizations" data-placeholder="Type a name from Organizations"><option value=""></option></select></label>
 				</div>
 				<div class="row">
 					<label class="wide">Relations <span class="chips" id="person-relations"></span></label>
@@ -401,6 +410,13 @@
 				<div class="row">
 					<label>Relation <select id="relation-type" aria-label="Relation"></select></label>
 					<label class="wide">Of <select id="relation-person" data-placeholder="Type a name from People: picking one adds the relation"></select></label>
+				</div>
+				<div class="row">
+					<label class="wide">Organizations <span class="chips" id="person-organization-links"></span></label>
+				</div>
+				<div class="row">
+					<label>How <select id="organization-link-type" aria-label="How linked"></select></label>
+					<label class="wide">At <select id="organization-link-organization" data-placeholder="Type a name from Organizations: picking one adds the link"></select></label>
 				</div>
 				<div class="row">
 					<label class="wide">Description <input name="description" placeholder="How you know them"></label>
@@ -529,6 +545,19 @@
 				<div class="row">
 					<label class="wide">Name <input name="name" required placeholder="e.g. Mother of"></label>
 					<label class="wide">Other way <input name="inverse" placeholder="e.g. Child of" title="How it reads from the other person's side; empty when it reads the same both ways (Friend of)"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Description <input name="description"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="person-org-relation-type-form" class="dialog-form" hidden>
+				<div class="row">
+					<label class="wide">Name <input name="name" required placeholder="e.g. Worked at"></label>
 				</div>
 				<div class="row">
 					<label class="wide">Description <input name="description"></label>

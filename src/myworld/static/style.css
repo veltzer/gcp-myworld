@@ -1232,8 +1232,8 @@ button.danger {
 	white-space: nowrap;
 }
 
-/* the relations in the person form: chips, or a quiet "None yet" */
-#person-relations .empty {
+/* a person's links in the person form (to people, to organizations): chips, or a quiet "None yet" */
+.chips .empty {
 	color: var(--muted);
 }
 

@@ -33,6 +33,8 @@ from myworld.models import (
     Organization,
     OrganizationType,
     Person,
+    PersonOrganization,
+    PersonOrganizationType,
     PersonRelation,
     PersonRelationType,
     PersonType,
@@ -107,6 +109,7 @@ DATASETS: dict[str, str] = {
     "person-types": "Professions",
     "relation-types": "Org relation types",
     "person-relation-types": "Person relation types",
+    "person-organization-types": "Person-org relation types",
     "devices": "Devices",
 }
 
@@ -631,7 +634,7 @@ def check_concert_duplicates(session: Session) -> Result:
 
 # ─── the user's enumerations: org, person and relation types, devices ───────
 
-type _Enumeration = type[OrganizationType | PersonType | RelationType | PersonRelationType | Device]
+type _Enumeration = type[OrganizationType | PersonType | RelationType | PersonRelationType | PersonOrganizationType | Device]
 
 
 # ─── groups ─────────────────────────────────────────────────────────────────
@@ -781,6 +784,7 @@ _enumeration_checks("organization-types", OrganizationType, lambda session: _ids
 _enumeration_checks("person-types", PersonType, lambda session: _ids(session, person_type_links.c.person_type_id))
 _enumeration_checks("relation-types", RelationType, lambda session: _ids(session, organization_relation_types.c.relation_type_id))
 _enumeration_checks("person-relation-types", PersonRelationType, lambda session: _ids(session, PersonRelation.relation_type_id))
+_enumeration_checks("person-organization-types", PersonOrganizationType, lambda session: _ids(session, PersonOrganization.relation_type_id))
 _enumeration_checks("devices", Device, lambda session: _ids(session, AudioCourse.device_id, YouTubeVideo.device_id))
 
 

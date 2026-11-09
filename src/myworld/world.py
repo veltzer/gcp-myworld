@@ -32,6 +32,8 @@ from myworld.models import (
     Organization,
     OrganizationType,
     Person,
+    PersonOrganization,
+    PersonOrganizationType,
     PersonRelation,
     PersonRelationType,
     PersonType,
@@ -83,8 +85,9 @@ def _names(people: list[Person]) -> list[str]:
 
 
 def _refs(rows: list[Person] | list[Organization] | list[PersonType] | list[RelationType] | list[Group] | list[Concert]) -> list[dict[str, Any]]:
-    """ Names with the ids the People and Organizations views link to. """
-    return [{"id": row.id, "name": row.name} for row in sorted(rows, key=lambda row: row.name)]
+    """ Names with the ids the People and Organizations views link to, each row once (a person may be linked to one organization twice). """
+    unique = {row.id: row for row in rows}.values()
+    return [{"id": row.id, "name": row.name} for row in sorted(unique, key=lambda row: row.name)]
 
 
 def concert_json(concert: Concert) -> dict[str, Any]:
@@ -236,7 +239,13 @@ def person_json(person: Person) -> dict[str, Any]:
         "middle_name": person.middle_name,
         "surname": person.surname,
         "types": _refs(person.types),
+        # each organization they are linked to, once; and the links, each of a kind ("Worked at Schema")
         "organizations": _refs(person.organizations),
+        "organization_links": [
+            {"type_id": link.relation_type.id, "type": link.relation_type.name, "organization": {"id": link.organization.id, "name": link.organization.name},
+             "name": f"{link.relation_type.name} {link.organization.name}"}
+            for link in person.organization_links
+        ],
         # how they are related to other people, each read from their side:
         # "Mother of Dana" (their own relations) and "Child of Ruth" (Ruth's)
         "relations": [_relation_json(r.relation_type.id, r.relation_type.name, r.other) for r in person.relations],
@@ -266,6 +275,12 @@ def organization_json(organization: Organization) -> dict[str, Any]:
         "remark": organization.remark,
         "image": image_url(organization.image_id),
         "people": _refs(organization.people),
+        # how each is linked to it: "Dana Cohen (Worked at)"
+        "person_links": [
+            {"type_id": link.relation_type.id, "type": link.relation_type.name, "person": {"id": link.person.id, "name": link.person.name},
+             "name": f"{link.person.name} ({link.relation_type.name})"}
+            for link in sorted(organization.person_links, key=lambda link: (link.person.name, link.relation_type.name))
+        ],
     }
 
 
@@ -316,6 +331,8 @@ def api_people() -> flask.Response:
         .where(Person.owner_id == flask.g.user.id)
         .options(
             selectinload(Person.organizations), selectinload(Person.types),
+            selectinload(Person.organization_links).selectinload(PersonOrganization.relation_type),
+            selectinload(Person.organization_links).selectinload(PersonOrganization.organization),
             selectinload(Person.relations).selectinload(PersonRelation.relation_type), selectinload(Person.relations).selectinload(PersonRelation.other),
             selectinload(Person.related).selectinload(PersonRelation.relation_type), selectinload(Person.related).selectinload(PersonRelation.person),
         )
@@ -331,7 +348,11 @@ def api_organizations() -> flask.Response:
     query = (
         select(Organization)
         .where(Organization.owner_id == flask.g.user.id)
-        .options(selectinload(Organization.people), selectinload(Organization.type), selectinload(Organization.relations))
+        .options(
+            selectinload(Organization.people), selectinload(Organization.type), selectinload(Organization.relations),
+            selectinload(Organization.person_links).selectinload(PersonOrganization.relation_type),
+            selectinload(Organization.person_links).selectinload(PersonOrganization.person),
+        )
         .order_by(Organization.name)
     )
     organizations = flask.g.db.execute(query).scalars().all()
@@ -445,7 +466,7 @@ def owned_image(body: dict[str, Any]) -> int | None:
     return image_id
 
 
-def _owned(model: type[Concert | Museum | AudioCourse | YouTubeVideo | Person | Organization | Place | Group | OrganizationType | PersonType | RelationType | PersonRelationType | Device], row_id: int) -> Any:
+def _owned(model: type[Concert | Museum | AudioCourse | YouTubeVideo | Person | Organization | Place | Group | OrganizationType | PersonType | RelationType | PersonRelationType | PersonOrganizationType | Device], row_id: int) -> Any:
     row = flask.g.db.get(model, row_id)
     if row is None or row.owner_id != flask.g.user.id:
         raise ApiError(404, "no such entry")
@@ -636,10 +657,56 @@ def _apply_person(person: Person, body: dict[str, Any]) -> None:
             raise ApiError(400, f"{key}: one word, without spaces (a surname of two words is hyphenated; more names go in the middle name)")
     if not person.first_name and not person.middle_name and not person.surname and not person.description:
         raise ApiError(400, "a person needs a name or a description")
-    person.organizations = owned_list(body, "organizations", Organization)
+    if "organization_links" in body:
+        person.organization_links = _organization_links(person, body["organization_links"])
+    elif "organizations" in body:
+        person.organization_links = _links_to(person, owned_list(body, "organizations", Organization))
     person.types = owned_list(body, "type_ids", PersonType)
     if "relations" in body:
         person.relations = _person_relations(person, body["relations"])
+
+
+def _organization_links(person: Person, value: Any) -> list[PersonOrganization]:
+    """
+    A person's links to organizations from [{"type_id", "organization_id"}, ...]:
+    each a person-org relation type and an organization of the user's; one
+    already there is kept as it is.
+    """
+    if not isinstance(value, list) or not all(isinstance(r, dict) for r in value):
+        raise ApiError(400, "organization_links: expected a list of {type_id, organization_id}")
+    kept = {(link.relation_type_id, link.organization_id): link for link in person.organization_links}
+    out: dict[tuple[int, int], PersonOrganization] = {}
+    for item in value:
+        type_id, organization_id = item.get("type_id"), item.get("organization_id")
+        if not all(isinstance(i, int) and not isinstance(i, bool) for i in (type_id, organization_id)):
+            raise ApiError(400, "organization_links: type_id and organization_id are ids")
+        kind = flask.g.db.get(PersonOrganizationType, type_id)
+        if kind is None or kind.owner_id != flask.g.user.id:
+            raise ApiError(400, "organization_links: unknown kind of link")
+        organization = flask.g.db.get(Organization, organization_id)
+        if organization is None or organization.owner_id != flask.g.user.id:
+            raise ApiError(400, "organization_links: unknown organization")
+        out[type_id, organization_id] = kept.get((type_id, organization_id)) or PersonOrganization(relation_type=kind, organization=organization)
+    return list(out.values())
+
+
+def _links_to(person: Person, organizations: list[Organization]) -> list[PersonOrganization]:
+    """
+    Links to exactly these organizations, for a client that sends only which:
+    the links already there to them are kept, a new one is of the user's
+    first kind ("Worked at" when they have it).
+    """
+    wanted = {o.id for o in organizations}
+    links = [link for link in person.organization_links if link.organization_id in wanted]
+    linked = {link.organization_id for link in links}
+    missing = [o for o in organizations if o.id not in linked]
+    if missing:
+        kinds = flask.g.db.execute(select(PersonOrganizationType).where(PersonOrganizationType.owner_id == flask.g.user.id)).scalars().all()
+        if not kinds:
+            raise ApiError(400, "organizations: add a kind of link first (Types, Person-org relations)")
+        kind = next((k for k in kinds if k.name == "Worked at"), min(kinds, key=lambda k: k.name))
+        links += [PersonOrganization(relation_type=kind, organization=o) for o in missing]
+    return links
 
 
 def _person_relations(person: Person, value: Any) -> list[PersonRelation]:
@@ -956,6 +1023,7 @@ def api_stats() -> flask.Response:
         "person_types": count(PersonType),
         "relation_types": count(RelationType),
         "person_relation_types": count(PersonRelationType),
+        "person_organization_types": count(PersonOrganizationType),
         "devices": count(Device),
         "images": count(Image),
         "people_by_type": _by_type(people_by_type),
@@ -970,7 +1038,7 @@ def api_stats() -> flask.Response:
 
 # ─── the enumerations: organization, person and relation types ────────────
 
-type TypeModel = OrganizationType | PersonType | RelationType | PersonRelationType | Device
+type TypeModel = OrganizationType | PersonType | RelationType | PersonRelationType | PersonOrganizationType | Device
 
 # path -> (type model, what the typed rows are called); an organization has one
 # type (organizations.type_id) and any number of relation types
@@ -981,6 +1049,8 @@ TYPES: dict[str, tuple[type[TypeModel], str]] = {
     "relation-types": (RelationType, "organization"),
     # how people are related to each other ("Mother of"): used by relations between two people
     "person-relation-types": (PersonRelationType, "relation"),
+    # how a person is linked to an organization ("Worked at")
+    "person-organization-types": (PersonOrganizationType, "link"),
     # not a type of a thing, but kept the same way: a list of the user's own, each used by some rows
     "devices": (Device, "recording"),
 }
@@ -994,6 +1064,12 @@ def _type_links(what: str) -> Any:
         # audio courses and YouTube videos both point to a device
         return select(AudioCourse.device_id.label("type_id")).where(AudioCourse.owner_id == flask.g.user.id).union_all(
             select(YouTubeVideo.device_id.label("type_id")).where(YouTubeVideo.owner_id == flask.g.user.id),
+        )
+    if what == "person-organization-types":
+        return (
+            select(PersonOrganization.relation_type_id.label("type_id"))
+            .join(Person, Person.id == PersonOrganization.person_id)
+            .where(Person.owner_id == flask.g.user.id)
         )
     if what == "person-relation-types":
         return (
@@ -1049,7 +1125,7 @@ def _apply_type(model: type[TypeModel], kind: TypeModel, body: dict[str, Any]) -
         kind.inverse = text(body, "inverse")
 
 
-@bp.route("/api/<any('organization-types', 'person-types', 'relation-types', 'person-relation-types', devices):what>", methods=["GET"])
+@bp.route("/api/<any('organization-types', 'person-types', 'relation-types', 'person-relation-types', 'person-organization-types', devices):what>", methods=["GET"])
 @auth.login_required
 def api_types(what: str) -> flask.Response:
     """ The user's enumeration, with how many rows are of each type. """
@@ -1065,7 +1141,7 @@ def api_types(what: str) -> flask.Response:
     return flask.jsonify([type_json(kind, n) for kind, n in rows])
 
 
-@bp.route("/api/<any('organization-types', 'person-types', 'relation-types', 'person-relation-types', devices):what>", methods=["POST"])
+@bp.route("/api/<any('organization-types', 'person-types', 'relation-types', 'person-relation-types', 'person-organization-types', devices):what>", methods=["POST"])
 @auth.login_required
 def api_types_add(what: str) -> tuple[flask.Response, int]:
     model = TYPES[what][0]
@@ -1076,7 +1152,7 @@ def api_types_add(what: str) -> tuple[flask.Response, int]:
     return flask.jsonify(type_json(kind, 0)), 201
 
 
-@bp.route("/api/<any('organization-types', 'person-types', 'relation-types', 'person-relation-types', devices):what>/<int:row_id>", methods=["PUT"])
+@bp.route("/api/<any('organization-types', 'person-types', 'relation-types', 'person-relation-types', 'person-organization-types', devices):what>/<int:row_id>", methods=["PUT"])
 @auth.login_required
 def api_types_update(what: str, row_id: int) -> flask.Response:
     model = TYPES[what][0]
@@ -1086,7 +1162,7 @@ def api_types_update(what: str, row_id: int) -> flask.Response:
     return flask.jsonify(type_json(kind, _type_uses(what, kind)))
 
 
-@bp.route("/api/<any('organization-types', 'person-types', 'relation-types', 'person-relation-types', devices):what>/<int:row_id>", methods=["DELETE"])
+@bp.route("/api/<any('organization-types', 'person-types', 'relation-types', 'person-relation-types', 'person-organization-types', devices):what>/<int:row_id>", methods=["DELETE"])
 @auth.login_required
 def api_types_delete(what: str, row_id: int) -> flask.Response:
     """ Only a type nothing is: a row never silently loses its type. """

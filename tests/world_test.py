@@ -674,7 +674,7 @@ def test_people(imported: webtest.TestApp) -> None:
     assert [c["name"] for c in alice["organizations"]] == ["Startup"]
     assert [c["name"] for c in bob["organizations"]] == ["Acme", "Startup"]
     # only the person and their organizations: their concerts and museums are not listed next to them
-    assert set(alice) == {"id", "name", "is_self", "honorific", "first_name", "middle_name", "surname", "relations", "related", "types", "organizations", "description"}
+    assert set(alice) == {"id", "name", "is_self", "honorific", "first_name", "middle_name", "surname", "relations", "related", "types", "organizations", "organization_links", "description"}
 
 
 def test_organizations(imported: webtest.TestApp) -> None:
@@ -1082,12 +1082,39 @@ def test_edit_person(imported: webtest.TestApp) -> None:
     assert (bob["first_name"], bob["surname"]) == ("Robert", "Buddy")
     louvre = next(m for m in imported.get("/api/museum-visits").json if m["with"])
     assert louvre["with"] == ["Robert Buddy"]
-    # no organizations sent: the person is linked to none
-    assert bob["organizations"] == []
+    # no organizations sent: the links stay as they were, as relations do
+    assert [o["name"] for o in bob["organizations"]] == ["Acme", "Startup"]
 
 
 def organization_ids(app: webtest.TestApp) -> dict[str, int]:
     return {c["name"]: c["id"] for c in app.get("/api/organizations").json}
+
+
+def test_kinds_of_links_to_organizations(imported: webtest.TestApp) -> None:
+    kinds = {k["name"]: k for k in imported.get("/api/person-organization-types").json}
+    # the import starts the user with the kinds; people.yaml's organizations are where people worked
+    assert sorted(kinds) == sorted(import_world.PERSON_ORGANIZATION_TYPES)
+    organizations = organization_ids(imported)
+    bob = next(p for p in imported.get("/api/people").json if p["name"] == "Bob Buddy")
+    assert [link["name"] for link in bob["organization_links"]] == ["Worked at Acme", "Worked at Startup"]
+    # the same organization twice, by two kinds; and several organizations
+    edited = imported.put_json(f"/api/people/{bob['id']}", {"first_name": "Bob", "surname": "Buddy", "organization_links": [
+        {"type_id": kinds["Studied at"]["id"], "organization_id": organizations["Old School"]},
+        {"type_id": kinds["Taught at"]["id"], "organization_id": organizations["Old School"]},
+        {"type_id": kinds["Worked at"]["id"], "organization_id": organizations["Acme"]},
+    ]}).json
+    assert sorted(link["name"] for link in edited["organization_links"]) == ["Studied at Old School", "Taught at Old School", "Worked at Acme"]
+    assert [o["name"] for o in edited["organizations"]] == ["Acme", "Old School"]
+    school = next(o for o in imported.get("/api/organizations").json if o["name"] == "Old School")
+    assert [p["name"] for p in school["people"]] == ["Bob Buddy"]
+    assert [link["name"] for link in school["person_links"]] == ["Bob Buddy (Studied at)", "Bob Buddy (Taught at)"]
+    # the user's own kinds and organizations only
+    for bad in ([{"type_id": 9999, "organization_id": organizations["Acme"]}], [{"type_id": kinds["Founded"]["id"], "organization_id": 9999}], "Acme", [{"type_id": "1"}]):
+        imported.put_json(f"/api/people/{bob['id']}", {"first_name": "Bob", "organization_links": bad}, status=400)
+    # a kind in use cannot go; its count says how many links are of it
+    assert next(k for k in imported.get("/api/person-organization-types").json if k["name"] == "Studied at")["count"] == 1
+    imported.delete(f"/api/person-organization-types/{kinds['Studied at']['id']}", status=409)
+    imported.delete(f"/api/person-organization-types/{kinds['Founded']['id']}", status=204)
 
 
 def test_link_person_to_organizations(imported: webtest.TestApp) -> None:

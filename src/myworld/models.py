@@ -8,14 +8,15 @@ Adding a new kind of work is a matter of adding it to KINDS.
 Concerts, museum visits, the people they were shared with and the
 organizations those people work at are a second, separate part: each row
 belongs to one user (owner_id) and is never shared. A person may be linked
-to several organizations (person_organizations).
+to several organizations, each link of a kind ("Worked at", "Studied at":
+person_organizations, PersonOrganization).
 Their photos live in the images table, so the database alone holds all of it.
 They are loaded by scripts/import_world.py.
 """
 
 import datetime
 import os
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import (
     JSON,
@@ -238,12 +239,6 @@ person_type_links = Table(
     Column("person_type_id", ForeignKey("person_types.id", ondelete="CASCADE"), primary_key=True),
 )
 
-person_organizations = Table(
-    "person_organizations",
-    Base.metadata,
-    Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
-    Column("organization_id", ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True),
-)
 
 
 class Image(Base):
@@ -297,9 +292,11 @@ class Person(Base):
     # family, co-worker, ...: any number of the user's own person types
     types: Mapped[list[PersonType]] = relationship(secondary=person_type_links, back_populates="people")
 
-    organizations: Mapped[list[Organization]] = relationship(
-        secondary=person_organizations, back_populates="people",
+    # how this person is linked to organizations ("Worked at" Schema); organizations is each of those organizations, once
+    organization_links: Mapped[list[PersonOrganization]] = relationship(
+        back_populates="person", cascade="all, delete-orphan", order_by=lambda: (PersonOrganization.organization_id, PersonOrganization.relation_type_id),
     )
+    organizations: Mapped[list[Organization]] = relationship(secondary=lambda: person_organizations, viewonly=True, order_by=lambda: Organization.name)
     concerts: Mapped[list[Concert]] = relationship(
         secondary=concert_companions, back_populates="people",
     )
@@ -377,6 +374,38 @@ class PersonRelationType(Base):
         return self.inverse or self.name
 
 
+class PersonOrganizationType(Base):
+    """
+    How a person is linked to an organization: "Worked at", "Studied at",
+    "Founded". An enumeration the user keeps themselves (the Person-org
+    relations page).
+    """
+    __tablename__ = "person_organization_types"
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_person_organization_type_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class PersonOrganization(Base):
+    """ One link of a person to an organization: person is relation_type organization ("Dana" "Worked at" "Schema"). """
+    # the same two may be linked by several kinds ("Studied at", then "Worked at")
+    __tablename__ = "person_organizations"
+
+    person_id: Mapped[int] = mapped_column(ForeignKey("people.id", ondelete="CASCADE"), primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True)
+    relation_type_id: Mapped[int] = mapped_column(ForeignKey("person_organization_types.id", ondelete="CASCADE"), primary_key=True)
+    person: Mapped[Person] = relationship(back_populates="organization_links")
+    organization: Mapped[Organization] = relationship(back_populates="person_links")
+    relation_type: Mapped[PersonOrganizationType] = relationship()
+
+
+# the link table itself, for queries and deletes that need no objects
+person_organizations = cast(Table, PersonOrganization.__table__)
+
+
 class PersonRelation(Base):
     """ One person's relation to another: person is relation_type of other ("Ruth" is "Mother of" "Dana"). """
     __tablename__ = "person_relations"
@@ -446,7 +475,9 @@ class Organization(_Located, Base):
     image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     image: Mapped[Image | None] = relationship()
 
-    people: Mapped[list[Person]] = relationship(secondary=person_organizations, back_populates="organizations")
+    # the people linked to it, each by a kind ("Worked at"); people is each of those people, once
+    person_links: Mapped[list[PersonOrganization]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    people: Mapped[list[Person]] = relationship(secondary=lambda: person_organizations, viewonly=True, order_by=lambda: Person.id)
     relations: Mapped[list[RelationType]] = relationship(secondary=organization_relation_types, back_populates="organizations")
 
 

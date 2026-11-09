@@ -87,6 +87,8 @@ from myworld.models import (
     Organization,
     OrganizationType,
     Person,
+    PersonOrganization,
+    PersonOrganizationType,
     PersonRelation,
     PersonRelationType,
     PersonType,
@@ -170,6 +172,16 @@ PERSON_RELATION_TYPES = {
     "Friend of": ("", "A friend who is not a relative"),
     "Acquaintance of": ("", "Knows them, not a friend"),
     "Neighbour of": ("", "Lives or lived next door"),
+}
+# how a person is linked to an organization, every import starts the user with;
+# people.yaml's organizations are where the person worked
+PERSON_ORGANIZATION_TYPES = {
+    "Worked at": "Was employed there",
+    "Studied at": "Was a student there",
+    "Taught at": "Taught there",
+    "Consulted for": "Was a consultant for them",
+    "Founded": "Founded it",
+    "Member of": "Was a member",
 }
 # person types that are really how someone is related to the user: give_types
 # makes each a person relation to the user's own person and drops the type
@@ -341,7 +353,7 @@ def self_person(session: Session, owner: User) -> Person:
     return me
 
 
-def _starting_types[T: (OrganizationType, PersonType, RelationType)](
+def _starting_types[T: (OrganizationType, PersonType, RelationType, PersonOrganizationType)](
     session: Session, owner: User, model: type[T], starting: dict[str, str],
 ) -> tuple[dict[str, T], int]:
     """ owner's types of model by name, after adding those of starting they lack, and how many were added. """
@@ -369,6 +381,7 @@ def give_types(session: Session, owner: User) -> dict[str, int]:
     org_types, org_added = _starting_types(session, owner, OrganizationType, ORGANIZATION_TYPES)
     professions, person_added = _starting_types(session, owner, PersonType, PERSON_TYPES)
     _, relation_added = _starting_types(session, owner, RelationType, dict(RELATION_TYPES.values()))
+    _, link_added = _starting_types(session, owner, PersonOrganizationType, PERSON_ORGANIZATION_TYPES)
     relation_types = {t.name: t for t in session.scalars(select(PersonRelationType).where(PersonRelationType.owner_id == owner.id))}
     person_relation_added = 0
     for name, (inverse, description) in PERSON_RELATION_TYPES.items():
@@ -376,7 +389,7 @@ def give_types(session: Session, owner: User) -> dict[str, int]:
             relation_types[name] = PersonRelationType(owner_id=owner.id, name=name, inverse=inverse, description=description)
             session.add(relation_types[name])
             person_relation_added += 1
-    added = org_added + person_added + relation_added + person_relation_added
+    added = org_added + person_added + relation_added + link_added + person_relation_added
     session.flush()
     me = self_person(session, owner)
     people = session.scalars(
@@ -472,7 +485,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     for entry in session.scalars(select(UserWork).where(UserWork.user_id == owner.id, UserWork.image_id.is_not(None))):
         entry.image_id = None
     session.flush()
-    for model in (AudioCourse, YouTubeVideo, Device, Concert, Place, Group, Museum, Person, Organization, OrganizationType, PersonType, RelationType, PersonRelationType, Image):
+    for model in (AudioCourse, YouTubeVideo, Device, Concert, Place, Group, Museum, Person, Organization, OrganizationType, PersonType, RelationType, PersonRelationType, PersonOrganizationType, Image):
         session.execute(delete(model).where(model.owner_id == owner.id))
     session.flush()
 
@@ -538,6 +551,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
         organizations[organization.name] = organization
         session.add(organization)
 
+    link_kinds, _ = _starting_types(session, owner, PersonOrganizationType, PERSON_ORGANIZATION_TYPES)
     people: dict[str, Person] = {}
     for item in people_items:
         if item["name"] in people:
@@ -550,7 +564,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
         honorific, first_name, middle_name, surname = split_name(item["name"])
         person = Person(
             owner_id=owner.id, honorific=honorific, first_name=first_name, middle_name=middle_name, surname=surname, description=item.get("description", ""),
-            organizations=[organizations[name] for name in names],
+            organization_links=[PersonOrganization(relation_type=link_kinds["Worked at"], organization=organizations[name]) for name in names],
         )
         people[item["name"]] = person
         session.add(person)
