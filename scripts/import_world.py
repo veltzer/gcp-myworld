@@ -63,7 +63,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import yaml
-from sqlalchemy import delete, select
+from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session, selectinload
 
 from myworld.models import (
@@ -653,21 +653,27 @@ def import_youtube_history(session: Session, owner: User, source: Path) -> dict[
     if len(set(ids)) != len(ids):
         raise WorldImportError("youtube.json.gz: a video is listed twice")
     have = {v.youtube_id: v for v in session.scalars(select(YouTubeVideo).where(YouTubeVideo.owner_id == owner.id))}
-    added = updated = 0
+    new: list[dict[str, Any]] = []
+    updated = 0
     for item in items:
         details = _history_details(item)
         video = have.get(item["id"])
         if video is None:
             # "Metadata unavailable" is not a name: a video YouTube no longer has keeps none
             name = "" if details["unavailable"] else item["title"]
-            session.add(YouTubeVideo(owner_id=owner.id, youtube_id=item["id"], name=name, review="", watched_at="", **details))
-            added += 1
+            new.append({
+                "owner_id": owner.id, "youtube_id": item["id"], "name": name, "review": "", "watched_at": "",
+                "date_my": "", "date_timezone": "", "channel": "", "category": "", **details,
+            })
         else:
             for key, value in details.items():
                 setattr(video, key, value)
             updated += 1
     session.flush()
-    return {"YouTube videos added": added, "YouTube videos given details": updated}
+    # one bulk insert: 30,000 ORM adds are 30,000 round trips to Cloud SQL
+    if new:
+        session.execute(insert(YouTubeVideo), new)
+    return {"YouTube videos added": len(new), "YouTube videos given details": updated}
 
 
 class Devices:
