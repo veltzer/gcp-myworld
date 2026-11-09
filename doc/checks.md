@@ -11,7 +11,7 @@ checks read the whole database, every account's rows, and change nothing.
   title (the description is the tooltip), what it found, and a Run
   button; Run all runs them in turn. A failing check's count opens the
   list of problems under its row; a problem with a row of your own in the
-  app (an organization, a person, a museum visit) links to it. A check
+  app (an organization, a person, a museum visit, a book) links to it. A check
   with thousands of problems sends the first 500, and says how many more
   there are.
 - **From the command line:** `scripts/check.py` runs the same checks
@@ -61,6 +61,13 @@ uses too).
   than a year.
 - `audio-course-duplicates`: no account has two audio courses of the same
   name.
+- `book-covers`: every book has a cover.
+- `book-links`: every book has a Goodreads or a Simania id, so its card
+  links to its page.
+- `book-authors`: every book has an author.
+- `book-ratings`: every book read (Done) has a rating.
+- `book-duplicates`: no account has two books of the same title and
+  author.
 - `youtube-ids`: every YouTube video id is one YouTube could have given
   (11 letters, digits, - and _); one that is not links to no video.
 - `youtube-dates`: every YouTube video has the date it was watched.

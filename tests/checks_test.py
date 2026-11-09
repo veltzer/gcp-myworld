@@ -29,6 +29,8 @@ from myworld.models import (
     PersonType,
     RelationType,
     User,
+    UserWork,
+    Work,
     YouTubeVideo,
 )
 from tests.conftest import sign_in
@@ -271,6 +273,54 @@ def test_audio_courses(engine: Engine) -> None:
         assert [name for name, _ in found("audio-course-duplicates")] == ["Twice", "twice "]
         # each problem opens its course
         assert [(p.link.split("/")[0], p.owner) for p in stalled.problems] == [("audio-courses", alice.id)]
+
+
+def test_books(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(google_sub="alice", email="alice@example.com")
+        bob = User(google_sub="bob", email="bob@example.com")
+        session.add_all([alice, bob])
+        session.flush()
+        cover = Image(owner_id=alice.id, filename="b.jpg", content_type="image/jpeg", sha256="0" * 64, data=b"\xff\xd8")
+        works = {
+            "Good": Work(kind="book", title="Good", creator="Ann", goodreads_id="1"),
+            "Hebrew": Work(kind="book", title="Hebrew", creator="Ben", simania_id="2"),
+            "Bare": Work(kind="book", title="Bare", creator=""),
+            "Twice": Work(kind="book", title="Twice", creator="Cy", goodreads_id="3"),
+            "twice ": Work(kind="book", title="twice ", creator="cy", goodreads_id="4"),
+            # a film is not a book: none of the book checks look at it
+            "Film": Work(kind="film", title="Film", creator=""),
+        }
+        session.add_all([cover, *works.values()])
+        session.flush()
+        session.add_all([
+            # every rule kept: read, rated, with a cover and a link
+            UserWork(user_id=alice.id, work_id=works["Good"].id, status="done", rating=8, image_id=cover.id),
+            # not read yet: no rating asked for
+            UserWork(user_id=alice.id, work_id=works["Hebrew"].id, status="wishlist", image_id=cover.id),
+            # each of these breaks rules
+            UserWork(user_id=alice.id, work_id=works["Bare"].id, status="done"),
+            UserWork(user_id=alice.id, work_id=works["Twice"].id, status="done", rating=6, image_id=cover.id),
+            UserWork(user_id=alice.id, work_id=works["twice "].id, status="done", rating=6, image_id=cover.id),
+            UserWork(user_id=alice.id, work_id=works["Film"].id, status="done"),
+            # bob has the same book as alice: two accounts, no duplicate
+            UserWork(user_id=bob.id, work_id=works["Good"].id, status="done", rating=5, image_id=cover.id),
+        ])
+        session.commit()
+
+        def found(name: str) -> list[tuple[str, str]]:
+            return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS[name].run(session).problems]
+
+        assert found("book-covers") == [("Bare", "has no cover")]
+        assert found("book-links") == [("Bare", "has neither a Goodreads nor a Simania id")]
+        assert found("book-authors") == [("Bare", "has no author")]
+        assert found("book-ratings") == [("Bare", "is read but has no rating")]
+        assert checks.CHECKS["book-ratings"].run(session).checked == 5
+        assert [name for name, _ in found("book-duplicates")] == ["Twice", "twice "]
+        # each problem opens its book on the Books page, for the account that has it
+        [bare] = checks.CHECKS["book-covers"].run(session).problems
+        assert (bare.link, bare.owner) == (f"book/{works['Bare'].id}", alice.id)
+        assert checks.CHECKS["book-covers"].run(session).checked == 6
 
 
 def test_person_types(engine: Engine) -> None:

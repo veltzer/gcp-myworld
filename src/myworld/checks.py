@@ -27,6 +27,8 @@ from myworld.models import (
     Museum,
     Organization,
     Person,
+    UserWork,
+    Work,
     YouTubeVideo,
     audio_course_lecturers,
     museum_companions,
@@ -427,6 +429,65 @@ def check_audio_course_duplicates(session: Session) -> Result:
         for course in same
     ]
     return Result(checked=len(courses), problems=problems)
+
+
+def _books(session: Session) -> list[UserWork]:
+    """ Every account's library entries of books, with their works. """
+    query = select(UserWork).join(Work).where(Work.kind == "book").order_by(UserWork.user_id, Work.title, Work.id)
+    return list(session.scalars(query))
+
+
+def _book_problem(entry: UserWork, message: str) -> Problem:
+    return Problem(f"{entry.work.title} (book {entry.work_id}, account {entry.user_id})", message, f"book/{entry.work_id}", entry.user_id)
+
+
+@check("book-covers", "Every book has a cover", "books")
+def check_book_covers(session: Session) -> Result:
+    """ Every book in a library, of every account, has a cover image. """
+    books = _books(session)
+    return Result(checked=len(books), problems=[_book_problem(b, "has no cover") for b in books if b.image_id is None])
+
+
+@check("book-links", "Every book links to its page", "books")
+def check_book_links(session: Session) -> Result:
+    """ Every book in a library, of every account, has a Goodreads or a Simania id, so its card links to its page. """
+    books = _books(session)
+    problems = [
+        _book_problem(b, "has neither a Goodreads nor a Simania id")
+        for b in books
+        if not b.work.goodreads_id.strip() and not b.work.simania_id.strip()
+    ]
+    return Result(checked=len(books), problems=problems)
+
+
+@check("book-authors", "Every book has an author", "books")
+def check_book_authors(session: Session) -> Result:
+    """ Every book in a library, of every account, has an author. """
+    books = _books(session)
+    return Result(checked=len(books), problems=[_book_problem(b, "has no author") for b in books if not b.work.creator.strip()])
+
+
+@check("book-ratings", "Every book read is rated", "books read")
+def check_book_ratings(session: Session) -> Result:
+    """ Every book an account has read (Done), of every account, has a rating; one not read yet need not. """
+    read = [b for b in _books(session) if b.status == "done"]
+    return Result(checked=len(read), problems=[_book_problem(b, "is read but has no rating") for b in read if b.rating is None])
+
+
+@check("book-duplicates", "No book is listed twice", "books")
+def check_book_duplicates(session: Session) -> Result:
+    """ No account has two books of the same title and author (ignoring case and spaces at the ends), as two works. """
+    books = _books(session)
+    seen: dict[tuple[int, str, str], list[UserWork]] = {}
+    for book in books:
+        seen.setdefault((book.user_id, book.work.title.strip().lower(), book.work.creator.strip().lower()), []).append(book)
+    problems = [
+        _book_problem(book, f"has the same title and author as {len(same) - 1} other book{'s' if len(same) > 2 else ''} of the account")
+        for same in seen.values()
+        if len(same) > 1
+        for book in same
+    ]
+    return Result(checked=len(books), problems=problems)
 
 
 def _videos(session: Session) -> list[YouTubeVideo]:

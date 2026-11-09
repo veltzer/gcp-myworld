@@ -394,6 +394,8 @@ function editable(node, item) {
 function libraryCard(entry) {
 	const { creator } = state.config.kinds[state.kind];
 	const { card, body, list } = cardShell({ ...entry, name: entry.title }, [entry.creator, entry.year].filter(Boolean).join(", "), "cover");
+	// an entry is known by its work: "book-12", opened by the link #book/12
+	card.id = `${state.kind}-${entry.work_id}`;
 	// the dialog edits the entry as it is
 	editable(card, entry);
 	const links = catalogLinks(entry);
@@ -801,12 +803,12 @@ function setupSort() {
 	};
 }
 
-async function selectKind(kind) {
+async function selectKind(kind, hash = kind) {
 	state.kind = kind;
 	state.view = kind;
 	// the last kind's entries are not this one's: the filter counts start at 0 until they load
 	state.entries = [];
-	navigate(kind);
+	navigate(hash);
 	showSection("library-view");
 	$("world-search").value = "";
 	await fillTypeFilter(kind);
@@ -934,7 +936,7 @@ async function openHash() {
 // Open what an address-bar hash names: a tab, a page, or one row of a view.
 async function route(requested) {
 	const linked = requested.match(/^([a-z-]+)\/(\d+)$/);
-	if (linked && linked[1] in WORLDS) {
+	if (linked && (linked[1] in WORLDS || linked[1] in state.config.kinds)) {
 		await showRow(linked[1], Number(linked[2]));
 	} else if (requested === "stats") {
 		await selectStats();
@@ -2066,7 +2068,7 @@ function checkCard(check) {
 // and is the viewer's own (the app opens only those), plain text otherwise.
 function problemSubject(problem) {
 	const match = problem.link.match(/^([a-z-]+)\/(\d+)$/);
-	if (!match || problem.owner !== state.config.user.id || !(match[1] in WORLDS)) {
+	if (!match || problem.owner !== state.config.user.id || !(match[1] in WORLDS || match[1] in state.config.kinds)) {
 		return el("span", "check-subject", problem.subject);
 	}
 	const a = el("a", "check-subject", problem.subject);
@@ -2296,7 +2298,13 @@ async function refreshWorld() {
 }
 
 // Open the People or Organizations view at one row or card, scrolled to and highlighted.
+// Open one row of a view, or one entry of a library kind (id: its work), marked and scrolled to.
 async function showRow(view, id) {
+	if (view in state.config.kinds) {
+		await selectKind(view, `${view}/${id}`);
+		markRow($(`${view}-${id}`));
+		return;
+	}
 	await selectWorld(view, `${view}/${id}`);
 	// a card past the pages drawn: draw up to it
 	const at = paging.shown.findIndex((item) => item.id === id);
@@ -2304,11 +2312,14 @@ async function showRow(view, id) {
 		paging.limit = at + 1;
 		renderWorld();
 	}
-	const row = $(`${slug(view)}-${id}`);
+	markRow($(`${slug(view)}-${id}`));
+}
+
+function markRow(row) {
 	if (!row) {
 		return;
 	}
-	for (const old of document.querySelectorAll("#world-view .highlight")) {
+	for (const old of document.querySelectorAll(".highlight")) {
 		old.classList.remove("highlight");
 	}
 	row.classList.add("highlight");
