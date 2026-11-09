@@ -2739,7 +2739,8 @@ function setupChips(box) {
 // Before saving: every picker's leftover text must turn into a chip; false
 // (with the reason shown) when some text names nothing that exists.
 function pendingChipsOk(form) {
-	return [...form.querySelectorAll("[data-chips]")].every((box) => box.pick(false));
+	// the person form's relation row too: a person left in its Of box is added, one that names no one stops the save
+	return [...form.querySelectorAll("[data-chips]")].every((box) => box.pick(false)) && (form.id !== "person-form" || pickRelation(false));
 }
 
 // The date pickers of a form, from the date in their hidden field (YYYY,
@@ -2797,11 +2798,22 @@ function renderEditingRelations() {
 	});
 }
 
-// The person picked in the relation row: one of People by its picker label, never the person edited
-function relationPerson(people) {
-	const label = $("relation-person").value.trim();
-	return people.find((p) => chipLabel(p) === label && p.id !== state.editing?.id) || null;
+// The people the relation row's Of text names: like the other pickers, a
+// suggestion names one exactly and a bare name ("Adam Dunski") counts when no
+// one else has it; never the person being edited, ignoring case.
+function relationMatches(people) {
+	const wanted = $("relation-person").value.trim().toLowerCase();
+	if (!wanted) {
+		return [];
+	}
+	const others = people.filter((p) => p.id !== state.editing?.id);
+	const exact = others.filter((p) => chipLabel(p).toLowerCase() === wanted);
+	return exact.length ? exact : others.filter((p) => p.name.toLowerCase() === wanted);
 }
+
+// set up per dialog by prepareRelations: turns the Of text into a relation;
+// false (with the reason shown) when the text names no one, or several
+let pickRelation = () => true;
 
 async function prepareRelations(item) {
 	const [kinds, people] = await Promise.all([worldList("person-relation-types"), worldList("people")]);
@@ -2818,25 +2830,49 @@ async function prepareRelations(item) {
 		option.value = chipLabel(p);
 		return option;
 	}));
-	$("relation-person").value = "";
+	const input = $("relation-person");
 	const add = $("relation-add");
+	input.value = "";
+	input.classList.remove("invalid");
 	const sync = () => {
-		add.disabled = !kinds.length || !relationPerson(people);
+		input.classList.remove("invalid");
+		add.disabled = !kinds.length || relationMatches(people).length !== 1;
 	};
-	$("relation-person").oninput = sync;
-	add.onclick = () => {
-		const other = relationPerson(people);
-		const kind = kinds.find((k) => String(k.id) === $("relation-type").value);
-		if (!other || !kind) {
-			return;
+	pickRelation = (quiet) => {
+		const name = input.value.trim();
+		if (!name) {
+			return true;
 		}
+		const matches = relationMatches(people);
+		const kind = kinds.find((k) => String(k.id) === $("relation-type").value);
+		if (matches.length !== 1 || !kind) {
+			input.classList.add("invalid");
+			if (!quiet) {
+				dialogError(matches.length > 1
+					? `Several people are called ${name}: pick one from the suggestions.`
+					: `${name} is not in People: pick one from the suggestions, or add them to People first.`);
+			}
+			return false;
+		}
+		const other = matches[0];
 		if (!editingRelations.some((r) => r.type_id === kind.id && r.person.id === other.id)) {
 			editingRelations.push({ type_id: kind.id, type: kind.name, person: { id: other.id, name: other.name } });
 		}
-		$("relation-person").value = "";
+		dialogError("");
+		input.value = "";
 		sync();
 		renderEditingRelations();
+		return true;
 	};
+	input.oninput = sync;
+	// Enter adds the relation, as in the other pickers, rather than saving the form
+	input.onkeydown = (event) => {
+		if (event.key === "Enter") {
+			event.preventDefault();
+			pickRelation(false);
+		}
+	};
+	add.onclick = () => pickRelation(false);
 	sync();
 	renderEditingRelations();
 }
