@@ -20,6 +20,14 @@ static/images/audiocourse-{gc-<great_courses_id>,audible-<asin>,internal-<n>}.jp
 each lecturer is a person (one of the same name, or a new one), typed Lecturer,
 and each device one of the account's devices (made when first named).
 
+Books come from data/yaml/books_read.yaml (with the rating and review of
+data/yaml/text_books.yaml), their covers from
+static/images/book-{goodreads,simania}-<id>.jpg. A book is a library entry:
+its rating, review and finish date are those of its latest dated reading,
+and what the entry has no field for (the other readings, the languages read
+and owned, the names in other languages, the publisher, the remark) is
+written into its notes.
+
 YouTube videos come from data/yaml/video_youtube.yaml (the reviewed ones)
 and static/data/youtube.json.gz (the watch history: what YouTube says about
 each video, no date or review); a video in both is one row. Their
@@ -39,7 +47,8 @@ GitHub).
 With --audio-courses only the audio courses are imported, added to what the
 account already has and touching nothing else; it stops if the account has
 audio courses already, rather than replace what was edited since. --youtube
-does the same for the YouTube videos. --youtube-history adds the watch
+does the same for the YouTube videos. --books adds the books the account
+does not have yet, and can run again. --youtube-history adds the watch
 history to the videos there are: the ones not there yet as new rows, and
 YouTube's details (channel, category, ...) on those already there; it can
 run again.
@@ -56,6 +65,7 @@ import json
 import mimetypes
 import re
 import sys
+import zoneinfo
 from pathlib import Path
 from typing import Any
 
@@ -78,6 +88,8 @@ from myworld.models import (
     PersonType,
     RelationType,
     User,
+    UserWork,
+    Work,
     YouTubeVideo,
     audio_course_lecturers,
     concert_companions,
@@ -90,6 +102,14 @@ from myworld.models import (
 )
 
 DATE_FIELDS = {"date_utcz", "date_ymd", "date_my", "date_y", "date_timezone"}
+# books_read.yaml: a book, its names (one per language), its authors (each a
+# list of the author's name in several languages), each reading and each copy owned
+BOOK_FIELDS = {"names", "authors", "language", "readings", "ownings", "remark", "publisher", "isbn"}
+BOOK_NAME_FIELDS = {"language", "name", "goodreads_id", "simania_id"}
+BOOK_READING_FIELDS = {"language", "undated", "date", "timezone", "rating", "review"}
+BOOK_OWNING_FIELDS = {"language"}
+# text_books.yaml: a rating and review for a book of books_read.yaml
+TEXT_BOOK_FIELDS = {"name", "authors", "review", "rating"}
 # company: the name, or a list of names, of the organizations the person is at
 PERSON_FIELDS = {"name", "company", "description"}
 CONCERT_FIELDS = DATE_FIELDS | {
@@ -342,6 +362,13 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     session.execute(delete(organization_relation_types).where(
         organization_relation_types.c.organization_id.in_(select(Organization.id).where(Organization.owner_id == owner.id)),
     ))
+    # the books are added again below; other library entries lose their cover, as every image goes
+    session.execute(delete(UserWork).where(
+        UserWork.user_id == owner.id, UserWork.work_id.in_(select(Work.id).where(Work.kind == "book")),
+    ))
+    for entry in session.scalars(select(UserWork).where(UserWork.user_id == owner.id, UserWork.image_id.is_not(None))):
+        entry.image_id = None
+    session.flush()
     for model in (AudioCourse, YouTubeVideo, Device, Concert, Museum, Person, Organization, OrganizationType, PersonType, RelationType, Image):
         session.execute(delete(model).where(model.owner_id == owner.id))
     session.flush()
@@ -489,13 +516,14 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     courses = import_audio_courses(session, owner, source)
     videos = import_youtube(session, owner, source)
     history = import_youtube_history(session, owner, source)
+    books = import_books(session, owner, source)
     typed = give_types(session, owner)
     return {
         "people": len(people) + courses["lecturers added"], "organizations": len(organizations), "organization types": len(types),
         "relation types": len(relation_types), "person types": len(PERSON_TYPES), "people with a type": typed["people given a type"],
         "concerts": len(concert_items), "museums": len(museum_items), "audio courses": courses["audio courses"],
         "YouTube videos": videos["YouTube videos"] + history["YouTube videos added"], "devices": courses["devices added"] + videos["devices added"],
-        "images": len(images) + courses["images"],
+        "books": books["books"], "images": len(images) + courses["images"] + books["covers"],
     }
 
 
@@ -587,6 +615,161 @@ def import_audio_courses(session: Session, owner: User, source: Path) -> dict[st
         ))
     session.flush()
     return {"audio courses": len(items), "lecturers added": added, "devices added": device.added, "images": images}
+
+
+def _check_fields(path: Path, what: str, item: dict[str, Any], fields: set[str]) -> None:
+    unknown = set(item) - fields
+    if unknown:
+        raise WorldImportError(f"{path}: {what} has fields this import does not know: {sorted(unknown)}")
+
+
+def _english_first(alternatives: list[dict[str, Any]]) -> dict[str, Any]:
+    """ Of a name given in several languages, the English one, or else the first. """
+    return next((a for a in alternatives if a["language"] == "english"), alternatives[0])
+
+
+def _language(code: str) -> str:
+    return code.capitalize()
+
+
+def _reading_day(reading: dict[str, Any]) -> datetime.date | None:
+    """ The day a reading ended, where the reader was (its timezone). """
+    if reading.get("undated"):
+        return None
+    stamp = datetime.datetime.fromisoformat(str(reading["date"]))
+    return stamp.astimezone(zoneinfo.ZoneInfo(reading.get("timezone") or "UTC")).date()
+
+
+def _book_notes(item: dict[str, Any], title: str, main: dict[str, Any] | None) -> str:
+    """ What a library entry has no field for, in a few sentences. """
+    parts = []
+    if main is not None and main.get("review"):
+        parts.append(str(main["review"]))
+    readings = item["readings"]
+    if len(readings) > 1 or any(r["language"] != item["language"] for r in readings):
+        described = []
+        for reading in readings:
+            day = _reading_day(reading)
+            detail = [day.isoformat() if day else "date unknown"]
+            if reading is not main and reading.get("rating") is not None:
+                detail.append(f"rated {reading['rating']}")
+            if reading is not main and reading.get("review"):
+                detail.append(str(reading["review"]))
+            described.append(f"{_language(reading['language'])} ({', '.join(detail)})")
+        parts.append(f"Read in {'; '.join(described)}")
+    owned = sorted({_language(o["language"]) for o in item.get("ownings", [])})
+    if owned:
+        parts.append(f"Owned in {' and '.join(owned)}")
+    if item["language"] not in ("english", "unknown"):
+        parts.append(f"Written in {_language(item['language'])}")
+    for name in item["names"]:
+        if name["name"] != title:
+            parts.append(f"{_language(name['language'])} title: {name['name']}")
+    for alternatives in item["authors"]:
+        shown = _english_first(alternatives)
+        for other in alternatives:
+            if other is not shown:
+                parts.append(f"Author in {_language(other['language'])}: {other['name']}")
+    if item.get("publisher"):
+        parts.append(f"Publisher: {item['publisher']}")
+    if item.get("remark"):
+        parts.append(str(item["remark"]))
+    return ". ".join(part.rstrip(".") for part in parts)
+
+
+def _book_items(source: Path) -> list[dict[str, Any]]:
+    """ books_read.yaml, every level checked for fields this import does not know, with text_books.yaml's ratings in. """
+    path = source / "data" / "yaml" / "books_read.yaml"
+    with path.open(encoding="UTF8") as fp:
+        items = yaml.safe_load(fp)["items"]
+    for item in items:
+        what = repr(item["names"][0]["name"])
+        _check_fields(path, what, item, BOOK_FIELDS)
+        for name in item["names"]:
+            _check_fields(path, f"a name of {what}", name, BOOK_NAME_FIELDS)
+        for reading in item["readings"]:
+            _check_fields(path, f"a reading of {what}", reading, BOOK_READING_FIELDS)
+            if not reading.get("undated") and "date" not in reading:
+                raise WorldImportError(f"{path}: a reading of {what} has neither a date nor undated")
+        for owning in item.get("ownings", []):
+            _check_fields(path, f"a copy of {what}", owning, BOOK_OWNING_FIELDS)
+    by_name = {name["name"]: item for item in items for name in item["names"]}
+    for text_book in _items(source, "text_books", TEXT_BOOK_FIELDS):
+        book = by_name.get(text_book["name"])
+        if book is None:
+            raise WorldImportError(f"text_books.yaml: {text_book['name']!r} is not in books_read.yaml")
+        book["text_rating"] = text_book.get("rating")
+        book["text_review"] = text_book.get("review", "")
+    return items
+
+
+def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
+    """
+    Add owner's books from source, with their covers: a library entry for
+    each book owner does not have yet (the work, which is shared, is reused
+    when there is one), so it can run again. Does not commit.
+    """
+    items = _book_items(source)
+    image_dir = source / "static" / "images"
+    stored = {image.filename: image for image in session.scalars(select(Image).where(Image.owner_id == owner.id))}
+    added = skipped = images = uncovered = 0
+    for item in items:
+        title = _english_first(item["names"])["name"]
+        creator = ", ".join(_english_first(alternatives)["name"] for alternatives in item["authors"])
+        goodreads_id = next((n["goodreads_id"] for n in item["names"] if n.get("goodreads_id")), "")
+        simania_id = next((n["simania_id"] for n in item["names"] if n.get("simania_id")), "")
+        work = session.scalars(select(Work).where(
+            Work.kind == "book", Work.title == title, Work.creator == creator, Work.year.is_(None),
+        )).one_or_none()
+        if work is None:
+            work = Work(kind="book", title=title, creator=creator, year=None)
+            session.add(work)
+        # catalog ids are only filled in, never overwritten
+        work.goodreads_id = work.goodreads_id or str(goodreads_id)
+        work.simania_id = work.simania_id or str(simania_id)
+        work.external_id = work.external_id or str(item.get("isbn", ""))
+        session.flush()
+        if session.get(UserWork, (owner.id, work.id)) is not None:
+            skipped += 1
+            continue
+        cover = None
+        name = f"book-goodreads-{goodreads_id}.jpg" if goodreads_id else f"book-simania-{simania_id}.jpg" if simania_id else ""
+        path = image_dir / name
+        # veltzer.github.io has no cover for a few books either
+        if name and path.exists():
+            data = path.read_bytes()
+            sha256 = hashlib.sha256(data).hexdigest()
+            cover = stored.get(name)
+            if cover is not None and cover.sha256 != sha256:
+                raise WorldImportError(f"{path}: an image of that name is stored already, with other contents")
+            if cover is None:
+                cover = Image(owner_id=owner.id, filename=name, content_type="image/jpeg", sha256=sha256, data=data)
+                session.add(cover)
+                session.flush()
+                stored[name] = cover
+                images += 1
+        readings = item["readings"]
+        # the latest dated reading, or else the last one listed
+        dated = sorted((r for r in readings if not r.get("undated")), key=lambda r: str(r["date"]))
+        main = dated[-1] if dated else readings[-1] if readings else None
+        rating = main.get("rating") if main else None
+        notes = _book_notes(item, title, main)
+        if rating is None and item.get("text_rating") is not None:
+            rating = item["text_rating"]
+            notes = ". ".join(part for part in (item.get("text_review", ""), notes) if part)
+        session.add(UserWork(
+            user_id=owner.id,
+            work_id=work.id,
+            status="done" if readings else "wishlist",
+            rating=rating,
+            finished_on=_reading_day(main) if main else None,
+            notes=notes,
+            image_id=cover.id if cover else None,
+        ))
+        added += 1
+        uncovered += cover is None
+    session.flush()
+    return {"books": added, "books there already": skipped, "covers": images, "books with no cover": uncovered}
 
 
 def import_youtube(session: Session, owner: User, source: Path) -> dict[str, int]:
@@ -715,6 +898,10 @@ def main() -> int:
         help="import only the YouTube videos, adding them to what the account has (stops if it has YouTube videos already)",
     )
     parser.add_argument(
+        "--books", action="store_true",
+        help="import only the books, adding those the account does not have yet; safe to run again",
+    )
+    parser.add_argument(
         "--youtube-history", action="store_true",
         help="add the YouTube watch history to the videos the account has (new ones, and details on those there); safe to run again",
     )
@@ -729,6 +916,8 @@ def main() -> int:
             owner = find_owner(session, args.email, args.subject)
             if args.only_types:
                 counts = give_types(session, owner)
+            elif args.books:
+                counts = import_books(session, owner, args.source)
             elif args.youtube_history:
                 counts = import_youtube_history(session, owner, args.source)
             elif args.youtube:

@@ -260,6 +260,14 @@ first `companies` tables to `organizations`, then making
   `scripts/import_world.py --youtube`, and the watch history (about
   30,000 videos, `static/data/youtube.json.gz`) by `--youtube-history`,
   which can run again.
+- Books are imported from `books_read.yaml` in `veltzer.github.io` (with
+  the rating and review of `text_books.yaml`) by
+  `scripts/import_world.py --books`, which adds the books the account does
+  not have yet and can run again; the covers come from
+  `static/images/book-*.jpg`. A book read is Done, one only owned is Want
+  to. Its rating, review and finish date are those of its latest dated
+  reading; the other readings, the languages read and owned, the names in
+  other languages, the publisher and the remark go into its notes.
 - JSON longer than 4 KB is sent gzipped to a client that takes it.
 - `GET /api/people`: `first_name`, `surname`, `name` (the two together),
   `types` (ids and names), description and `organizations` (ids and names);
@@ -312,12 +320,16 @@ with hyphens for underscores (`library_entries` is
 `/api/library-entries`, `concert_visits` is `/api/concert-visits`); the
 others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
 
-- `GET /api/library-entries[?kind=book]`: the user's entries.
+- `GET /api/library-entries[?kind=book]`: the user's entries, each with
+  `image`, its cover (the user's own image, shown before the title).
 - `POST /api/library-entries`: add (or update, if the work is already in the
   library) with `kind`, `title`, `creator`, `year`, `status`, `rating`,
-  `started_on`, `finished_on`, `notes`, and for films optionally
-  `imdb_id`, `tmdb_id`, `rotten_tomatoes_id`.
-- `PUT /api/library-entries/<work_id>`: update the per-user fields.
+  `started_on`, `finished_on`, `notes`, `image_id` (an upload, see
+  `POST /api/images`), and for films optionally `imdb_id`, `tmdb_id`,
+  `rotten_tomatoes_id`, for books `goodreads_id` and `simania_id`; the
+  catalog ids show as links next to the title.
+- `PUT /api/library-entries/<work_id>`: update the per-user fields and the
+  cover.
 - `DELETE /api/library-entries/<work_id>`: remove from the library.
 
 ## Data model
@@ -327,10 +339,11 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   methods; `password_hash` is set only for email accounts).
 - `library_works`: books, films, series, albums, games; one shared row
   per work, identified by kind, title, creator and year, plus the catalog
-  ids of films (`imdb_id`, `tmdb_id`, `rotten_tomatoes_id`). New kinds are
+  ids of films (`imdb_id`, `tmdb_id`, `rotten_tomatoes_id`) and books
+  (`goodreads_id`, `simania_id`). New kinds are
   added to `KINDS` in `src/myworld/models.py`.
 - `library_entries`: what a user thinks about a work: status, rating,
-  dates, notes. All per-user queries go through this table, so users never
+  dates, notes, and its cover (`image_id`). All per-user queries go through this table, so users never
   see each other's entries even though the work rows are shared.
 - Every other table holds one user's rows (by `owner_id`, or through the
   rows it links), never shared:

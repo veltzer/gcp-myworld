@@ -127,6 +127,9 @@ class Work(Base):
     imdb_id: Mapped[str] = mapped_column(String(20), nullable=False, default="")
     tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rotten_tomatoes_id: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    # books: Goodreads, and Simania (a Hebrew catalog) for a book read in Hebrew
+    goodreads_id: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    simania_id: Mapped[str] = mapped_column(String(20), nullable=False, default="")
 
     users: Mapped[list[UserWork]] = relationship(back_populates="work")  # pylint: disable=used-before-assignment
 
@@ -144,6 +147,8 @@ class UserWork(Base):
     started_on: Mapped[datetime.date | None] = mapped_column(nullable=True)
     finished_on: Mapped[datetime.date | None] = mapped_column(nullable=True)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # the cover: an image of the user's own, as the works are shared
+    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
     user: Mapped[User] = relationship(back_populates="works")

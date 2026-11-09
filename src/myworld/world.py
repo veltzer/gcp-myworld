@@ -70,7 +70,7 @@ def _date_json(row: Concert | Museum | AudioCourse | YouTubeVideo) -> dict[str, 
     return {"date": None, "date_precision": None, "date_sort": ""}
 
 
-def _image_url(image_id: int | None) -> str | None:
+def image_url(image_id: int | None) -> str | None:
     return None if image_id is None else flask.url_for("world.api_image", image_id=image_id)
 
 
@@ -101,7 +101,7 @@ def concert_json(concert: Concert) -> dict[str, Any]:
         "remark": concert.remark,
         "with": _names(concert.people),
         "people": _refs(concert.people),
-        "image": _image_url(concert.image_id),
+        "image": image_url(concert.image_id),
         "image_source": concert.image_source,
         "image_license": concert.image_license,
         "image_author": concert.image_author,
@@ -126,7 +126,7 @@ def museum_json(museum: Museum) -> dict[str, Any]:
         "alone": museum.alone,
         "with": _names(museum.people),
         "people": _refs(museum.people),
-        "image": _image_url(museum.image_id),
+        "image": image_url(museum.image_id),
     }
 
 
@@ -155,7 +155,7 @@ def audio_course_json(course: AudioCourse) -> dict[str, Any]:
         "audible_asin": course.audible_asin,
         "link": course.link,
         "url": _course_url(course),
-        "image": _image_url(course.image_id),
+        "image": image_url(course.image_id),
     }
 
 
@@ -217,7 +217,7 @@ def organization_json(organization: Organization) -> dict[str, Any]:
         "longitude": organization.longitude,
         "what_happened": organization.what_happened,
         "remark": organization.remark,
-        "image": _image_url(organization.image_id),
+        "image": image_url(organization.image_id),
         "people": _refs(organization.people),
     }
 
@@ -366,7 +366,7 @@ def _owned_people(body: dict[str, Any]) -> list[Person]:
     return _owned_list(body, "people", Person)
 
 
-def _owned_image(body: dict[str, Any]) -> int | None:
+def owned_image(body: dict[str, Any]) -> int | None:
     image_id = opt_int(body, "image_id", 1, 2**31 - 1)
     if image_id is None:
         return None
@@ -383,13 +383,14 @@ def _owned(model: type[Concert | Museum | AudioCourse | YouTubeVideo | Person | 
     return row
 
 
-def _drop_unused_images() -> None:
+def drop_unused_images() -> None:
     """ Photos and logos nothing shows any more (replaced or deleted) go too. """
     db = flask.g.db
     used = select(Concert.image_id).where(Concert.image_id.is_not(None)).union(
         select(Museum.image_id).where(Museum.image_id.is_not(None)),
         select(Organization.image_id).where(Organization.image_id.is_not(None)),
         select(AudioCourse.image_id).where(AudioCourse.image_id.is_not(None)),
+        select(UserWork.image_id).where(UserWork.image_id.is_not(None)),
     )
     for image in db.execute(select(Image).where(Image.owner_id == flask.g.user.id, Image.id.not_in(used))).scalars():
         db.delete(image)
@@ -408,7 +409,7 @@ def _apply_concert(concert: Concert, body: dict[str, Any], current: Concert | No
     concert.review = text(body, "review")
     concert.remark = text(body, "remark")
     # a photo is only ever replaced by a new upload, never blanked by omission
-    image_id = _owned_image(body)
+    image_id = owned_image(body)
     if image_id is not None:
         concert.image_id = image_id
     concert.image_source = text(body, "image_source")
@@ -429,7 +430,7 @@ def _apply_museum(museum: Museum, body: dict[str, Any], current: Museum | None) 
     museum.remark = text(body, "remark")
     museum.url = text(body, "url")
     museum.tickets = opt_int(body, "tickets", 0, 1000)
-    image_id = _owned_image(body)
+    image_id = owned_image(body)
     if image_id is not None:
         museum.image_id = image_id
     museum.people = _owned_people(body)
@@ -471,7 +472,7 @@ def _apply_audio_course(course: AudioCourse, body: dict[str, Any], current: Audi
     course.link = text(body, "link")
     if course.link and not course.link.startswith(("https://", "http://")):
         raise ApiError(400, "link: expected an http(s) URL")
-    image_id = _owned_image(body)
+    image_id = owned_image(body)
     if image_id is not None:
         course.image_id = image_id
     for key, value in _dates(body, current).items():
@@ -536,7 +537,7 @@ def _apply_organization(organization: Organization, body: dict[str, Any]) -> Non
     organization.type = _owned_type(OrganizationType, type_id)
     # looked up before anything is set on a new organization, which is not in the session yet
     relations = _owned_list(body, "relation_ids", RelationType)
-    image_id = _owned_image(body)
+    image_id = owned_image(body)
     organization.relations = relations
     organization.status = text(body, "status")
     organization.website = text(body, "website")
@@ -565,7 +566,7 @@ def api_concerts_update(row_id: int) -> flask.Response:
     concert = _owned(Concert, row_id)
     _apply_concert(concert, json_body(), concert)
     flask.g.db.flush()
-    _drop_unused_images()
+    drop_unused_images()
     flask.g.db.commit()
     return flask.jsonify(concert_json(concert))
 
@@ -586,7 +587,7 @@ def api_museums_update(row_id: int) -> flask.Response:
     museum = _owned(Museum, row_id)
     _apply_museum(museum, json_body(), museum)
     flask.g.db.flush()
-    _drop_unused_images()
+    drop_unused_images()
     flask.g.db.commit()
     return flask.jsonify(museum_json(museum))
 
@@ -607,7 +608,7 @@ def api_audio_courses_update(row_id: int) -> flask.Response:
     course = _owned(AudioCourse, row_id)
     _apply_audio_course(course, json_body(), course)
     flask.g.db.flush()
-    _drop_unused_images()
+    drop_unused_images()
     flask.g.db.commit()
     return flask.jsonify(audio_course_json(course))
 
@@ -666,7 +667,7 @@ def api_organizations_update(row_id: int) -> flask.Response:
     organization = _owned(Organization, row_id)
     _apply_organization(organization, json_body())
     flask.g.db.flush()
-    _drop_unused_images()
+    drop_unused_images()
     flask.g.db.commit()
     return flask.jsonify(organization_json(organization))
 
@@ -678,7 +679,7 @@ def api_world_delete(what: str, row_id: int) -> flask.Response:
     # the ORM also removes the row's links (to people, to organizations, to concerts and museums)
     flask.g.db.delete(_owned(model, row_id))
     flask.g.db.flush()
-    _drop_unused_images()
+    drop_unused_images()
     flask.g.db.commit()
     return flask.Response(status=204)
 
@@ -923,4 +924,4 @@ def api_images_add() -> tuple[flask.Response, int]:
         image = Image(owner_id=flask.g.user.id, filename=filename, content_type=content_type, sha256=sha256, data=data)
         db.add(image)
         db.commit()
-    return flask.jsonify({"id": image.id, "url": _image_url(image.id)}), 201 if created else 200
+    return flask.jsonify({"id": image.id, "url": image_url(image.id)}), 201 if created else 200

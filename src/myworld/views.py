@@ -11,7 +11,7 @@ import requests
 import werkzeug
 from sqlalchemy import select
 
-from myworld import auth, movies
+from myworld import auth, movies, world
 from myworld.api import ApiError, json_body, opt_date, opt_int, text
 from myworld.models import KINDS, RATING_MAX, RATING_MIN, STATUSES, UserWork, Work
 
@@ -62,6 +62,9 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
         "imdb_id": entry.work.imdb_id,
         "tmdb_id": entry.work.tmdb_id,
         "rotten_tomatoes_id": entry.work.rotten_tomatoes_id,
+        "goodreads_id": entry.work.goodreads_id,
+        "simania_id": entry.work.simania_id,
+        "image": world.image_url(entry.image_id),
         "status": entry.status,
         "rating": entry.rating,
         "started_on": entry.started_on.isoformat() if entry.started_on else None,
@@ -86,6 +89,10 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any]) -> None:
     entry.started_on = opt_date(body, "started_on")
     entry.finished_on = opt_date(body, "finished_on")
     entry.notes = text(body, "notes")
+    # a cover is only ever replaced by a new upload, never blanked by omission
+    image_id = world.owned_image(body)
+    if image_id is not None:
+        entry.image_id = image_id
 
 
 def _apply_work_ids(work: Work, body: dict[str, Any]) -> None:
@@ -99,6 +106,10 @@ def _apply_work_ids(work: Work, body: dict[str, Any]) -> None:
     rotten_tomatoes_id = text(body, "rotten_tomatoes_id")
     if rotten_tomatoes_id:
         work.rotten_tomatoes_id = rotten_tomatoes_id
+    for key in ("goodreads_id", "simania_id"):
+        value = text(body, key)
+        if value:
+            setattr(work, key, value)
 
 
 def _own_entry(work_id: int) -> UserWork:
@@ -189,6 +200,8 @@ def api_library_update(work_id: int) -> flask.Response:
 def api_library_delete(work_id: int) -> flask.Response:
     entry = _own_entry(work_id)
     flask.g.db.delete(entry)
+    flask.g.db.flush()
+    world.drop_unused_images()
     flask.g.db.commit()
     return flask.Response(status=204)
 

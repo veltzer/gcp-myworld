@@ -65,6 +65,9 @@
 #     included. Run before deploying the version that uses
 #     the new names, deploy right away, then run this again: a pair found
 #     with one side empty keeps the side with rows.
+#   - books: library_works.goodreads_id and simania_id (catalog ids), and
+#     library_entries.image_id (the cover). Adding columns: run before the
+#     deploy.
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -303,6 +306,16 @@ for old, new in RENAMES:
 if "type_id" in {row[1] for row in db.execute("PRAGMA table_info(person_type_links)")}:
     db.execute("ALTER TABLE person_type_links RENAME COLUMN type_id TO person_type_id")
     added.append("person_type_links.type_id -> person_type_id")
+# columns of tables that have their new names only now
+for table, column, kind in [
+    ("library_works", "goodreads_id", "VARCHAR(20) NOT NULL DEFAULT ''"),
+    ("library_works", "simania_id", "VARCHAR(20) NOT NULL DEFAULT ''"),
+    ("library_entries", "image_id", "INTEGER REFERENCES images (id) ON DELETE SET NULL"),
+]:
+    existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+    if existing and column not in existing:
+        db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+        added.append(f"{table}.{column}")
 if not db.execute("SELECT 1 FROM users WHERE role = 'admin'").fetchone():
     oldest = db.execute("SELECT min(id) FROM users").fetchone()[0]
     if oldest is not None:
@@ -327,6 +340,8 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash', 'role'))
 	   OR (table_name = 'works' AND column_name IN ('id', 'imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
 	   OR (table_name IN ('museums', 'concerts') AND column_name = 'id')
+	   OR (table_name = 'library_works' AND column_name IN ('id', 'goodreads_id', 'simania_id'))
+	   OR (table_name = 'library_entries' AND column_name = 'image_id')
 	   OR (table_name = 'people' AND column_name = 'company')
 	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
 	   OR (table_name = 'organizations' AND column_name IN ('type_id', 'functions'))
@@ -618,6 +633,12 @@ stale="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 ")"
 if [[ "${stale}" != "0" ]]; then
 	need "tables renamed to what a row is, and what Postgres named after them" "${renames}"
+fi
+# books (adding columns: run before the deploy); after the renames, as these are the new tables
+if has "works.id:.*" || has "library_works.id:.*"; then
+	has "library_works.goodreads_id:.*" || need library_works.goodreads_id "ALTER TABLE library_works ADD COLUMN goodreads_id VARCHAR(20) NOT NULL DEFAULT ''"
+	has "library_works.simania_id:.*" || need library_works.simania_id "ALTER TABLE library_works ADD COLUMN simania_id VARCHAR(20) NOT NULL DEFAULT ''"
+	has "library_entries.image_id:.*" || need library_entries.image_id "ALTER TABLE library_entries ADD COLUMN image_id INTEGER REFERENCES images (id) ON DELETE SET NULL"
 fi
 
 if (( ${#changed[@]} == 0 )); then

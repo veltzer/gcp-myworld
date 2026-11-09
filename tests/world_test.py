@@ -174,6 +174,65 @@ YOUTUBE_HISTORY = {"items": [
 ]}
 
 
+# books_read.yaml: read twice (once dated, rated and reviewed), read in
+# translation with a Hebrew name, and owned but not read (no cover on the site)
+BOOKS = """
+items:
+  - names:
+      - language: "english"
+        name: "The Hobbit"
+        goodreads_id: "5907"
+    authors:
+      - - language: "english"
+          name: "J.R.R. Tolkien"
+    language: "english"
+    ownings:
+      - language: "english"
+    readings:
+      - language: "english"
+        undated: true
+      - language: "english"
+        date: "2004-08-12T22:45:36Z"
+        timezone: "Asia/Jerusalem"
+        rating: 7
+        review: "Good"
+  - names:
+      - language: "english"
+        name: "Thirty Fifth in May"
+      - language: "hebrew"
+        name: "שלושים וחמישה במאי"
+        simania_id: "7005"
+    authors:
+      - - language: "english"
+          name: "Erich Kestner"
+        - language: "hebrew"
+          name: "אריך קסטנר"
+    language: "german"
+    readings:
+      - language: "hebrew"
+        undated: true
+    remark: "was named: 35 May"
+  - names:
+      - language: "english"
+        name: "Chess"
+        simania_id: "11971"
+    authors: []
+    language: "hebrew"
+    isbn: "1-58648-261-0"
+    ownings:
+      - language: "hebrew"
+    readings: []
+"""
+
+TEXT_BOOKS = """
+items:
+  - name: "Thirty Fifth in May"
+    authors: ["Erich Kestner"]
+    review: "nice"
+    rating: 8
+"""
+
+
 # by the logo convention (doc/logos.md), so the checks pass on imported data
 LOGO = b'<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="-1 -1 12 12"><rect width="10" height="10"/></svg>'
 
@@ -182,7 +241,7 @@ def write_source(root: Path, concerts: str = CONCERTS) -> Path:
     (root / "data" / "yaml").mkdir(parents=True)
     (root / "static" / "images").mkdir(parents=True)
     (root / "data" / "logos").mkdir(parents=True)
-    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("video_youtube", YOUTUBE)):
+    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("video_youtube", YOUTUBE), ("books_read", BOOKS), ("text_books", TEXT_BOOKS)):
         (root / "data" / "yaml" / f"{name}.yaml").write_text(text, encoding="UTF8")
     (root / "data" / "logos" / "acme.svg").write_bytes(LOGO)
     (root / "static" / "data").mkdir(parents=True)
@@ -192,6 +251,8 @@ def write_source(root: Path, concerts: str = CONCERTS) -> Path:
     (root / "static" / "images" / "museum-15.jpg").write_bytes(b"\xff\xd8louvre")
     (root / "static" / "images" / "audiocourse-gc-337.jpg").write_bytes(b"\xff\xd8greeks")
     (root / "static" / "images" / "audiocourse-internal-1.jpg").write_bytes(b"\xff\xd8music")
+    (root / "static" / "images" / "book-goodreads-5907.jpg").write_bytes(b"\xff\xd8hobbit")
+    (root / "static" / "images" / "book-simania-7005.jpg").write_bytes(b"\xff\xd8may")
     return root
 
 
@@ -207,7 +268,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         session.commit()
     assert counts == {
         "people": 5, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 5, "people with a type": 5,
-        "concerts": 3, "museums": 3, "audio courses": 2, "YouTube videos": 4, "devices": 3, "images": 5}
+        "concerts": 3, "museums": 3, "audio courses": 2, "YouTube videos": 4, "devices": 3, "books": 3, "images": 7}
     return app
 
 
@@ -408,6 +469,46 @@ def test_youtube_import_adds_once(imported: webtest.TestApp, engine: Engine, tmp
     assert counts == {"YouTube videos": 2, "devices added": 0}
 
 
+def test_books(imported: webtest.TestApp) -> None:
+    books = {b["title"]: b for b in imported.get("/api/library-entries?kind=book").json}
+    hobbit, may, chess = books["The Hobbit"], books["Thirty Fifth in May"], books["Chess"]
+    # the dated reading gives the rating, the review and the day (in Jerusalem, a day after UTC)
+    assert (hobbit["creator"], hobbit["status"], hobbit["rating"], hobbit["finished_on"]) == ("J.R.R. Tolkien", "done", 7, "2004-08-13")
+    assert hobbit["notes"] == "Good. Read in English (date unknown); English (2004-08-13). Owned in English"
+    assert hobbit["goodreads_id"] == "5907"
+    assert imported.get(hobbit["image"]).body == b"\xff\xd8hobbit"
+    # text_books.yaml rates a book read with no rating of its own
+    assert (may["rating"], may["finished_on"], may["simania_id"]) == (8, None, "7005")
+    assert may["notes"] == (
+        "nice. Read in Hebrew (date unknown). Written in German. Hebrew title: שלושים וחמישה במאי. "
+        "Author in Hebrew: אריך קסטנר. was named: 35 May"
+    )
+    # owned but not read, with no cover
+    assert (chess["status"], chess["creator"], chess["image"]) == ("wishlist", "", None)
+    assert chess["notes"] == "Owned in Hebrew. Written in Hebrew"
+
+
+def test_books_import_adds_once(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    source = write_source(tmp_path / "again")
+    [hobbit] = [b for b in imported.get("/api/library-entries?kind=book").json if b["title"] == "The Hobbit"]
+    imported.delete(f"/api/library-entries/{hobbit['work_id']}", status=204)
+    with Session(engine) as session:
+        counts = import_world.import_books(session, owner(session), source)
+        session.commit()
+    # the deleted one comes back, on the work there already, and its cover is stored again
+    assert counts == {"books": 1, "books there already": 2, "covers": 1, "books with no cover": 0}
+    assert len(imported.get("/api/library-entries?kind=book").json) == 3
+
+
+def test_books_unknown_field(engine: Engine, tmp_path: Path, app: webtest.TestApp) -> None:
+    sign_in(app)
+    source = write_source(tmp_path)
+    path = source / "data" / "yaml" / "books_read.yaml"
+    path.write_text(BOOKS.replace('        rating: 7', '        rating: 7\n        mood: "happy"'), encoding="UTF8")
+    with Session(engine) as session, pytest.raises(import_world.WorldImportError, match=r"a reading of 'The Hobbit' has fields .*mood"):
+        import_world.import_books(session, owner(session), source)
+
+
 def test_people_links_point_at_people(imported: webtest.TestApp) -> None:
     ids = {p["name"]: p["id"] for p in imported.get("/api/people").json}
     for path in ("/api/concert-visits", "/api/museum-visits"):
@@ -600,7 +701,7 @@ def test_reimport_replaces(imported: webtest.TestApp, engine: Engine, tmp_path: 
     with Session(engine) as session:
         import_world.import_world(session, owner(session), tmp_path)
         session.commit()
-        for model, count in ((Concert, 3), (Museum, 3), (AudioCourse, 2), (Person, 5), (Organization, 3), (Image, 5)):
+        for model, count in ((Concert, 3), (Museum, 3), (AudioCourse, 2), (Person, 5), (Organization, 3), (Image, 7)):
             assert session.scalar(select(func.count()).select_from(model)) == count
         assert session.scalar(select(func.count()).select_from(concert_companions)) == 3
         assert session.scalar(select(func.count()).select_from(person_organizations)) == 3
@@ -830,7 +931,7 @@ def test_delete(imported: webtest.TestApp, engine: Engine) -> None:
     assert imported.get("/api/concert-visits").json == []
     with Session(engine) as session:
         # the concert photo went with its last concert; the museum one stays
-        assert sorted(session.scalars(select(Image.filename)).all()) == ["acme.svg", "audiocourse-gc-337.jpg", "audiocourse-internal-1.jpg", "museum-15.jpg"]
+        assert sorted(session.scalars(select(Image.filename)).all()) == ["acme.svg", "audiocourse-gc-337.jpg", "audiocourse-internal-1.jpg", "book-goodreads-5907.jpg", "book-simania-7005.jpg", "museum-15.jpg"]
         assert session.scalar(select(func.count()).select_from(concert_companions)) == 0
     imported.delete("/api/concert-visits/1", status=404)
 
@@ -870,13 +971,14 @@ def test_stats(imported: webtest.TestApp) -> None:
     imported.post_json("/api/library-entries", {"kind": "book", "title": "Dune", "status": "done"}, status=201)
     stats = imported.get("/api/stats").json
     assert (stats["concerts"], stats["museum_visits"], stats["museums"], stats["audio_courses"]) == (3, 3, 2, 2)
-    assert (stats["people"], stats["organizations"], stats["images"]) == (5, 3, 5)
+    assert (stats["people"], stats["organizations"], stats["images"]) == (5, 3, 7)
     assert (stats["organization_types"], stats["person_types"]) == (7, 5)
     # Bob, Singer and The Band performed; Bob also went with the user, he counts once
     assert stats["performers"] == 3
     books = next(k for k in stats["library"] if k["kind"] == "book")
-    assert books["total"] == 1
-    assert books["by_status"] == {"Done": 1}
+    # Dune and the three imported books
+    assert books["total"] == 4
+    assert books["by_status"] == {"Done": 3, "Want to": 1}
     assert {t["name"]: t["count"] for t in stats["people_by_type"]} == {"Co-Worker": 2, "Performer": 2, "Lecturer": 1}
     assert {t["name"]: t["count"] for t in stats["organizations_by_type"]} == {"Company": 2, "University": 1}
     assert stats["concerts_by_year"] == [{"year": 1989, "count": 1}, {"year": 2001, "count": 1}, {"year": 2020, "count": 1}]

@@ -694,6 +694,16 @@ button.danger {
 	color: var(--muted);
 }
 
+/* a library entry's cover, before its title */
+.cover-thumb {
+	width: 2rem;
+	height: 3rem;
+	object-fit: cover;
+	vertical-align: middle;
+	margin-right: 0.5rem;
+	border-radius: 2px;
+}
+
 .ids {
 	display: inline-flex;
 	gap: 0.35rem;

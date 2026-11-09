@@ -206,17 +206,19 @@ function cell(parent, className) {
 	return td;
 }
 
-// [field, label, url of the work on that catalog, id of the "open" link in the add form]
+// [field, label, url of the work on that catalog, id of the "open" link in the add form (films only)]
 const CATALOGS = [
 	["imdb_id", "IMDb", (id) => `https://www.imdb.com/title/${id}/`, "imdb-link"],
 	["tmdb_id", "TMDB", (id) => `https://www.themoviedb.org/movie/${id}`, "tmdb-link"],
 	["rotten_tomatoes_id", "RT", (id) => `https://www.rottentomatoes.com/${id}`, "rt-link"],
+	["goodreads_id", "Goodreads", (id) => `https://www.goodreads.com/book/show/${id}`, null],
+	["simania_id", "Simania", (id) => `https://simania.co.il/bookdetails.php?item_id=${id}`, null],
 ];
 
 // The read-only id fields of the add form: the values come from the search, never typed.
 function showMovieIds(values) {
 	const form = $("add-form");
-	for (const [key, , url, linkId] of CATALOGS) {
+	for (const [key, , url, linkId] of CATALOGS.filter((catalog) => catalog[3])) {
 		const value = values[key] ?? "";
 		form.elements[key].value = value;
 		const link = $(linkId);
@@ -399,7 +401,14 @@ function editable(node, item) {
 function renderRow(entry) {
 	const tr = document.createElement("tr");
 	const title = cell(tr, "title");
-	title.textContent = entry.title;
+	if (entry.image) {
+		const cover = el("img", "cover-thumb");
+		cover.src = entry.image;
+		cover.alt = "";
+		cover.loading = "lazy";
+		title.appendChild(cover);
+	}
+	title.append(entry.title);
 	const links = catalogLinks(entry);
 	if (links) {
 		title.appendChild(links);
@@ -893,11 +902,12 @@ async function libraryPage() {
 		dialogError("");
 		const body = { kind: state.kind };
 		for (const el of form.elements) {
-			if (el.name) {
+			if (el.name && el.type !== "file") {
 				body[el.name] = el.value;
 			}
 		}
 		try {
+			body.image_id = await uploadPhoto(form);
 			if (state.editing) {
 				await api(`/api/library-entries/${state.editing.work_id}`, { method: "PUT", body });
 			} else {
@@ -2670,6 +2680,7 @@ function prepareWorkForm(form, entry) {
 	for (const name of ["title", "creator", "year", "status", "rating", "started_on", "finished_on", "notes"]) {
 		form.elements[name].value = values[name] ?? "";
 	}
+	form.elements.photo.value = "";
 	for (const name of MOVIE_FIELDS) {
 		form.elements[name].readOnly = Boolean(entry);
 	}
