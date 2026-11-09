@@ -536,13 +536,15 @@ function setupSidebar() {
 
 async function loadEntries() {
 	state.entries = await api(`/api/library-entries?kind=${encodeURIComponent(state.kind)}`);
+	// the statuses in the filter, with how many entries have each
+	await fillTypeFilter(state.kind);
 	renderEntries();
 }
 
 // The library's cards: searched and sorted with the same toolbar as every other tab.
 function renderEntries() {
 	const { plural } = state.config.kinds[state.kind];
-	const shown = rankBySearch(sortItems(state.entries.filter(searchMatches)));
+	const shown = rankBySearch(sortItems(state.entries.filter((entry) => typeMatches(entry) && searchMatches(entry))));
 	setCount(state.kind, state.entries.length);
 	$("library-cards").replaceChildren(...shown.map(libraryCard));
 	$("library-cards").hidden = shown.length === 0;
@@ -802,6 +804,8 @@ function setupSort() {
 async function selectKind(kind) {
 	state.kind = kind;
 	state.view = kind;
+	// the last kind's entries are not this one's: the filter counts start at 0 until they load
+	state.entries = [];
 	navigate(kind);
 	showSection("library-view");
 	$("world-search").value = "";
@@ -1038,7 +1042,6 @@ const WORLDS = {
 // views whose rows have a type -> the view of their enumeration
 const TYPED = { people: "person-types", organizations: "organization-types" };
 
-// the id of the form, row or card of a view: "organization type" -> "organization-type"
 // a view's name in ids: a world's noun ("museum-visit"), or a library kind ("book")
 function slug(view) {
 	if (!(view in WORLDS)) {
@@ -1577,9 +1580,11 @@ const TABLES = {
 	devices: ["devices-table", "device-rows", typeRow],
 };
 
-// The type filter next to the search, for views whose rows have a type: a set
-// of the picked values ("none" for the rows without a type, else type ids),
-// empty for everything. A row matches when it has any picked type. Kept per view.
+// The filter next to the search. On a view whose rows have a type (people,
+// organizations) it picks types; on a library kind it picks statuses (Done,
+// Want to, ...). A set of the picked values ("none" for the rows without a
+// type, else type ids or status keys), empty for everything. A row matches
+// when it has any picked value. Kept per view.
 const typeFilters = {};
 
 function pickedTypes(view) {
@@ -1589,30 +1594,62 @@ function pickedTypes(view) {
 	return typeFilters[view];
 }
 
+// What a view is filtered by: its noun, its choices ({value, name, count}),
+// whether rows can have none, and the values of a row. Null: nothing to filter by.
+async function filterSpec(view) {
+	if (TYPED[view]) {
+		const types = await worldList(TYPED[view]);
+		return {
+			noun: "types",
+			none: "No type",
+			options: types.map((t) => ({ value: String(t.id), name: t.name, count: t.count })),
+		};
+	}
+	if (state.config.kinds[view]) {
+		const counts = {};
+		for (const entry of state.entries) {
+			counts[entry.status] = (counts[entry.status] || 0) + 1;
+		}
+		return {
+			noun: "statuses",
+			none: null,
+			options: Object.entries(state.config.statuses).map(([value, name]) => ({ value, name, count: counts[value] || 0 })),
+		};
+	}
+	return null;
+}
+
+function filterValues(view, item) {
+	if (state.config.kinds[view]) {
+		return [item.status];
+	}
+	// a person has a list of types, an organization one
+	return (item.types || (item.type ? [item.type] : [])).map((t) => String(t.id));
+}
+
 // The button names what is picked: "All types", the names, or how many.
-function typeFilterLabel(view, types) {
+function typeFilterLabel(view, spec) {
 	const picked = pickedTypes(view);
 	if (picked.size === 0) {
-		return "All types";
+		return `All ${spec.noun}`;
 	}
-	const names = [...picked].map((value) => (value === "none" ? "No type" : types.find((t) => String(t.id) === value)?.name)).filter(Boolean);
-	return names.length <= 2 ? names.join(", ") : `${names.length} types`;
+	const names = [...picked].map((value) => (value === "none" ? spec.none : spec.options.find((o) => o.value === value)?.name)).filter(Boolean);
+	return names.length <= 2 ? names.join(", ") : `${names.length} ${spec.noun}`;
 }
 
 async function fillTypeFilter(view) {
 	const button = $("type-filter");
 	const menu = $("type-filter-menu");
-	const typesView = TYPED[view];
+	const spec = await filterSpec(view);
 	menu.hidden = true;
 	button.setAttribute("aria-expanded", "false");
-	// a view without types keeps the control, disabled
-	button.disabled = !typesView;
-	if (!typesView) {
+	// a view with nothing to filter by keeps the control, disabled
+	button.disabled = !spec;
+	if (!spec) {
 		button.textContent = "All types";
 		menu.replaceChildren();
 		return;
 	}
-	const types = await worldList(typesView);
 	const picked = pickedTypes(view);
 	const box = (value, label) => {
 		const line = el("label", "type-filter-option");
@@ -1626,7 +1663,7 @@ async function fillTypeFilter(view) {
 			} else {
 				picked.delete(value);
 			}
-			button.textContent = typeFilterLabel(view, types);
+			button.textContent = typeFilterLabel(view, spec);
 			rerender();
 		};
 		line.append(input, ` ${label}`);
@@ -1639,25 +1676,25 @@ async function fillTypeFilter(view) {
 		for (const input of menu.querySelectorAll("input")) {
 			input.checked = false;
 		}
-		button.textContent = typeFilterLabel(view, types);
+		button.textContent = typeFilterLabel(view, spec);
 		rerender();
 	};
 	menu.replaceChildren(
-		...types.map((t) => box(String(t.id), `${t.name} (${t.count})`)),
-		box("none", "No type"),
+		...spec.options.map((o) => box(o.value, `${o.name} (${o.count})`)),
+		...(spec.none ? [box("none", spec.none)] : []),
 		clear,
 	);
-	button.textContent = typeFilterLabel(view, types);
+	button.textContent = typeFilterLabel(view, spec);
 }
 
 function typeMatches(item) {
-	const picked = pickedTypes(state.view);
-	if (!TYPED[state.view] || picked.size === 0) {
+	const view = state.view;
+	const picked = pickedTypes(view);
+	if (picked.size === 0 || !(TYPED[view] || state.config.kinds[view])) {
 		return true;
 	}
-	// a person has a list of types, an organization one
-	const types = item.types || (item.type ? [item.type] : []);
-	return types.length === 0 ? picked.has("none") : types.some((t) => picked.has(String(t.id)));
+	const values = filterValues(view, item);
+	return values.length === 0 ? picked.has("none") : values.some((value) => picked.has(value));
 }
 
 // Everything a search can match on, as one lowercase string.

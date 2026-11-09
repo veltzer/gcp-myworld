@@ -184,7 +184,8 @@ tell them apart. Each person may have any number of types (a neighbor and a frie
 the user's own person types enumeration (sidebar, Types, Person; an import starts with Family,
 Girlfriend, Performer and Co-Worker and guesses them from the data: see
 `_person_type` in `scripts/import_world.py`). People and Organizations
-have a type filter next to the search.
+have a type filter next to the search; on a library kind (Books, Films,
+...) the same control filters by status.
 
 A person may be at several organizations: the People tab links each one
 to its card in Organizations, and an organization card links back to its
