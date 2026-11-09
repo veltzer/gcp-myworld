@@ -10,10 +10,19 @@ import flask
 import requests
 import werkzeug
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from myworld import auth, movies, world
 from myworld.api import ApiError, json_body, opt_date, opt_int, text
-from myworld.models import KINDS, RATING_MAX, RATING_MIN, STATUSES, UserWork, Work
+from myworld.models import (
+    KINDS,
+    RATING_MAX,
+    RATING_MIN,
+    STATUSES,
+    Person,
+    UserWork,
+    Work,
+)
 
 bp = flask.Blueprint("views", __name__)
 
@@ -63,6 +72,8 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
         "tmdb_id": entry.work.tmdb_id,
         "rotten_tomatoes_id": entry.work.rotten_tomatoes_id,
         "goodreads_id": entry.work.goodreads_id,
+        # who wrote it, as the user's people (the People view links to them)
+        "authors": [{"id": p.id, "name": p.name} for p in entry.authors],
         "simania_id": entry.work.simania_id,
         "image": world.image_url(entry.image_id),
         "status": entry.status,
@@ -93,6 +104,9 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any]) -> None:
     image_id = world.owned_image(body)
     if image_id is not None:
         entry.image_id = image_id
+    # the authors, ids of the user's people, are set only when sent
+    if "authors" in body:
+        entry.authors = world.owned_list(body, "authors", Person)
 
 
 def _apply_work_ids(work: Work, body: dict[str, Any]) -> None:
@@ -155,7 +169,7 @@ def api_library_list() -> flask.Response:
     kind = flask.request.args.get("kind")
     if kind is not None:
         query = query.where(Work.kind == _kind(kind))
-    entries = flask.g.db.execute(query.order_by(UserWork.updated_at.desc())).scalars().all()
+    entries = flask.g.db.execute(query.options(selectinload(UserWork.authors)).order_by(UserWork.updated_at.desc())).scalars().all()
     return flask.jsonify([_entry_json(e) for e in entries])
 
 

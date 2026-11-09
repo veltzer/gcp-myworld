@@ -295,6 +295,8 @@ def test_books(engine: Engine) -> None:
         session.add_all([alice, bob])
         session.flush()
         cover = Image(owner_id=alice.id, filename="b.jpg", content_type="image/jpeg", sha256="0" * 64, data=b"\xff\xd8")
+        # the authors are each account's own people
+        ann, bobs_ann = Person(owner_id=alice.id, first_name="Ann"), Person(owner_id=bob.id, first_name="Ann")
         works = {
             "Good": Work(kind="book", title="Good", creator="Ann", goodreads_id="1"),
             "Hebrew": Work(kind="book", title="Hebrew", creator="Ben", simania_id="2"),
@@ -304,20 +306,20 @@ def test_books(engine: Engine) -> None:
             # a film is not a book: none of the book checks look at it
             "Film": Work(kind="film", title="Film", creator=""),
         }
-        session.add_all([cover, *works.values()])
+        session.add_all([cover, ann, bobs_ann, *works.values()])
         session.flush()
         session.add_all([
             # every rule kept: read, rated, with a cover and a link
-            UserWork(user_id=alice.id, work_id=works["Good"].id, status="done", rating=8, image_id=cover.id),
+            UserWork(user_id=alice.id, work_id=works["Good"].id, status="done", rating=8, image_id=cover.id, authors=[ann]),
             # not read yet: no rating asked for
-            UserWork(user_id=alice.id, work_id=works["Hebrew"].id, status="wishlist", image_id=cover.id),
+            UserWork(user_id=alice.id, work_id=works["Hebrew"].id, status="wishlist", image_id=cover.id, authors=[ann]),
             # each of these breaks rules
             UserWork(user_id=alice.id, work_id=works["Bare"].id, status="done"),
-            UserWork(user_id=alice.id, work_id=works["Twice"].id, status="done", rating=6, image_id=cover.id),
-            UserWork(user_id=alice.id, work_id=works["twice "].id, status="done", rating=6, image_id=cover.id),
+            UserWork(user_id=alice.id, work_id=works["Twice"].id, status="done", rating=6, image_id=cover.id, authors=[ann]),
+            UserWork(user_id=alice.id, work_id=works["twice "].id, status="done", rating=6, image_id=cover.id, authors=[ann]),
             UserWork(user_id=alice.id, work_id=works["Film"].id, status="done"),
             # bob has the same book as alice: two accounts, no duplicate
-            UserWork(user_id=bob.id, work_id=works["Good"].id, status="done", rating=5, image_id=cover.id),
+            UserWork(user_id=bob.id, work_id=works["Good"].id, status="done", rating=5, image_id=cover.id, authors=[bobs_ann]),
         ])
         session.commit()
 

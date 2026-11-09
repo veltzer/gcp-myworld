@@ -347,7 +347,7 @@ def _dates(body: dict[str, Any], current: Concert | Museum | AudioCourse | YouTu
     return out
 
 
-def _owned_list[T: (Person, Organization, PersonType, RelationType)](body: dict[str, Any], key: str, model: type[T]) -> list[T]:
+def owned_list[T: (Person, Organization, PersonType, RelationType)](body: dict[str, Any], key: str, model: type[T]) -> list[T]:
     """ body[key], a list of ids of the user's own rows of model, as those rows. """
     ids = body.get(key) or []
     if not isinstance(ids, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
@@ -363,7 +363,7 @@ def _owned_list[T: (Person, Organization, PersonType, RelationType)](body: dict[
 
 
 def _owned_people(body: dict[str, Any]) -> list[Person]:
-    return _owned_list(body, "people", Person)
+    return owned_list(body, "people", Person)
 
 
 def owned_image(body: dict[str, Any]) -> int | None:
@@ -398,7 +398,7 @@ def drop_unused_images() -> None:
 
 def _apply_concert(concert: Concert, body: dict[str, Any], current: Concert | None) -> None:
     concert.name = text(body, "name", required=True)
-    concert.performers = _owned_list(body, "performers", Person)
+    concert.performers = owned_list(body, "performers", Person)
     concert.event = text(body, "event")
     concert.genre = text(body, "genre")
     concert.venue = text(body, "venue")
@@ -458,7 +458,7 @@ def _stamp(body: dict[str, Any], key: str, current: datetime.datetime | None) ->
 
 def _apply_audio_course(course: AudioCourse, body: dict[str, Any], current: AudioCourse | None) -> None:
     course.name = text(body, "name", required=True)
-    course.lecturers = _owned_list(body, "lecturers", Person)
+    course.lecturers = owned_list(body, "lecturers", Person)
     course.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
     course.review = text(body, "review")
     course.device = _owned_type(Device, opt_int(body, "device_id", 1, 2**31 - 1))
@@ -521,8 +521,8 @@ def _apply_person(person: Person, body: dict[str, Any]) -> None:
     person.description = text(body, "description")
     if not person.first_name and not person.surname and not person.description:
         raise ApiError(400, "a person needs a first name, a surname or a description")
-    person.organizations = _owned_list(body, "organizations", Organization)
-    person.types = _owned_list(body, "type_ids", PersonType)
+    person.organizations = owned_list(body, "organizations", Organization)
+    person.types = owned_list(body, "type_ids", PersonType)
 
 
 def _apply_organization(organization: Organization, body: dict[str, Any]) -> None:
@@ -536,7 +536,7 @@ def _apply_organization(organization: Organization, body: dict[str, Any]) -> Non
     type_id = opt_int(body, "type_id", 1, 2**31 - 1)
     organization.type = _owned_type(OrganizationType, type_id)
     # looked up before anything is set on a new organization, which is not in the session yet
-    relations = _owned_list(body, "relation_ids", RelationType)
+    relations = owned_list(body, "relation_ids", RelationType)
     image_id = owned_image(body)
     organization.relations = relations
     organization.status = text(body, "status")

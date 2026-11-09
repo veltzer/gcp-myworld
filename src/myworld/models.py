@@ -27,6 +27,7 @@ from sqlalchemy import (
     DateTime,
     Double,
     ForeignKey,
+    ForeignKeyConstraint,
     Integer,
     LargeBinary,
     String,
@@ -153,9 +154,26 @@ class UserWork(Base):
 
     user: Mapped[User] = relationship(back_populates="works")
     work: Mapped[Work] = relationship(back_populates="users", lazy="joined")
+    # who wrote it (a book's authors): the user's own people, as the works are shared
+    authors: Mapped[list[Person]] = relationship(
+        secondary=lambda: library_entry_authors, back_populates="wrote", order_by=lambda: Person.id,
+    )
 
 
 # ─── concerts, museums, people ───────────────────────────────────────────────
+
+# a library entry's authors: the user's people who wrote it, one row each
+library_entry_authors = Table(
+    "library_entry_authors",
+    Base.metadata,
+    Column("user_id", Integer, primary_key=True),
+    Column("work_id", Integer, primary_key=True),
+    Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
+    ForeignKeyConstraint(
+        ["user_id", "work_id"], ["library_entries.user_id", "library_entries.work_id"],
+        ondelete="CASCADE", name="fk_library_entry_authors_entry",
+    ),
+)
 
 concert_companions = Table(
     "concert_companions",
@@ -266,6 +284,10 @@ class Person(Base):
     )
     lectured: Mapped[list[AudioCourse]] = relationship(
         secondary=audio_course_lecturers, back_populates="lecturers",
+    )
+    # the library entries (books) they wrote
+    wrote: Mapped[list[UserWork]] = relationship(
+        secondary=library_entry_authors, back_populates="authors",
     )
 
 

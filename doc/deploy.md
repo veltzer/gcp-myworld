@@ -182,8 +182,10 @@ say, is all first name), and names are not unique: two people of the same
 name are two rows, and the pickers show each one's type and description to
 tell them apart. Each person may have any number of types (a neighbor and a friend) from
 the user's own person types enumeration (sidebar, Types, Person; an import starts with Family,
-Girlfriend, Performer and Co-Worker and guesses them from the data: see
-`_person_type` in `scripts/import_world.py`). People and Organizations
+Girlfriend, Performer, Co-Worker, Lecturer and Book Author and guesses them from the data: see
+`_person_type` in `scripts/import_world.py`). A book's authors are people
+too (Book Authors): the book's card links to them, and their Connections
+list the books they wrote. People and Organizations
 have a type filter next to the search; on a library kind (Books, Films,
 ...) the same control filters by status and by whether an entry has a
 cover, together (Done and No cover: the books read that have no cover).
@@ -267,7 +269,11 @@ first `companies` tables to `organizations`, then making
   `scripts/import_world.py --books`, which adds the books the account does
   not have yet and can run again; the covers come from
   `static/images/book-*.jpg`, and a book the account has already gets its
-  cover when it has none and the site has one now. A book read is Done, one only owned is Want
+  cover when it has none and the site has one now. Each author is the
+  account's person of that name, or a new one, and is a Book Author; a
+  book the account has already gets its authors when it has none linked,
+  and is found by its Goodreads or Simania id, so an author added to the
+  yaml since fills in its author rather than adding the book again. A book read is Done, one only owned is Want
   to. Its rating, review and finish date are those of its latest dated
   reading; the other readings, the languages read and owned, the names in
   other languages, the publisher and the remark go into its notes.
@@ -324,15 +330,17 @@ with hyphens for underscores (`library_entries` is
 others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
 
 - `GET /api/library-entries[?kind=book]`: the user's entries, each with
-  `image`, its cover (the user's own image, the picture on its card).
+  `image`, its cover (the user's own image, the picture on its card), and
+  `authors`, the people who wrote it (`id` and `name`).
 - `POST /api/library-entries`: add (or update, if the work is already in the
   library) with `kind`, `title`, `creator`, `year`, `status`, `rating`,
   `started_on`, `finished_on`, `notes`, `image_id` (an upload, see
   `POST /api/images`), and for films optionally `imdb_id`, `tmdb_id`,
   `rotten_tomatoes_id`, for books `goodreads_id` and `simania_id`; the
-  catalog ids show as links next to the title.
-- `PUT /api/library-entries/<work_id>`: update the per-user fields and the
-  cover.
+  catalog ids show as links next to the title. `authors`, a list of ids of
+  the user's people, sets the authors; left out, they stay as they are.
+- `PUT /api/library-entries/<work_id>`: update the per-user fields, the
+  cover and (when sent) the authors.
 - `DELETE /api/library-entries/<work_id>`: remove from the library.
 
 ## Data model
@@ -347,7 +355,9 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   added to `KINDS` in `src/myworld/models.py`.
 - `library_entries`: what a user thinks about a work: status, rating,
   dates, notes, and its cover (`image_id`). All per-user queries go through this table, so users never
-  see each other's entries even though the work rows are shared.
+  see each other's entries even though the work rows are shared. Its
+  authors are the user's people, in `library_entry_authors` (by the
+  entry's `user_id` and `work_id`, and `person_id`).
 - Every other table holds one user's rows (by `owner_id`, or through the
   rows it links), never shared:
     - `concert_visits`, `museum_visits`, `audio_courses`, `youtube_videos`:
@@ -358,7 +368,7 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   `relation_types`, `devices`.
     - link tables, named `<row>_<what it links to>`: `concert_companions`
   and `museum_companions` (who the user went with),
-  `concert_performers`, `audio_course_lecturers`,
+  `concert_performers`, `audio_course_lecturers`, `library_entry_authors`,
   `person_organizations`, `person_type_links`,
   `organization_relation_types`.
 

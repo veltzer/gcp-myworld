@@ -94,6 +94,7 @@ from myworld.models import (
     audio_course_lecturers,
     concert_companions,
     concert_performers,
+    library_entry_authors,
     make_engine,
     museum_companions,
     organization_relation_types,
@@ -144,6 +145,7 @@ PERSON_TYPES = {
     "Performer": "Someone seen on stage",
     "Co-Worker": "Someone worked with",
     "Lecturer": "Someone who taught a course I took",
+    "Book Author": "Someone who wrote a book I read or own",
 }
 # the relation types (how an organization is related to the user) every import
 # starts the user with, by the word organizations.yaml uses in its functions
@@ -282,6 +284,8 @@ def _person_type(person: Person) -> str | None:
         return "Performer"
     if person.lectured:
         return "Lecturer"
+    if person.wrote:
+        return "Book Author"
     return None
 
 
@@ -317,7 +321,9 @@ def give_types(session: Session, owner: User) -> dict[str, int]:
     people = session.scalars(
         select(Person)
         .where(Person.owner_id == owner.id, ~Person.types.any())
-        .options(selectinload(Person.organizations), selectinload(Person.performed), selectinload(Person.lectured))
+        .options(
+            selectinload(Person.organizations), selectinload(Person.performed), selectinload(Person.lectured), selectinload(Person.wrote),
+        )
     )
     people_typed = 0
     for person in people:
@@ -362,6 +368,8 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     session.execute(delete(organization_relation_types).where(
         organization_relation_types.c.organization_id.in_(select(Organization.id).where(Organization.owner_id == owner.id)),
     ))
+    # every person goes, so every author link of owner's library entries does too
+    session.execute(delete(library_entry_authors).where(library_entry_authors.c.user_id == owner.id))
     # the books are added again below; other library entries lose their cover, as every image goes
     session.execute(delete(UserWork).where(
         UserWork.user_id == owner.id, UserWork.work_id.in_(select(Work.id).where(Work.kind == "book")),
@@ -519,7 +527,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     books = import_books(session, owner, source)
     typed = give_types(session, owner)
     return {
-        "people": len(people) + courses["lecturers added"], "organizations": len(organizations), "organization types": len(types),
+        "people": len(people) + courses["lecturers added"] + books["authors added"], "organizations": len(organizations), "organization types": len(types),
         "relation types": len(relation_types), "person types": len(PERSON_TYPES), "people with a type": typed["people given a type"],
         "concerts": len(concert_items), "museums": len(museum_items), "audio courses": courses["audio courses"],
         "YouTube videos": videos["YouTube videos"] + history["YouTube videos added"], "devices": courses["devices added"] + videos["devices added"],
@@ -708,12 +716,36 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
     Add owner's books from source, with their covers: a library entry for
     each book owner does not have yet (the work, which is shared, is reused
     when there is one), so it can run again. An entry owner has already only
-    gets its cover, when it has none and source has one now. Does not commit.
+    gets its cover, when it has none and source has one now, and its
+    authors, when it has none. Each author is owner's person of that name,
+    or a new person, and is a Book Author (a person type). Does not commit.
     """
     items = _book_items(source)
     image_dir = source / "static" / "images"
     stored = {image.filename: image for image in session.scalars(select(Image).where(Image.owner_id == owner.id))}
-    added = skipped = images = uncovered = covered = 0
+    added = skipped = images = uncovered = covered = credited = people_added = typed = 0
+    person_types, _ = _starting_types(session, owner, PersonType, {"Book Author": PERSON_TYPES["Book Author"]})
+    book_author = person_types["Book Author"]
+    by_name: dict[str, list[Person]] = {}
+    for person in session.scalars(select(Person).where(Person.owner_id == owner.id).options(selectinload(Person.types))):
+        by_name.setdefault(person.name, []).append(person)
+
+    def author(name: str) -> Person:
+        """ owner's person called name, made a Book Author; a new one when there is none. """
+        nonlocal people_added, typed
+        found = by_name.get(name, [])
+        if len(found) > 1:
+            raise WorldImportError(f"books_read.yaml: {len(found)} people are called {name!r}; make the names differ first")
+        if not found:
+            first_name, surname = split_name(name)
+            found = [Person(owner_id=owner.id, first_name=first_name, surname=surname, description="", types=[])]
+            session.add(found[0])
+            by_name[name] = found
+            people_added += 1
+        if book_author not in found[0].types:
+            found[0].types.append(book_author)
+            typed += 1
+        return found[0]
 
     def book_cover(goodreads_id: str, simania_id: str) -> Image | None:
         """ The book's cover, stored once per owner; None when veltzer.github.io has none (a few books). """
@@ -740,13 +772,23 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
         creator = ", ".join(_english_first(alternatives)["name"] for alternatives in item["authors"])
         goodreads_id = next((n["goodreads_id"] for n in item["names"] if n.get("goodreads_id")), "")
         simania_id = next((n["simania_id"] for n in item["names"] if n.get("simania_id")), "")
-        work = session.scalars(select(Work).where(
-            Work.kind == "book", Work.title == title, Work.creator == creator, Work.year.is_(None),
-        )).one_or_none()
+        names = [_english_first(alternatives)["name"] for alternatives in item["authors"]]
+        if len(set(names)) != len(names):
+            raise WorldImportError(f"books_read.yaml: {title!r} names an author twice")
+        # the book's work: by its catalog id, so an author added to the yaml since finds it, else by title and author
+        work = None
+        for column, value in ((Work.goodreads_id, goodreads_id), (Work.simania_id, simania_id)):
+            if work is None and value:
+                work = session.scalars(select(Work).where(Work.kind == "book", column == str(value))).first()
+        if work is None:
+            work = session.scalars(select(Work).where(
+                Work.kind == "book", Work.title == title, Work.creator == creator, Work.year.is_(None),
+            )).one_or_none()
         if work is None:
             work = Work(kind="book", title=title, creator=creator, year=None)
             session.add(work)
-        # catalog ids are only filled in, never overwritten
+        # the author and the catalog ids are only filled in, never overwritten
+        work.creator = work.creator or creator
         work.goodreads_id = work.goodreads_id or str(goodreads_id)
         work.simania_id = work.simania_id or str(simania_id)
         work.external_id = work.external_id or str(item.get("isbn", ""))
@@ -760,6 +802,10 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
                 if cover is not None:
                     entry.image_id = cover.id
                     covered += 1
+            # the authors, as people, of an entry that has none (one imported before they were people)
+            if not entry.authors and names:
+                entry.authors = [author(name) for name in names]
+                credited += 1
             continue
         cover = book_cover(goodreads_id, simania_id)
         readings = item["readings"]
@@ -779,6 +825,7 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
             finished_on=_reading_day(main) if main else None,
             notes=notes,
             image_id=cover.id if cover else None,
+            authors=[author(name) for name in names],
         ))
         added += 1
         uncovered += cover is None
@@ -786,6 +833,7 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
     return {
         "books": added, "books there already": skipped, "covers": images,
         "covers given to books there already": covered, "books with no cover": uncovered,
+        "authors added": people_added, "people made book authors": typed, "authors given to books there already": credited,
     }
 
 

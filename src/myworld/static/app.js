@@ -402,7 +402,12 @@ function libraryCard(entry) {
 	if (links) {
 		body.insertBefore(links, list);
 	}
-	detail(list, creator, entry.creator);
+	// the authors as links to them in People; the plain text for an entry with none linked
+	if (entry.authors.length) {
+		linksDetail(list, creator, "people", entry.authors);
+	} else {
+		detail(list, creator, entry.creator);
+	}
 	detail(list, "Year", entry.year === null ? "" : String(entry.year));
 	detail(list, "Status", state.config.statuses[entry.status] || entry.status);
 	if (entry.rating !== null) {
@@ -1517,20 +1522,25 @@ const LINK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 12c
 
 // Everything that ties a person to the user, grouped, each entry a link to its card.
 async function showConnections(person) {
-	const [concerts, museums, courses] = await Promise.all([worldList("concerts"), worldList("museums"), worldList("audio-courses")]);
+	const [concerts, museums, courses, books] = await Promise.all([
+		worldList("concerts"), worldList("museums"), worldList("audio-courses"), api("/api/library-entries?kind=book"),
+	]);
 	const has = (list) => list.some((p) => p.id === person.id);
+	// a book is known by its work: #book/<work id>
+	const wrote = books.filter((b) => has(b.authors)).map((b) => ({ id: b.work_id, name: b.title }));
 	const groups = [
 		["Concerts you went to together", "concerts", concerts.filter((c) => has(c.people))],
 		["Concerts they performed at", "concerts", concerts.filter((c) => has(c.performers))],
 		["Museums you visited together", "museums", museums.filter((m) => has(m.people))],
 		["Audio courses they taught", "audio-courses", courses.filter((c) => has(c.lecturers))],
+		["Books they wrote", "book", wrote],
 		["Organizations", "organizations", person.organizations],
 	].filter(([, , items]) => items.length > 0);
 	$("connections-title").textContent = person.name;
 	const body = $("connections-body");
 	body.replaceChildren();
 	if (groups.length === 0) {
-		body.appendChild(el("p", "empty", "No concerts, museums, courses or organizations link you yet."));
+		body.appendChild(el("p", "empty", "No concerts, museums, courses, books or organizations link you yet."));
 	}
 	for (const [label, view, items] of groups) {
 		body.appendChild(el("h3", null, `${label} (${items.length})`));

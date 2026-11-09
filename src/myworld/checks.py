@@ -31,6 +31,7 @@ from myworld.models import (
     Work,
     YouTubeVideo,
     audio_course_lecturers,
+    library_entry_authors,
     museum_companions,
     organization_relation_types,
     person_type_links,
@@ -478,9 +479,10 @@ def check_book_links(session: Session) -> Result:
 
 @check("book-authors", "Every book has an author", "books", "book")
 def check_book_authors(session: Session) -> Result:
-    """ Every book in a library, of every account, has an author. """
+    """ Every book in a library, of every account, has an author: one of the account's people (a Book Author), linked to it. """
     books = _books(session)
-    return Result(checked=len(books), problems=[_book_problem(b, "has no author") for b in books if not b.work.creator.strip()])
+    written = set(session.execute(select(library_entry_authors.c.user_id, library_entry_authors.c.work_id)).tuples())
+    return Result(checked=len(books), problems=[_book_problem(b, "has no author") for b in books if (b.user_id, b.work_id) not in written])
 
 
 @check("book-ratings", "Every book read is rated", "books read", "book")

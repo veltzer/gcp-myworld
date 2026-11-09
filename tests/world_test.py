@@ -25,6 +25,7 @@ from myworld.models import (
     User,
     YouTubeVideo,
     concert_companions,
+    library_entry_authors,
     person_organizations,
 )
 from tests.conftest import sign_in
@@ -267,7 +268,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         counts = import_world.import_world(session, owner(session), write_source(tmp_path))
         session.commit()
     assert counts == {
-        "people": 5, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 5, "people with a type": 5,
+        "people": 7, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 6, "people with a type": 5,
         "concerts": 3, "museums": 3, "audio courses": 2, "YouTube videos": 4, "devices": 3, "books": 3, "images": 7}
     return app
 
@@ -496,7 +497,10 @@ def test_books_import_adds_once(imported: webtest.TestApp, engine: Engine, tmp_p
         counts = import_world.import_books(session, owner(session), source)
         session.commit()
     # the deleted one comes back, on the work there already, and its cover is stored again
-    assert counts == {"books": 1, "books there already": 2, "covers": 1, "covers given to books there already": 0, "books with no cover": 0}
+    assert counts == {
+        "books": 1, "books there already": 2, "covers": 1, "covers given to books there already": 0, "books with no cover": 0,
+        "authors added": 0, "people made book authors": 0, "authors given to books there already": 0,
+    }
     assert len(imported.get("/api/library-entries?kind=book").json) == 3
 
 
@@ -507,10 +511,59 @@ def test_books_import_adds_a_new_cover(imported: webtest.TestApp, engine: Engine
     with Session(engine) as session:
         counts = import_world.import_books(session, owner(session), source)
         session.commit()
-    assert counts == {"books": 0, "books there already": 3, "covers": 1, "covers given to books there already": 1, "books with no cover": 0}
+    assert counts == {
+        "books": 0, "books there already": 3, "covers": 1, "covers given to books there already": 1, "books with no cover": 0,
+        "authors added": 0, "people made book authors": 0, "authors given to books there already": 0,
+    }
     books = {b["title"]: b for b in imported.get("/api/library-entries?kind=book").json}
     assert imported.get(books["Chess"]["image"]).body == b"\xff\xd8chess"
     assert imported.get(books["The Hobbit"]["image"]).body == b"\xff\xd8hobbit"
+
+
+def test_book_authors_are_people(imported: webtest.TestApp) -> None:
+    books = {b["title"]: b for b in imported.get("/api/library-entries?kind=book").json}
+    people = {p["name"]: p for p in imported.get("/api/people").json}
+    # each author is a person, a Book Author, linked from the book
+    tolkien = people["J.R.R. Tolkien"]
+    assert (tolkien["first_name"], tolkien["surname"]) == ("J.R.R.", "Tolkien")
+    assert [t["name"] for t in tolkien["types"]] == ["Book Author"]
+    assert books["The Hobbit"]["authors"] == [{"id": tolkien["id"], "name": "J.R.R. Tolkien"}]
+    assert books["Chess"]["authors"] == []
+    # the authors can be set through the API, to the user's own people only
+    work_id = books["Chess"]["work_id"]
+    entry = imported.put_json(f"/api/library-entries/{work_id}", {"status": "wishlist", "authors": [tolkien["id"]]}).json
+    assert [a["name"] for a in entry["authors"]] == ["J.R.R. Tolkien"]
+    imported.put_json(f"/api/library-entries/{work_id}", {"status": "wishlist", "authors": [9999]}, status=400)
+    # an edit that does not send the authors keeps them
+    entry = imported.put_json(f"/api/library-entries/{work_id}", {"status": "done"}).json
+    assert [a["name"] for a in entry["authors"]] == ["J.R.R. Tolkien"]
+
+
+CHESS_WITHOUT_AUTHOR = '        simania_id: "11971"\n    authors: []\n'
+CHESS_WITH_AUTHOR = '        simania_id: "11971"\n    authors:\n      - - language: "english"\n          name: "Garry Kasparov"\n'
+
+
+def test_books_import_adds_a_new_author(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    source = write_source(tmp_path / "again")
+    # the yaml names Chess's author now: its work is found by its Simania id, not made again
+    assert CHESS_WITHOUT_AUTHOR in BOOKS
+    (source / "data" / "yaml" / "books_read.yaml").write_text(BOOKS.replace(CHESS_WITHOUT_AUTHOR, CHESS_WITH_AUTHOR), encoding="UTF8")
+    with Session(engine) as session:
+        # and entries imported before their authors were people get them
+        session.execute(delete(library_entry_authors))
+        session.commit()
+        counts = import_world.import_books(session, owner(session), source)
+        session.commit()
+    assert counts == {
+        "books": 0, "books there already": 3, "covers": 0, "covers given to books there already": 0, "books with no cover": 0,
+        "authors added": 1, "people made book authors": 1, "authors given to books there already": 3,
+    }
+    books = {b["title"]: b for b in imported.get("/api/library-entries?kind=book").json}
+    assert len(books) == 3
+    assert (books["Chess"]["creator"], [a["name"] for a in books["Chess"]["authors"]]) == ("Garry Kasparov", ["Garry Kasparov"])
+    assert [a["name"] for a in books["The Hobbit"]["authors"]] == ["J.R.R. Tolkien"]
+    kasparov = next(p for p in imported.get("/api/people").json if p["name"] == "Garry Kasparov")
+    assert [t["name"] for t in kasparov["types"]] == ["Book Author"]
 
 
 def test_books_unknown_field(engine: Engine, tmp_path: Path, app: webtest.TestApp) -> None:
@@ -531,9 +584,9 @@ def test_people_links_point_at_people(imported: webtest.TestApp) -> None:
 
 def test_people(imported: webtest.TestApp) -> None:
     people = imported.get("/api/people").json
-    # Robert Greenberg is a lecturer of audio_courses.yaml
-    assert [p["name"] for p in people] == ["Alice Friend", "Bob Buddy", "Robert Greenberg", "Singer", "The Band"]
-    alice, bob, _, _, _ = people
+    # Robert Greenberg is a lecturer of audio_courses.yaml, Erich Kestner and J.R.R. Tolkien authors of books_read.yaml
+    assert [p["name"] for p in people] == ["Alice Friend", "Bob Buddy", "Erich Kestner", "J.R.R. Tolkien", "Robert Greenberg", "Singer", "The Band"]
+    alice, bob, *_ = people
     assert alice["description"] == "Old friend"
     assert [c["name"] for c in alice["organizations"]] == ["Startup"]
     assert [c["name"] for c in bob["organizations"]] == ["Acme", "Startup"]
@@ -714,7 +767,7 @@ def test_reimport_replaces(imported: webtest.TestApp, engine: Engine, tmp_path: 
     with Session(engine) as session:
         import_world.import_world(session, owner(session), tmp_path)
         session.commit()
-        for model, count in ((Concert, 3), (Museum, 3), (AudioCourse, 2), (Person, 5), (Organization, 3), (Image, 7)):
+        for model, count in ((Concert, 3), (Museum, 3), (AudioCourse, 2), (Person, 7), (Organization, 3), (Image, 7)):
             assert session.scalar(select(func.count()).select_from(model)) == count
         assert session.scalar(select(func.count()).select_from(concert_companions)) == 3
         assert session.scalar(select(func.count()).select_from(person_organizations)) == 3
@@ -984,15 +1037,15 @@ def test_stats(imported: webtest.TestApp) -> None:
     imported.post_json("/api/library-entries", {"kind": "book", "title": "Dune", "status": "done"}, status=201)
     stats = imported.get("/api/stats").json
     assert (stats["concerts"], stats["museum_visits"], stats["museums"], stats["audio_courses"]) == (3, 3, 2, 2)
-    assert (stats["people"], stats["organizations"], stats["images"]) == (5, 3, 7)
-    assert (stats["organization_types"], stats["person_types"]) == (7, 5)
+    assert (stats["people"], stats["organizations"], stats["images"]) == (7, 3, 7)
+    assert (stats["organization_types"], stats["person_types"]) == (7, 6)
     # Bob, Singer and The Band performed; Bob also went with the user, he counts once
     assert stats["performers"] == 3
     books = next(k for k in stats["library"] if k["kind"] == "book")
     # Dune and the three imported books
     assert books["total"] == 4
     assert books["by_status"] == {"Done": 3, "Want to": 1}
-    assert {t["name"]: t["count"] for t in stats["people_by_type"]} == {"Co-Worker": 2, "Performer": 2, "Lecturer": 1}
+    assert {t["name"]: t["count"] for t in stats["people_by_type"]} == {"Co-Worker": 2, "Performer": 2, "Lecturer": 1, "Book Author": 2}
     assert {t["name"]: t["count"] for t in stats["organizations_by_type"]} == {"Company": 2, "University": 1}
     assert stats["concerts_by_year"] == [{"year": 1989, "count": 1}, {"year": 2001, "count": 1}, {"year": 2020, "count": 1}]
     assert stats["museums_by_year"] == [{"year": 2010, "count": 2}, {"year": 2011, "count": 1}]
