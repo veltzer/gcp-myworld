@@ -59,6 +59,11 @@ uses too).
   than a year.
 - `audio-course-duplicates`: no account has two audio courses of the same
   name.
+- `youtube-ids`: every YouTube video id is one YouTube could have given
+  (11 letters, digits, - and _); one that is not links to no video.
+- `youtube-dates`: every YouTube video has the date it was watched.
+- `youtube-reviews`: every YouTube video has a rating and a review.
+- `youtube-devices`: every YouTube video has the device it was watched on.
 
 ## Adding one
 

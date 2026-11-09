@@ -317,6 +317,30 @@
 					<button type="submit">Add</button>
 				</div>
 			</form>
+			<form id="youtube-video-form" class="dialog-form" hidden>
+				<div class="row">
+					<label class="wide">Video <input name="youtube_id" required placeholder="the video's id, or a link to it"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Name <input name="name" required></label>
+				</div>
+				<div class="row">
+					<label>Watched <input name="date" pattern="\d{4}(-\d{2}(-\d{2}(T[0-9:.]+Z)?)?)?" placeholder="YYYY-MM-DD, YYYY-MM or YYYY"></label>
+					<label>Rating <input name="rating" type="number"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Review <input name="review"></label>
+				</div>
+				<div class="row">
+					<label>Device <select name="device_id"></select></label>
+					<label>Where <input name="watched_at" placeholder="e.g. Home"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
 			<form id="person-form" class="dialog-form" hidden>
 				<div class="row">
 					<label class="wide">First name <input name="first_name"></label>

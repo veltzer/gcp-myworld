@@ -415,9 +415,9 @@ class Museum(_Dated, _Located, Base):
 
 class Device(Base):
     """
-    What something was played on: "Samsung S10", "Sansa Clip 2". An
-    enumeration the user keeps themselves (the Devices page); an audio course
-    points to one.
+    What something was played on: "Samsung S10", "Sansa Clip 2", "Desktop".
+    An enumeration the user keeps themselves (the Devices page); an audio
+    course or a YouTube video points to one.
     """
     __tablename__ = "devices"
     __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_device_name"),)
@@ -428,6 +428,7 @@ class Device(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     audio_courses: Mapped[list[AudioCourse]] = relationship(back_populates="device")
+    youtube_videos: Mapped[list[YouTubeVideo]] = relationship(back_populates="device")
 
 
 class AudioCourse(_Dated, Base):
@@ -466,6 +467,35 @@ class AudioCourse(_Dated, Base):
     image: Mapped[Image | None] = relationship()
 
     lecturers: Mapped[list[Person]] = relationship(secondary=audio_course_lecturers, back_populates="lectured")
+
+
+# a YouTube video id: 11 characters of the URL-safe base64 alphabet
+YOUTUBE_ID_LENGTH = 11
+
+
+class YouTubeVideo(_Dated, Base):
+    """
+    A YouTube video watched; the date (_Dated) is when. Imported from
+    veltzer.github.io's video_youtube.yaml, which it keeps field for field.
+    The page and the thumbnail are YouTube's own, found by youtube_id.
+    """
+    __tablename__ = "youtube_videos"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "youtube_id", name="uq_youtube_video_id"),
+        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_youtube_video_rating_range"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    youtube_id: Mapped[str] = mapped_column(String(20), nullable=False)
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    review: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # what it was watched on: one of the user's own devices
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id", ondelete="SET NULL"), nullable=True)
+    device: Mapped[Device | None] = relationship(back_populates="youtube_videos")
+    # where it was watched ("Home")
+    watched_at: Mapped[str] = mapped_column(String(100), nullable=False, default="")
 
 
 def database_url() -> str:

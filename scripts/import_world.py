@@ -20,6 +20,10 @@ static/images/audiocourse-{gc-<great_courses_id>,audible-<asin>,internal-<n>}.jp
 each lecturer is a person (one of the same name, or a new one), typed Lecturer,
 and each device one of the account's devices (made when first named).
 
+YouTube videos come from data/yaml/video_youtube.yaml; their thumbnails are
+YouTube's own, so there is no image to import. Their devices are the same
+list as the audio courses'.
+
 Everything the user had in these tables is replaced, in one transaction, so
 the script is safe to run again. Unknown fields in the YAML stop the import
 rather than being dropped, so nothing is lost on the way in.
@@ -32,7 +36,8 @@ GitHub).
 
 With --audio-courses only the audio courses are imported, added to what the
 account already has and touching nothing else; it stops if the account has
-audio courses already, rather than replace what was edited since.
+audio courses already, rather than replace what was edited since. --youtube
+does the same for the YouTube videos.
 
 The database is DATABASE_URL (default: the local sqlite file); for Cloud SQL
 see doc/deploy.md.
@@ -66,6 +71,7 @@ from myworld.models import (
     PersonType,
     RelationType,
     User,
+    YouTubeVideo,
     audio_course_lecturers,
     concert_people,
     concert_performers,
@@ -151,6 +157,7 @@ AUDIO_COURSE_FIELDS = DATE_FIELDS | {
     "name", "lecturers", "rating", "review", "device", "location", "date_started_utcz", "date_ended_utcz", "progress",
     "great_courses_id", "great_courses_slug", "audible_asin", "internal_id",
 }
+YOUTUBE_FIELDS = DATE_FIELDS | {"id", "name", "rating", "review", "device", "location"}
 # internal_id only names the image file; it is not stored
 MUSEUM_FIELDS = DATE_FIELDS | {
     "name", "city", "rating", "review", "remark", "url", "tickets", "with", "internal_id",
@@ -323,7 +330,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     session.execute(delete(organization_relation_types).where(
         organization_relation_types.c.organization_id.in_(select(Organization.id).where(Organization.owner_id == owner.id)),
     ))
-    for model in (AudioCourse, Device, Concert, Museum, Person, Organization, OrganizationType, PersonType, RelationType, Image):
+    for model in (AudioCourse, YouTubeVideo, Device, Concert, Museum, Person, Organization, OrganizationType, PersonType, RelationType, Image):
         session.execute(delete(model).where(model.owner_id == owner.id))
     session.flush()
 
@@ -468,11 +475,13 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
         ))
     session.flush()
     courses = import_audio_courses(session, owner, source)
+    videos = import_youtube(session, owner, source)
     typed = give_types(session, owner)
     return {
         "people": len(people) + courses["lecturers added"], "organizations": len(organizations), "organization types": len(types),
         "relation types": len(relation_types), "person types": len(PERSON_TYPES), "people with a type": typed["people given a type"],
-        "concerts": len(concert_items), "museums": len(museum_items), "audio courses": courses["audio courses"], "devices": courses["devices added"],
+        "concerts": len(concert_items), "museums": len(museum_items), "audio courses": courses["audio courses"],
+        "YouTube videos": videos["YouTube videos"], "devices": courses["devices added"] + videos["devices added"],
         "images": len(images) + courses["images"],
     }
 
@@ -523,19 +532,7 @@ def import_audio_courses(session: Session, owner: User, source: Path) -> dict[st
             added += 1
         return found[0]
 
-    devices = {d.name: d for d in session.scalars(select(Device).where(Device.owner_id == owner.id))}
-    devices_added = 0
-
-    def device(name: str) -> Device | None:
-        """ owner's device of that name, made the first time it is named. """
-        nonlocal devices_added
-        if not name:
-            return None
-        if name not in devices:
-            devices[name] = Device(owner_id=owner.id, name=name, description="")
-            session.add(devices[name])
-            devices_added += 1
-        return devices[name]
+    device = Devices(session, owner)
 
     image_dir = source / "static" / "images"
     # a cover already stored (an earlier import of courses since deleted) is used again
@@ -576,7 +573,50 @@ def import_audio_courses(session: Session, owner: User, source: Path) -> dict[st
             **_dates(item),
         ))
     session.flush()
-    return {"audio courses": len(items), "lecturers added": added, "devices added": devices_added, "images": images}
+    return {"audio courses": len(items), "lecturers added": added, "devices added": device.added, "images": images}
+
+
+def import_youtube(session: Session, owner: User, source: Path) -> dict[str, int]:
+    """ Add owner's YouTube videos from source. Stops when owner has YouTube videos already. Does not commit. """
+    items = _items(source, "video_youtube", YOUTUBE_FIELDS)
+    if session.scalar(select(YouTubeVideo.id).where(YouTubeVideo.owner_id == owner.id).limit(1)) is not None:
+        raise WorldImportError("this account has YouTube videos already: delete them first, or run the full import")
+    ids = [item["id"] for item in items]
+    if len(set(ids)) != len(ids):
+        raise WorldImportError("video_youtube.yaml: a video is listed twice")
+    device = Devices(session, owner)
+    for item in items:
+        session.add(YouTubeVideo(
+            owner_id=owner.id,
+            youtube_id=item["id"],
+            name=str(item["name"]),
+            rating=item.get("rating"),
+            review=item.get("review", ""),
+            device=device(item.get("device", "")),
+            watched_at=item.get("location", ""),
+            **_dates(item),
+        ))
+    session.flush()
+    return {"YouTube videos": len(items), "devices added": device.added}
+
+
+class Devices:
+    """ owner's devices by name: device(name) is the one of that name, made the first time it is named. """
+
+    def __init__(self, session: Session, owner: User) -> None:
+        self.session = session
+        self.owner = owner
+        self.by_name = {d.name: d for d in session.scalars(select(Device).where(Device.owner_id == owner.id))}
+        self.added = 0
+
+    def __call__(self, name: str) -> Device | None:
+        if not name:
+            return None
+        if name not in self.by_name:
+            self.by_name[name] = Device(owner_id=self.owner.id, name=name, description="")
+            self.session.add(self.by_name[name])
+            self.added += 1
+        return self.by_name[name]
 
 
 def main() -> int:
@@ -590,6 +630,10 @@ def main() -> int:
         help="import only the audio courses, adding them to what the account has (stops if it has audio courses already)",
     )
     parser.add_argument(
+        "--youtube", action="store_true",
+        help="import only the YouTube videos, adding them to what the account has (stops if it has YouTube videos already)",
+    )
+    parser.add_argument(
         "--only-types", action="store_true",
         help="import nothing: only add the starting types and type the organizations and people that have none",
     )
@@ -600,6 +644,8 @@ def main() -> int:
             owner = find_owner(session, args.email, args.subject)
             if args.only_types:
                 counts = give_types(session, owner)
+            elif args.youtube:
+                counts = import_youtube(session, owner, args.source)
             elif args.audio_courses:
                 counts = import_audio_courses(session, owner, args.source)
                 counts["people given a type"] = give_types(session, owner)["people given a type"]

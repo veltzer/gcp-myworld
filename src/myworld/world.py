@@ -22,6 +22,7 @@ from myworld.models import (
     RATING_MAX,
     RATING_MIN,
     STATUSES,
+    YOUTUBE_ID_LENGTH,
     AudioCourse,
     Concert,
     Device,
@@ -34,6 +35,7 @@ from myworld.models import (
     RelationType,
     UserWork,
     Work,
+    YouTubeVideo,
     concert_performers,
     organization_relation_types,
     person_person_types,
@@ -53,7 +55,7 @@ IMAGE_SIGNATURES: dict[str, tuple[bytes, ...]] = {
 IMAGE_EXTENSIONS = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp"}
 
 
-def _date_json(row: Concert | Museum | AudioCourse) -> dict[str, Any]:
+def _date_json(row: Concert | Museum | AudioCourse | YouTubeVideo) -> dict[str, Any]:
     """ The date as precisely as it is known, and a sortable key for it. """
     if row.date_utcz is not None:
         utc = row.date_utcz.replace(tzinfo=datetime.UTC)
@@ -166,6 +168,23 @@ def _course_url(course: AudioCourse) -> str:
     return course.link
 
 
+def youtube_video_json(video: YouTubeVideo) -> dict[str, Any]:
+    return {
+        "id": video.id,
+        "name": video.name,
+        **_date_json(video),
+        "date_timezone": video.date_timezone,
+        "youtube_id": video.youtube_id,
+        "rating": video.rating,
+        "review": video.review,
+        "device": None if video.device is None else {"id": video.device.id, "name": video.device.name},
+        "watched_at": video.watched_at,
+        # YouTube's own page and thumbnail (a grey one when the video is gone)
+        "url": f"https://www.youtube.com/watch?v={video.youtube_id}",
+        "image": f"https://i.ytimg.com/vi/{video.youtube_id}/hqdefault.jpg",
+    }
+
+
 def person_json(person: Person) -> dict[str, Any]:
     return {
         "id": person.id,
@@ -217,6 +236,14 @@ def api_audio_courses() -> flask.Response:
     courses = flask.g.db.execute(query).scalars().all()
     # finished ones newest first; those in progress (no date yet) after them
     return flask.jsonify(_newest_first([audio_course_json(c) for c in courses]))
+
+
+@bp.route("/api/youtube", methods=["GET"])
+@auth.login_required
+def api_youtube() -> flask.Response:
+    query = select(YouTubeVideo).where(YouTubeVideo.owner_id == flask.g.user.id).options(selectinload(YouTubeVideo.device))
+    videos = flask.g.db.execute(query).scalars().all()
+    return flask.jsonify(_newest_first([youtube_video_json(v) for v in videos]))
 
 
 @bp.route("/api/museums", methods=["GET"])
@@ -279,7 +306,7 @@ def _sniff(data: bytes) -> str | None:
     return None
 
 
-def _dates(body: dict[str, Any], current: Concert | Museum | AudioCourse | None = None) -> dict[str, Any]:
+def _dates(body: dict[str, Any], current: Concert | Museum | AudioCourse | YouTubeVideo | None = None) -> dict[str, Any]:
     """
     The date as typed: YYYY, YYYY-MM or YYYY-MM-DD, stored at that precision,
     or nothing. date_timezone is where it happened (an IANA name). On an edit
@@ -344,7 +371,7 @@ def _owned_image(body: dict[str, Any]) -> int | None:
     return image_id
 
 
-def _owned(model: type[Concert | Museum | AudioCourse | Person | Organization | OrganizationType | PersonType | RelationType | Device], row_id: int) -> Any:
+def _owned(model: type[Concert | Museum | AudioCourse | YouTubeVideo | Person | Organization | OrganizationType | PersonType | RelationType | Device], row_id: int) -> Any:
     row = flask.g.db.get(model, row_id)
     if row is None or row.owner_id != flask.g.user.id:
         raise ApiError(404, "no such entry")
@@ -444,6 +471,37 @@ def _apply_audio_course(course: AudioCourse, body: dict[str, Any], current: Audi
         course.image_id = image_id
     for key, value in _dates(body, current).items():
         setattr(course, key, value)
+
+
+YOUTUBE_ID = re.compile(rf"[A-Za-z0-9_-]{{{YOUTUBE_ID_LENGTH}}}")
+# the id inside a pasted link: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/shorts/ID, /embed/ID, /live/ID
+YOUTUBE_LINK = re.compile(r"(?:[?&]v=|youtu\.be/|/(?:shorts|embed|live)/)([A-Za-z0-9_-]+)")
+
+
+def youtube_id(value: str) -> str:
+    """ The video id of what was typed: an id, or a link to the video. """
+    found = YOUTUBE_LINK.search(value)
+    if found:
+        value = found.group(1)
+    if not YOUTUBE_ID.fullmatch(value):
+        raise ApiError(400, f"youtube_id: expected a video id ({YOUTUBE_ID_LENGTH} characters) or a link to the video")
+    return value
+
+
+def _apply_youtube_video(video: YouTubeVideo, body: dict[str, Any], current: YouTubeVideo | None) -> None:
+    video.youtube_id = youtube_id(text(body, "youtube_id", required=True))
+    clash = flask.g.db.execute(select(YouTubeVideo.id).where(
+        YouTubeVideo.owner_id == flask.g.user.id, YouTubeVideo.youtube_id == video.youtube_id, YouTubeVideo.id != video.id,
+    )).first()
+    if clash is not None:
+        raise ApiError(409, "that video is in your list already")
+    video.name = text(body, "name", required=True)
+    video.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
+    video.review = text(body, "review")
+    video.device = _owned_type(Device, opt_int(body, "device_id", 1, 2**31 - 1))
+    video.watched_at = text(body, "watched_at")
+    for key, value in _dates(body, current).items():
+        setattr(video, key, value)
 
 
 def _apply_person(person: Person, body: dict[str, Any]) -> None:
@@ -548,6 +606,25 @@ def api_audio_courses_update(row_id: int) -> flask.Response:
     return flask.jsonify(audio_course_json(course))
 
 
+@bp.route("/api/youtube", methods=["POST"])
+@auth.login_required
+def api_youtube_add() -> tuple[flask.Response, int]:
+    video = YouTubeVideo(owner_id=flask.g.user.id)
+    _apply_youtube_video(video, json_body(), None)
+    flask.g.db.add(video)
+    flask.g.db.commit()
+    return flask.jsonify(youtube_video_json(video)), 201
+
+
+@bp.route("/api/youtube/<int:row_id>", methods=["PUT"])
+@auth.login_required
+def api_youtube_update(row_id: int) -> flask.Response:
+    video = _owned(YouTubeVideo, row_id)
+    _apply_youtube_video(video, json_body(), video)
+    flask.g.db.commit()
+    return flask.jsonify(youtube_video_json(video))
+
+
 @bp.route("/api/people", methods=["POST"])
 @auth.login_required
 def api_people_add() -> tuple[flask.Response, int]:
@@ -588,10 +665,10 @@ def api_organizations_update(row_id: int) -> flask.Response:
     return flask.jsonify(organization_json(organization))
 
 
-@bp.route("/api/<any(concerts, museums, 'audio-courses', people, organizations):what>/<int:row_id>", methods=["DELETE"])
+@bp.route("/api/<any(concerts, museums, 'audio-courses', youtube, people, organizations):what>/<int:row_id>", methods=["DELETE"])
 @auth.login_required
 def api_world_delete(what: str, row_id: int) -> flask.Response:
-    model = {"concerts": Concert, "museums": Museum, "audio-courses": AudioCourse, "people": Person, "organizations": Organization}[what]
+    model = {"concerts": Concert, "museums": Museum, "audio-courses": AudioCourse, "youtube": YouTubeVideo, "people": Person, "organizations": Organization}[what]
     # the ORM also removes the row's links (to people, to organizations, to concerts and museums)
     flask.g.db.delete(_owned(model, row_id))
     flask.g.db.flush()
@@ -668,6 +745,7 @@ def api_stats() -> flask.Response:
         "museum_visits": len(museums),
         "museums": len({m.name for m in museums}),
         "audio_courses": count(AudioCourse),
+        "youtube_videos": count(YouTubeVideo),
         "people": len(people),
         "organizations": len(organizations),
         "organization_types": count(OrganizationType),
@@ -695,7 +773,7 @@ TYPES: dict[str, tuple[type[TypeModel], str]] = {
     "person-types": (PersonType, "person"),
     "relation-types": (RelationType, "organization"),
     # not a type of a thing, but kept the same way: a list of the user's own, each used by some rows
-    "devices": (Device, "audio course"),
+    "devices": (Device, "recording"),
 }
 
 
@@ -704,7 +782,10 @@ def _type_links(what: str) -> Any:
     if what == "organization-types":
         return select(Organization.type_id.label("type_id")).where(Organization.owner_id == flask.g.user.id)
     if what == "devices":
-        return select(AudioCourse.device_id.label("type_id")).where(AudioCourse.owner_id == flask.g.user.id)
+        # audio courses and YouTube videos both point to a device
+        return select(AudioCourse.device_id.label("type_id")).where(AudioCourse.owner_id == flask.g.user.id).union_all(
+            select(YouTubeVideo.device_id.label("type_id")).where(YouTubeVideo.owner_id == flask.g.user.id),
+        )
     if what == "relation-types":
         return (
             select(organization_relation_types.c.relation_type_id.label("type_id"))

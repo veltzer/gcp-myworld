@@ -247,6 +247,14 @@ first `companies` tables to `organizations`, then making
   concert's `performers` are people too (ids and names). A museum visit
   also has `address`, `latitude` and `longitude` (`maps.md`), and `alone`:
   true when the user went alone, which is never sent with people.
+- `GET /api/youtube`: the YouTube videos watched, newest first, with
+  `youtube_id`, rating, review, `device` (id and name), `watched_at`,
+  and YouTube's own page (`url`) and thumbnail (`image`, from
+  `i.ytimg.com`). `youtube_id` is written as an id or as a link to the
+  video (`youtube.com/watch?v=`, `youtu.be/`, `/shorts/`, `/embed/`, `/live/`),
+  which is taken apart; an account lists a video once (409). Imported
+  from `video_youtube.yaml` in `veltzer.github.io` by
+  `scripts/import_world.py --youtube`.
 - `GET /api/people`: `first_name`, `surname`, `name` (the two together),
   `types` (ids and names), description and `organizations` (ids and names);
 a person is written with `type_ids`, a list.
@@ -254,7 +262,7 @@ a person is written with `type_ids`, a list.
   (how it is related to the user: ids and names of relation types), status, website, location, address, `latitude` and `longitude`, the logo as
   `image`, and `people` (ids and names).
 - `POST` to the same paths adds,
-  `PUT /api/<concerts|museums|people|organizations>/<id>` replaces the fields,
+  `PUT /api/<concerts|museums|audio-courses|youtube|people|organizations>/<id>` replaces the fields,
   `DELETE` removes. The date is typed as `YYYY`, `YYYY-MM` or
   `YYYY-MM-DD`; a date sent back exactly as it came keeps its stored
   precision, timestamps included. `people` and `organizations` are lists of

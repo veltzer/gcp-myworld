@@ -20,6 +20,7 @@ from myworld.models import (
     OrganizationType,
     Person,
     User,
+    YouTubeVideo,
     concert_people,
     person_organizations,
 )
@@ -137,6 +138,25 @@ items:
 """
 
 
+YOUTUBE = """
+items:
+  - id: "VNIRUigPxA8"
+    name: "Richard Dawkins in conversation"
+    date_utcz: "2015-11-21T19:14:10Z"
+    date_timezone: "Asia/Jerusalem"
+    review: "Nice conversation."
+    rating: 6
+  - id: "5jqXEzplxeo"
+    name: "BDS Movement Debate | Oxford Union"
+    date_utcz: "2015-11-30T16:24:31Z"
+    date_timezone: "Asia/Jerusalem"
+    review: "interesting debate"
+    rating: 7
+    location: "Home"
+    device: "Desktop"
+"""
+
+
 # by the logo convention (doc/logos.md), so the checks pass on imported data
 LOGO = b'<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="-1 -1 12 12"><rect width="10" height="10"/></svg>'
 
@@ -145,7 +165,7 @@ def write_source(root: Path, concerts: str = CONCERTS) -> Path:
     (root / "data" / "yaml").mkdir(parents=True)
     (root / "static" / "images").mkdir(parents=True)
     (root / "data" / "logos").mkdir(parents=True)
-    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES)):
+    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("video_youtube", YOUTUBE)):
         (root / "data" / "yaml" / f"{name}.yaml").write_text(text, encoding="UTF8")
     (root / "data" / "logos" / "acme.svg").write_bytes(LOGO)
     (root / "static" / "images" / "concert-the-band.jpg").write_bytes(b"\xff\xd8band")
@@ -167,7 +187,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         session.commit()
     assert counts == {
         "people": 5, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 5, "people with a type": 5,
-        "concerts": 3, "museums": 3, "audio courses": 2, "devices": 2, "images": 5}
+        "concerts": 3, "museums": 3, "audio courses": 2, "YouTube videos": 2, "devices": 3, "images": 5}
     return app
 
 
@@ -264,8 +284,10 @@ def test_edit_audio_course(imported: webtest.TestApp) -> None:
 def test_devices(imported: webtest.TestApp) -> None:
     devices = imported.get("/api/devices").json
     # a list kept like the types: each with how many audio courses point to it
-    assert [(d["name"], d["count"]) for d in devices] == [("Samsung S10", 1), ("Samsung S7", 1)]
-    s10, s7 = devices
+    assert [(d["name"], d["count"]) for d in devices] == [("Desktop", 1), ("Samsung S10", 1), ("Samsung S7", 1)]
+    desktop, s10, s7 = devices
+    # a YouTube video's device counts too, and keeps it from being deleted
+    imported.delete(f"/api/devices/{desktop['id']}", status=409)
     music = next(c for c in imported.get("/api/audio-courses").json if c["name"] == "How to Listen to Music")
     body = dict(music, lecturers=[p["id"] for p in music["lecturers"]], device_id=s10["id"])
     assert imported.put_json(f"/api/audio-courses/{music['id']}", body).json["device"] == {"id": s10["id"], "name": "Samsung S10"}
@@ -296,6 +318,41 @@ def test_audio_courses_import_adds_once(imported: webtest.TestApp, engine: Engin
         session.commit()
     # the lecturers are the people already there, and the covers the images already stored: nothing is added twice
     assert counts == {"audio courses": 2, "lecturers added": 0, "devices added": 0, "images": 0}
+
+
+def test_youtube(imported: webtest.TestApp) -> None:
+    videos = imported.get("/api/youtube").json
+    # newest first
+    assert [v["youtube_id"] for v in videos] == ["5jqXEzplxeo", "VNIRUigPxA8"]
+    debate = videos[0]
+    assert (debate["date"], debate["rating"], debate["watched_at"], debate["device"]["name"]) == ("2015-11-30T16:24:31Z", 7, "Home", "Desktop")
+    assert debate["url"] == "https://www.youtube.com/watch?v=5jqXEzplxeo"
+    assert debate["image"] == "https://i.ytimg.com/vi/5jqXEzplxeo/hqdefault.jpg"
+    # a link pasted in place of the id is taken apart
+    added = imported.post_json("/api/youtube", {"name": "Talk", "youtube_id": "https://youtu.be/JbNJoHFsQnc?t=10", "date": "2024-05-01"}, status=201).json
+    assert added["youtube_id"] == "JbNJoHFsQnc"
+    body = dict(added, device_id="")
+    for link in ("https://www.youtube.com/watch?v=JbNJoHFsQnc&list=x", "https://www.youtube.com/shorts/JbNJoHFsQnc", "JbNJoHFsQnc"):
+        assert imported.put_json(f"/api/youtube/{added['id']}", dict(body, youtube_id=link)).json["youtube_id"] == "JbNJoHFsQnc"
+    # a malformed id, and a video listed twice
+    imported.put_json(f"/api/youtube/{added['id']}", dict(body, youtube_id="JbNJoHFsQncS"), status=400)
+    imported.post_json("/api/youtube", {"name": "Again", "youtube_id": "5jqXEzplxeo"}, status=409)
+    imported.delete(f"/api/youtube/{added['id']}", status=204)
+    assert len(imported.get("/api/youtube").json) == 2
+
+
+def test_youtube_import_adds_once(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    del imported
+    source = tmp_path / "again"
+    write_source(source)
+    with Session(engine) as session:
+        with pytest.raises(import_world.WorldImportError, match="has YouTube videos already"):
+            import_world.import_youtube(session, owner(session), source)
+        session.execute(delete(YouTubeVideo))
+        counts = import_world.import_youtube(session, owner(session), source)
+        session.commit()
+    # the devices are those already there
+    assert counts == {"YouTube videos": 2, "devices added": 0}
 
 
 def test_people_links_point_at_people(imported: webtest.TestApp) -> None:

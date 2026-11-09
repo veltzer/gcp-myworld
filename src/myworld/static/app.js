@@ -545,6 +545,11 @@ const SORTS = {
 		["rating", "Rating", (c) => c.rating, "desc"],
 		["started", "Started", (c) => c.started, "desc"],
 	],
+	youtube: [
+		["date", "Watched", (v) => v.date_sort, "desc"],
+		["name", "Name", (v) => v.name, "asc"],
+		["rating", "Rating", (v) => v.rating, "desc"],
+	],
 	people: [
 		["first_name", "First name", (p) => p.first_name, "asc"],
 		["surname", "Surname", (p) => p.surname, "asc"],
@@ -572,7 +577,7 @@ const SORTS = {
 	],
 	devices: [
 		["name", "Name", (t) => t.name, "asc"],
-		["count", "Audio courses", (t) => t.count, "desc"],
+		["count", "Used by", (t) => t.count, "desc"],
 	],
 };
 const SORT_KEY = "myworld.sort";
@@ -825,8 +830,8 @@ async function openHash() {
 
 // Open what an address-bar hash names: a tab, a page, or one row of a view.
 async function route(requested) {
-	const linked = requested.match(/^(concerts|museums|audio-courses|people|organizations|organization-types|person-types|relation-types|devices)\/(\d+)$/);
-	if (linked) {
+	const linked = requested.match(/^([a-z-]+)\/(\d+)$/);
+	if (linked && linked[1] in WORLDS) {
 		await showRow(linked[1], Number(linked[2]));
 	} else if (requested === "stats") {
 		await selectStats();
@@ -920,6 +925,7 @@ const WORLDS = {
 	concerts: ["My Concerts", "/api/concerts", "concert", "Concerts"],
 	museums: ["My Museums", "/api/museums", "museum", "Museums"],
 	"audio-courses": ["Audio courses", "/api/audio-courses", "audio course", "Audio courses"],
+	youtube: ["YouTube", "/api/youtube", "YouTube video", "YouTube"],
 	people: ["People", "/api/people", "person", "People"],
 	organizations: ["Organizations", "/api/organizations", "organization", "Organizations"],
 	"organization-types": ["Organization types", "/api/organization-types", "organization type", "Org types"],
@@ -933,7 +939,7 @@ const TYPED = { people: "person-types", organizations: "organization-types" };
 
 // the id of the form, row or card of a view: "organization type" -> "organization-type"
 function slug(view) {
-	return WORLDS[view][2].replace(/ /g, "-");
+	return WORLDS[view][2].toLowerCase().replace(/ /g, "-");
 }
 
 const worldCache = {};
@@ -1339,7 +1345,20 @@ function audioCourseCard(item) {
 	return card;
 }
 
-const CARDS = { concerts: concertCard, museums: museumCard, "audio-courses": audioCourseCard, organizations: organizationCard };
+function youtubeCard(item) {
+	const { card, list } = cardShell(item, "");
+	detail(list, "Watched", formatDate(item));
+	if (item.rating !== null) {
+		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
+	}
+	detail(list, "Review", item.review);
+	detail(list, "Where", item.watched_at);
+	linksDetail(list, "Device", "devices", item.device ? [item.device] : []);
+	websiteDetail(list, item.url);
+	return card;
+}
+
+const CARDS = { concerts: concertCard, museums: museumCard, "audio-courses": audioCourseCard, youtube: youtubeCard, organizations: organizationCard };
 
 // Material "link"
 const LINK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>';
@@ -1828,6 +1847,7 @@ function renderStats(stats) {
 		statTile("Concerts", stats.concerts, `${stats.performers} performers`, "concerts"),
 		statTile("Museum visits", stats.museum_visits, `${stats.museums} museums`, "museums"),
 		statTile("Audio courses", stats.audio_courses, "", "audio-courses"),
+		statTile("YouTube videos", stats.youtube_videos, "", "youtube"),
 		statTile("People", stats.people, "", "people"),
 		statTile("Organizations", stats.organizations, "", "organizations"),
 		statTile("Organization types", stats.organization_types, "", "organization-types"),
@@ -1976,7 +1996,7 @@ function setupWorlds() {
 // ─── the add dialog ─────────────────────────────────────────────────────────
 
 // One dialog, opened by the + button, showing the form of whatever is on screen.
-const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "person-form", "organization-form", "organization-type-form", "person-type-form", "relation-type-form", "device-form"];
+const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "youtube-video-form", "person-form", "organization-form", "organization-type-form", "person-type-form", "relation-type-form", "device-form"];
 const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 
 function dialogError(message) {
@@ -2159,6 +2179,19 @@ const WORLD_BODIES = {
 			audible_asin: value("audible_asin"),
 			link: value("link"),
 			image_id: await uploadPhoto(form),
+		};
+	},
+	youtube: async (form) => {
+		const value = (name) => form.elements[name].value;
+		return {
+			youtube_id: value("youtube_id"),
+			name: value("name"),
+			date: value("date"),
+			date_timezone: state.editing?.date_timezone || where(),
+			rating: value("rating"),
+			review: value("review"),
+			device_id: value("device_id"),
+			watched_at: value("watched_at"),
 		};
 	},
 	concerts: async (form) => {
@@ -2422,6 +2455,8 @@ function setupAddDialog() {
 	$("museum-form").elements.rating.max = rating_max;
 	$("audio-course-form").elements.rating.min = rating_min;
 	$("audio-course-form").elements.rating.max = rating_max;
+	$("youtube-video-form").elements.rating.min = rating_min;
+	$("youtube-video-form").elements.rating.max = rating_max;
 	for (const view of Object.keys(WORLDS)) {
 		setupWorldForm(view);
 	}

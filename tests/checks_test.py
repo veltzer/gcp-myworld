@@ -29,6 +29,7 @@ from myworld.models import (
     PersonType,
     RelationType,
     User,
+    YouTubeVideo,
 )
 from tests.conftest import sign_in
 
@@ -324,3 +325,29 @@ def test_script(tmp_path: Path) -> None:
     passing = run_script(url, "logos", "organization-logos")
     assert passing.returncode == 0, passing.stdout + passing.stderr
     assert "ok    logos: all 1 logos pass" in passing.stdout
+
+
+def test_youtube(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(google_sub="alice", email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        desktop = Device(owner_id=alice.id, name="Desktop")
+        good = {"date_y": 2015, "rating": 7, "review": "nice", "device": desktop}
+        session.add_all([
+            YouTubeVideo(owner_id=alice.id, youtube_id="VNIRUigPxA8", name="Good", **good),
+            # one character too many: links to no video
+            YouTubeVideo(owner_id=alice.id, youtube_id="JbNJoHFsQncS", name="Long id", **good),
+            YouTubeVideo(owner_id=alice.id, youtube_id="5jqXEzplxeo", name="Bare"),
+        ])
+        session.commit()
+
+        def found(name: str) -> list[tuple[str, str]]:
+            return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS[name].run(session).problems]
+
+        assert found("youtube-ids") == [("Long id", "has the id 'JbNJoHFsQncS', not 11 letters, digits, - and _")]
+        assert found("youtube-dates") == [("Bare", "has no date")]
+        assert found("youtube-reviews") == [("Bare", "has no rating and no review")]
+        assert found("youtube-devices") == [("Bare", "has no device")]
+        # each problem opens its video
+        assert checks.CHECKS["youtube-devices"].run(session).problems[0].link.startswith("youtube/")

@@ -21,11 +21,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from myworld.models import (
+    YOUTUBE_ID_LENGTH,
     AudioCourse,
     Image,
     Museum,
     Organization,
     Person,
+    YouTubeVideo,
     audio_course_lecturers,
     museum_people,
     organization_relation_types,
@@ -316,7 +318,7 @@ def _course_problem(course: AudioCourse, message: str) -> Problem:
     return Problem(f"{course.name} (audio course {course.id}, account {course.owner_id})", message, f"audio-courses/{course.id}", course.owner_id)
 
 
-def _finished(course: AudioCourse) -> bool:
+def _finished(course: AudioCourse | YouTubeVideo) -> bool:
     """ Whether it has a date, at any precision: the day it was finished. """
     return course.date_utcz is not None or course.date_ymd is not None or bool(course.date_my) or course.date_y is not None
 
@@ -419,3 +421,55 @@ def check_audio_course_duplicates(session: Session) -> Result:
         for course in same
     ]
     return Result(checked=len(courses), problems=problems)
+
+
+def _videos(session: Session) -> list[YouTubeVideo]:
+    return list(session.scalars(select(YouTubeVideo).order_by(YouTubeVideo.owner_id, YouTubeVideo.name, YouTubeVideo.id)))
+
+
+def _video_problem(video: YouTubeVideo, message: str) -> Problem:
+    return Problem(f"{video.name} (YouTube video {video.id}, account {video.owner_id})", message, f"youtube/{video.id}", video.owner_id)
+
+
+YOUTUBE_ID = re.compile(rf"[A-Za-z0-9_-]{{{YOUTUBE_ID_LENGTH}}}")
+
+
+@check("youtube-ids", "Every YouTube video has a well-formed id", "YouTube videos")
+def check_youtube_ids(session: Session) -> Result:
+    """
+    Every YouTube video, of every account, has an id YouTube could have
+    given: 11 letters, digits, - and _. One that is not links to no video.
+    """
+    videos = _videos(session)
+    problems = [
+        _video_problem(v, f"has the id {v.youtube_id!r}, not {YOUTUBE_ID_LENGTH} letters, digits, - and _")
+        for v in videos
+        if not YOUTUBE_ID.fullmatch(v.youtube_id)
+    ]
+    return Result(checked=len(videos), problems=problems)
+
+
+@check("youtube-dates", "Every YouTube video has a date", "YouTube videos")
+def check_youtube_dates(session: Session) -> Result:
+    """ Every YouTube video, of every account, has the date it was watched (a day, a month, a year or a full time). """
+    videos = _videos(session)
+    return Result(checked=len(videos), problems=[_video_problem(v, "has no date") for v in videos if not _finished(v)])
+
+
+@check("youtube-reviews", "Every YouTube video is rated and reviewed", "YouTube videos")
+def check_youtube_reviews(session: Session) -> Result:
+    """ Every YouTube video, of every account, has a rating and a review. """
+    videos = _videos(session)
+    problems = []
+    for video in videos:
+        missing = [what for what, absent in (("rating", video.rating is None), ("review", not video.review.strip())) if absent]
+        if missing:
+            problems.append(_video_problem(video, f"has no {' and no '.join(missing)}"))
+    return Result(checked=len(videos), problems=problems)
+
+
+@check("youtube-devices", "Every YouTube video has a device", "YouTube videos")
+def check_youtube_devices(session: Session) -> Result:
+    """ Every YouTube video, of every account, has the device it was watched on. """
+    videos = _videos(session)
+    return Result(checked=len(videos), problems=[_video_problem(v, "has no device") for v in videos if v.device_id is None])
