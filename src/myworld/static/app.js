@@ -1592,11 +1592,12 @@ const TABLES = {
 	devices: ["devices-table", "device-rows", typeRow],
 };
 
-// The filter next to the search. On a view whose rows have a type (people,
-// organizations) it picks types; on a library kind it picks statuses (Done,
-// Want to, ...). A set of the picked values ("none" for the rows without a
-// type, else type ids or status keys), empty for everything. A row matches
-// when it has any picked value. Kept per view.
+// The filter next to the search, in groups. On a view whose rows have a
+// type (people, organizations) one group picks types; on a library kind
+// one picks statuses (Done, Want to, ...) and one whether it has a cover.
+// Kept per view as a set of "group:value" ("type:none" for the rows without
+// a type), empty for everything. A row matches when, in every group with
+// something picked, it has one of the picked values.
 const typeFilters = {};
 
 function pickedTypes(view) {
@@ -1606,47 +1607,50 @@ function pickedTypes(view) {
 	return typeFilters[view];
 }
 
-// What a view is filtered by: its noun, its choices ({value, name, count}),
-// whether rows can have none, and the values of a row. Null: nothing to filter by.
+// What a view is filtered by: what the button says with nothing picked, and
+// its groups ({key, heading, options: [{value, name, count}]}). Null: nothing to filter by.
 async function filterSpec(view) {
 	if (TYPED[view]) {
 		const types = await worldList(TYPED[view]);
-		return {
-			noun: "types",
-			none: "No type",
-			options: types.map((t) => ({ value: String(t.id), name: t.name, count: t.count })),
-		};
+		const options = types.map((t) => ({ value: String(t.id), name: t.name, count: t.count }));
+		return { all: "All types", groups: [{ key: "type", heading: "", options: [...options, { value: "none", name: "No type", count: null }] }] };
 	}
 	if (state.config.kinds[view]) {
-		const counts = {};
-		for (const entry of state.entries) {
-			counts[entry.status] = (counts[entry.status] || 0) + 1;
-		}
+		const count = (test) => state.entries.filter(test).length;
+		const statuses = Object.entries(state.config.statuses).map(([value, name]) => ({ value, name, count: count((e) => e.status === value) }));
+		const covers = [
+			{ value: "yes", name: "With a cover", count: count((e) => e.image) },
+			{ value: "no", name: "No cover", count: count((e) => !e.image) },
+		];
 		return {
-			noun: "statuses",
-			none: null,
-			options: Object.entries(state.config.statuses).map(([value, name]) => ({ value, name, count: counts[value] || 0 })),
+			all: `All ${state.config.kinds[view].plural.toLowerCase()}`,
+			groups: [{ key: "status", heading: "Status", options: statuses }, { key: "cover", heading: "Cover", options: covers }],
 		};
 	}
 	return null;
 }
 
-function filterValues(view, item) {
-	if (state.config.kinds[view]) {
+// a row's values in a filter group
+function filterValues(group, item) {
+	if (group === "status") {
 		return [item.status];
 	}
+	if (group === "cover") {
+		return [item.image ? "yes" : "no"];
+	}
 	// a person has a list of types, an organization one
-	return (item.types || (item.type ? [item.type] : [])).map((t) => String(t.id));
+	const types = item.types || (item.type ? [item.type] : []);
+	return types.length ? types.map((t) => String(t.id)) : ["none"];
 }
 
 // The button names what is picked: "All types", the names, or how many.
 function typeFilterLabel(view, spec) {
 	const picked = pickedTypes(view);
 	if (picked.size === 0) {
-		return `All ${spec.noun}`;
+		return spec.all;
 	}
-	const names = [...picked].map((value) => (value === "none" ? spec.none : spec.options.find((o) => o.value === value)?.name)).filter(Boolean);
-	return names.length <= 2 ? names.join(", ") : `${names.length} ${spec.noun}`;
+	const names = spec.groups.flatMap((group) => group.options.filter((o) => picked.has(`${group.key}:${o.value}`)).map((o) => o.name));
+	return names.length <= 2 ? names.join(", ") : `${names.length} picked`;
 }
 
 async function fillTypeFilter(view) {
@@ -1692,21 +1696,32 @@ async function fillTypeFilter(view) {
 		rerender();
 	};
 	menu.replaceChildren(
-		...spec.options.map((o) => box(o.value, `${o.name} (${o.count})`)),
-		...(spec.none ? [box("none", spec.none)] : []),
+		...spec.groups.flatMap((group) => [
+			...(group.heading ? [el("span", "type-filter-heading", group.heading)] : []),
+			...group.options.map((o) => box(`${group.key}:${o.value}`, o.count === null ? o.name : `${o.name} (${o.count})`)),
+		]),
 		clear,
 	);
 	button.textContent = typeFilterLabel(view, spec);
 }
 
+// the filter groups a view has, by key
+const FILTER_GROUPS = { type: (view) => Boolean(TYPED[view]), status: (view) => view in state.config.kinds, cover: (view) => view in state.config.kinds };
+
 function typeMatches(item) {
 	const view = state.view;
 	const picked = pickedTypes(view);
-	if (picked.size === 0 || !(TYPED[view] || state.config.kinds[view])) {
+	if (picked.size === 0) {
 		return true;
 	}
-	const values = filterValues(view, item);
-	return values.length === 0 ? picked.has("none") : values.some((value) => picked.has(value));
+	// within a group any picked value will do; every group with a pick must match
+	return Object.entries(FILTER_GROUPS).every(([group, applies]) => {
+		if (!applies(view)) {
+			return true;
+		}
+		const wanted = [...picked].filter((value) => value.startsWith(`${group}:`));
+		return wanted.length === 0 || filterValues(group, item).some((value) => wanted.includes(`${group}:${value}`));
+	});
 }
 
 // Everything a search can match on, as one lowercase string.

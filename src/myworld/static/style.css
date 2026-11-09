@@ -814,6 +814,20 @@ button.danger {
 	cursor: pointer;
 }
 
+/* a group's name in the filter menu: Status, Cover */
+.type-filter-heading {
+	font-size: 0.75rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--muted);
+	margin-top: 0.4rem;
+}
+
+.type-filter-heading:first-child {
+	margin-top: 0;
+}
+
 .type-filter-menu .text {
 	align-self: flex-start;
 	margin-top: 0.25rem;
