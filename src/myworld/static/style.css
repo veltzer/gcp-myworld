@@ -1734,3 +1734,72 @@ button.text.check-toggle {
 .world-card .world-title {
 	padding-right: 2.25rem;
 }
+
+/* ─── the structure of the database ──────────────────────────────────────── */
+
+.schema-heading {
+	font-size: 1.05rem;
+	margin: 1.2rem 0 0.5rem;
+}
+
+.schema-drift {
+	margin: 0.5rem 0;
+	padding: 0.6rem 0.6rem 0.6rem 1.8rem;
+	border: 1px solid #b42318;
+	border-radius: 6px;
+	color: #b42318;
+}
+
+.schema-drift[hidden] {
+	display: none;
+}
+
+/* the diagram is as wide as it needs: it scrolls inside its box, never the page */
+.schema-diagram {
+	overflow: auto;
+	max-height: 80dvh;
+	padding: 0.5rem;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+}
+
+.schema-tables {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 34rem), 1fr));
+	gap: 1rem;
+}
+
+.schema-table {
+	min-width: 0;
+	overflow-x: auto;
+}
+
+.schema-name {
+	margin: 0 0 0.3rem;
+	font-size: 1rem;
+	font-family: ui-monospace, monospace;
+}
+
+.schema-rows {
+	font-family: inherit;
+	font-weight: normal;
+	color: var(--muted);
+	white-space: nowrap;
+}
+
+.schema-columns td {
+	white-space: nowrap;
+	font-family: ui-monospace, monospace;
+	font-size: 0.85rem;
+}
+
+.schema-columns tr.drift td {
+	color: #b42318;
+}
+
+.schema-facts {
+	margin: 0.4rem 0 0;
+	padding-left: 1.2rem;
+	font-size: 0.85rem;
+	color: var(--muted);
+}

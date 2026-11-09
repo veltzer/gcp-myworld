@@ -282,6 +282,8 @@ a person is written with `type_ids`, a list.
 - `GET /api/checks` (admins only): the database checks, and
   `GET /api/checks/<name>` runs one over every account's rows; see
   `checks.md`.
+- `GET /api/schema` (admins only): every table as the database reports
+  it, with row counts and drift from the code's models; see `schema.md`.
 - `GET /api/stats`: how many of everything the user has (library entries
   per kind and status, concerts, performers, museum visits and museums,
   people, organizations, both kinds of types, images), people and

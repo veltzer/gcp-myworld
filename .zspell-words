@@ -2,6 +2,9 @@ ASIN
 London
 Nominatim
 OpenStreetMap
+SQLAlchemy
+SchemaCrawler
+SchemaSpy
 WGS
 Wayback
 Westminster

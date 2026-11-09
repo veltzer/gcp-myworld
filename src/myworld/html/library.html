@@ -29,6 +29,10 @@
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 16.2 5.3 12l-1.4 1.4 5.6 5.6L21.1 7.4 19.7 6 9.5 16.2z"/></svg>
 				Checks
 			</a>
+			<a id="schema-link" class="stats-link" href="/library#schema" title="The structure of the database, as the database reports it">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3C7.6 3 4 4.3 4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6c0-1.7-3.6-3-8-3zm6 15c0 .4-2.1 1.5-6 1.5S6 18.4 6 18v-2.3c1.5.8 3.6 1.3 6 1.3s4.5-.5 6-1.3V18zm0-4.5c0 .4-2.1 1.5-6 1.5s-6-1.1-6-1.5v-2.3c1.5.8 3.6 1.3 6 1.3s4.5-.5 6-1.3v2.3zM12 9C8.1 9 6 7.9 6 7.5S8.1 6 12 6s6 1.1 6 1.5S15.9 9 12 9z"/></svg>
+				Schema
+			</a>
 			<div class="whoami">
 				<!-- the account menu: how you signed in and as whom -->
 				<div class="account">
@@ -71,6 +75,14 @@
 					<button id="checks-run-all" type="button">Run all</button>
 				</p>
 				<div id="checks-list" class="checks"></div>
+			</section>
+			<section id="schema-view" class="schema" hidden>
+				<p id="schema-summary" class="checks-intro"></p>
+				<ul id="schema-drift" class="schema-drift" hidden></ul>
+				<h2 class="schema-heading">How the tables point at each other</h2>
+				<div id="schema-diagram" class="schema-diagram"></div>
+				<h2 class="schema-heading">The tables</h2>
+				<div id="schema-tables" class="schema-tables"></div>
 			</section>
 			<section id="users-view" hidden>
 				<table id="users" class="entries">
