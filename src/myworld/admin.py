@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 
 from myworld import auth, checks
 from myworld.api import ApiError, json_body
-from myworld.models import ROLE_ADMIN, ROLES, Base, User
+from myworld.models import ROLE_ADMIN, ROLES, Base, DisabledCheck, User
 
 bp = flask.Blueprint("admin", __name__)
 
@@ -67,14 +67,58 @@ def api_checks() -> flask.Response:
     if wanted is not None and wanted not in checks.DATASETS:
         raise ApiError(404, f"no dataset called {wanted}")
     order = list(checks.DATASETS)
+    disabled = _disabled()
     return flask.jsonify([
         {
             "name": c.name, "title": c.title, "description": c.description, "noun": c.noun,
             "dataset": c.dataset, "dataset_name": checks.DATASETS[c.dataset],
+            # turned off by the signed-in admin: Run all skips it
+            "enabled": c.name not in disabled,
         }
         for c in sorted(checks.CHECKS.values(), key=lambda c: order.index(c.dataset))
         if wanted is None or c.dataset == wanted
     ])
+
+
+def _disabled() -> set[str]:
+    """ The checks the signed-in admin turned off. """
+    return set(flask.g.db.scalars(select(DisabledCheck.check_name).where(DisabledCheck.user_id == flask.g.user.id)))
+
+
+def _known_check(name: str) -> str:
+    if name not in checks.CHECKS:
+        raise ApiError(404, f"no check called {name}")
+    return name
+
+
+@bp.route("/api/disabled-checks", methods=["GET"])
+@auth.admin_required
+def api_disabled_checks() -> flask.Response:
+    """ The names of the checks the signed-in admin turned off. """
+    return flask.jsonify(sorted(_disabled()))
+
+
+@bp.route("/api/disabled-checks/<name>", methods=["PUT"])
+@auth.admin_required
+def api_disable_check(name: str) -> tuple[str, int]:
+    """ Turn a check off for the signed-in admin (again is fine). """
+    db = flask.g.db
+    if db.get(DisabledCheck, (flask.g.user.id, _known_check(name))) is None:
+        db.add(DisabledCheck(user_id=flask.g.user.id, check_name=name))
+        db.commit()
+    return "", 204
+
+
+@bp.route("/api/disabled-checks/<name>", methods=["DELETE"])
+@auth.admin_required
+def api_enable_check(name: str) -> tuple[str, int]:
+    """ Turn a check back on for the signed-in admin (again is fine). """
+    db = flask.g.db
+    row = db.get(DisabledCheck, (flask.g.user.id, _known_check(name)))
+    if row is not None:
+        db.delete(row)
+        db.commit()
+    return "", 204
 
 
 @bp.route("/api/checks/<name>", methods=["GET"])

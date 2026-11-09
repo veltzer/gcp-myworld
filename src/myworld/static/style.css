@@ -1691,11 +1691,22 @@ button.text.danger:hover {
 
 .check {
 	display: grid;
-	grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto;
+	grid-template-columns: auto minmax(0, 2fr) minmax(0, 3fr) auto;
 	align-items: center;
 	column-gap: 1rem;
 	padding: 0.1rem 0.75rem;
 	border-top: 1px solid var(--line);
+}
+
+/* a check turned off: greyed, Run disabled, its box unticked */
+.check.check-off .check-title,
+.check.check-off .check-result {
+	color: var(--muted);
+	opacity: 0.6;
+}
+
+.check-enabled {
+	margin: 0;
 }
 
 .check > button.text {

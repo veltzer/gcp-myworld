@@ -21,16 +21,23 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from myworld.models import (
+    KINDS,
     YOUTUBE_ID_LENGTH,
     AudioCourse,
+    Concert,
+    Device,
     Image,
     Museum,
     Organization,
+    OrganizationType,
     Person,
+    PersonType,
+    RelationType,
     UserWork,
     Work,
     YouTubeVideo,
     audio_course_lecturers,
+    concert_performers,
     library_entry_authors,
     museum_companions,
     organization_relation_types,
@@ -77,13 +84,19 @@ class Check:
 
 # What the checks are about: the app's page of that data (its #hash) -> its
 # name. The Checks page groups them in this order, and each page runs its own.
+# Every page of data has checks (tests/checks_test.py makes sure of it).
 DATASETS: dict[str, str] = {
-    "book": "Books",
+    **{kind: plural for kind, (_, plural, _) in KINDS.items()},
+    "concerts": "Concerts",
     "museums": "Museums",
     "audio-courses": "Audio courses",
     "youtube": "YouTube",
     "people": "People",
     "organizations": "Organizations",
+    "organization-types": "Org types",
+    "person-types": "Person types",
+    "relation-types": "Relation types",
+    "devices": "Devices",
 }
 
 CHECKS: dict[str, Check] = {}
@@ -259,7 +272,7 @@ def check_organization_locations(session: Session) -> Result:
 
 # ─── people ─────────────────────────────────────────────────────────────────
 
-@check("person-types", "Every person has a type", "people", "people")
+@check("people-types", "Every person has a type", "people", "people")
 def check_person_types(session: Session) -> Result:
     """ Every person, of every account, is categorized as at least one person type (family, co-worker, ...). """
     typed = set(session.scalars(select(person_type_links.c.person_id)))
@@ -343,7 +356,7 @@ def _course_problem(course: AudioCourse, message: str) -> Problem:
     return Problem(f"{course.name} (audio course {course.id}, account {course.owner_id})", message, f"audio-courses/{course.id}", course.owner_id)
 
 
-def _finished(course: AudioCourse | YouTubeVideo) -> bool:
+def _finished(course: AudioCourse | YouTubeVideo | Concert) -> bool:
     """ Whether it has a date, at any precision: the day it was finished. """
     return course.date_utcz is not None or course.date_ymd is not None or bool(course.date_my) or course.date_y is not None
 
@@ -448,29 +461,66 @@ def check_audio_course_duplicates(session: Session) -> Result:
     return Result(checked=len(courses), problems=problems)
 
 
-def _books(session: Session) -> list[UserWork]:
-    """ Every account's library entries of books, with their works. """
-    query = select(UserWork).join(Work).where(Work.kind == "book").order_by(UserWork.user_id, Work.title, Work.id)
+def _entries(session: Session, kind: str) -> list[UserWork]:
+    """ Every account's library entries of a kind, with their works. """
+    query = select(UserWork).join(Work).where(Work.kind == kind).order_by(UserWork.user_id, Work.title, Work.id)
     return list(session.scalars(query))
 
 
-def _book_problem(entry: UserWork, message: str) -> Problem:
-    return Problem(f"{entry.work.title} (book {entry.work_id}, account {entry.user_id})", message, f"book/{entry.work_id}", entry.user_id)
+def _entry_problem(entry: UserWork, message: str) -> Problem:
+    kind = entry.work.kind
+    return Problem(f"{entry.work.title} ({KINDS[kind][0].lower()} {entry.work_id}, account {entry.user_id})", message, f"{kind}/{entry.work_id}", entry.user_id)
 
 
-@check("book-covers", "Every book has a cover", "books", "book")
-def check_book_covers(session: Session) -> Result:
-    """ Every book in a library, of every account, has a cover image. """
-    books = _books(session)
-    return Result(checked=len(books), problems=[_book_problem(b, "has no cover") for b in books if b.image_id is None])
+# what having done a library kind is called: a book read, a film seen
+DONE_VERBS = {"book": "read", "film": "seen", "series": "watched", "album": "heard", "game": "played"}
+
+
+def _library_checks(kind: str) -> None:
+    """ The checks every library kind has: a cover, a rating once done, no entry twice. """
+    name, plural, creator = KINDS[kind]
+    noun, verb = plural.lower(), DONE_VERBS[kind]
+    one = name.lower()
+
+    def covers(session: Session) -> Result:
+        entries = _entries(session, kind)
+        return Result(checked=len(entries), problems=[_entry_problem(e, "has no cover") for e in entries if e.image_id is None])
+
+    def ratings(session: Session) -> Result:
+        done = [e for e in _entries(session, kind) if e.status == "done"]
+        return Result(checked=len(done), problems=[_entry_problem(e, f"is {verb} but has no rating") for e in done if e.rating is None])
+
+    def duplicates(session: Session) -> Result:
+        entries = _entries(session, kind)
+        seen: dict[tuple[int, str, str], list[UserWork]] = {}
+        for entry in entries:
+            seen.setdefault((entry.user_id, entry.work.title.strip().lower(), entry.work.creator.strip().lower()), []).append(entry)
+        problems = [
+            _entry_problem(entry, f"has the same title and {creator.lower()} as {len(same) - 1} other {one if len(same) == 2 else noun} of the account")
+            for same in seen.values()
+            if len(same) > 1
+            for entry in same
+        ]
+        return Result(checked=len(entries), problems=problems)
+
+    covers.__doc__ = f"Every {one} in a library, of every account, has a cover image."
+    ratings.__doc__ = f"Every {one} an account has {verb} (Done), of every account, has a rating; one not {verb} yet need not."
+    duplicates.__doc__ = f"No account has two {noun} of the same title and {creator.lower()} (ignoring case and spaces at the ends), as two works."
+    check(f"{kind}-covers", f"Every {one} has a cover", noun, kind)(covers)
+    check(f"{kind}-ratings", f"Every {one} {verb} is rated", f"{noun} {verb}", kind)(ratings)
+    check(f"{kind}-duplicates", f"No {one} is listed twice", noun, kind)(duplicates)
+
+
+for _kind in KINDS:
+    _library_checks(_kind)
 
 
 @check("book-links", "Every book links to its page", "books", "book")
 def check_book_links(session: Session) -> Result:
     """ Every book in a library, of every account, has a Goodreads or a Simania id, so its card links to its page. """
-    books = _books(session)
+    books = _entries(session, "book")
     problems = [
-        _book_problem(b, "has neither a Goodreads nor a Simania id")
+        _entry_problem(b, "has neither a Goodreads nor a Simania id")
         for b in books
         if not b.work.goodreads_id.strip() and not b.work.simania_id.strip()
     ]
@@ -480,32 +530,138 @@ def check_book_links(session: Session) -> Result:
 @check("book-authors", "Every book has an author", "books", "book")
 def check_book_authors(session: Session) -> Result:
     """ Every book in a library, of every account, has an author: one of the account's people (a Book Author), linked to it. """
-    books = _books(session)
+    books = _entries(session, "book")
     written = set(session.execute(select(library_entry_authors.c.user_id, library_entry_authors.c.work_id)).tuples())
-    return Result(checked=len(books), problems=[_book_problem(b, "has no author") for b in books if (b.user_id, b.work_id) not in written])
+    return Result(checked=len(books), problems=[_entry_problem(b, "has no author") for b in books if (b.user_id, b.work_id) not in written])
 
 
-@check("book-ratings", "Every book read is rated", "books read", "book")
-def check_book_ratings(session: Session) -> Result:
-    """ Every book an account has read (Done), of every account, has a rating; one not read yet need not. """
-    read = [b for b in _books(session) if b.status == "done"]
-    return Result(checked=len(read), problems=[_book_problem(b, "is read but has no rating") for b in read if b.rating is None])
+@check("film-links", "Every film links to its page", "films", "film")
+def check_film_links(session: Session) -> Result:
+    """ Every film in a library, of every account, has an IMDb or a TMDB id, so its card links to its page. """
+    films = _entries(session, "film")
+    problems = [_entry_problem(f, "has neither an IMDb nor a TMDB id") for f in films if not f.work.imdb_id.strip() and f.work.tmdb_id is None]
+    return Result(checked=len(films), problems=problems)
 
 
-@check("book-duplicates", "No book is listed twice", "books", "book")
-def check_book_duplicates(session: Session) -> Result:
-    """ No account has two books of the same title and author (ignoring case and spaces at the ends), as two works. """
-    books = _books(session)
-    seen: dict[tuple[int, str, str], list[UserWork]] = {}
-    for book in books:
-        seen.setdefault((book.user_id, book.work.title.strip().lower(), book.work.creator.strip().lower()), []).append(book)
+# ─── concerts ───────────────────────────────────────────────────────────────
+
+def _concerts(session: Session) -> list[Concert]:
+    return list(session.scalars(select(Concert).order_by(Concert.owner_id, Concert.name, Concert.id)))
+
+
+def _concert_problem(concert: Concert, message: str) -> Problem:
+    return Problem(f"{concert.name} (concert {concert.id}, account {concert.owner_id})", message, f"concerts/{concert.id}", concert.owner_id)
+
+
+@check("concert-dates", "Every concert has a date", "concerts", "concerts")
+def check_concert_dates(session: Session) -> Result:
+    """ Every concert, of every account, has a date (a day, a month, a year or a full time). """
+    concerts = _concerts(session)
+    return Result(checked=len(concerts), problems=[_concert_problem(c, "has no date") for c in concerts if not _finished(c)])
+
+
+@check("concert-places", "Every concert says where it was", "concerts", "concerts")
+def check_concert_places(session: Session) -> Result:
+    """ Every concert, of every account, has a venue and a city; one seen on TV need not. """
+    concerts = _concerts(session)
+    problems = []
+    for concert in concerts:
+        missing = [what for what, absent in (("venue", not concert.venue.strip()), ("city", not concert.city.strip())) if absent]
+        if missing and not concert.broadcast:
+            problems.append(_concert_problem(concert, f"has no {' and no '.join(missing)}"))
+    return Result(checked=len(concerts), problems=problems)
+
+
+@check("concert-performers", "Every concert has a performer", "concerts", "concerts")
+def check_concert_performers(session: Session) -> Result:
+    """ Every concert, of every account, has at least one performer (a person). """
+    performed = set(session.scalars(select(concert_performers.c.concert_id)))
+    concerts = _concerts(session)
+    return Result(checked=len(concerts), problems=[_concert_problem(c, "has no performer") for c in concerts if c.id not in performed])
+
+
+@check("concert-photos", "Every concert has a photo", "concerts", "concerts")
+def check_concert_photos(session: Session) -> Result:
+    """ Every concert, of every account, has a photo. """
+    concerts = _concerts(session)
+    return Result(checked=len(concerts), problems=[_concert_problem(c, "has no photo") for c in concerts if c.image_id is None])
+
+
+@check("concert-duplicates", "No concert is listed twice", "concerts", "concerts")
+def check_concert_duplicates(session: Session) -> Result:
+    """ No account has two concerts of the same name on the same date (ignoring case and spaces at the ends). """
+    concerts = _concerts(session)
+    seen: dict[tuple[int, str, str], list[Concert]] = {}
+    for concert in concerts:
+        when = str(concert.date_utcz or concert.date_ymd or concert.date_my or concert.date_y or "")
+        seen.setdefault((concert.owner_id, concert.name.strip().lower(), when), []).append(concert)
     problems = [
-        _book_problem(book, f"has the same title and author as {len(same) - 1} other book{'s' if len(same) > 2 else ''} of the account")
+        _concert_problem(concert, f"has the same name and date as {len(same) - 1} other concert{'s' if len(same) > 2 else ''} of the account")
         for same in seen.values()
         if len(same) > 1
-        for book in same
+        for concert in same
     ]
-    return Result(checked=len(books), problems=problems)
+    return Result(checked=len(concerts), problems=problems)
+
+
+# ─── the user's enumerations: org, person and relation types, devices ───────
+
+type _Enumeration = type[OrganizationType | PersonType | RelationType | Device]
+
+
+def _enumeration_checks(dataset: str, model: _Enumeration, used: Callable[[Session], set[int]]) -> None:
+    """ The checks every enumeration has: each value used, described, and not there twice. """
+    one = DATASETS[dataset].lower().removesuffix("s").replace("org ", "organization ")
+    noun = f"{one}s"
+
+    def rows(session: Session) -> list[Any]:
+        return list(session.scalars(select(model).order_by(model.owner_id, model.name, model.id)))
+
+    def problem(row: Any, message: str) -> Problem:
+        return Problem(f"{row.name} ({one} {row.id}, account {row.owner_id})", message, f"{dataset}/{row.id}", row.owner_id)
+
+    def check_used(session: Session) -> Result:
+        all_rows, in_use = rows(session), used(session)
+        return Result(checked=len(all_rows), problems=[problem(r, "is used by nothing") for r in all_rows if r.id not in in_use])
+
+    def check_described(session: Session) -> Result:
+        all_rows = rows(session)
+        return Result(checked=len(all_rows), problems=[problem(r, "has no description") for r in all_rows if not r.description.strip()])
+
+    def check_twice(session: Session) -> Result:
+        all_rows = rows(session)
+        seen: dict[tuple[int, str], list[Any]] = {}
+        for row in all_rows:
+            seen.setdefault((row.owner_id, row.name.strip().lower()), []).append(row)
+        problems = [
+            problem(row, f"has the same name as {len(same) - 1} other {one if len(same) == 2 else noun} of the account")
+            for same in seen.values()
+            if len(same) > 1
+            for row in same
+        ]
+        return Result(checked=len(all_rows), problems=problems)
+
+    check_used.__doc__ = f"Every {one}, of every account, is used by at least one row; one used by nothing can go."
+    check_described.__doc__ = f"Every {one}, of every account, has a description, so its tooltip and page say what it means."
+    check_twice.__doc__ = f"No account has two {noun} of the same name (ignoring case and spaces at the ends)."
+    prefix = dataset.removesuffix("s")
+    check(f"{prefix}-used", f"Every {one} is used", noun, dataset)(check_used)
+    check(f"{prefix}-descriptions", f"Every {one} has a description", noun, dataset)(check_described)
+    check(f"{prefix}-duplicates", f"No {one} is listed twice", noun, dataset)(check_twice)
+
+
+def _ids(session: Session, *columns: Any) -> set[int]:
+    """ The non-null values of the given id columns, together. """
+    found: set[int] = set()
+    for column in columns:
+        found |= {value for value in session.scalars(select(column)) if value is not None}
+    return found
+
+
+_enumeration_checks("organization-types", OrganizationType, lambda session: _ids(session, Organization.type_id))
+_enumeration_checks("person-types", PersonType, lambda session: _ids(session, person_type_links.c.person_type_id))
+_enumeration_checks("relation-types", RelationType, lambda session: _ids(session, organization_relation_types.c.relation_type_id))
+_enumeration_checks("devices", Device, lambda session: _ids(session, AudioCourse.device_id, YouTubeVideo.device_id))
 
 
 def _videos(session: Session) -> list[YouTubeVideo]:

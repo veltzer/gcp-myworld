@@ -364,6 +364,8 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   one row per thing done (see "Concerts, museums, people and
   organizations").
     - `people`, `organizations`, `images`.
+    - `disabled_checks`: the database checks an admin turned off for
+  themselves (see `checks.md`).
     - the user's own enumerations: `organization_types`, `person_types`,
   `relation_types`, `devices`.
     - link tables, named `<row>_<what it links to>`: `concert_companions`

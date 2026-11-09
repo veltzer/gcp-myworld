@@ -135,6 +135,19 @@ class Work(Base):
     users: Mapped[list[UserWork]] = relationship(back_populates="work")  # pylint: disable=used-before-assignment
 
 
+class DisabledCheck(Base):
+    """
+    A database check (checks.py) an admin turned off for themselves, one
+    they cannot pass yet: Run all skips it, on the Checks page and on its
+    data's page, and so does scripts/check.py --email. Turned back on, the
+    row goes.
+    """
+    __tablename__ = "disabled_checks"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    check_name: Mapped[str] = mapped_column(String(100), primary_key=True)
+
+
 class UserWork(Base):
     __tablename__ = "library_entries"
     __table_args__ = (

@@ -7,15 +7,24 @@ checks read the whole database, every account's rows, and change nothing.
 ## Running them
 
 - **In the app:** the Checks page (sidebar, Overview, admins only; see
-  `accounts.md`) lists the checks by dataset (Books, Museums, Audio
-  courses, YouTube, People, Organizations), each dataset under a heading
-  with its own Run all. Every check is one row of the same height: its
-  title (the description is the tooltip), what it found, and a Run
-  button; Run all at the top runs them all in turn.
+  `accounts.md`) lists the checks by dataset, a dataset for every page of
+  data in the sidebar (Books to Games, Concerts to YouTube, People,
+  Organizations, and the four Types pages), each dataset under a heading
+  with its own Run all. Every check is one row of the same height: a box
+  that turns it on or off, its title (the description is the tooltip),
+  what it found, and a Run button; Run all at the top runs them all in
+  turn.
 - **On a dataset's page:** the Checks button in the toolbar (next to the
   count) opens that page's checks over its rows and runs them all: on
-  Books, the book checks. It is there on every page, disabled where the
-  page has no checks and for an account that is not an admin. A failing check's count opens the
+  Books, the book checks. Every page of data has checks
+  (`test_every_page_has_checks` fails when one has none); the button is
+  disabled on the other pages (Stats, Checks, ...) and for an account
+  that is not an admin.
+- **Turning a check off:** clear its box, on either page, for a check
+  you cannot pass yet. It is saved in the database for your account
+  (`disabled_checks`): Run all skips it and says Off, and its Run is
+  disabled until you tick it again. Each admin has their own.
+- **What a problem says:** a failing check's count opens the
   list of problems under its row; a problem with a row of your own in the
   app (an organization, a person, a museum visit, a book) links to it. A check
   with thousands of problems sends the first 500, and says how many more
@@ -29,6 +38,7 @@ scripts/check.py                        # every check
 scripts/check.py logos                  # only these
 scripts/check.py --dataset book         # one dataset's, as its page runs them
 scripts/check.py --list                 # what there is, by dataset
+scripts/check.py --email me@example.com # skip the checks that account turned off
 scripts/with_cloud_db.sh scripts/check.py   # production
 ```
 
@@ -51,6 +61,56 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `book-ratings`: every book read (Done) has a rating.
 - `book-duplicates`: no account has two books of the same title and
   author.
+
+### Films (`film`)
+
+- `film-covers`: every film in a library, of every account, has a cover
+  image.
+- `film-ratings`: every film an account has seen (Done), of every
+  account, has a rating; one not seen yet need not.
+- `film-duplicates`: no account has two films of the same title and
+  director (ignoring case and spaces at the ends), as two works.
+- `film-links`: every film in a library, of every account, has an IMDb
+  or a TMDB id, so its card links to its page.
+
+### Video series (`series`)
+
+- `series-covers`: every video series in a library, of every account,
+  has a cover image.
+- `series-ratings`: every video series an account has watched (Done), of
+  every account, has a rating; one not watched yet need not.
+- `series-duplicates`: no account has two video series of the same title
+  and creator (ignoring case and spaces at the ends), as two works.
+
+### Albums (`album`)
+
+- `album-covers`: every album in a library, of every account, has a
+  cover image.
+- `album-ratings`: every album an account has heard (Done), of every
+  account, has a rating; one not heard yet need not.
+- `album-duplicates`: no account has two albums of the same title and
+  artist (ignoring case and spaces at the ends), as two works.
+
+### Games (`game`)
+
+- `game-covers`: every game in a library, of every account, has a cover
+  image.
+- `game-ratings`: every game an account has played (Done), of every
+  account, has a rating; one not played yet need not.
+- `game-duplicates`: no account has two games of the same title and
+  studio (ignoring case and spaces at the ends), as two works.
+
+### Concerts (`concerts`)
+
+- `concert-dates`: every concert, of every account, has a date (a day, a
+  month, a year or a full time).
+- `concert-places`: every concert, of every account, has a venue and a
+  city; one seen on TV need not.
+- `concert-performers`: every concert, of every account, has at least
+  one performer (a person).
+- `concert-photos`: every concert, of every account, has a photo.
+- `concert-duplicates`: no account has two concerts of the same name on
+  the same date (ignoring case and spaces at the ends).
 
 ### Museums (`museums`)
 
@@ -88,7 +148,7 @@ By dataset: the key is the page's name in the app (`#book`) and what
 
 ### People (`people`)
 
-- `person-types`: every person has at least one person type.
+- `people-types`: every person has at least one person type.
 
 ### Organizations (`organizations`)
 
@@ -101,6 +161,42 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `organization-addresses`: every organization has an address.
 - `organization-locations`: every organization has a latitude and a
   longitude, so it is on the map.
+
+### Org types (`organization-types`)
+
+- `organization-type-used`: every organization type, of every account,
+  is used by at least one row; one used by nothing can go.
+- `organization-type-descriptions`: every organization type, of every
+  account, has a description, so its tooltip and page say what it means.
+- `organization-type-duplicates`: no account has two organization types
+  of the same name (ignoring case and spaces at the ends).
+
+### Person types (`person-types`)
+
+- `person-type-used`: every person type, of every account, is used by at
+  least one row; one used by nothing can go.
+- `person-type-descriptions`: every person type, of every account, has a
+  description, so its tooltip and page say what it means.
+- `person-type-duplicates`: no account has two person types of the same
+  name (ignoring case and spaces at the ends).
+
+### Relation types (`relation-types`)
+
+- `relation-type-used`: every relation type, of every account, is used
+  by at least one row; one used by nothing can go.
+- `relation-type-descriptions`: every relation type, of every account,
+  has a description, so its tooltip and page say what it means.
+- `relation-type-duplicates`: no account has two relation types of the
+  same name (ignoring case and spaces at the ends).
+
+### Devices (`devices`)
+
+- `device-used`: every device, of every account, is used by at least one
+  row; one used by nothing can go.
+- `device-descriptions`: every device, of every account, has a
+  description, so its tooltip and page say what it means.
+- `device-duplicates`: no account has two devices of the same name
+  (ignoring case and spaces at the ends).
 
 ## Adding one
 

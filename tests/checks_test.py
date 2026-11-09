@@ -5,23 +5,27 @@ API that runs them and scripts/check.py, which runs the same ones.
 
 import datetime
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 import webtest
-from sqlalchemy import create_engine, delete, update
+from sqlalchemy import create_engine, delete, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld import checks
 from myworld.checks import logo_problems
 from myworld.models import (
+    KINDS,
     ROLE_ADMIN,
     AudioCourse,
     Base,
+    Concert,
     Device,
+    DisabledCheck,
     Image,
     Museum,
     Organization,
@@ -71,7 +75,7 @@ def test_bad_logo(data: bytes, wanted: str) -> None:
 
 
 def test_every_check_describes_itself() -> None:
-    assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "person-types", "museum-dates", "organization-locations", "museum-addresses", "museum-locations", "museum-company",
+    assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "people-types", "museum-dates", "organization-locations", "museum-addresses", "museum-locations", "museum-company",
         "audio-course-lecturers", "audio-course-devices", "audio-course-status", "audio-course-reviews",
         "audio-course-covers", "audio-course-links", "audio-course-stalled", "audio-course-duplicates"} <= set(checks.CHECKS)
     for chosen in checks.CHECKS.values():
@@ -86,7 +90,7 @@ def test_a_name_is_registered_once() -> None:
     with pytest.raises(ValueError, match="twice"):
         checks.check("logos", "again", "logos", "organizations")(lambda session: checks.Result(0, []))
     with pytest.raises(ValueError, match="no dataset"):
-        checks.check("films", "Films", "films", "film")(lambda session: checks.Result(0, []))
+        checks.check("plays", "Plays", "plays", "play")(lambda session: checks.Result(0, []))
 
 
 def fill(engine: Engine) -> None:
@@ -352,7 +356,7 @@ def test_person_types(engine: Engine) -> None:
             Person(owner_id=bob.id, description="the guide at the Louvre"),
         ])
         session.commit()
-        result = checks.CHECKS["person-types"].run(session)
+        result = checks.CHECKS["people-types"].run(session)
     assert result.checked == 3
     assert [(p.subject, p.message) for p in result.problems] == [
         ("Eli (person 2, account 1)", "has no type"),
@@ -423,3 +427,150 @@ def test_youtube(engine: Engine) -> None:
         assert found("youtube-devices") == [("Bare", "has no device")]
         # each problem opens its video
         assert checks.CHECKS["youtube-devices"].run(session).problems[0].link.startswith("youtube/")
+
+
+def test_every_page_has_checks() -> None:
+    """ Every page of data in the sidebar (the library's kinds, then NAV_GROUPS in app.js) is a dataset with checks. """
+    app_js = (Path(__file__).resolve().parent.parent / "src" / "myworld" / "static" / "app.js").read_text(encoding="UTF8")
+    groups = re.search(r"const NAV_GROUPS = \[(.*?)\n\];", app_js, re.DOTALL)
+    assert groups is not None
+    pages = set(KINDS) | set(re.findall(r'"([a-z-]+)"', re.sub(r'\["[A-Z][a-z]+", ', "", groups.group(1))))
+    assert "concerts" in pages and "devices" in pages
+    assert pages == set(checks.DATASETS)
+    for page in pages:
+        assert any(c.dataset == page for c in checks.CHECKS.values()), f"{page} has no checks"
+
+
+def test_concerts(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(google_sub="alice", email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        band = Person(owner_id=alice.id, first_name="The Band")
+        photo = Image(owner_id=alice.id, filename="p.jpg", content_type="image/jpeg", sha256="0" * 64, data=b"\xff\xd8")
+        good = {"venue": "Barby", "city": "Tel Aviv", "performers": [band], "image": photo}
+        session.add_all([
+            # every rule kept
+            Concert(owner_id=alice.id, name="Good", date_y=2010, **good),
+            # seen on TV: no venue or city asked for
+            Concert(owner_id=alice.id, name="On TV", date_y=2011, broadcast=True, **dict(good, venue="", city="")),
+            # each of these breaks rules
+            Concert(owner_id=alice.id, name="Bare", venue="Barby"),
+            Concert(owner_id=alice.id, name="Twice", date_y=2012, **good),
+            Concert(owner_id=alice.id, name="twice ", date_y=2012, **good),
+            # the same name on another date is another concert
+            Concert(owner_id=alice.id, name="Twice", date_y=2013, **good),
+        ])
+        session.commit()
+
+        def found(name: str) -> list[tuple[str, str]]:
+            return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS[name].run(session).problems]
+
+        assert found("concert-dates") == [("Bare", "has no date")]
+        assert found("concert-places") == [("Bare", "has no city")]
+        assert found("concert-performers") == [("Bare", "has no performer")]
+        assert found("concert-photos") == [("Bare", "has no photo")]
+        assert [name for name, _ in found("concert-duplicates")] == ["Twice", "twice "]
+        assert checks.CHECKS["concert-photos"].run(session).problems[0].link.startswith("concerts/")
+
+
+def test_library_kinds(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(google_sub="alice", email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        poster = Image(owner_id=alice.id, filename="f.jpg", content_type="image/jpeg", sha256="0" * 64, data=b"\xff\xd8")
+        good = Work(kind="film", title="Good", creator="Ann", imdb_id="tt1")
+        bare = Work(kind="film", title="Bare", creator="Ann")
+        album = Work(kind="album", title="Bare", creator="Ann")
+        session.add_all([poster, good, bare, album])
+        session.flush()
+        session.add_all([
+            UserWork(user_id=alice.id, work_id=good.id, status="done", rating=8, image_id=poster.id),
+            UserWork(user_id=alice.id, work_id=bare.id, status="done"),
+            UserWork(user_id=alice.id, work_id=album.id, status="done"),
+        ])
+        session.commit()
+
+        def found(name: str) -> list[tuple[str, str]]:
+            return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS[name].run(session).problems]
+
+        # each kind checks its own entries only
+        assert found("film-covers") == [("Bare", "has no cover")]
+        assert found("film-ratings") == [("Bare", "is seen but has no rating")]
+        assert found("film-links") == [("Bare", "has neither an IMDb nor a TMDB id")]
+        assert found("album-ratings") == [("Bare", "is heard but has no rating")]
+        assert found("game-covers") == []
+        [film] = checks.CHECKS["film-covers"].run(session).problems
+        assert (film.subject, film.link) == (f"Bare (film {bare.id}, account {alice.id})", f"film/{bare.id}")
+
+
+def test_enumerations(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(google_sub="alice", email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        friend = PersonType(owner_id=alice.id, name="Friend", description="A friend")
+        session.add_all([
+            friend,
+            PersonType(owner_id=alice.id, name="friend ", description="Again"),
+            PersonType(owner_id=alice.id, name="Unused"),
+            Person(owner_id=alice.id, first_name="Dana", types=[friend]),
+            Device(owner_id=alice.id, name="Phone", description="A phone"),
+        ])
+        session.commit()
+
+        def found(name: str) -> list[tuple[str, str]]:
+            return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS[name].run(session).problems]
+
+        assert sorted(found("person-type-used")) == [("Unused", "is used by nothing"), ("friend ", "is used by nothing")]
+        assert found("person-type-descriptions") == [("Unused", "has no description")]
+        assert [name for name, _ in found("person-type-duplicates")] == ["Friend", "friend "]
+        assert found("device-used") == [("Phone", "is used by nothing")]
+        assert found("organization-type-used") == []
+        [unused] = checks.CHECKS["person-type-descriptions"].run(session).problems
+        assert unused.link.startswith("person-types/")
+
+
+def test_checks_can_be_turned_off(app: webtest.TestApp, engine: Engine) -> None:
+    sign_in(app, "carol")
+    app.put("/api/disabled-checks/logos", status=403)
+    with engine.begin() as connection:
+        connection.execute(update(User).where(User.google_sub == "carol").values(role=ROLE_ADMIN))
+    assert all(c["enabled"] for c in app.get("/api/checks").json)
+    app.put("/api/disabled-checks/logos", status=204)
+    # turning it off again is fine
+    app.put("/api/disabled-checks/logos", status=204)
+    assert app.get("/api/disabled-checks").json == ["logos"]
+    assert {c["name"]: c["enabled"] for c in app.get("/api/checks").json}["logos"] is False
+    app.put("/api/disabled-checks/nonesuch", status=404)
+    # it is saved: another admin still has it on
+    app.post("/auth/logout")
+    sign_in(app, "dave")
+    with engine.begin() as connection:
+        connection.execute(update(User).where(User.google_sub == "dave").values(role=ROLE_ADMIN))
+    assert app.get("/api/disabled-checks").json == []
+    app.post("/auth/logout")
+    sign_in(app, "carol")
+    app.delete("/api/disabled-checks/logos", status=204)
+    app.delete("/api/disabled-checks/logos", status=204)
+    assert app.get("/api/disabled-checks").json == []
+    assert all(c["enabled"] for c in app.get("/api/checks").json)
+
+
+def test_script_skips_what_an_account_turned_off(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'db.sqlite'}"
+    engine = create_engine(url)
+    Base.metadata.create_all(engine)
+    fill(engine)
+    with Session(engine) as session:
+        alice = session.scalars(select(User).where(User.email == "alice@example.com")).one()
+        session.add(DisabledCheck(user_id=alice.id, check_name="logos"))
+        session.commit()
+    engine.dispose()
+    # the bad logo fails logos, unless the account that turned it off is named
+    assert run_script(url, "logos").returncode == 1
+    skipped = run_script(url, "logos", "--email", "alice@example.com")
+    assert skipped.returncode == 0, skipped.stdout + skipped.stderr
+    assert "off   logos: turned off by alice@example.com" in skipped.stdout
+    assert run_script(url, "--email", "nobody@example.com").returncode == 2

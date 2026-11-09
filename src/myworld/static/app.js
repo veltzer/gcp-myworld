@@ -2173,12 +2173,46 @@ async function selectSchema() {
 function checkCard(check) {
 	const card = el("div", "check");
 	card.dataset.check = check.name;
+	// on or off for this admin, saved in the database: Run all skips one that is off
+	const enabled = document.createElement("input");
+	enabled.type = "checkbox";
+	enabled.className = "check-enabled";
+	enabled.setAttribute("aria-label", `Run ${check.title} with Run all`);
 	const title = el("span", "check-title", check.title);
 	title.title = check.description;
-	const run = el("button", "text", "Run");
+	const run = el("button", "text check-run", "Run");
 	run.type = "button";
 	run.onclick = () => runCheck(card).catch((e) => showError(e.message));
-	card.append(title, el("span", "check-result"), run);
+	const show = () => {
+		enabled.checked = check.enabled;
+		enabled.title = check.enabled ? "On: Run all runs it. Untick to turn it off" : "Off: Run all skips it. Tick to turn it on";
+		card.classList.toggle("check-off", !check.enabled);
+		run.disabled = !check.enabled;
+		card.dataset.enabled = String(check.enabled);
+	};
+	enabled.onchange = async () => {
+		const on = enabled.checked;
+		enabled.disabled = true;
+		try {
+			await api(`/api/disabled-checks/${check.name}`, { method: on ? "DELETE" : "PUT" });
+			check.enabled = on;
+			// the same check may be on the Checks page and in a page's own checks
+			for (const other of document.querySelectorAll(`.check[data-check="${check.name}"]`)) {
+				other.dispatchEvent(new Event("check-toggled"));
+			}
+		} catch (e) {
+			showError(e.message);
+		} finally {
+			enabled.disabled = false;
+			show();
+		}
+	};
+	card.addEventListener("check-toggled", show);
+	card.append(enabled, title, el("span", "check-result"), run);
+	show();
+	if (!check.enabled) {
+		card.querySelector(".check-result").textContent = "Off";
+	}
 	return card;
 }
 
@@ -2199,7 +2233,7 @@ function problemSubject(problem) {
 }
 
 async function runCheck(card) {
-	const button = card.querySelector("button");
+	const button = card.querySelector(".check-run");
 	const out = card.querySelector(".check-result");
 	button.disabled = true;
 	card.querySelector(".check-details")?.remove();
@@ -2247,6 +2281,14 @@ async function runChecks(box, button) {
 	button.disabled = true;
 	try {
 		for (const card of box.querySelectorAll(".check")) {
+			// one turned off is skipped, and says so
+			if (card.dataset.enabled === "false") {
+				card.querySelector(".check-details")?.remove();
+				const out = card.querySelector(".check-result");
+				out.className = "check-result";
+				out.textContent = "Off";
+				continue;
+			}
 			await runCheck(card);
 		}
 	} finally {

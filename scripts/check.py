@@ -8,6 +8,7 @@ runs from the Checks page, over every account.
   scripts/check.py logos ...        only these
   scripts/check.py --dataset book   the checks of one dataset (as its page runs them)
   scripts/check.py --list           the checks there are, by dataset
+  scripts/check.py --email me@x     skip the checks that account turned off
 
 The database is DATABASE_URL (default: the local sqlite file); for Cloud SQL
 run it through the proxy: scripts/with_cloud_db.sh scripts/check.py. Exits 1
@@ -26,10 +27,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 os.chdir(ROOT)
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from myworld.checks import CHECKS, DATASETS
-from myworld.models import make_engine
+from myworld.models import DisabledCheck, User, make_engine
 
 
 def main() -> int:
@@ -40,6 +42,7 @@ def main() -> int:
     parser.add_argument("names", nargs="*", metavar="check", help="checks to run (default: all)")
     parser.add_argument("--dataset", choices=list(DATASETS), help="run the checks of this dataset")
     parser.add_argument("--list", action="store_true", help="list the checks, by dataset, and run none")
+    parser.add_argument("--email", help="skip the checks this account turned off (on the Checks page)")
     args = parser.parse_args()
     if args.list:
         width = max(len(name) for name in CHECKS)
@@ -62,8 +65,18 @@ def main() -> int:
     print(engine.url.render_as_string(hide_password=True))
     failed = 0
     with Session(engine) as session:
+        disabled: set[str] = set()
+        if args.email:
+            users = session.scalars(select(User).where(User.email == args.email)).all()
+            if not users:
+                print(f"check: no account for {args.email}", file=sys.stderr)
+                return 2
+            disabled = set(session.scalars(select(DisabledCheck.check_name).where(DisabledCheck.user_id.in_([u.id for u in users]))))
         for name in args.names or CHECKS:
             chosen = CHECKS[name]
+            if name in disabled:
+                print(f"off   {name}: turned off by {args.email}")
+                continue
             result = chosen.run(session)
             if result.ok:
                 print(f"ok    {name}: all {result.checked} {chosen.noun} pass")
