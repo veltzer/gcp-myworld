@@ -551,11 +551,17 @@ async function loadEntries() {
 }
 
 // The library's cards: searched and sorted with the same toolbar as every other tab.
+// What the list on screen is: a new view, search, sort, filter or layout starts again at the first page
+function listKey(view) {
+	const sort = currentSort();
+	return JSON.stringify([view, $("world-search").value, sort?.field[0], sort?.direction, [...pickedTypes(view)], state.layout]);
+}
+
 function renderEntries() {
 	const { plural } = state.config.kinds[state.kind];
 	const shown = rankBySearch(sortItems(state.entries.filter((entry) => typeMatches(entry) && searchMatches(entry))));
 	setCount(state.kind, state.entries.length);
-	$("library-cards").replaceChildren(...shown.map(libraryCard));
+	$("library-cards").replaceChildren(...pageOf(shown, listKey(state.kind)).map(libraryCard));
 	$("library-cards").hidden = shown.length === 0;
 	$("empty").hidden = state.entries.length !== 0;
 	$("empty").textContent = `No ${plural.toLowerCase()} yet. Add one with the + button.`;
@@ -803,6 +809,9 @@ function updateTools() {
 		layout.disabled = !cards || (layout.dataset.layout === "map" && !MAPPED.has(state.view));
 	}
 	$("layouts").setAttribute("aria-disabled", String(!cards));
+	if (PAGES.has(state.view)) {
+		pagerOff();
+	}
 	updateViewChecks();
 }
 
@@ -947,6 +956,7 @@ async function libraryPage() {
 	setupWorlds();
 	setupViewChecks();
 	setupDatePicks();
+	setupPager();
 	setupAddDialog();
 	renderKinds();
 	loadCounts().catch((e) => showError(e.message));
@@ -1855,40 +1865,98 @@ function buildHaystack(item) {
 	return values.join(" ").toLowerCase();
 }
 
-// cards drawn at a time: a long list (30,000 YouTube videos) gets a Show more at its end
-const CARDS_PAGE = 200;
-const paging = { key: "", limit: CARDS_PAGE, shown: [] };
+// ─── pages: every list (cards, tables, books) a page at a time ──────────────
+
+const PAGE_SIZES = [25, 50, 100, 200];
+const PAGE_SIZE_KEY = "myworld.page-size";
+// key: what the list on screen is (view, search, sort, filter, layout): a new one starts at the first page
+const paging = { key: "", page: 0, size: savedPageSize(), shown: [] };
+
+function savedPageSize() {
+	try {
+		const saved = Number(window.localStorage.getItem(PAGE_SIZE_KEY));
+		return PAGE_SIZES.includes(saved) ? saved : 50;
+	} catch (e) {
+		return 50;
+	}
+}
+
+// The rows of the page on screen out of shown (the whole list, filtered and sorted), and the pager set for it;
+// a list that is not paged (the map shows everything) gets them all, with the pager disabled.
+function pageOf(shown, key, paged = true) {
+	if (key !== paging.key) {
+		paging.key = key;
+		paging.page = 0;
+	}
+	paging.shown = shown;
+	const pages = Math.max(1, Math.ceil(shown.length / paging.size));
+	paging.page = Math.min(paging.page, pages - 1);
+	const on = paged && pages > 1;
+	$("page-first").disabled = !on || paging.page === 0;
+	$("page-previous").disabled = !on || paging.page === 0;
+	$("page-next").disabled = !on || paging.page === pages - 1;
+	$("page-last").disabled = !on || paging.page === pages - 1;
+	$("page-size").disabled = !paged || shown.length <= PAGE_SIZES[0];
+	$("page-label").textContent = paged ? `Page ${(paging.page + 1).toLocaleString()} of ${pages.toLocaleString()}` : "All shown";
+	if (!paged) {
+		return shown;
+	}
+	return shown.slice(paging.page * paging.size, (paging.page + 1) * paging.size);
+}
+
+// the pager on a page that has no list (stats, checks, ...): there, disabled
+function pagerOff() {
+	for (const id of ["page-first", "page-previous", "page-next", "page-last", "page-size"]) {
+		$(id).disabled = true;
+	}
+	$("page-label").textContent = "Page 1 of 1";
+}
+
+function goToPage(page) {
+	paging.page = page;
+	rerender();
+	window.scrollTo(0, 0);
+}
+
+function setupPager() {
+	$("page-size").replaceChildren(...PAGE_SIZES.map((size) => {
+		const option = document.createElement("option");
+		option.value = size;
+		option.textContent = `${size} per page`;
+		return option;
+	}));
+	$("page-size").value = paging.size;
+	$("page-size").onchange = () => {
+		// keep the first row on screen in view
+		const first = paging.page * paging.size;
+		paging.size = Number($("page-size").value);
+		try {
+			window.localStorage.setItem(PAGE_SIZE_KEY, String(paging.size));
+		} catch (e) {
+			// the size is then only for this visit
+		}
+		goToPage(Math.floor(first / paging.size));
+	};
+	$("page-first").onclick = () => goToPage(0);
+	$("page-previous").onclick = () => goToPage(paging.page - 1);
+	$("page-next").onclick = () => goToPage(paging.page + 1);
+	$("page-last").onclick = () => goToPage(Math.ceil(paging.shown.length / paging.size) - 1);
+}
 
 function renderWorld() {
 	const view = state.view;
 	const items = worldCache[view] || [];
 	const shown = rankBySearch(sortItems(items.filter((item) => typeMatches(item) && searchMatches(item))));
-	// a new view, search, sort or filter starts again at the first page
-	const sort = currentSort();
-	const key = JSON.stringify([view, $("world-search").value, sort?.field[0], sort?.direction, [...pickedTypes(view)], state.layout]);
-	if (key !== paging.key) {
-		paging.key = key;
-		paging.limit = CARDS_PAGE;
-	}
-	paging.shown = shown;
 	const table = TABLES[view];
 	const map = !table && showsMap();
+	// a page at a time, but the map shows every place
+	const page = pageOf(shown, listKey(view), !map);
 	$("cards").hidden = Boolean(table) || map;
-	const cards = table || map ? [] : shown.slice(0, paging.limit).map(CARDS[view]);
-	if (!table && !map && shown.length > paging.limit) {
-		const more = el("button", "text show-more", `Show ${Math.min(CARDS_PAGE, shown.length - paging.limit)} more (${shown.length - paging.limit} not shown)`);
-		more.type = "button";
-		more.onclick = () => {
-			paging.limit += CARDS_PAGE;
-			renderWorld();
-		};
-		cards.push(more);
-	}
-	$("cards").replaceChildren(...cards);
+	$("cards").replaceChildren(...(table || map ? [] : page.map(CARDS[view])));
 	$("world-map").hidden = !map;
 	for (const [name, [tableId, rowsId, row]] of Object.entries(TABLES)) {
 		$(tableId).hidden = name !== view || shown.length === 0;
-		$(rowsId).replaceChildren(...(name === view ? shown.map(row) : []));
+		$(rowsId).replaceChildren(...(name === view ? page.map(row) : []));
 	}
 	// "Audio courses" -> "audio courses"; a name with capitals inside ("YouTube videos") stays
 	const title = WORLDS[view][0].replace(/^My /, "");
@@ -2560,14 +2628,20 @@ async function refreshWorld() {
 async function showRow(view, id) {
 	if (view in state.config.kinds) {
 		await selectKind(view, `${view}/${id}`);
+		// a book on another page: go to its page
+		const at = paging.shown.findIndex((entry) => entry.work_id === id);
+		if (!$(`${view}-${id}`) && at >= 0) {
+			paging.page = Math.floor(at / paging.size);
+			renderEntries();
+		}
 		markRow($(`${view}-${id}`));
 		return;
 	}
 	await selectWorld(view, `${view}/${id}`);
-	// a card past the pages drawn: draw up to it
+	// a row on another page: go to its page
 	const at = paging.shown.findIndex((item) => item.id === id);
-	if (!$(`${slug(view)}-${id}`) && at >= paging.limit) {
-		paging.limit = at + 1;
+	if (!$(`${slug(view)}-${id}`) && at >= 0) {
+		paging.page = Math.floor(at / paging.size);
 		renderWorld();
 	}
 	markRow($(`${slug(view)}-${id}`));

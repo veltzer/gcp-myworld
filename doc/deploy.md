@@ -225,6 +225,13 @@ than 15 rows opens only once something is typed. Only rows that exist can
 be picked, and in a picker Enter picks and Escape closes the list: neither
 saves the form or closes the dialog.
 
+Every list (cards, tables, books) is shown a page at a time: the pager in
+the toolbar goes to the first, previous, next and last page and picks 25,
+50 (the default), 100 or 200 rows per page, remembered in the browser. A new
+search, sort, filter or layout starts at the first page, a link to a row on
+another page opens that page, and the Map layout shows every place, with the
+pager disabled.
+
 A person may be at several organizations: the People tab links each one
 to its card in Organizations, and an organization card links back to its
 people. The person dialog picks organizations the way the concert dialog

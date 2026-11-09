@@ -82,6 +82,15 @@
 				</span>
 				<!-- this page's checks (admins only): disabled where there are none -->
 				<button id="view-checks-button" type="button" class="icon-button" title="Run the checks of this page" aria-label="Checks" aria-expanded="false" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 7h-9v2h9V7zm0 8h-9v2h9v-2zM5.54 11 2 7.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 11zm0 8L2 15.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 19z"/></svg></button>
+				<!-- pages of a long list: the same spot on every page, disabled where everything fits -->
+				<span id="pager" class="pager" role="group" aria-label="Pages">
+					<button id="page-first" type="button" class="icon-button" title="First page" aria-label="First page" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.41 16.59 13.82 12l4.59-4.59L17 6l-6 6 6 6zM6 6h2v12H6z"/></svg></button>
+					<button id="page-previous" type="button" class="icon-button" title="Previous page" aria-label="Previous page" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
+					<span id="page-label" class="page-label">Page 1 of 1</span>
+					<button id="page-next" type="button" class="icon-button" title="Next page" aria-label="Next page" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
+					<button id="page-last" type="button" class="icon-button" title="Last page" aria-label="Last page" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.59 7.41 10.18 12l-4.59 4.59L7 18l6-6-6-6zM16 6h2v12h-2z"/></svg></button>
+					<select id="page-size" aria-label="Rows per page" disabled></select>
+				</span>
 				<span id="world-count" class="empty"></span>
 				<div id="layouts" class="layouts" role="group" aria-label="Layout"></div>
 			</div>

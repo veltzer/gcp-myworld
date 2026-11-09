@@ -862,11 +862,24 @@ button.danger {
 	display: none;
 }
 
-/* the end of a long list: the rest, a page at a time; across the whole grid */
-.show-more {
-	grid-column: 1 / -1;
-	justify-self: center;
+/* the pager in the toolbar: first, previous, which page, next, last, how many per page */
+.pager {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.15rem;
 	white-space: nowrap;
+}
+
+.pager .page-label {
+	padding: 0 0.35rem;
+	color: var(--muted);
+	font-size: 0.9rem;
+}
+
+.pager select {
+	margin-left: 0.35rem;
+	font-size: 0.9rem;
+	padding: 0.25rem 0.4rem;
 }
 
 .world-card {
