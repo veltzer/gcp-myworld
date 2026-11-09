@@ -472,8 +472,8 @@ def _entry_problem(entry: UserWork, message: str) -> Problem:
     return Problem(f"{entry.work.title} ({KINDS[kind][0].lower()} {entry.work_id}, account {entry.user_id})", message, f"{kind}/{entry.work_id}", entry.user_id)
 
 
-# what having done a library kind is called: a book read, a film seen
-DONE_VERBS = {"book": "read", "film": "seen", "series": "watched", "album": "heard", "game": "played"}
+# what having done a library kind is called: a book read
+DONE_VERBS = {"book": "read"}
 
 
 def _library_checks(kind: str) -> None:
@@ -533,14 +533,6 @@ def check_book_authors(session: Session) -> Result:
     books = _entries(session, "book")
     written = set(session.execute(select(library_entry_authors.c.user_id, library_entry_authors.c.work_id)).tuples())
     return Result(checked=len(books), problems=[_entry_problem(b, "has no author") for b in books if (b.user_id, b.work_id) not in written])
-
-
-@check("film-links", "Every film links to its page", "films", "film")
-def check_film_links(session: Session) -> Result:
-    """ Every film in a library, of every account, has an IMDb or a TMDB id, so its card links to its page. """
-    films = _entries(session, "film")
-    problems = [_entry_problem(f, "has neither an IMDb nor a TMDB id") for f in films if not f.work.imdb_id.strip() and f.work.tmdb_id is None]
-    return Result(checked=len(films), problems=problems)
 
 
 # ─── concerts ───────────────────────────────────────────────────────────────

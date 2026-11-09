@@ -136,7 +136,9 @@ on migrations under "Data model".
 
 ## Film search
 
-The add dialog for a film can search The Movie Database (TMDB) and fill in
+Films are not a collection for now (their data model will follow the data
+they are imported from), but the search stays for that import. The add
+dialog for a film can search The Movie Database (TMDB) and fill in
 the title, director and year, together with the film's ids on IMDb, TMDB
 and Rotten Tomatoes, which are stored on the shared `library_works` row and shown
 as links in the library. TMDB knows the IMDb id and the Wikidata item of a
@@ -186,8 +188,7 @@ Girlfriend, Performer, Co-Worker, Lecturer and Book Author and guesses them from
 `_person_type` in `scripts/import_world.py`). A book's authors are people
 too (Book Authors): the book's card links to them, and their Connections
 list the books they wrote. People and Organizations
-have a type filter next to the search; on a library kind (Books, Films,
-...) the same control filters by status and by whether an entry has a
+have a type filter next to the search; on a library kind (Books) the same control filters by status and by whether an entry has a
 cover, together (Done and No cover: the books read that have no cover).
 
 A person may be at several organizations: the People tab links each one
@@ -348,11 +349,13 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
 - `users`: one row per account (`google_sub` is the stable key: the Google
   `sub` claim, or a provider-qualified subject for the other sign-in
   methods; `password_hash` is set only for email accounts).
-- `library_works`: books, films, series, albums, games; one shared row
-  per work, identified by kind, title, creator and year, plus the catalog
-  ids of films (`imdb_id`, `tmdb_id`, `rotten_tomatoes_id`) and books
-  (`goodreads_id`, `simania_id`). New kinds are
-  added to `KINDS` in `src/myworld/models.py`.
+- `library_works`: books, for now (films, series, albums and games were
+  taken out until their data is imported, which will shape them); one
+  shared row per work, identified by kind, title, creator and year, plus
+  the catalog ids of books (`goodreads_id`, `simania_id`) and of films
+  (`imdb_id`, `tmdb_id`, `rotten_tomatoes_id`, kept for the film search
+  and for the one film row from before). New kinds are added to `KINDS`
+  in `src/myworld/models.py`.
 - `library_entries`: what a user thinks about a work: status, rating,
   dates, notes, and its cover (`image_id`). All per-user queries go through this table, so users never
   see each other's entries even though the work rows are shared. Its

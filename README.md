@@ -3,7 +3,7 @@
      values that template reads, and build again. -->
 # *gcp-myworld* project by Mark Veltzer
 
-description: My World: a personal library of books, films and more
+description: My World: a personal record of books, concerts, museums, courses and more
 
 project website: https://veltzer.github.io/gcp-myworld
 

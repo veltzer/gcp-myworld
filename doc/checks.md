@@ -8,7 +8,7 @@ checks read the whole database, every account's rows, and change nothing.
 
 - **In the app:** the Checks page (sidebar, Overview, admins only; see
   `accounts.md`) lists the checks by dataset, a dataset for every page of
-  data in the sidebar (Books to Games, Concerts to YouTube, People,
+  data in the sidebar (Books, Concerts to YouTube, People,
   Organizations, and the four Types pages), each dataset under a heading
   with its own Run all. Every check is one row of the same height: a box
   that turns it on or off, its title (the description is the tooltip),
@@ -61,44 +61,6 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `book-ratings`: every book read (Done) has a rating.
 - `book-duplicates`: no account has two books of the same title and
   author.
-
-### Films (`film`)
-
-- `film-covers`: every film in a library, of every account, has a cover
-  image.
-- `film-ratings`: every film an account has seen (Done), of every
-  account, has a rating; one not seen yet need not.
-- `film-duplicates`: no account has two films of the same title and
-  director (ignoring case and spaces at the ends), as two works.
-- `film-links`: every film in a library, of every account, has an IMDb
-  or a TMDB id, so its card links to its page.
-
-### Video series (`series`)
-
-- `series-covers`: every video series in a library, of every account,
-  has a cover image.
-- `series-ratings`: every video series an account has watched (Done), of
-  every account, has a rating; one not watched yet need not.
-- `series-duplicates`: no account has two video series of the same title
-  and creator (ignoring case and spaces at the ends), as two works.
-
-### Albums (`album`)
-
-- `album-covers`: every album in a library, of every account, has a
-  cover image.
-- `album-ratings`: every album an account has heard (Done), of every
-  account, has a rating; one not heard yet need not.
-- `album-duplicates`: no account has two albums of the same title and
-  artist (ignoring case and spaces at the ends), as two works.
-
-### Games (`game`)
-
-- `game-covers`: every game in a library, of every account, has a cover
-  image.
-- `game-ratings`: every game an account has played (Done), of every
-  account, has a rating; one not played yet need not.
-- `game-duplicates`: no account has two games of the same title and
-  studio (ignoring case and spaces at the ends), as two works.
 
 ### Concerts (`concerts`)
 

@@ -474,37 +474,6 @@ def test_concerts(engine: Engine) -> None:
         assert checks.CHECKS["concert-photos"].run(session).problems[0].link.startswith("concerts/")
 
 
-def test_library_kinds(engine: Engine) -> None:
-    with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
-        session.add(alice)
-        session.flush()
-        poster = Image(owner_id=alice.id, filename="f.jpg", content_type="image/jpeg", sha256="0" * 64, data=b"\xff\xd8")
-        good = Work(kind="film", title="Good", creator="Ann", imdb_id="tt1")
-        bare = Work(kind="film", title="Bare", creator="Ann")
-        album = Work(kind="album", title="Bare", creator="Ann")
-        session.add_all([poster, good, bare, album])
-        session.flush()
-        session.add_all([
-            UserWork(user_id=alice.id, work_id=good.id, status="done", rating=8, image_id=poster.id),
-            UserWork(user_id=alice.id, work_id=bare.id, status="done"),
-            UserWork(user_id=alice.id, work_id=album.id, status="done"),
-        ])
-        session.commit()
-
-        def found(name: str) -> list[tuple[str, str]]:
-            return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS[name].run(session).problems]
-
-        # each kind checks its own entries only
-        assert found("film-covers") == [("Bare", "has no cover")]
-        assert found("film-ratings") == [("Bare", "is seen but has no rating")]
-        assert found("film-links") == [("Bare", "has neither an IMDb nor a TMDB id")]
-        assert found("album-ratings") == [("Bare", "is heard but has no rating")]
-        assert found("game-covers") == []
-        [film] = checks.CHECKS["film-covers"].run(session).problems
-        assert (film.subject, film.link) == (f"Bare (film {bare.id}, account {alice.id})", f"film/{bare.id}")
-
-
 def test_enumerations(engine: Engine) -> None:
     with Session(engine) as session:
         alice = User(google_sub="alice", email="alice@example.com")

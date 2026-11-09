@@ -43,10 +43,6 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 # kind -> (display name, plural, what the "creator" column is called for that kind)
 KINDS: dict[str, tuple[str, str, str]] = {
     "book": ("Book", "Books", "Author"),
-    "film": ("Film", "Films", "Director"),
-    "series": ("Video series", "Video series", "Creator"),
-    "album": ("Album", "Albums", "Artist"),
-    "game": ("Game", "Games", "Studio"),
 }
 
 STATUSES: dict[str, str] = {

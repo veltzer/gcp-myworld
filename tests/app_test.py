@@ -54,8 +54,8 @@ def test_config_anonymous(app: webtest.TestApp) -> None:
     assert config["user"] is None
     assert config["google_client_id"].endswith(".apps.googleusercontent.com")
     assert config["dev_login"] is False
-    assert list(config["kinds"]) == ["book", "film", "series", "album", "game"]
-    assert config["kinds"]["series"]["plural"] == "Video series"
+    # films, series, albums and games come back with the data they are imported from
+    assert list(config["kinds"]) == ["book"]
     assert "done" in config["statuses"]
 
 
@@ -124,8 +124,8 @@ def test_add_edit_delete(app: webtest.TestApp) -> None:
 
     [listed] = app.get("/api/library-entries?kind=book").json
     assert listed["work_id"] == work_id
-    # films are a separate shelf
-    assert app.get("/api/library-entries?kind=film").json == []
+    # films are not a collection (yet)
+    app.get("/api/library-entries?kind=film", status=400)
 
     # adding the same work again updates the existing entry
     response = app.post_json("/api/library-entries", {"kind": "book", "title": "Dune", "creator": "Frank Herbert", "year": 1965, "rating": 10})
@@ -164,7 +164,7 @@ def test_validation(app: webtest.TestApp) -> None:
 
 def test_users_are_isolated(app: webtest.TestApp) -> None:
     sign_in(app, sub="alice")
-    entry = app.post_json("/api/library-entries", {"kind": "film", "title": "Alien", "creator": "Ridley Scott", "year": 1979}).json
+    entry = app.post_json("/api/library-entries", {"kind": "book", "title": "Alien", "creator": "Alan Dean Foster", "year": 1979}).json
     work_id = entry["work_id"]
 
     app.post("/auth/logout")
@@ -174,8 +174,8 @@ def test_users_are_isolated(app: webtest.TestApp) -> None:
     app.put_json(f"/api/library-entries/{work_id}", {"status": "done"}, status=404)
     app.delete(f"/api/library-entries/{work_id}", status=404)
 
-    # bob adding the same film reuses the shared work row and gets his own entry
-    entry = app.post_json("/api/library-entries", {"kind": "film", "title": "Alien", "creator": "Ridley Scott", "year": 1979, "rating": 7}).json
+    # bob adding the same book reuses the shared work row and gets his own entry
+    entry = app.post_json("/api/library-entries", {"kind": "book", "title": "Alien", "creator": "Alan Dean Foster", "year": 1979, "rating": 7}).json
     assert entry["work_id"] == work_id
     assert entry["rating"] == 7
     app.post("/auth/logout")
