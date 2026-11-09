@@ -38,7 +38,7 @@ from myworld.models import (
     YouTubeVideo,
     concert_performers,
     organization_relation_types,
-    person_person_types,
+    person_type_links,
 )
 
 bp = flask.Blueprint("world", __name__)
@@ -788,7 +788,7 @@ type TypeModel = OrganizationType | PersonType | RelationType | Device
 
 # path -> (type model, what the typed rows are called); an organization has one
 # type (organizations.type_id) and any number of relation types
-# (organization_relation_types), a person any number of types (person_person_types)
+# (organization_relation_types), a person any number of types (person_type_links)
 TYPES: dict[str, tuple[type[TypeModel], str]] = {
     "organization-types": (OrganizationType, "organization"),
     "person-types": (PersonType, "person"),
@@ -814,8 +814,8 @@ def _type_links(what: str) -> Any:
             .where(Organization.owner_id == flask.g.user.id)
         )
     return (
-        select(person_person_types.c.type_id.label("type_id"))
-        .join(Person, Person.id == person_person_types.c.person_id)
+        select(person_type_links.c.person_type_id.label("type_id"))
+        .join(Person, Person.id == person_type_links.c.person_id)
         .where(Person.owner_id == flask.g.user.id)
     )
 

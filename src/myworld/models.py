@@ -111,7 +111,7 @@ class User(Base):
 
 
 class Work(Base):
-    __tablename__ = "works"
+    __tablename__ = "library_works"
     __table_args__ = (
         UniqueConstraint("kind", "title", "creator", "year", name="uq_work_identity"),
     )
@@ -132,13 +132,13 @@ class Work(Base):
 
 
 class UserWork(Base):
-    __tablename__ = "user_works"
+    __tablename__ = "library_entries"
     __table_args__ = (
         CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_rating_range"),
     )
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-    work_id: Mapped[int] = mapped_column(ForeignKey("works.id", ondelete="CASCADE"), primary_key=True)
+    work_id: Mapped[int] = mapped_column(ForeignKey("library_works.id", ondelete="CASCADE"), primary_key=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="done")
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_on: Mapped[datetime.date | None] = mapped_column(nullable=True)
@@ -152,25 +152,25 @@ class UserWork(Base):
 
 # ─── concerts, museums, people ───────────────────────────────────────────────
 
-concert_people = Table(
-    "concert_people",
+concert_companions = Table(
+    "concert_companions",
     Base.metadata,
-    Column("concert_id", ForeignKey("concerts.id", ondelete="CASCADE"), primary_key=True),
+    Column("concert_id", ForeignKey("concert_visits.id", ondelete="CASCADE"), primary_key=True),
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
 )
 
-museum_people = Table(
-    "museum_people",
+museum_companions = Table(
+    "museum_companions",
     Base.metadata,
-    Column("museum_id", ForeignKey("museums.id", ondelete="CASCADE"), primary_key=True),
+    Column("museum_id", ForeignKey("museum_visits.id", ondelete="CASCADE"), primary_key=True),
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
 )
 
-# who was on stage, as people (with: concert_people is who the user went with)
+# who was on stage, as people (with: concert_companions is who the user went with)
 concert_performers = Table(
     "concert_performers",
     Base.metadata,
-    Column("concert_id", ForeignKey("concerts.id", ondelete="CASCADE"), primary_key=True),
+    Column("concert_id", ForeignKey("concert_visits.id", ondelete="CASCADE"), primary_key=True),
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
 )
 
@@ -183,11 +183,11 @@ audio_course_lecturers = Table(
 )
 
 # what a person is to the user: any number of their person types (a neighbor and a friend)
-person_person_types = Table(
-    "person_person_types",
+person_type_links = Table(
+    "person_type_links",
     Base.metadata,
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
-    Column("type_id", ForeignKey("person_types.id", ondelete="CASCADE"), primary_key=True),
+    Column("person_type_id", ForeignKey("person_types.id", ondelete="CASCADE"), primary_key=True),
 )
 
 person_organizations = Table(
@@ -221,7 +221,7 @@ class PersonType(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
-    people: Mapped[list[Person]] = relationship(secondary=person_person_types, back_populates="types")
+    people: Mapped[list[Person]] = relationship(secondary=person_type_links, back_populates="types")
 
 
 class Person(Base):
@@ -240,13 +240,13 @@ class Person(Base):
     surname: Mapped[str] = mapped_column(String(200), nullable=False, default="", server_default="")
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     # family, co-worker, ...: any number of the user's own person types
-    types: Mapped[list[PersonType]] = relationship(secondary=person_person_types, back_populates="people")
+    types: Mapped[list[PersonType]] = relationship(secondary=person_type_links, back_populates="people")
 
     organizations: Mapped[list[Organization]] = relationship(
         secondary=person_organizations, back_populates="people",
     )
     concerts: Mapped[list[Concert]] = relationship(
-        secondary=concert_people, back_populates="people",
+        secondary=concert_companions, back_populates="people",
     )
     performed: Mapped[list[Concert]] = relationship(
         secondary=concert_performers, back_populates="performers",
@@ -257,7 +257,7 @@ class Person(Base):
         """ The whole name, as shown; the description for someone with no name. """
         return f"{self.first_name} {self.surname}".strip() or self.description
     museums: Mapped[list[Museum]] = relationship(
-        secondary=museum_people, back_populates="people",
+        secondary=museum_companions, back_populates="people",
     )
     lectured: Mapped[list[AudioCourse]] = relationship(
         secondary=audio_course_lecturers, back_populates="lecturers",
@@ -360,7 +360,7 @@ class _Dated:
 
 
 class Concert(_Dated, Base):
-    __tablename__ = "concerts"
+    __tablename__ = "concert_visits"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -383,14 +383,14 @@ class Concert(_Dated, Base):
     image_author: Mapped[str] = mapped_column(String(300), nullable=False, default="")
 
     # who the user went with
-    people: Mapped[list[Person]] = relationship(secondary=concert_people, back_populates="concerts")
+    people: Mapped[list[Person]] = relationship(secondary=concert_companions, back_populates="concerts")
     # who was on stage
     performers: Mapped[list[Person]] = relationship(secondary=concert_performers, back_populates="performed")
 
 
 class Museum(_Dated, _Located, Base):
     """ One visit to a museum; a museum visited twice is two rows. """
-    __tablename__ = "museums"
+    __tablename__ = "museum_visits"
     __table_args__ = (
         CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_museum_rating_range"),
     )
@@ -411,7 +411,7 @@ class Museum(_Dated, _Located, Base):
     image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     image: Mapped[Image | None] = relationship()
 
-    people: Mapped[list[Person]] = relationship(secondary=museum_people, back_populates="museums")
+    people: Mapped[list[Person]] = relationship(secondary=museum_companions, back_populates="museums")
 
 
 class Device(Base):

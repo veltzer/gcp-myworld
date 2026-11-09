@@ -29,9 +29,9 @@ from myworld.models import (
     Person,
     YouTubeVideo,
     audio_course_lecturers,
-    museum_people,
+    museum_companions,
     organization_relation_types,
-    person_person_types,
+    person_type_links,
 )
 
 
@@ -243,7 +243,7 @@ def check_organization_locations(session: Session) -> Result:
 @check("person-types", "Every person has a type", "people")
 def check_person_types(session: Session) -> Result:
     """ Every person, of every account, is categorized as at least one person type (family, co-worker, ...). """
-    typed = set(session.scalars(select(person_person_types.c.person_id)))
+    typed = set(session.scalars(select(person_type_links.c.person_id)))
     people = session.scalars(select(Person).order_by(Person.owner_id, Person.first_name, Person.surname, Person.id)).all()
     problems = [
         Problem(f"{person.name} (person {person.id}, account {person.owner_id})", "has no type", f"people/{person.id}", person.owner_id)
@@ -298,7 +298,7 @@ def check_museum_company(session: Session) -> Result:
     with or is marked "I went alone", so an empty With is never a gap
     nobody filled in; and none is both.
     """
-    with_people = set(session.scalars(select(museum_people.c.museum_id)))
+    with_people = set(session.scalars(select(museum_companions.c.museum_id)))
     visits = session.scalars(select(Museum).order_by(Museum.owner_id, Museum.name, Museum.id)).all()
     problems = []
     for visit in visits:

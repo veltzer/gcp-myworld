@@ -24,7 +24,7 @@ from myworld.models import (
     Person,
     User,
     YouTubeVideo,
-    concert_people,
+    concert_companions,
     person_organizations,
 )
 from tests.conftest import sign_in
@@ -602,7 +602,7 @@ def test_reimport_replaces(imported: webtest.TestApp, engine: Engine, tmp_path: 
         session.commit()
         for model, count in ((Concert, 3), (Museum, 3), (AudioCourse, 2), (Person, 5), (Organization, 3), (Image, 5)):
             assert session.scalar(select(func.count()).select_from(model)) == count
-        assert session.scalar(select(func.count()).select_from(concert_people)) == 3
+        assert session.scalar(select(func.count()).select_from(concert_companions)) == 3
         assert session.scalar(select(func.count()).select_from(person_organizations)) == 3
     assert len(imported.get("/api/concerts").json) == 3
 
@@ -831,7 +831,7 @@ def test_delete(imported: webtest.TestApp, engine: Engine) -> None:
     with Session(engine) as session:
         # the concert photo went with its last concert; the museum one stays
         assert sorted(session.scalars(select(Image.filename)).all()) == ["acme.svg", "audiocourse-gc-337.jpg", "audiocourse-internal-1.jpg", "museum-15.jpg"]
-        assert session.scalar(select(func.count()).select_from(concert_people)) == 0
+        assert session.scalar(select(func.count()).select_from(concert_companions)) == 0
     imported.delete("/api/concerts/1", status=404)
 
 

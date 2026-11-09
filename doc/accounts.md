@@ -115,7 +115,7 @@ until linked from inside a session, and leave email verification out.
 
 Migration of existing data is small: every current row becomes one
 identity, and duplicate accounts of the same person are merged by hand
-once, by moving `user_works.user_id` and deleting the spare user.
+once, by moving `library_entries.user_id` and deleting the spare user.
 
 Roughly a day of work: models and migration, the linking rule in the two
 OAuth paths, the settings page with its three link actions, and tests for

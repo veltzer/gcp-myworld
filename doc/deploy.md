@@ -126,7 +126,7 @@ signed in through Google and through the password form is two accounts.
   `dev:<address>`.
 
 The `users.password_hash` column, the wider `google_sub` column and the
-film id columns on `works` were added after the first deploy, so a
+film id columns on `library_works` (then `works`) were added after the first deploy, so a
 database that predates them needs `scripts/migrate.sh` once before
 deploying this version (`--local` does the same for the sqlite file). It
 runs the ALTER TABLE statements through `gcloud_sql_psql.sh` (the Cloud
@@ -138,7 +138,7 @@ on migrations under "Data model".
 
 The add dialog for a film can search The Movie Database (TMDB) and fill in
 the title, director and year, together with the film's ids on IMDb, TMDB
-and Rotten Tomatoes, which are stored on the shared `works` row and shown
+and Rotten Tomatoes, which are stored on the shared `library_works` row and shown
 as links in the library. TMDB knows the IMDb id and the Wikidata item of a
 film; the Rotten Tomatoes id comes from that Wikidata item (property
 P1258), best effort.
@@ -322,21 +322,32 @@ script would use as well:
 - `users`: one row per account (`google_sub` is the stable key: the Google
   `sub` claim, or a provider-qualified subject for the other sign-in
   methods; `password_hash` is set only for email accounts).
-- `works`: books, films, series, albums, games; one shared row per work,
-  identified by kind, title, creator and year, plus the catalog ids of
-  films (`imdb_id`, `tmdb_id`, `rotten_tomatoes_id`). New kinds are added
-  to `KINDS` in `src/myworld/models.py`.
-- `user_works`: what a user thinks about a work: status, rating, dates,
-  notes. All per-user queries go through this table, so users never see
-  each other's entries even though the work rows are shared.
-- `concerts`, `museums` (one row per visit), `people` and `organizations`
-  (each pointing at one of the user's `organization_types`), linked by `concert_people`, `museum_people` and `person_organizations`, and
-  `images`: owned by one user each, never shared (see "Concerts, museums,
-  people and organizations").
+- `library_works`: books, films, series, albums, games; one shared row
+  per work, identified by kind, title, creator and year, plus the catalog
+  ids of films (`imdb_id`, `tmdb_id`, `rotten_tomatoes_id`). New kinds are
+  added to `KINDS` in `src/myworld/models.py`.
+- `library_entries`: what a user thinks about a work: status, rating,
+  dates, notes. All per-user queries go through this table, so users never
+  see each other's entries even though the work rows are shared.
+- Every other table holds one user's rows (by `owner_id`, or through the
+  rows it links), never shared:
+    - `concert_visits`, `museum_visits`, `audio_courses`, `youtube_videos`:
+  one row per thing done (see "Concerts, museums, people and
+  organizations").
+    - `people`, `organizations`, `images`.
+    - the user's own enumerations: `organization_types`, `person_types`,
+  `relation_types`, `devices`.
+    - link tables, named `<row>_<what it links to>`: `concert_companions`
+  and `museum_companions` (who the user went with),
+  `concert_performers`, `audio_course_lecturers`,
+  `person_organizations`, `person_type_links`,
+  `organization_relation_types`.
 
-Tables are created on startup with `create_all`; there is no migration
-tool yet. Adding columns to an existing deployment needs a manual
-`ALTER TABLE` (or introducing Alembic) at that point.
+The Schema page (`schema.md`) shows the tables as the database has them.
+Tables are created on startup with `create_all`, which never alters one:
+`scripts/migrate.sh` makes the changes it cannot (columns, renames), and
+says at the top of each step whether to run it before or after the
+deploy.
 
 ## Local development
 

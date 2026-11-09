@@ -80,13 +80,13 @@ from myworld.models import (
     User,
     YouTubeVideo,
     audio_course_lecturers,
-    concert_people,
+    concert_companions,
     concert_performers,
     make_engine,
-    museum_people,
+    museum_companions,
     organization_relation_types,
     person_organizations,
-    person_person_types,
+    person_type_links,
 )
 
 DATE_FIELDS = {"date_utcz", "date_ymd", "date_my", "date_y", "date_timezone"}
@@ -331,13 +331,13 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
 
     # the link rows explicitly: sqlite does not enforce ON DELETE CASCADE unless asked to
     concerts_of_owner = select(Concert.id).where(Concert.owner_id == owner.id)
-    session.execute(delete(concert_people).where(concert_people.c.concert_id.in_(concerts_of_owner)))
+    session.execute(delete(concert_companions).where(concert_companions.c.concert_id.in_(concerts_of_owner)))
     session.execute(delete(concert_performers).where(concert_performers.c.concert_id.in_(concerts_of_owner)))
-    session.execute(delete(museum_people).where(museum_people.c.museum_id.in_(select(Museum.id).where(Museum.owner_id == owner.id))))
+    session.execute(delete(museum_companions).where(museum_companions.c.museum_id.in_(select(Museum.id).where(Museum.owner_id == owner.id))))
     session.execute(delete(audio_course_lecturers).where(
         audio_course_lecturers.c.audio_course_id.in_(select(AudioCourse.id).where(AudioCourse.owner_id == owner.id)),
     ))
-    session.execute(delete(person_person_types).where(person_person_types.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
+    session.execute(delete(person_type_links).where(person_type_links.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
     session.execute(delete(person_organizations).where(person_organizations.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
     session.execute(delete(organization_relation_types).where(
         organization_relation_types.c.organization_id.in_(select(Organization.id).where(Organization.owner_id == owner.id)),

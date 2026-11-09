@@ -56,6 +56,15 @@
 #     words, and only then is the column dropped. The new code no longer
 #     writes the column, which is NOT NULL, so run this right after deploying
 #     that version.
+#   - tables named for what a row is: works -> library_works, user_works ->
+#     library_entries, concerts -> concert_visits, museums -> museum_visits,
+#     concert_people -> concert_companions, museum_people ->
+#     museum_companions, person_person_types -> person_type_links (its type_id
+#     to person_type_id); on Cloud SQL also the constraints, indexes and
+#     sequences named after them, those of companies and person_companies
+#     included. Run before deploying the version that uses
+#     the new names, deploy right away, then run this again: a pair found
+#     with one side empty keeps the side with rows.
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -260,6 +269,40 @@ if "device" in courses:
         SELECT d.id FROM devices d WHERE d.owner_id = audio_courses.owner_id AND d.name = audio_courses.device) WHERE device <> ''""")
     db.execute("ALTER TABLE audio_courses DROP COLUMN device")
     added.append("audio_courses.device -> devices, audio_courses.device_id")
+# old name -> new name; the link tables first, so an empty pair is dropped before what it points at
+RENAMES = [
+    ("concert_people", "concert_companions"),
+    ("museum_people", "museum_companions"),
+    ("person_person_types", "person_type_links"),
+    ("user_works", "library_entries"),
+    ("museums", "museum_visits"),
+    ("concerts", "concert_visits"),
+    ("works", "library_works"),
+]
+for old, new in RENAMES:
+    tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if old not in tables:
+        continue
+    if new in tables:
+        # one side was made empty by create_all (an old version after the rename, or the new one before it)
+        old_rows = db.execute(f"SELECT count(*) FROM {old}").fetchone()[0]
+        new_rows = db.execute(f"SELECT count(*) FROM {new}").fetchone()[0]
+        if old_rows and new_rows:
+            raise SystemExit(f"{path}: both {old} and {new} have rows; merge them by hand")
+        db.execute(f"DROP TABLE {new if old_rows else old}")
+        if not old_rows:
+            added.append(f"dropped the empty {old} left by an old version")
+            continue
+    # sqlite points the other tables' foreign keys at the new name itself
+    db.execute(f"ALTER TABLE {old} RENAME TO {new}")
+    indexes = db.execute("SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND name LIKE ?", (new, f"ix_{old}_%")).fetchall()
+    for name, sql in indexes:
+        db.execute(f"DROP INDEX {name}")
+        db.execute(sql.replace(name, f"ix_{new}_{name.removeprefix(f'ix_{old}_')}", 1))
+    added.append(f"{old} -> {new}")
+if "type_id" in {row[1] for row in db.execute("PRAGMA table_info(person_type_links)")}:
+    db.execute("ALTER TABLE person_type_links RENAME COLUMN type_id TO person_type_id")
+    added.append("person_type_links.type_id -> person_type_id")
 if not db.execute("SELECT 1 FROM users WHERE role = 'admin'").fetchone():
     oldest = db.execute("SELECT min(id) FROM users").fetchone()[0]
     if oldest is not None:
@@ -282,7 +325,8 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	SELECT table_name || '.' || column_name || ':' || COALESCE(character_maximum_length::text, '')
 	FROM information_schema.columns
 	WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash', 'role'))
-	   OR (table_name = 'works' AND column_name IN ('imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
+	   OR (table_name = 'works' AND column_name IN ('id', 'imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
+	   OR (table_name IN ('museums', 'concerts') AND column_name = 'id')
 	   OR (table_name = 'people' AND column_name = 'company')
 	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
 	   OR (table_name = 'organizations' AND column_name IN ('type_id', 'functions'))
@@ -307,9 +351,12 @@ need() {
 }
 has "users.password_hash:.*" || need users.password_hash "ALTER TABLE users ADD COLUMN password_hash VARCHAR(300)"
 has "users.google_sub:400" || need "users.google_sub (wider)" "ALTER TABLE users ALTER COLUMN google_sub TYPE VARCHAR(400)"
-has "works.imdb_id:.*" || need works.imdb_id "ALTER TABLE works ADD COLUMN imdb_id VARCHAR(20) NOT NULL DEFAULT ''"
-has "works.tmdb_id:.*" || need works.tmdb_id "ALTER TABLE works ADD COLUMN tmdb_id INTEGER"
-has "works.rotten_tomatoes_id:.*" || need works.rotten_tomatoes_id "ALTER TABLE works ADD COLUMN rotten_tomatoes_id VARCHAR(200) NOT NULL DEFAULT ''"
+# these steps use the old table names: they only apply to a database that still has them
+if has "works.id:.*"; then
+	has "works.imdb_id:.*" || need works.imdb_id "ALTER TABLE works ADD COLUMN imdb_id VARCHAR(20) NOT NULL DEFAULT ''"
+	has "works.tmdb_id:.*" || need works.tmdb_id "ALTER TABLE works ADD COLUMN tmdb_id INTEGER"
+	has "works.rotten_tomatoes_id:.*" || need works.rotten_tomatoes_id "ALTER TABLE works ADD COLUMN rotten_tomatoes_id VARCHAR(200) NOT NULL DEFAULT ''"
+fi
 ! has "people.company:.*" || need "people.company (dropped)" "ALTER TABLE people DROP COLUMN company"
 if has "companies.id:.*" && has "organizations.id:.*"; then
 	rows="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "SELECT (SELECT count(*) FROM companies) + (SELECT count(*) FROM person_companies)")"
@@ -432,14 +479,18 @@ if ! has "users.role:.*" || [[ "$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1
 		WHERE id = (SELECT min(id) FROM users) AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'admin')"
 fi
 # where a museum or an organization is (adding columns: run before the deploy)
-has "museums.address:.*" || need museums.address "ALTER TABLE museums ADD COLUMN address VARCHAR(500) NOT NULL DEFAULT ''"
-for table in museums organizations; do
+located=(organizations)
+if has "museums.id:.*"; then
+	located+=(museums)
+	has "museums.address:.*" || need museums.address "ALTER TABLE museums ADD COLUMN address VARCHAR(500) NOT NULL DEFAULT ''"
+	# a museum visit made alone, told apart from one whose company is not filled in
+	has "museums.alone:.*" || need museums.alone "ALTER TABLE museums ADD COLUMN alone BOOLEAN NOT NULL DEFAULT false"
+fi
+for table in "${located[@]}"; do
 	for column in latitude longitude; do
 		has "${table}.${column}:.*" || need "${table}.${column}" "ALTER TABLE ${table} ADD COLUMN ${column} DOUBLE PRECISION"
 	done
 done
-# a museum visit made alone, told apart from one whose company is not filled in
-has "museums.alone:.*" || need museums.alone "ALTER TABLE museums ADD COLUMN alone BOOLEAN NOT NULL DEFAULT false"
 # a page about an audio course that is not sold any more (adding a column: run before the deploy)
 has "audio_courses.link:.*" || need audio_courses.link "ALTER TABLE audio_courses ADD COLUMN link VARCHAR(1000) NOT NULL DEFAULT ''"
 # what YouTube says about a video (the watch history): adding columns, run before the deploy
@@ -468,6 +519,105 @@ if has "audio_courses.device:.*"; then
 		UPDATE audio_courses c SET device_id = d.id FROM devices d
 			WHERE d.owner_id = c.owner_id AND d.name = c.device AND c.device <> '';
 		ALTER TABLE audio_courses DROP COLUMN device"
+fi
+
+# tables named for what a row is (renames: run before the deploy, and again after it)
+read -r -d '' renames <<'SQL' || true
+DO $$
+DECLARE
+	pair text[];
+	old text;
+	new text;
+	old_rows bigint;
+	new_rows bigint;
+	r record;
+BEGIN
+	-- the link tables first, so an empty pair is dropped before what it points at
+	FOREACH pair SLICE 1 IN ARRAY ARRAY[
+		['concert_people', 'concert_companions'],
+		['museum_people', 'museum_companions'],
+		['person_person_types', 'person_type_links'],
+		['user_works', 'library_entries'],
+		['museums', 'museum_visits'],
+		['concerts', 'concert_visits'],
+		['works', 'library_works']
+	] LOOP
+		old := pair[1];
+		new := pair[2];
+		CONTINUE WHEN to_regclass(old) IS NULL;
+		IF to_regclass(new) IS NOT NULL THEN
+			-- one side was made empty by create_all (an old version after the rename, or the new one before it)
+			EXECUTE format('SELECT count(*) FROM %I', old) INTO old_rows;
+			EXECUTE format('SELECT count(*) FROM %I', new) INTO new_rows;
+			IF old_rows > 0 AND new_rows > 0 THEN
+				RAISE EXCEPTION 'both % and % have rows; merge them by hand', old, new;
+			END IF;
+			IF old_rows = 0 THEN
+				EXECUTE format('DROP TABLE %I', old);
+				CONTINUE;
+			END IF;
+			EXECUTE format('DROP TABLE %I', new);
+		END IF;
+		EXECUTE format('ALTER TABLE %I RENAME TO %I', old, new);
+	END LOOP;
+	IF EXISTS (SELECT 1 FROM information_schema.columns
+			WHERE table_schema = current_schema() AND table_name = 'person_type_links' AND column_name = 'type_id') THEN
+		ALTER TABLE person_type_links RENAME COLUMN type_id TO person_type_id;
+	END IF;
+	-- what Postgres named after a table keeps the old name through a rename: the
+	-- constraints (renaming one renames the index behind it), the ix_ indexes and
+	-- the id sequence; this also catches up with companies -> organizations
+	FOREACH pair SLICE 1 IN ARRAY ARRAY[
+		['person_companies_company_id_fkey', 'person_organizations_organization_id_fkey'],
+		['person_person_types_type_id_fkey', 'person_type_links_person_type_id_fkey'],
+		['person_type_links_type_id_fkey', 'person_type_links_person_type_id_fkey']
+	] LOOP
+		FOR r IN SELECT conrelid::regclass AS t FROM pg_constraint WHERE conname = pair[1] LOOP
+			EXECUTE format('ALTER TABLE %s RENAME CONSTRAINT %I TO %I', r.t, pair[1], pair[2]);
+		END LOOP;
+	END LOOP;
+	FOREACH pair SLICE 1 IN ARRAY ARRAY[
+		['companies', 'organizations'],
+		['person_companies', 'person_organizations'],
+		['concert_people', 'concert_companions'],
+		['museum_people', 'museum_companions'],
+		['person_person_types', 'person_type_links'],
+		['user_works', 'library_entries'],
+		['museums', 'museum_visits'],
+		['concerts', 'concert_visits'],
+		['works', 'library_works']
+	] LOOP
+		old := pair[1];
+		new := pair[2];
+		CONTINUE WHEN to_regclass(new) IS NULL;
+		FOR r IN SELECT conname FROM pg_constraint WHERE conrelid = new::regclass AND starts_with(conname, old || '_') LOOP
+			EXECUTE format('ALTER TABLE %I RENAME CONSTRAINT %I TO %I', new, r.conname, new || substr(r.conname, length(old) + 1));
+		END LOOP;
+		FOR r IN SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND tablename = new AND starts_with(indexname, 'ix_' || old || '_') LOOP
+			EXECUTE format('ALTER INDEX %I RENAME TO %I', r.indexname, 'ix_' || new || substr(r.indexname, length(old) + 4));
+		END LOOP;
+		FOR r IN SELECT s.relname FROM pg_class s JOIN pg_depend d ON d.objid = s.oid
+				WHERE s.relkind = 'S' AND d.refobjid = new::regclass AND starts_with(s.relname, old || '_') LOOP
+			EXECUTE format('ALTER SEQUENCE %I RENAME TO %I', r.relname, new || substr(r.relname, length(old) + 1));
+		END LOOP;
+	END LOOP;
+END
+$$
+SQL
+# anything still under an old name: a table, or a constraint, index or sequence named after one
+stale="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
+	SELECT count(*) FROM (
+		SELECT relname AS name FROM pg_class WHERE relnamespace = current_schema()::regnamespace
+		UNION ALL SELECT conname FROM pg_constraint WHERE connamespace = current_schema()::regnamespace
+		UNION ALL SELECT column_name FROM information_schema.columns
+			WHERE table_schema = current_schema() AND table_name = 'person_type_links' AND column_name = 'type_id'
+	) AS objects
+	WHERE name ~ '^(ix_)?(companies|person_companies|concert_people|museum_people|person_person_types|user_works|museums|concerts|works)(_|\$)'
+	   OR name = 'type_id'
+	   OR name = 'person_organizations_company_id_fkey'
+")"
+if [[ "${stale}" != "0" ]]; then
+	need "tables renamed to what a row is, and what Postgres named after them" "${renames}"
 fi
 
 if (( ${#changed[@]} == 0 )); then
