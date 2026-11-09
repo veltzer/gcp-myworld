@@ -1,5 +1,5 @@
 """
-People's names: a first name and a surname are one word each (a surname of
+People's names: an honorific ("Dr.", "Sir"), a first name and a surname are one word each (a surname of
 two words is hyphenated, "Di-Meola"); everything between them is the middle
 name, which may be several words ("Ronald Reuel"). A name that is not a
 person's (a band, "Open stage") is not split: it stays whole in the first
@@ -35,38 +35,41 @@ def _surname(words: list[str]) -> tuple[list[str], str]:
     return words[:-1], words[-1]
 
 
-def split_name(name: str) -> tuple[str, str, str] | None:
+def split_name(name: str) -> tuple[str, str, str, str] | None:
     """
-    A whole person's name as (first, middle, surname): "Jeffrey L. Kasser" is
-    ("Jeffrey", "L.", "Kasser"), "Al Di Meola" ("Al", "", "Di-Meola"), "Prince"
-    ("Prince", "", ""). None when it is not plainly a person's name: a band,
-    a description, a title ("Sir Arthur Conan Doyle"), anything in brackets.
+    A whole person's name as (honorific, first, middle, surname): "Jeffrey L.
+    Kasser" is ("", "Jeffrey", "L.", "Kasser"), "Al Di Meola" ("", "Al", "",
+    "Di-Meola"), "Sir Arthur Conan Doyle" ("Sir", "Arthur", "Conan", "Doyle"),
+    "Prince" ("", "Prince", "", ""). None when it is not plainly a person's
+    name: a band, a description, anything in brackets.
     """
     words = name.split()
+    honorific = words.pop(0) if len(words) > 1 and words[0].lower() in TITLES else ""
     if not words:
         return None
     if len(words) == 1:
-        return words[0], "", ""
+        return honorific, words[0], "", ""
     lowered = [w.lower() for w in words]
     if lowered[0] in TITLES or GROUP_WORDS.intersection(lowered):
         return None
     if not all(NAME_WORD.fullmatch(w) or w.lower() in PARTICLES for w in words) or not NAME_WORD.fullmatch(words[0]):
         return None
     before, surname = _surname(words)
-    return before[0], " ".join(before[1:]), surname
+    return honorific, before[0], " ".join(before[1:]), surname
 
 
-def tidy(first: str, middle: str, surname: str) -> tuple[str, str, str]:
+def tidy(honorific: str, first: str, middle: str, surname: str) -> tuple[str, str, str, str]:
     """
     The parts of a name made to follow the rules where it is plain how:
-    a whole name in the first name is split, more words in the first name go
-    to the middle name, an initial leading the surname ("R. Hofstaddter")
-    goes to the middle name and the rest of the surname is hyphenated. What
-    is not plainly a person's name is left as it is.
+    a whole name in the first name is split (a title in it, "Sir", becoming
+    the honorific), more words in the first name go to the middle name, an
+    initial leading the surname ("R. Hofstaddter") goes to the middle name
+    and the rest of the surname is hyphenated. What is not plainly a
+    person's name is left as it is.
     """
-    if not surname and not middle and has_space(first):
+    if not honorific and not surname and not middle and has_space(first):
         split = split_name(first)
-        return split if split is not None else (first, middle, surname)
+        return split if split is not None else (honorific, first, middle, surname)
     middles = [middle] if middle else []
     if has_space(first):
         words = first.split()
@@ -76,4 +79,4 @@ def tidy(first: str, middle: str, surname: str) -> tuple[str, str, str]:
         while len(words) > 1 and INITIAL.fullmatch(words[0]):
             middles.append(words.pop(0))
         surname = "-".join(words)
-    return first, " ".join(middles), surname
+    return honorific, first, " ".join(middles), surname

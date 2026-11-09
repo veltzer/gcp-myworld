@@ -179,7 +179,8 @@ who the user went with. The import makes every performer a person,
 reusing one `people.yaml` already has; `scripts/migrate.sh` did the same
 for the free-text performer names already in the database.
 
-A person has a first name, a middle name and a surname. The first name and
+A person has an honorific ("Dr.", "Sir"; usually empty), a first name, a
+middle name and a surname, shown in that order. The honorific, the first name and
 the surname are one word each (a surname of two words is hyphenated,
 Di-Meola; the API refuses spaces in them); the middle name is whatever
 comes between and may be several words. A name that is not a person's (a

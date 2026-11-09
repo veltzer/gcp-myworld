@@ -227,6 +227,7 @@ def person_json(person: Person) -> dict[str, Any]:
     return {
         "id": person.id,
         "name": person.name,
+        "honorific": person.honorific,
         "first_name": person.first_name,
         "middle_name": person.middle_name,
         "surname": person.surname,
@@ -608,12 +609,13 @@ def _apply_person(person: Person, body: dict[str, Any]) -> None:
     # either name, or both, may be missing: someone with no name goes by the
     # description, so it is only a person with none of the three, who could
     # not be picked in any picker, that is refused
+    person.honorific = text(body, "honorific")
     person.first_name = text(body, "first_name")
     person.middle_name = " ".join(text(body, "middle_name").split())
     person.surname = text(body, "surname")
     person.description = text(body, "description")
     # one word each; the middle name holds whatever comes between
-    for key, value in (("first_name", person.first_name), ("surname", person.surname)):
+    for key, value in (("honorific", person.honorific), ("first_name", person.first_name), ("surname", person.surname)):
         if names.has_space(value):
             raise ApiError(400, f"{key}: one word, without spaces (a surname of two words is hyphenated; more names go in the middle name)")
     if not person.first_name and not person.middle_name and not person.surname and not person.description:

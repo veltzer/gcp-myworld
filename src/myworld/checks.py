@@ -292,20 +292,20 @@ def check_person_types(session: Session) -> Result:
     return Result(checked=len(people), problems=problems)
 
 
-@check("people-names", "Every name is a first name, middle name and surname", "people", "people")
+@check("people-names", "Every name is an honorific, first name, middle name and surname", "people", "people")
 def check_person_names(session: Session) -> Result:
     """
-    Every person's first name and surname, of every account, is one word
-    (a surname of two words hyphenated, more names in the middle name).
+    Every person's honorific, first name and surname, of every account, is
+    one word (a surname of two words hyphenated, more names in the middle name).
     What scripts/tidy_names.py could not split is listed: mostly a band or
     a description kept whole in the first name, to fix by hand.
     """
     people = session.scalars(select(Person).order_by(Person.owner_id, Person.first_name, Person.surname, Person.id)).all()
-    problems = [
-        Problem(f"{person.name} (person {person.id}, account {person.owner_id})", f"{'first name' if names.has_space(person.first_name) else 'surname'} has spaces", f"people/{person.id}", person.owner_id)
-        for person in people
-        if names.has_space(person.first_name) or names.has_space(person.surname)
-    ]
+    problems = []
+    for person in people:
+        spaced = [what for what, value in (("honorific", person.honorific), ("first name", person.first_name), ("surname", person.surname)) if names.has_space(value)]
+        if spaced:
+            problems.append(Problem(f"{person.name} (person {person.id}, account {person.owner_id})", f"{' and '.join(spaced)} has spaces", f"people/{person.id}", person.owner_id))
     return Result(checked=len(people), problems=problems)
 
 

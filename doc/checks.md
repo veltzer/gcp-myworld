@@ -127,8 +127,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
 ### People (`people`)
 
 - `people-types`: every person has at least one person type.
-- `people-names`: every first name and surname is one word (a surname of
-  two words hyphenated, more names in the middle name). What
+- `people-names`: every honorific, first name and surname is one word (a
+  surname of two words hyphenated, more names in the middle name). What
   `scripts/tidy_names.py` could not split is listed: mostly bands and
   descriptions kept whole in the first name.
 

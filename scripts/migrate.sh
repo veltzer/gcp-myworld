@@ -71,6 +71,9 @@
 #   - people.middle_name, between the first name and the surname: adding a
 #     column, run before the deploy; then scripts/tidy_names.py (through
 #     scripts/with_cloud_db.sh for Cloud SQL) moves the middle names into it.
+#   - people.honorific ("Dr.", "Sir"), before the first name: adding a
+#     column, run before the deploy; scripts/tidy_names.py then moves a
+#     title leading a whole name into it.
 #   - places: every concert's venue, city and country become a row of places
 #     (one per account, name and city; a concert with a city but no venue
 #     gives a place named after the city), concert_visits.place_id points to
@@ -116,6 +119,7 @@ COLUMNS = [
     ("youtube_videos", "views", "BIGINT"),
     ("youtube_videos", "unavailable", "BOOLEAN NOT NULL DEFAULT 0"),
     ("people", "middle_name", "VARCHAR(200) NOT NULL DEFAULT ''"),
+    ("people", "honorific", "VARCHAR(50) NOT NULL DEFAULT ''"),
 ]
 
 url = os.environ.get("DATABASE_URL", "sqlite:///db.gi/myworld.sqlite")
@@ -379,7 +383,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
 	   OR (table_name = 'organizations' AND column_name IN ('type_id', 'functions'))
 	   OR (table_name = 'concerts' AND column_name = 'performers')
-	   OR (table_name = 'people' AND column_name IN ('name', 'type_id', 'middle_name'))
+	   OR (table_name = 'people' AND column_name IN ('name', 'type_id', 'middle_name', 'honorific'))
 	   OR (table_name = 'concert_visits' AND column_name = 'venue')
 	   OR (table_name = 'person_types' AND column_name = 'id')
 	   OR (table_name IN ('museums', 'organizations') AND column_name IN ('address', 'latitude', 'longitude', 'alone'))
@@ -676,6 +680,8 @@ if has "works.id:.*" || has "library_works.id:.*"; then
 fi
 # people.middle_name (adding a column: run before the deploy)
 has "people.middle_name:.*" || need people.middle_name "ALTER TABLE people ADD COLUMN middle_name VARCHAR(200) NOT NULL DEFAULT ''"
+# people.honorific ("Dr.", "Sir"; adding a column: run before the deploy)
+has "people.honorific:.*" || need people.honorific "ALTER TABLE people ADD COLUMN honorific VARCHAR(50) NOT NULL DEFAULT ''"
 # concert venues become places (right after deploying the version that has them)
 if has "concert_visits.venue:.*"; then
 	need "concert venues -> places, concert_visits.place_id" "CREATE TABLE IF NOT EXISTS places (

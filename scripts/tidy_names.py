@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
 """
-Make people's names follow the rules (src/myworld/names.py): the first name
+Make people's names follow the rules (src/myworld/names.py): a title
+leading a whole name becomes the honorific ("Sir"), the first name
 and the surname one word each, a surname of two words hyphenated
 ("Di-Meola"), whatever comes between in the middle name. Only what is plain
 is changed; a band or a description kept whole in the first name is left
@@ -40,12 +41,12 @@ def main() -> int:
     with Session(make_engine()) as session:
         changed = 0
         for person in session.scalars(select(Person).order_by(Person.id)):
-            before = (person.first_name, person.middle_name, person.surname)
+            before = (person.honorific, person.first_name, person.middle_name, person.surname)
             after = names.tidy(*before)
             if after != before:
                 changed += 1
                 print(f"{person.id}: {' / '.join(before)} -> {' / '.join(after)}")
-                person.first_name, person.middle_name, person.surname = after
+                person.honorific, person.first_name, person.middle_name, person.surname = after
         if not args.dry_run:
             session.commit()
         print(f"{changed} names {'would change' if args.dry_run else 'changed'}")

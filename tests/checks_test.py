@@ -377,11 +377,13 @@ def test_person_names(engine: Engine) -> None:
             Person(owner_id=alice.id, first_name="Shay Zalman Trio"),
             Person(owner_id=alice.id, first_name="Guy", surname="Bar Tor"),
             Person(owner_id=alice.id, description="the guide at the Louvre"),
+            Person(owner_id=alice.id, honorific="Dr. Prof.", first_name="Dana"),
         ])
         session.commit()
         result = checks.CHECKS["people-names"].run(session)
-    assert result.checked == 4
+    assert result.checked == 5
     assert sorted((p.subject, p.message) for p in result.problems) == [
+        ("Dr. Prof. Dana (person 5, account 1)", "honorific has spaces"),
         ("Guy Bar Tor (person 3, account 1)", "surname has spaces"),
         ("Shay Zalman Trio (person 2, account 1)", "first name has spaces"),
     ]
@@ -399,6 +401,7 @@ def test_tidy_names_script(tmp_path: Path) -> None:
             Person(owner_id=alice.id, first_name="Richard P. Feynman"),
             Person(owner_id=alice.id, first_name="Guy", surname="Bar Tor"),
             Person(owner_id=alice.id, first_name="Open stage"),
+            Person(owner_id=alice.id, first_name="Sir Arthur Conan Doyle"),
         ])
         session.commit()
     root = Path(__file__).resolve().parent.parent
@@ -407,13 +410,13 @@ def test_tidy_names_script(tmp_path: Path) -> None:
     def tidy(*args: str) -> str:
         done = subprocess.run([sys.executable, str(root / "scripts" / "tidy_names.py"), *args], env=env, capture_output=True, text=True, check=True)
         return done.stdout
-    assert tidy("--dry-run").splitlines()[-1] == "2 names would change"
-    assert tidy().splitlines()[-1] == "2 names changed"
+    assert tidy("--dry-run").splitlines()[-1] == "3 names would change"
+    assert tidy().splitlines()[-1] == "3 names changed"
     assert tidy() == "0 names changed\n"
     with Session(engine) as session:
         people = session.scalars(select(Person).order_by(Person.id)).all()
-        assert [(p.first_name, p.middle_name, p.surname) for p in people] == [
-            ("Richard", "P.", "Feynman"), ("Guy", "", "Bar-Tor"), ("Open stage", "", ""),
+        assert [(p.honorific, p.first_name, p.middle_name, p.surname) for p in people] == [
+            ("", "Richard", "P.", "Feynman"), ("", "Guy", "", "Bar-Tor"), ("", "Open stage", "", ""), ("Sir", "Arthur", "Conan", "Doyle"),
         ]
     engine.dispose()
 

@@ -670,6 +670,7 @@ const SORTS = {
 	],
 	people: [
 		["first_name", "First name", (p) => p.first_name, "asc"],
+		["honorific", "Honorific", (p) => p.honorific, "asc"],
 		["middle_name", "Middle name", (p) => p.middle_name, "asc"],
 		["surname", "Surname", (p) => p.surname, "asc"],
 		["type", "Type", (p) => p.types[0]?.name, "asc"],
@@ -1627,7 +1628,7 @@ function personRow(person) {
 	button.innerHTML = LINK_ICON;
 	button.onclick = () => showConnections(person).catch((e) => showError(e.message));
 	links.appendChild(button);
-	tr.append(el("td", "title", person.first_name), el("td", "title", person.middle_name), el("td", "title", person.surname), kind, organizations, el("td", null, person.description), links);
+	tr.append(el("td", "title", person.honorific), el("td", "title", person.first_name), el("td", "title", person.middle_name), el("td", "title", person.surname), kind, organizations, el("td", null, person.description), links);
 	editable(tr, person);
 	return tr;
 }
@@ -2879,6 +2880,7 @@ const WORLD_BODIES = {
 		};
 	},
 	people: async (form) => ({
+		honorific: form.elements.honorific.value,
 		first_name: form.elements.first_name.value,
 		middle_name: form.elements.middle_name.value,
 		surname: form.elements.surname.value,

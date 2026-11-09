@@ -123,6 +123,7 @@
 				<table id="people" class="entries" hidden>
 					<thead>
 						<tr>
+							<th>Honorific</th>
 							<th>First name</th>
 							<th>Middle name</th>
 							<th>Surname</th>
@@ -370,6 +371,7 @@
 			</form>
 			<form id="person-form" class="dialog-form" hidden>
 				<div class="row">
+					<label>Honorific <input name="honorific" pattern="\S*" placeholder="Dr., Sir" title="One word, without spaces; usually empty"></label>
 					<label>First name <input name="first_name" pattern="\S*" title="One word, without spaces"></label>
 					<label>Middle name <input name="middle_name" title="Any names between the first name and the surname"></label>
 					<label>Surname <input name="surname" pattern="\S*" title="One word, without spaces: hyphenate a surname of two words (Di-Meola)"></label>

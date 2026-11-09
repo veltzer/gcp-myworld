@@ -275,7 +275,7 @@ class PersonType(Base):
 class Person(Base):
     """
     Someone the user knows or saw. Names are not unique: two people may share
-    one, and they stay two rows. The first name and the surname are one word
+    one, and they stay two rows. The honorific ("Dr.", "Sir"), the first name and the surname are one word
     each (a surname of two words is hyphenated, "Di-Meola"); the middle name
     is everything between them and may be several words (see myworld.names).
     Any part may be empty: a person known only by a description ("the guide
@@ -285,6 +285,8 @@ class Person(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # "Dr.", "Sir": one word, before the first name; usually empty
+    honorific: Mapped[str] = mapped_column(String(50), nullable=False, default="", server_default="")
     first_name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     middle_name: Mapped[str] = mapped_column(String(200), nullable=False, default="", server_default="")
     surname: Mapped[str] = mapped_column(String(200), nullable=False, default="", server_default="")
@@ -306,7 +308,7 @@ class Person(Base):
     @property
     def name(self) -> str:
         """ The whole name, as shown; the description for someone with no name. """
-        return " ".join(part for part in (self.first_name, self.middle_name, self.surname) if part) or self.description
+        return " ".join(part for part in (self.honorific, self.first_name, self.middle_name, self.surname) if part) or self.description
     museums: Mapped[list[Museum]] = relationship(
         secondary=museum_companions, back_populates="people",
     )

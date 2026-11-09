@@ -640,7 +640,7 @@ def test_people(imported: webtest.TestApp) -> None:
     assert [c["name"] for c in alice["organizations"]] == ["Startup"]
     assert [c["name"] for c in bob["organizations"]] == ["Acme", "Startup"]
     # only the person and their organizations: their concerts and museums are not listed next to them
-    assert set(alice) == {"id", "name", "first_name", "middle_name", "surname", "types", "organizations", "description"}
+    assert set(alice) == {"id", "name", "honorific", "first_name", "middle_name", "surname", "types", "organizations", "description"}
 
 
 def test_organizations(imported: webtest.TestApp) -> None:
@@ -706,31 +706,35 @@ def test_person_types(imported: webtest.TestApp) -> None:
 
 
 def test_split_name() -> None:
-    assert import_world.split_name("Doron Veltzer") == ("Doron", "", "Veltzer")
-    assert import_world.split_name("Yaron Ben-Ami") == ("Yaron", "", "Ben-Ami")
-    assert import_world.split_name("Jeffrey L. Kasser") == ("Jeffrey", "L.", "Kasser")
-    assert import_world.split_name("John Ronald Reuel Tolkien") == ("John", "Ronald Reuel", "Tolkien")
-    assert import_world.split_name('Jeff "Tain" Watts') == ("Jeff", '"Tain"', "Watts")
+    assert import_world.split_name("Doron Veltzer") == ("", "Doron", "", "Veltzer")
+    assert import_world.split_name("Yaron Ben-Ami") == ("", "Yaron", "", "Ben-Ami")
+    assert import_world.split_name("Jeffrey L. Kasser") == ("", "Jeffrey", "L.", "Kasser")
+    assert import_world.split_name("John Ronald Reuel Tolkien") == ("", "John", "Ronald Reuel", "Tolkien")
+    assert import_world.split_name('Jeff "Tain" Watts') == ("", "Jeff", '"Tain"', "Watts")
     # a surname of two words is hyphenated
-    assert import_world.split_name("Al Di Meola") == ("Al", "", "Di-Meola")
-    assert import_world.split_name("Marcus du Sautoy") == ("Marcus", "", "du-Sautoy")
+    assert import_world.split_name("Al Di Meola") == ("", "Al", "", "Di-Meola")
+    assert import_world.split_name("Marcus du Sautoy") == ("", "Marcus", "", "du-Sautoy")
     # what is not plainly a person's name stays whole, for the people-names check
-    assert import_world.split_name("Oded from MAFAT") == ("Oded from MAFAT", "", "")
-    assert import_world.split_name("The Band") == ("The Band", "", "")
-    assert import_world.split_name("Mads Vinding Trio") == ("Mads Vinding Trio", "", "")
-    assert import_world.split_name("Barak (bass)") == ("Barak (bass)", "", "")
-    assert import_world.split_name("Sir Arthur Conan Doyle") == ("Sir Arthur Conan Doyle", "", "")
-    assert import_world.split_name("Marmir") == ("Marmir", "", "")
+    assert import_world.split_name("Oded from MAFAT") == ("", "Oded from MAFAT", "", "")
+    assert import_world.split_name("The Band") == ("", "The Band", "", "")
+    assert import_world.split_name("Mads Vinding Trio") == ("", "Mads Vinding Trio", "", "")
+    assert import_world.split_name("Barak (bass)") == ("", "Barak (bass)", "", "")
+    # a title before the name is its honorific
+    assert import_world.split_name("Sir Arthur Conan Doyle") == ("Sir", "Arthur", "Conan", "Doyle")
+    assert import_world.split_name("Dr. Who") == ("Dr.", "Who", "", "")
+    assert import_world.split_name("Marmir") == ("", "Marmir", "", "")
 
 
 def test_tidy_names() -> None:
     # names already in a database, made to follow the rules where it is plain how
-    assert names.tidy("Kiti", "", "Silveira Basso") == ("Kiti", "", "Silveira-Basso")
-    assert names.tidy("Douglass", "", "R. Hofstaddter") == ("Douglass", "R.", "Hofstaddter")
-    assert names.tidy("Richard P. Feynman", "", "") == ("Richard", "P.", "Feynman")
-    assert names.tidy("Mary Ann", "Lou", "Smith") == ("Mary", "Ann Lou", "Smith")
-    assert names.tidy("Open stage", "", "") == ("Open stage", "", "")
-    assert names.tidy("Dana", "", "Cohen") == ("Dana", "", "Cohen")
+    assert names.tidy("", "Kiti", "", "Silveira Basso") == ("", "Kiti", "", "Silveira-Basso")
+    assert names.tidy("", "Douglass", "", "R. Hofstaddter") == ("", "Douglass", "R.", "Hofstaddter")
+    assert names.tidy("", "Richard P. Feynman", "", "") == ("", "Richard", "P.", "Feynman")
+    assert names.tidy("", "Mary Ann", "Lou", "Smith") == ("", "Mary", "Ann Lou", "Smith")
+    assert names.tidy("", "Open stage", "", "") == ("", "Open stage", "", "")
+    assert names.tidy("", "Sir Arthur Conan Doyle", "", "") == ("Sir", "Arthur", "Conan", "Doyle")
+    assert names.tidy("Dr.", "Dana", "", "Cohen") == ("Dr.", "Dana", "", "Cohen")
+    assert names.tidy("", "Dana", "", "Cohen") == ("", "Dana", "", "Cohen")
     # people are matched however a name is spaced or hyphenated
     assert names.key("Al Di Meola") == names.key("Al  di-meola")
 
@@ -741,6 +745,11 @@ def test_names_are_one_word_each(imported: webtest.TestApp) -> None:
     imported.post_json("/api/people", {"first_name": "Mary Ann", "surname": "Smith"}, status=400)
     imported.post_json("/api/people", {"first_name": "Al", "surname": "Di Meola"}, status=400)
     assert imported.post_json("/api/people", {"first_name": "Al", "surname": "Di-Meola"}, status=201).json["name"] == "Al Di-Meola"
+    # an honorific, one word, comes first in the name; empty unless given
+    assert person["honorific"] == ""
+    doctor = imported.post_json("/api/people", {"honorific": "Dr.", "first_name": "Dana", "surname": "Cohen"}, status=201).json
+    assert (doctor["honorific"], doctor["name"]) == ("Dr.", "Dr. Dana Cohen")
+    imported.post_json("/api/people", {"honorific": "Dr. Prof.", "first_name": "Dana"}, status=400)
     # a middle name alone is a name
     assert imported.post_json("/api/people", {"middle_name": "Lou"}, status=201).json["name"] == "Lou"
 
@@ -755,8 +764,8 @@ def test_people_may_share_a_name(imported: webtest.TestApp) -> None:
 
 def test_guessing_a_person_type() -> None:
     def person(name: str, description: str = "") -> Person:
-        first_name, middle_name, surname = import_world.split_name(name)
-        return Person(first_name=first_name, middle_name=middle_name, surname=surname, description=description)
+        honorific, first_name, middle_name, surname = import_world.split_name(name)
+        return Person(honorific=honorific, first_name=first_name, middle_name=middle_name, surname=surname, description=description)
     assert import_world._person_type(person("Doron Veltzer")) == "Family"
     assert import_world._person_type(person("X", "My brother")) == "Family"
     assert import_world._person_type(person("X", "My brothers ex-girlfriend")) is None

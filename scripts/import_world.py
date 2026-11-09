@@ -260,14 +260,14 @@ def type_for(name: str) -> str:
     return ORGANIZATION_TYPE_BY_NAME.get(name, DEFAULT_ORGANIZATION_TYPE)
 
 
-def split_name(name: str) -> tuple[str, str, str]:
+def split_name(name: str) -> tuple[str, str, str, str]:
     """
-    A whole name as (first name, middle name, surname), split as
+    A whole name as (honorific, first name, middle name, surname), split as
     myworld.names.split_name does ("Jeffrey L. Kasser", "Al Di Meola"
     becoming Di-Meola); what is not plainly a person's name ("Oded from
     MAFAT", "The Band") is all first name, for the people-names check to list.
     """
-    return naming.split_name(name) or (name, "", "")
+    return naming.split_name(name) or ("", name, "", "")
 
 
 def _person_type(person: Person) -> str | None:
@@ -455,9 +455,9 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
             if name not in organizations:
                 organizations[name] = Organization(owner_id=owner.id, name=name, type=organization_type(DEFAULT_ORGANIZATION_TYPE))
                 session.add(organizations[name])
-        first_name, middle_name, surname = split_name(item["name"])
+        honorific, first_name, middle_name, surname = split_name(item["name"])
         person = Person(
-            owner_id=owner.id, first_name=first_name, middle_name=middle_name, surname=surname, description=item.get("description", ""),
+            owner_id=owner.id, honorific=honorific, first_name=first_name, middle_name=middle_name, surname=surname, description=item.get("description", ""),
             organizations=[organizations[name] for name in names],
         )
         people[item["name"]] = person
@@ -478,8 +478,8 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
         names = [name.strip() for name in item.get("performers", []) if name.strip()]
         for name in names:
             if name not in people:
-                first_name, middle_name, surname = split_name(name)
-                people[name] = Person(owner_id=owner.id, first_name=first_name, middle_name=middle_name, surname=surname, description="")
+                honorific, first_name, middle_name, surname = split_name(name)
+                people[name] = Person(owner_id=owner.id, honorific=honorific, first_name=first_name, middle_name=middle_name, surname=surname, description="")
                 session.add(people[name])
         return [people[name] for name in dict.fromkeys(names)]
 
@@ -576,8 +576,8 @@ def import_audio_courses(session: Session, owner: User, source: Path) -> dict[st
         if len(found) > 1:
             raise WorldImportError(f"audio_courses.yaml: {len(found)} people are called {name!r}; make the names differ first")
         if not found:
-            first_name, middle_name, surname = split_name(name)
-            found = [Person(owner_id=owner.id, first_name=first_name, middle_name=middle_name, surname=surname, description="")]
+            honorific, first_name, middle_name, surname = split_name(name)
+            found = [Person(owner_id=owner.id, honorific=honorific, first_name=first_name, middle_name=middle_name, surname=surname, description="")]
             session.add(found[0])
             by_name[naming.key(name)] = found
             added += 1
@@ -739,8 +739,8 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
         if len(found) > 1:
             raise WorldImportError(f"books_read.yaml: {len(found)} people are called {name!r}; make the names differ first")
         if not found:
-            first_name, middle_name, surname = split_name(name)
-            found = [Person(owner_id=owner.id, first_name=first_name, middle_name=middle_name, surname=surname, description="", types=[])]
+            honorific, first_name, middle_name, surname = split_name(name)
+            found = [Person(owner_id=owner.id, honorific=honorific, first_name=first_name, middle_name=middle_name, surname=surname, description="", types=[])]
             session.add(found[0])
             by_name[naming.key(name)] = found
             people_added += 1
