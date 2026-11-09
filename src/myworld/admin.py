@@ -59,10 +59,21 @@ def api_user_update(user_id: int) -> flask.Response:
 @bp.route("/api/checks", methods=["GET"])
 @auth.admin_required
 def api_checks() -> flask.Response:
-    """ The checks there are, to run one by one. """
+    """
+    The checks there are, to run one by one, grouped by dataset (in the
+    order of checks.DATASETS); ?dataset=book gives one dataset's only.
+    """
+    wanted = flask.request.args.get("dataset")
+    if wanted is not None and wanted not in checks.DATASETS:
+        raise ApiError(404, f"no dataset called {wanted}")
+    order = list(checks.DATASETS)
     return flask.jsonify([
-        {"name": c.name, "title": c.title, "description": c.description, "noun": c.noun}
-        for c in checks.CHECKS.values()
+        {
+            "name": c.name, "title": c.title, "description": c.description, "noun": c.noun,
+            "dataset": c.dataset, "dataset_name": checks.DATASETS[c.dataset],
+        }
+        for c in sorted(checks.CHECKS.values(), key=lambda c: order.index(c.dataset))
+        if wanted is None or c.dataset == wanted
     ])
 
 

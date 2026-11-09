@@ -1672,6 +1672,16 @@ button.text.danger:hover {
 	margin-left: 0.5rem;
 }
 
+/* a page's own checks, between the toolbar and its rows */
+.view-checks {
+	margin-bottom: 1rem;
+}
+
+.check-group .schema-heading button {
+	margin-left: 0.5rem;
+	font-size: 0.85rem;
+}
+
 /* one row per check: name | result | Run, every row the same height */
 .checks {
 	border: 1px solid var(--line);

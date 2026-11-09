@@ -76,11 +76,17 @@ def test_every_check_describes_itself() -> None:
         "audio-course-covers", "audio-course-links", "audio-course-stalled", "audio-course-duplicates"} <= set(checks.CHECKS)
     for chosen in checks.CHECKS.values():
         assert chosen.title and chosen.description and chosen.noun
+        assert chosen.dataset in checks.DATASETS
+    # every dataset has checks to run from its page
+    assert {c.dataset for c in checks.CHECKS.values()} == set(checks.DATASETS)
+    assert {name for name, c in checks.CHECKS.items() if c.dataset == "book"} == {"book-covers", "book-links", "book-authors", "book-ratings", "book-duplicates"}
 
 
 def test_a_name_is_registered_once() -> None:
     with pytest.raises(ValueError, match="twice"):
-        checks.check("logos", "again", "logos")(lambda session: checks.Result(0, []))
+        checks.check("logos", "again", "logos", "organizations")(lambda session: checks.Result(0, []))
+    with pytest.raises(ValueError, match="no dataset"):
+        checks.check("films", "Films", "films", "film")(lambda session: checks.Result(0, []))
 
 
 def fill(engine: Engine) -> None:
@@ -125,9 +131,16 @@ def test_checks_api_is_for_admins(app: webtest.TestApp, engine: Engine) -> None:
     with engine.begin() as connection:
         connection.execute(update(User).where(User.google_sub == "carol").values(role=ROLE_ADMIN))
     listed = app.get("/api/checks").json
-    assert [c["name"] for c in listed] == list(checks.CHECKS)
+    assert sorted(c["name"] for c in listed) == sorted(checks.CHECKS)
+    # grouped by dataset, in the order of DATASETS
+    order = list(checks.DATASETS)
+    assert [order.index(c["dataset"]) for c in listed] == sorted(order.index(c["dataset"]) for c in listed)
+    assert listed[0]["dataset_name"] == "Books"
+    books = app.get("/api/checks?dataset=book").json
+    assert {c["name"] for c in books} == {name for name, c in checks.CHECKS.items() if c.dataset == "book"}
+    app.get("/api/checks?dataset=nonesuch", status=404)
     result = app.get("/api/checks/logos").json
-    assert (result["ok"], result["checked"], len(result["problems"])) == (False, 2, 1)
+    assert (result["ok"], result["checked"], len(result["problems"]), result["dataset"]) == (False, 2, 1, "organizations")
     assert set(result["problems"][0]) == {"subject", "message", "link", "owner"}
     app.get("/api/checks/nonesuch", status=404)
 
@@ -360,7 +373,14 @@ def test_script(tmp_path: Path) -> None:
     fill(engine)
     engine.dispose()
     listed = run_script(url, "--list")
-    assert listed.returncode == 0 and "logos" in listed.stdout
+    assert listed.returncode == 0 and "logos" in listed.stdout and "Books (--dataset book):" in listed.stdout
+    # one dataset's checks only: the organizations' fail, the books' (none there) pass
+    organizations = run_script(url, "--dataset", "organizations")
+    assert organizations.returncode == 1 and "FAIL  logos" in organizations.stdout and "book-covers" not in organizations.stdout
+    books = run_script(url, "--dataset", "book")
+    assert books.returncode == 0, books.stdout + books.stderr
+    assert "ok    book-covers: all 0 books pass" in books.stdout and "logos" not in books.stdout
+    assert run_script(url, "--dataset", "book", "logos").returncode == 2
     failing = run_script(url)
     assert failing.returncode == 1
     assert "FAIL  logos: 1 problems in 2 logos" in failing.stdout

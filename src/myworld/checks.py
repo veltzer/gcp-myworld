@@ -69,19 +69,34 @@ class Check:
     description: str
     # what is counted in Result.checked: "logos", "organizations", ...
     noun: str
+    # the data it is about, a key of DATASETS
+    dataset: str
     run: Callable[[Session], Result]
 
+
+# What the checks are about: the app's page of that data (its #hash) -> its
+# name. The Checks page groups them in this order, and each page runs its own.
+DATASETS: dict[str, str] = {
+    "book": "Books",
+    "museums": "Museums",
+    "audio-courses": "Audio courses",
+    "youtube": "YouTube",
+    "people": "People",
+    "organizations": "Organizations",
+}
 
 CHECKS: dict[str, Check] = {}
 
 
-def check(name: str, title: str, noun: str) -> Callable[[Callable[[Session], Result]], Callable[[Session], Result]]:
-    """ Register a check; its docstring is the description shown with it. """
+def check(name: str, title: str, noun: str, dataset: str) -> Callable[[Callable[[Session], Result]], Callable[[Session], Result]]:
+    """ Register a check of a dataset; its docstring is the description shown with it. """
+    if dataset not in DATASETS:
+        raise ValueError(f"check {name!r}: no dataset called {dataset!r}")
     def register(function: Callable[[Session], Result]) -> Callable[[Session], Result]:
         if name in CHECKS:
             raise ValueError(f"check {name!r} is registered twice")
         description = " ".join((function.__doc__ or "").split())
-        CHECKS[name] = Check(name=name, title=title, description=description, noun=noun, run=function)
+        CHECKS[name] = Check(name=name, title=title, description=description, noun=noun, dataset=dataset, run=function)
         return function
     return register
 
@@ -96,6 +111,7 @@ def result_json(chosen: Check, result: Result) -> dict[str, Any]:
         "name": chosen.name,
         "title": chosen.title,
         "noun": chosen.noun,
+        "dataset": chosen.dataset,
         "checked": result.checked,
         "ok": result.ok,
         "problem_count": len(result.problems),
@@ -164,7 +180,7 @@ def logo_problems(data: bytes) -> list[str]:
     return list(dict.fromkeys(problems))
 
 
-@check("logos", "Organization logos", "logos")
+@check("logos", "Organization logos", "logos", "organizations")
 def check_logos(session: Session) -> Result:
     """
     Every SVG image in the database follows the logo convention
@@ -189,7 +205,7 @@ def check_logos(session: Session) -> Result:
     return Result(checked=len(images), problems=problems)
 
 
-@check("organization-logos", "Every organization has a logo", "organizations")
+@check("organization-logos", "Every organization has a logo", "organizations", "organizations")
 def check_organization_logos(session: Session) -> Result:
     """ Every organization, of every account, has a logo. """
     organizations = session.execute(select(Organization.id, Organization.owner_id, Organization.name, Organization.image_id).order_by(Organization.name)).all()
@@ -201,7 +217,7 @@ def check_organization_logos(session: Session) -> Result:
     return Result(checked=len(organizations), problems=problems)
 
 
-@check("organization-relations", "Every organization is related to you", "organizations")
+@check("organization-relations", "Every organization is related to you", "organizations", "organizations")
 def check_organization_relations(session: Session) -> Result:
     """ Every organization, of every account, has at least one relation type (taught there, consulted, ...). """
     related = set(session.scalars(select(organization_relation_types.c.organization_id)))
@@ -214,7 +230,7 @@ def check_organization_relations(session: Session) -> Result:
     return Result(checked=len(organizations), problems=problems)
 
 
-@check("organization-addresses", "Every organization has an address", "organizations")
+@check("organization-addresses", "Every organization has an address", "organizations", "organizations")
 def check_organization_addresses(session: Session) -> Result:
     """ Every organization, of every account, has an address (the office you knew, not only the city). """
     organizations = session.execute(select(Organization.id, Organization.owner_id, Organization.name, Organization.address).order_by(Organization.name)).all()
@@ -226,7 +242,7 @@ def check_organization_addresses(session: Session) -> Result:
     return Result(checked=len(organizations), problems=problems)
 
 
-@check("organization-locations", "Every organization is on the map", "organizations")
+@check("organization-locations", "Every organization is on the map", "organizations", "organizations")
 def check_organization_locations(session: Session) -> Result:
     """ Every organization, of every account, has a latitude and a longitude (scripts/geocode.py finds them from the address). """
     organizations = session.execute(
@@ -242,7 +258,7 @@ def check_organization_locations(session: Session) -> Result:
 
 # ─── people ─────────────────────────────────────────────────────────────────
 
-@check("person-types", "Every person has a type", "people")
+@check("person-types", "Every person has a type", "people", "people")
 def check_person_types(session: Session) -> Result:
     """ Every person, of every account, is categorized as at least one person type (family, co-worker, ...). """
     typed = set(session.scalars(select(person_type_links.c.person_id)))
@@ -257,7 +273,7 @@ def check_person_types(session: Session) -> Result:
 
 # ─── museums ────────────────────────────────────────────────────────────────
 
-@check("museum-dates", "Every museum visit has a date", "museum visits")
+@check("museum-dates", "Every museum visit has a date", "museum visits", "museums")
 def check_museum_dates(session: Session) -> Result:
     """ Every museum visit, of every account, has a date: a day, a month, a year or a full time, whichever is known. """
     visits = session.scalars(select(Museum).order_by(Museum.owner_id, Museum.name, Museum.id)).all()
@@ -269,7 +285,7 @@ def check_museum_dates(session: Session) -> Result:
     return Result(checked=len(visits), problems=problems)
 
 
-@check("museum-addresses", "Every museum visit has an address", "museum visits")
+@check("museum-addresses", "Every museum visit has an address", "museum visits", "museums")
 def check_museum_addresses(session: Session) -> Result:
     """ Every museum visit, of every account, has the museum's street address. """
     visits = session.scalars(select(Museum).order_by(Museum.owner_id, Museum.name, Museum.id)).all()
@@ -281,7 +297,7 @@ def check_museum_addresses(session: Session) -> Result:
     return Result(checked=len(visits), problems=problems)
 
 
-@check("museum-locations", "Every museum visit is on the map", "museum visits")
+@check("museum-locations", "Every museum visit is on the map", "museum visits", "museums")
 def check_museum_locations(session: Session) -> Result:
     """ Every museum visit, of every account, has a latitude and a longitude (scripts/geocode.py finds them from the address). """
     visits = session.scalars(select(Museum).order_by(Museum.owner_id, Museum.name, Museum.id)).all()
@@ -293,7 +309,7 @@ def check_museum_locations(session: Session) -> Result:
     return Result(checked=len(visits), problems=problems)
 
 
-@check("museum-company", "Every museum visit says who you were with", "museum visits")
+@check("museum-company", "Every museum visit says who you were with", "museum visits", "museums")
 def check_museum_company(session: Session) -> Result:
     """
     Every museum visit, of every account, either has the people you went
@@ -331,7 +347,7 @@ def _finished(course: AudioCourse | YouTubeVideo) -> bool:
     return course.date_utcz is not None or course.date_ymd is not None or bool(course.date_my) or course.date_y is not None
 
 
-@check("audio-course-lecturers", "Every audio course has a lecturer", "audio courses")
+@check("audio-course-lecturers", "Every audio course has a lecturer", "audio courses", "audio-courses")
 def check_audio_course_lecturers(session: Session) -> Result:
     """ Every audio course, of every account, has at least one lecturer (a person). """
     taught = set(session.scalars(select(audio_course_lecturers.c.audio_course_id)))
@@ -339,14 +355,14 @@ def check_audio_course_lecturers(session: Session) -> Result:
     return Result(checked=len(courses), problems=[_course_problem(c, "has no lecturer") for c in courses if c.id not in taught])
 
 
-@check("audio-course-devices", "Every audio course has a device", "audio courses")
+@check("audio-course-devices", "Every audio course has a device", "audio courses", "audio-courses")
 def check_audio_course_devices(session: Session) -> Result:
     """ Every audio course, of every account, says what it was played on (one of the account's devices). """
     courses = _courses(session)
     return Result(checked=len(courses), problems=[_course_problem(c, "has no device") for c in courses if c.device_id is None])
 
 
-@check("audio-course-status", "Every audio course is finished or in progress", "audio courses")
+@check("audio-course-status", "Every audio course is finished or in progress", "audio courses", "audio-courses")
 def check_audio_course_status(session: Session) -> Result:
     """
     Every audio course, of every account, is either finished (it has a date)
@@ -361,7 +377,7 @@ def check_audio_course_status(session: Session) -> Result:
     return Result(checked=len(courses), problems=problems)
 
 
-@check("audio-course-reviews", "Every finished audio course is rated and reviewed", "finished audio courses")
+@check("audio-course-reviews", "Every finished audio course is rated and reviewed", "finished audio courses", "audio-courses")
 def check_audio_course_reviews(session: Session) -> Result:
     """ Every finished audio course, of every account, has a rating and a review; one still in progress need not. """
     finished = [c for c in _courses(session) if _finished(c)]
@@ -373,14 +389,14 @@ def check_audio_course_reviews(session: Session) -> Result:
     return Result(checked=len(finished), problems=problems)
 
 
-@check("audio-course-covers", "Every audio course has a cover", "audio courses")
+@check("audio-course-covers", "Every audio course has a cover", "audio courses", "audio-courses")
 def check_audio_course_covers(session: Session) -> Result:
     """ Every audio course, of every account, has a cover image. """
     courses = _courses(session)
     return Result(checked=len(courses), problems=[_course_problem(c, "has no cover") for c in courses if c.image_id is None])
 
 
-@check("audio-course-links", "Every audio course links to its page", "audio courses")
+@check("audio-course-links", "Every audio course links to its page", "audio courses", "audio-courses")
 def check_audio_course_links(session: Session) -> Result:
     """
     Every audio course, of every account, has a Great Courses slug, an
@@ -396,7 +412,7 @@ def check_audio_course_links(session: Session) -> Result:
     return Result(checked=len(courses), problems=problems)
 
 
-@check("audio-course-stalled", "No audio course is stuck in progress", "audio courses in progress")
+@check("audio-course-stalled", "No audio course is stuck in progress", "audio courses in progress", "audio-courses")
 def check_audio_course_stalled(session: Session) -> Result:
     """
     No audio course, of any account, has been in progress (started, not
@@ -415,7 +431,7 @@ def check_audio_course_stalled(session: Session) -> Result:
     return Result(checked=len(running), problems=problems)
 
 
-@check("audio-course-duplicates", "No audio course is listed twice", "audio courses")
+@check("audio-course-duplicates", "No audio course is listed twice", "audio courses", "audio-courses")
 def check_audio_course_duplicates(session: Session) -> Result:
     """ No account has two audio courses of the same name (ignoring case and spaces at the ends). """
     courses = _courses(session)
@@ -441,14 +457,14 @@ def _book_problem(entry: UserWork, message: str) -> Problem:
     return Problem(f"{entry.work.title} (book {entry.work_id}, account {entry.user_id})", message, f"book/{entry.work_id}", entry.user_id)
 
 
-@check("book-covers", "Every book has a cover", "books")
+@check("book-covers", "Every book has a cover", "books", "book")
 def check_book_covers(session: Session) -> Result:
     """ Every book in a library, of every account, has a cover image. """
     books = _books(session)
     return Result(checked=len(books), problems=[_book_problem(b, "has no cover") for b in books if b.image_id is None])
 
 
-@check("book-links", "Every book links to its page", "books")
+@check("book-links", "Every book links to its page", "books", "book")
 def check_book_links(session: Session) -> Result:
     """ Every book in a library, of every account, has a Goodreads or a Simania id, so its card links to its page. """
     books = _books(session)
@@ -460,21 +476,21 @@ def check_book_links(session: Session) -> Result:
     return Result(checked=len(books), problems=problems)
 
 
-@check("book-authors", "Every book has an author", "books")
+@check("book-authors", "Every book has an author", "books", "book")
 def check_book_authors(session: Session) -> Result:
     """ Every book in a library, of every account, has an author. """
     books = _books(session)
     return Result(checked=len(books), problems=[_book_problem(b, "has no author") for b in books if not b.work.creator.strip()])
 
 
-@check("book-ratings", "Every book read is rated", "books read")
+@check("book-ratings", "Every book read is rated", "books read", "book")
 def check_book_ratings(session: Session) -> Result:
     """ Every book an account has read (Done), of every account, has a rating; one not read yet need not. """
     read = [b for b in _books(session) if b.status == "done"]
     return Result(checked=len(read), problems=[_book_problem(b, "is read but has no rating") for b in read if b.rating is None])
 
 
-@check("book-duplicates", "No book is listed twice", "books")
+@check("book-duplicates", "No book is listed twice", "books", "book")
 def check_book_duplicates(session: Session) -> Result:
     """ No account has two books of the same title and author (ignoring case and spaces at the ends), as two works. """
     books = _books(session)
@@ -501,7 +517,7 @@ def _video_problem(video: YouTubeVideo, message: str) -> Problem:
 YOUTUBE_ID = re.compile(rf"[A-Za-z0-9_-]{{{YOUTUBE_ID_LENGTH}}}")
 
 
-@check("youtube-ids", "Every YouTube video has a well-formed id", "YouTube videos")
+@check("youtube-ids", "Every YouTube video has a well-formed id", "YouTube videos", "youtube")
 def check_youtube_ids(session: Session) -> Result:
     """
     Every YouTube video, of every account, has an id YouTube could have
@@ -516,14 +532,14 @@ def check_youtube_ids(session: Session) -> Result:
     return Result(checked=len(videos), problems=problems)
 
 
-@check("youtube-dates", "Every YouTube video has a date", "YouTube videos")
+@check("youtube-dates", "Every YouTube video has a date", "YouTube videos", "youtube")
 def check_youtube_dates(session: Session) -> Result:
     """ Every YouTube video, of every account, has the date it was watched (a day, a month, a year or a full time). """
     videos = _videos(session)
     return Result(checked=len(videos), problems=[_video_problem(v, "has no date") for v in videos if not _finished(v)])
 
 
-@check("youtube-reviews", "Every YouTube video is rated and reviewed", "YouTube videos")
+@check("youtube-reviews", "Every YouTube video is rated and reviewed", "YouTube videos", "youtube")
 def check_youtube_reviews(session: Session) -> Result:
     """ Every YouTube video, of every account, has a rating and a review. """
     videos = _videos(session)
@@ -535,7 +551,7 @@ def check_youtube_reviews(session: Session) -> Result:
     return Result(checked=len(videos), problems=problems)
 
 
-@check("youtube-devices", "Every YouTube video has a device", "YouTube videos")
+@check("youtube-devices", "Every YouTube video has a device", "YouTube videos", "youtube")
 def check_youtube_devices(session: Session) -> Result:
     """ Every YouTube video, of every account, has the device it was watched on. """
     videos = _videos(session)

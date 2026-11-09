@@ -4,9 +4,10 @@
 Run the database checks (src/myworld/checks.py), the same ones an admin
 runs from the Checks page, over every account.
 
-  scripts/check.py             every check
-  scripts/check.py logos ...   only these
-  scripts/check.py --list      the checks there are
+  scripts/check.py                  every check
+  scripts/check.py logos ...        only these
+  scripts/check.py --dataset book   the checks of one dataset (as its page runs them)
+  scripts/check.py --list           the checks there are, by dataset
 
 The database is DATABASE_URL (default: the local sqlite file); for Cloud SQL
 run it through the proxy: scripts/with_cloud_db.sh scripts/check.py. Exits 1
@@ -27,7 +28,7 @@ os.chdir(ROOT)
 
 from sqlalchemy.orm import Session
 
-from myworld.checks import CHECKS
+from myworld.checks import CHECKS, DATASETS
 from myworld.models import make_engine
 
 
@@ -37,17 +38,26 @@ def main() -> int:
         epilog="checks: " + ", ".join(CHECKS),
     )
     parser.add_argument("names", nargs="*", metavar="check", help="checks to run (default: all)")
-    parser.add_argument("--list", action="store_true", help="list the checks and run none")
+    parser.add_argument("--dataset", choices=list(DATASETS), help="run the checks of this dataset")
+    parser.add_argument("--list", action="store_true", help="list the checks, by dataset, and run none")
     args = parser.parse_args()
     if args.list:
         width = max(len(name) for name in CHECKS)
-        for chosen in CHECKS.values():
-            print(f"{chosen.name:<{width}}  {chosen.title}: {chosen.description}")
+        for dataset, dataset_name in DATASETS.items():
+            print(f"{dataset_name} (--dataset {dataset}):")
+            for chosen in CHECKS.values():
+                if chosen.dataset == dataset:
+                    print(f"  {chosen.name:<{width}}  {chosen.title}: {chosen.description}")
         return 0
     unknown = [name for name in args.names if name not in CHECKS]
     if unknown:
         print(f"check: no check called {', '.join(unknown)}; there are: {', '.join(CHECKS)}", file=sys.stderr)
         return 2
+    if args.names and args.dataset:
+        print("check: name checks or a dataset, not both", file=sys.stderr)
+        return 2
+    if args.dataset:
+        args.names = [name for name, chosen in CHECKS.items() if chosen.dataset == args.dataset]
     engine = make_engine()
     print(engine.url.render_as_string(hide_password=True))
     failed = 0

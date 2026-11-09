@@ -77,9 +77,20 @@
 					<select id="sort-field" aria-label="Sort by"></select>
 					<button id="sort-direction" type="button" class="icon-button"></button>
 				</span>
+				<!-- this page's checks (admins only): disabled where there are none -->
+				<button id="view-checks-button" type="button" class="icon-button" title="Run the checks of this page" aria-label="Checks" aria-expanded="false" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 7h-9v2h9V7zm0 8h-9v2h9v-2zM5.54 11 2 7.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 11zm0 8L2 15.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 19z"/></svg></button>
 				<span id="world-count" class="empty"></span>
 				<div id="layouts" class="layouts" role="group" aria-label="Layout"></div>
 			</div>
+			<!-- the checks of the page on screen, opened from the toolbar -->
+			<section id="view-checks" class="view-checks" hidden>
+				<p class="checks-intro">
+					<strong id="view-checks-title"></strong>: the database checks of this data, over every account's rows.
+					<button id="view-checks-run" type="button">Run all</button>
+					<button id="view-checks-close" type="button" class="text">Close</button>
+				</p>
+				<div id="view-checks-list" class="checks"></div>
+			</section>
 			<section id="stats-view" class="stats" hidden></section>
 			<section id="checks-view" hidden>
 				<p class="checks-intro">
@@ -87,7 +98,8 @@
 					does not enforce when it is written. <code>scripts/check.py</code> runs the same ones.
 					<button id="checks-run-all" type="button">Run all</button>
 				</p>
-				<div id="checks-list" class="checks"></div>
+				<!-- a group per dataset: its heading, its own Run all, its checks -->
+				<div id="checks-list"></div>
 			</section>
 			<section id="schema-view" class="schema" hidden>
 				<p id="schema-summary" class="checks-intro"></p>

@@ -774,6 +774,7 @@ function updateTools() {
 		layout.disabled = !cards || (layout.dataset.layout === "map" && !MAPPED.has(state.view));
 	}
 	$("layouts").setAttribute("aria-disabled", String(!cards));
+	updateViewChecks();
 }
 
 // After a change to the search, the filter or the sort: redraw what is on screen.
@@ -915,6 +916,7 @@ async function libraryPage() {
 
 	setupMovieSearch();
 	setupWorlds();
+	setupViewChecks();
 	setupAddDialog();
 	renderKinds();
 	loadCounts().catch((e) => showError(e.message));
@@ -1917,11 +1919,102 @@ async function selectChecks() {
 	$("world-search").value = "";
 	await fillTypeFilter("checks");
 	updateTools();
-	const checks = await api("/api/checks");
+	const checks = await loadChecks();
 	if (state.view === "checks") {
 		$("world-count").textContent = `${checks.length} check${checks.length === 1 ? "" : "s"}`;
-		$("checks-list").replaceChildren(...checks.map(checkCard));
+		$("checks-list").replaceChildren(...checkGroups(checks));
 	}
+}
+
+// The checks there are (admins only), fetched once: the Checks page and each page's own checks use them.
+let checksLoading = null;
+
+function loadChecks() {
+	if (!checksLoading) {
+		checksLoading = api("/api/checks").catch((e) => {
+			checksLoading = null;
+			throw e;
+		});
+	}
+	return checksLoading;
+}
+
+// The Checks page, a group per dataset (Books, Museums, ...): a heading with its own Run all, then its checks.
+function checkGroups(checks) {
+	const groups = [];
+	for (const check of checks) {
+		let group = groups.at(-1);
+		if (!group || group.dataset.dataset !== check.dataset) {
+			group = el("section", "check-group");
+			group.dataset.dataset = check.dataset;
+			const heading = el("h2", "schema-heading", check.dataset_name);
+			const run = el("button", "text", "Run all");
+			run.type = "button";
+			const list = el("div", "checks");
+			run.onclick = () => runChecks(list, run).catch((e) => showError(e.message));
+			heading.appendChild(run);
+			group.append(heading, list);
+			groups.push(group);
+		}
+		group.querySelector(".checks").appendChild(checkCard(check));
+	}
+	return groups;
+}
+
+// ─── the checks of the page on screen ───────────────────────────────────────
+
+// The views that have checks, once an admin's checks are loaded: the toolbar button is enabled on those.
+let checkedViews = new Set();
+
+function updateViewChecks() {
+	const button = $("view-checks-button");
+	const has = isAdmin() && checkedViews.has(state.view);
+	button.disabled = !has;
+	button.title = !isAdmin() ? "Only an admin can run the checks" : has ? "Run the checks of this page" : "This page has no checks";
+	// the panel belongs to the page it was opened on
+	const panel = $("view-checks");
+	if (panel.dataset.view !== state.view) {
+		panel.hidden = true;
+		button.setAttribute("aria-expanded", "false");
+	}
+}
+
+async function openViewChecks() {
+	const view = state.view;
+	const checks = (await loadChecks()).filter((check) => check.dataset === view);
+	if (state.view !== view || checks.length === 0) {
+		return;
+	}
+	const panel = $("view-checks");
+	panel.dataset.view = view;
+	$("view-checks-title").textContent = `Checks of ${checks[0].dataset_name}`;
+	$("view-checks-list").replaceChildren(...checks.map(checkCard));
+	panel.hidden = false;
+	$("view-checks-button").setAttribute("aria-expanded", "true");
+	await runChecks($("view-checks-list"), $("view-checks-run"));
+}
+
+function setupViewChecks() {
+	$("view-checks-button").onclick = () => {
+		if ($("view-checks").hidden) {
+			openViewChecks().catch((e) => showError(e.message));
+		} else {
+			$("view-checks").hidden = true;
+			$("view-checks-button").setAttribute("aria-expanded", "false");
+		}
+	};
+	$("view-checks-run").onclick = () => runChecks($("view-checks-list"), $("view-checks-run")).catch((e) => showError(e.message));
+	$("view-checks-close").onclick = () => {
+		$("view-checks").hidden = true;
+		$("view-checks-button").setAttribute("aria-expanded", "false");
+	};
+	if (isAdmin()) {
+		loadChecks().then((checks) => {
+			checkedViews = new Set(checks.map((check) => check.dataset));
+			updateViewChecks();
+		}).catch((e) => showError(e.message));
+	}
+	updateViewChecks();
 }
 
 // ─── the structure of the database ──────────────────────────────────────────
@@ -2139,14 +2232,15 @@ async function runCheck(card) {
 	}
 }
 
-async function runAllChecks() {
-	$("checks-run-all").disabled = true;
+// Run every check under box in turn, its Run all button disabled meanwhile.
+async function runChecks(box, button) {
+	button.disabled = true;
 	try {
-		for (const card of $("checks-list").querySelectorAll(".check")) {
+		for (const card of box.querySelectorAll(".check")) {
 			await runCheck(card);
 		}
 	} finally {
-		$("checks-run-all").disabled = false;
+		button.disabled = false;
 	}
 }
 
@@ -2367,7 +2461,7 @@ function setupWorlds() {
 			}
 		};
 	}
-	$("checks-run-all").onclick = () => runAllChecks().catch((e) => showError(e.message));
+	$("checks-run-all").onclick = () => runChecks($("checks-list"), $("checks-run-all")).catch((e) => showError(e.message));
 	$("world-search").oninput = rerender;
 	setupSort();
 	$("connections-close").onclick = () => $("connections-dialog").close();
