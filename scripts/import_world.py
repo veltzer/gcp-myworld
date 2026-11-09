@@ -167,6 +167,8 @@ AUDIO_COURSE_FIELDS = DATE_FIELDS | {
 YOUTUBE_FIELDS = DATE_FIELDS | {"id", "name", "rating", "review", "device", "location"}
 # the watch history: yt-dlp's names; status "missing" (with video_id) is a video YouTube no longer has
 YOUTUBE_HISTORY_FIELDS = {"title", "webpage_url", "channel", "categories", "duration", "upload_date", "view_count", "status", "video_id"}
+# rows per multi-row INSERT: 18 columns each stays well under PostgreSQL's 65,535 parameters
+INSERT_CHUNK = 2000
 YOUTUBE_WATCH = re.compile(r"https://www\.youtube\.com/watch\?v=([A-Za-z0-9_-]{11})")
 # internal_id only names the image file; it is not stored
 MUSEUM_FIELDS = DATE_FIELDS | {
@@ -631,7 +633,7 @@ def _history_items(source: Path) -> list[dict[str, Any]]:
 def _history_details(item: dict[str, Any]) -> dict[str, Any]:
     """ What YouTube says about a video, as YouTubeVideo columns. """
     if item.get("status") == "missing":
-        return {"unavailable": True}
+        return {"channel": "", "category": "", "duration": None, "uploaded": None, "views": None, "unavailable": True}
     upload = item.get("upload_date")
     return {
         "channel": item.get("channel") or "",
@@ -663,16 +665,19 @@ def import_youtube_history(session: Session, owner: User, source: Path) -> dict[
             name = "" if details["unavailable"] else item["title"]
             new.append({
                 "owner_id": owner.id, "youtube_id": item["id"], "name": name, "review": "", "watched_at": "",
-                "date_my": "", "date_timezone": "", "channel": "", "category": "", **details,
+                # every column, in every row: a multi-row INSERT takes the same ones for all
+                "rating": None, "device_id": None, "date_utcz": None, "date_ymd": None, "date_my": "", "date_y": None,
+                "date_timezone": "", **details,
             })
         else:
             for key, value in details.items():
                 setattr(video, key, value)
             updated += 1
     session.flush()
-    # one bulk insert: 30,000 ORM adds are 30,000 round trips to Cloud SQL
-    if new:
-        session.execute(insert(YouTubeVideo), new)
+    # multi-row INSERTs: 30,000 ORM adds, or a driver's executemany (pg8000
+    # sends one statement per row), are 30,000 round trips to Cloud SQL
+    for start in range(0, len(new), INSERT_CHUNK):
+        session.execute(insert(YouTubeVideo).values(new[start:start + INSERT_CHUNK]))
     return {"YouTube videos added": len(new), "YouTube videos given details": updated}
 
 
