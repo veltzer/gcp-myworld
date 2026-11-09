@@ -10,28 +10,13 @@
 	</head>
 	<body data-page="library">
 		<header class="topbar">
+			<!-- the sidebar: folded away (wide screens) or slid out (phones) -->
+			<button id="nav-toggle" type="button" class="icon-button nav-toggle" aria-controls="sidebar" aria-expanded="true" title="Show or hide the list of pages" aria-label="Pages">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/></svg>
+			</button>
 			<a class="brand" href="/">
 				<img class="brand-mark" src="/static/favicon.svg" alt="">
 				My World
-			</a>
-			<nav id="kinds" class="kinds"></nav>
-			<!-- outside the tabs: a summary of all of them -->
-			<a id="stats-link" class="stats-link" href="/library#stats" title="How many of everything you have">
-				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
-				Stats
-			</a>
-			<!-- only an admin can open it; for everyone else it stays here, disabled -->
-			<a id="users-link" class="stats-link" href="/library#users" title="Every account and its role">
-				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm0 1.5c-3.3 0-6 1.8-6 4v2h12v-2c0-2.2-2.7-4-6-4zm7.5-1.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm.5 1.5c-.6 0-1.2.1-1.7.2 1.1.9 1.7 2.1 1.7 3.3v2h5v-2c0-1.9-2.2-3.5-5-3.5z"/></svg>
-				Users
-			</a>
-			<a id="checks-link" class="stats-link" href="/library#checks" title="Checks over the whole database">
-				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 16.2 5.3 12l-1.4 1.4 5.6 5.6L21.1 7.4 19.7 6 9.5 16.2z"/></svg>
-				Checks
-			</a>
-			<a id="schema-link" class="stats-link" href="/library#schema" title="The structure of the database, as the database reports it">
-				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3C7.6 3 4 4.3 4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6c0-1.7-3.6-3-8-3zm6 15c0 .4-2.1 1.5-6 1.5S6 18.4 6 18v-2.3c1.5.8 3.6 1.3 6 1.3s4.5-.5 6-1.3V18zm0-4.5c0 .4-2.1 1.5-6 1.5s-6-1.1-6-1.5v-2.3c1.5.8 3.6 1.3 6 1.3s4.5-.5 6-1.3v2.3zM12 9C8.1 9 6 7.9 6 7.5S8.1 6 12 6s6 1.1 6 1.5S15.9 9 12 9z"/></svg>
-				Schema
 			</a>
 			<div class="whoami">
 				<!-- the account menu: how you signed in and as whom -->
@@ -47,6 +32,34 @@
 				<button id="logout" type="button">Sign out</button>
 			</div>
 		</header>
+		<div id="layout" class="layout">
+		<aside id="sidebar" class="sidebar" aria-label="Pages">
+			<!-- the data, in groups, each with how many rows it has -->
+			<nav id="kinds" class="kinds"></nav>
+			<div class="side-group">
+				<h2 class="side-heading">Overview</h2>
+				<!-- a summary of all of them -->
+				<a id="stats-link" class="stats-link side-link" href="/library#stats" title="How many of everything you have">
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
+					Stats
+				</a>
+				<!-- only an admin can open these; for everyone else they stay here, disabled -->
+				<a id="users-link" class="stats-link side-link" href="/library#users" title="Every account and its role">
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm0 1.5c-3.3 0-6 1.8-6 4v2h12v-2c0-2.2-2.7-4-6-4zm7.5-1.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm.5 1.5c-.6 0-1.2.1-1.7.2 1.1.9 1.7 2.1 1.7 3.3v2h5v-2c0-1.9-2.2-3.5-5-3.5z"/></svg>
+					Users
+				</a>
+				<a id="checks-link" class="stats-link side-link" href="/library#checks" title="Checks over the whole database">
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 16.2 5.3 12l-1.4 1.4 5.6 5.6L21.1 7.4 19.7 6 9.5 16.2z"/></svg>
+					Checks
+				</a>
+				<a id="schema-link" class="stats-link side-link" href="/library#schema" title="The structure of the database, as the database reports it">
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3C7.6 3 4 4.3 4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6c0-1.7-3.6-3-8-3zm6 15c0 .4-2.1 1.5-6 1.5S6 18.4 6 18v-2.3c1.5.8 3.6 1.3 6 1.3s4.5-.5 6-1.3V18zm0-4.5c0 .4-2.1 1.5-6 1.5s-6-1.1-6-1.5v-2.3c1.5.8 3.6 1.3 6 1.3s4.5-.5 6-1.3v2.3zM12 9C8.1 9 6 7.9 6 7.5S8.1 6 12 6s6 1.1 6 1.5S15.9 9 12 9z"/></svg>
+					Schema
+				</a>
+			</div>
+		</aside>
+		<!-- on a phone: a tap outside the slid-out sidebar closes it -->
+		<div id="sidebar-scrim" class="sidebar-scrim" hidden></div>
 		<main class="content">
 			<p id="error" class="warning" hidden></p>
 			<!-- one toolbar for every tab: a control that does not apply is disabled, never hidden -->
@@ -168,6 +181,7 @@
 				</table>
 			</section>
 		</main>
+		</div>
 		<button id="fab" class="fab" type="button" aria-label="Add" title="Add">
 			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
 		</button>

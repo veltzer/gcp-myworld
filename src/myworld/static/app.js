@@ -415,32 +415,126 @@ function renderRow(entry) {
 	return tr;
 }
 
+// the sidebar's groups of views (the library's kinds come first, from the config)
+const NAV_GROUPS = [
+	["Experiences", ["concerts", "museums", "audio-courses", "youtube"]],
+	["People", ["people", "organizations"]],
+	["Lists", ["organization-types", "person-types", "relation-types", "devices"]],
+];
+
+function sideLink(label, key, open) {
+	const a = el("a", "side-link");
+	a.href = `/library#${key}`;
+	a.append(el("span", "side-label", label), el("span", "side-count"));
+	a.onclick = (event) => {
+		event.preventDefault();
+		closeSidebarOnPhone();
+		open();
+	};
+	return a;
+}
+
+function sideGroup(heading, links) {
+	const group = el("div", "side-group");
+	group.append(el("h2", "side-heading", heading), ...links);
+	return group;
+}
+
+// The sidebar, made once; after that only which page is active changes
 function renderKinds() {
 	const nav = $("kinds");
-	nav.replaceChildren();
-	for (const [kind, { plural }] of Object.entries(state.config.kinds)) {
-		const a = document.createElement("a");
-		a.href = `/library#${kind}`;
-		a.textContent = plural;
-		a.dataset.kind = kind;
-		a.onclick = (event) => {
-			event.preventDefault();
-			selectKind(kind);
-		};
-		nav.appendChild(a);
-	}
-	for (const [view, [, , , label]] of Object.entries(WORLDS)) {
-		const a = document.createElement("a");
-		a.href = `/library#${view}`;
-		a.textContent = label;
-		a.dataset.world = view;
-		a.onclick = (event) => {
-			event.preventDefault();
-			selectWorld(view).catch((e) => showError(e.message));
-		};
-		nav.appendChild(a);
+	if (!nav.children.length) {
+		const library = Object.entries(state.config.kinds).map(([kind, { plural }]) => {
+			const a = sideLink(plural, kind, () => selectKind(kind));
+			a.dataset.kind = kind;
+			return a;
+		});
+		const groups = NAV_GROUPS.map(([heading, views]) => sideGroup(heading, views.map((view) => {
+			const a = sideLink(WORLDS[view][3], view, () => selectWorld(view).catch((e) => showError(e.message)));
+			a.dataset.world = view;
+			return a;
+		})));
+		nav.append(sideGroup("Library", library), ...groups);
 	}
 	markActive();
+}
+
+// How many rows a view or library kind has, next to its name in the sidebar
+function setCount(key, count) {
+	const span = document.querySelector(`#kinds a[data-world="${key}"] .side-count, #kinds a[data-kind="${key}"] .side-count`);
+	if (span) {
+		span.textContent = count.toLocaleString();
+	}
+}
+
+// The counts when the page opens, from the stats; each list keeps its own fresh as it is loaded
+async function loadCounts() {
+	const stats = await api("/api/stats");
+	for (const kind of stats.library) {
+		setCount(kind.kind, kind.total);
+	}
+	const keys = {
+		concerts: "concerts", museums: "museum_visits", "audio-courses": "audio_courses", youtube: "youtube_videos",
+		people: "people", organizations: "organizations", "organization-types": "organization_types",
+		"person-types": "person_types", "relation-types": "relation_types", devices: "devices",
+	};
+	for (const [view, key] of Object.entries(keys)) {
+		setCount(view, stats[key]);
+	}
+}
+
+// ─── the sidebar: folded away on a wide screen, slid out over the page on a phone ───
+
+const SIDEBAR_KEY = "myworld.sidebar";
+const phone = window.matchMedia("(max-width: 900px)");
+
+function sidebarShown() {
+	return phone.matches ? document.body.classList.contains("sidebar-open") : !document.body.classList.contains("sidebar-folded");
+}
+
+function syncSidebar() {
+	const shown = sidebarShown();
+	$("nav-toggle").setAttribute("aria-expanded", String(shown));
+	$("sidebar-scrim").hidden = !(phone.matches && shown);
+}
+
+function closeSidebarOnPhone() {
+	if (phone.matches) {
+		document.body.classList.remove("sidebar-open");
+		syncSidebar();
+	}
+}
+
+function setupSidebar() {
+	try {
+		document.body.classList.toggle("sidebar-folded", localStorage.getItem(SIDEBAR_KEY) === "folded");
+	} catch (e) {
+		// no storage (a private window): the sidebar starts shown
+	}
+	$("nav-toggle").onclick = () => {
+		if (phone.matches) {
+			document.body.classList.toggle("sidebar-open");
+		} else {
+			const folded = document.body.classList.toggle("sidebar-folded");
+			try {
+				localStorage.setItem(SIDEBAR_KEY, folded ? "folded" : "shown");
+			} catch (e) {
+				// remembered for this page only
+			}
+		}
+		syncSidebar();
+	};
+	$("sidebar-scrim").onclick = closeSidebarOnPhone;
+	document.addEventListener("keydown", (event) => {
+		if (event.key === "Escape" && phone.matches && sidebarShown()) {
+			closeSidebarOnPhone();
+		}
+	});
+	phone.addEventListener("change", () => {
+		document.body.classList.remove("sidebar-open");
+		syncSidebar();
+	});
+	syncSidebar();
 }
 
 async function loadEntries() {
@@ -452,6 +546,7 @@ async function loadEntries() {
 function renderEntries() {
 	const { plural } = state.config.kinds[state.kind];
 	const shown = rankBySearch(sortItems(state.entries.filter(searchMatches)));
+	setCount(state.kind, state.entries.length);
 	$("rows").replaceChildren(...shown.map(renderRow));
 	$("entries").hidden = shown.length === 0;
 	$("empty").hidden = state.entries.length !== 0;
@@ -782,6 +877,7 @@ async function libraryPage() {
 		$("avatar").src = user.picture;
 	}
 	setupAccountMenu(user);
+	setupSidebar();
 	$("logout").onclick = async () => {
 		await fetch("/auth/logout", { method: "POST" });
 		window.location.href = "/";
@@ -818,6 +914,7 @@ async function libraryPage() {
 	setupWorlds();
 	setupAddDialog();
 	renderKinds();
+	loadCounts().catch((e) => showError(e.message));
 	startHistory();
 	setupFreshness();
 	await openHash();
@@ -1624,6 +1721,7 @@ function renderWorld() {
 	// "Audio courses" -> "audio courses"; a name with capitals inside ("YouTube videos") stays
 	const title = WORLDS[view][0].replace(/^My /, "");
 	const what = /^.+[A-Z]/.test(title) ? title : title.toLowerCase();
+	setCount(view, items.length);
 	if (items.length === 0) {
 		$("world-count").textContent = `Nothing here yet: no ${what} for this account.`;
 	} else {
@@ -1635,7 +1733,7 @@ function renderWorld() {
 }
 
 function markActive() {
-	for (const a of document.querySelectorAll(".kinds a")) {
+	for (const a of document.querySelectorAll("#kinds a")) {
 		const active = a.dataset.world ? a.dataset.world === state.view : a.dataset.kind === state.view;
 		a.classList.toggle("active", active);
 	}
@@ -2170,6 +2268,7 @@ async function showRow(view, id) {
 function setupWorlds() {
 	$("stats-link").onclick = (event) => {
 		event.preventDefault();
+		closeSidebarOnPhone();
 		selectStats().catch((e) => showError(e.message));
 	};
 	// the admin pages: for everyone else the links stay, disabled
@@ -2186,6 +2285,7 @@ function setupWorlds() {
 		}
 		link.onclick = (event) => {
 			event.preventDefault();
+			closeSidebarOnPhone();
 			if (isAdmin()) {
 				select().catch((e) => showError(e.message));
 			}

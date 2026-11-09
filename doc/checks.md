@@ -6,7 +6,7 @@ checks read the whole database, every account's rows, and change nothing.
 
 ## Running them
 
-- **In the app:** the Checks page (top bar, admins only; see
+- **In the app:** the Checks page (sidebar, Overview, admins only; see
   `accounts.md`) lists every check as one row of the same height: its
   title (the description is the tooltip), what it found, and a Run
   button; Run all runs them in turn. A failing check's count opens the

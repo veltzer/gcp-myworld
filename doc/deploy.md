@@ -288,7 +288,7 @@ a person is written with `type_ids`, a list.
   per kind and status, concerts, performers, museum visits and museums,
   people, organizations, both kinds of types, images), people and
   organizations by type, and concerts and museum visits per year: the
-  Stats page, linked from the top bar.
+  Stats page, in the sidebar.
 - `GET /api/organization-types`, `GET /api/person-types`,
   `GET /api/relation-types`: name, description and `count`, how many rows
   are of it; `POST`,

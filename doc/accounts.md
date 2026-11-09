@@ -47,7 +47,7 @@ no framework), and so is this: `auth.admin_required` guards what only an
 admin may do, reading the role from the database on every request, so a
 change takes effect at once, without signing out.
 
-An admin opens the Users page (top bar; disabled for everyone else),
+An admin opens the Users page (sidebar; disabled for everyone else),
 which lists every account, and can make any account an admin, which is
 how the role is delegated, or turn an admin back into a user. The last
 admin cannot be demoted (409), so the site always has one. The role

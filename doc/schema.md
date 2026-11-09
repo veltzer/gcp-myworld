@@ -1,6 +1,6 @@
 # The Schema page
 
-The Schema page (top bar, admins only; see `accounts.md`) shows the
+The Schema page (sidebar, Overview, admins only; see `accounts.md`) shows the
 structure of the database as the database itself reports it, not as the
 code describes it: SQLAlchemy's inspector reads the catalog (PostgreSQL's
 `information_schema` and `pg_catalog` in production, sqlite's `PRAGMA`s
