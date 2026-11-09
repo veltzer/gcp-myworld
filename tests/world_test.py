@@ -212,12 +212,12 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
 
 
 def test_requires_login(app: webtest.TestApp) -> None:
-    for path in ("/api/concerts", "/api/museums", "/api/people", "/api/organizations", "/api/organization-types", "/api/images/1"):
+    for path in ("/api/concert-visits", "/api/museum-visits", "/api/people", "/api/organizations", "/api/organization-types", "/api/images/1"):
         app.get(path, status=401)
 
 
 def test_concerts(imported: webtest.TestApp) -> None:
-    concerts = imported.get("/api/concerts").json
+    concerts = imported.get("/api/concert-visits").json
     # newest first, whatever the precision of the date
     assert [c["name"] for c in concerts] == ["Late Show", "Some Month", "The Band"]
     late, month, band = concerts
@@ -237,7 +237,7 @@ def test_concerts(imported: webtest.TestApp) -> None:
 
 
 def test_performers_are_people(imported: webtest.TestApp) -> None:
-    concerts = {c["name"]: c for c in imported.get("/api/concerts").json}
+    concerts = {c["name"]: c for c in imported.get("/api/concert-visits").json}
     people = {p["name"]: p["id"] for p in imported.get("/api/people").json}
     # a performer people.yaml does not have becomes a person; one it has is that person
     assert "The Band" in people
@@ -248,12 +248,12 @@ def test_performers_are_people(imported: webtest.TestApp) -> None:
     # performers and the people the user went with are separate lists
     assert concerts["Late Show"]["with"] == ["Alice Friend", "Bob Buddy"]
     assert concerts["Some Month"]["performers"] == []
-    imported.post_json("/api/concerts", {"name": "x", "performers": [999]}, status=400)
-    imported.post_json("/api/concerts", {"name": "x", "performers": ["Singer"]}, status=400)
+    imported.post_json("/api/concert-visits", {"name": "x", "performers": [999]}, status=400)
+    imported.post_json("/api/concert-visits", {"name": "x", "performers": ["Singer"]}, status=400)
 
 
 def test_museums_share_the_first_visit_photo(imported: webtest.TestApp) -> None:
-    museums = imported.get("/api/museums").json
+    museums = imported.get("/api/museum-visits").json
     assert [m["name"] for m in museums] == ["No Photo Museum", "The Louvre", "The Louvre"]
     assert museums[0]["image"] is None
     assert museums[1]["image"] is not None
@@ -341,7 +341,7 @@ def test_audio_courses_import_adds_once(imported: webtest.TestApp, engine: Engin
 
 
 def test_youtube(imported: webtest.TestApp) -> None:
-    videos = imported.get("/api/youtube").json
+    videos = imported.get("/api/youtube-videos").json
     # newest first; the watch history has no dates, so comes after, by name
     assert [v["youtube_id"] for v in videos] == ["5jqXEzplxeo", "VNIRUigPxA8", "-0-EI_f9oXs", "-0dYmE1lyw4"]
     debate, _, chess, gone = videos
@@ -351,21 +351,21 @@ def test_youtube(imported: webtest.TestApp) -> None:
     assert (chess["name"], chess["date"], chess["review"], chess["unavailable"]) == ("Carlsen Crushes a GM", None, "", False)
     # one YouTube no longer has: only its id, no name, and it can be edited without one
     assert (gone["name"], gone["unavailable"], gone["channel"]) == ("", True, "")
-    assert imported.put_json(f"/api/youtube/{gone['id']}", dict(gone, device_id="", rating=5)).json["rating"] == 5
+    assert imported.put_json(f"/api/youtube-videos/{gone['id']}", dict(gone, device_id="", rating=5)).json["rating"] == 5
     assert (debate["date"], debate["rating"], debate["watched_at"], debate["device"]["name"]) == ("2015-11-30T16:24:31Z", 7, "Home", "Desktop")
     # the page builds YouTube's URLs from the id
     assert "url" not in debate and "image" not in debate
     # a link pasted in place of the id is taken apart
-    added = imported.post_json("/api/youtube", {"name": "Talk", "youtube_id": "https://youtu.be/JbNJoHFsQnc?t=10", "date": "2024-05-01"}, status=201).json
+    added = imported.post_json("/api/youtube-videos", {"name": "Talk", "youtube_id": "https://youtu.be/JbNJoHFsQnc?t=10", "date": "2024-05-01"}, status=201).json
     assert added["youtube_id"] == "JbNJoHFsQnc"
     body = dict(added, device_id="")
     for link in ("https://www.youtube.com/watch?v=JbNJoHFsQnc&list=x", "https://www.youtube.com/shorts/JbNJoHFsQnc", "JbNJoHFsQnc"):
-        assert imported.put_json(f"/api/youtube/{added['id']}", dict(body, youtube_id=link)).json["youtube_id"] == "JbNJoHFsQnc"
+        assert imported.put_json(f"/api/youtube-videos/{added['id']}", dict(body, youtube_id=link)).json["youtube_id"] == "JbNJoHFsQnc"
     # a malformed id, and a video listed twice
-    imported.put_json(f"/api/youtube/{added['id']}", dict(body, youtube_id="JbNJoHFsQncS"), status=400)
-    imported.post_json("/api/youtube", {"name": "Again", "youtube_id": "5jqXEzplxeo"}, status=409)
-    imported.delete(f"/api/youtube/{added['id']}", status=204)
-    assert len(imported.get("/api/youtube").json) == 4
+    imported.put_json(f"/api/youtube-videos/{added['id']}", dict(body, youtube_id="JbNJoHFsQncS"), status=400)
+    imported.post_json("/api/youtube-videos", {"name": "Again", "youtube_id": "5jqXEzplxeo"}, status=409)
+    imported.delete(f"/api/youtube-videos/{added['id']}", status=204)
+    assert len(imported.get("/api/youtube-videos").json) == 4
 
 
 def test_youtube_history_runs_again(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
@@ -381,17 +381,17 @@ def test_youtube_history_runs_again(imported: webtest.TestApp, engine: Engine, t
 
 def test_long_json_is_gzipped(imported: webtest.TestApp) -> None:
     # small: sent as it is
-    small = imported.get("/api/youtube", headers={"Accept-Encoding": "gzip"})
+    small = imported.get("/api/youtube-videos", headers={"Accept-Encoding": "gzip"})
     assert "Accept-Encoding" not in small.headers.get("Vary", "")
     # long: gzipped (WebTest takes the gzip apart again, so what is left to see is the Vary)
     flask_app = imported.app
     assert isinstance(flask_app, flask.Flask)
     flask_app.config["GZIP_MIN_BYTES"] = 10
-    zipped = imported.get("/api/youtube", headers={"Accept-Encoding": "gzip"})
+    zipped = imported.get("/api/youtube-videos", headers={"Accept-Encoding": "gzip"})
     assert "Accept-Encoding" in zipped.headers["Vary"]
     assert len(zipped.json) == 4
     # a client that does not take gzip gets it plain
-    assert "Accept-Encoding" not in imported.get("/api/youtube").headers.get("Vary", "")
+    assert "Accept-Encoding" not in imported.get("/api/youtube-videos").headers.get("Vary", "")
 
 
 def test_youtube_import_adds_once(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
@@ -410,7 +410,7 @@ def test_youtube_import_adds_once(imported: webtest.TestApp, engine: Engine, tmp
 
 def test_people_links_point_at_people(imported: webtest.TestApp) -> None:
     ids = {p["name"]: p["id"] for p in imported.get("/api/people").json}
-    for path in ("/api/concerts", "/api/museums"):
+    for path in ("/api/concert-visits", "/api/museum-visits"):
         for item in imported.get(path).json:
             assert [ids[p["name"]] for p in item["people"]] == [p["id"] for p in item["people"]]
 
@@ -572,7 +572,7 @@ def test_logo(imported: webtest.TestApp) -> None:
 
 
 def test_image(imported: webtest.TestApp) -> None:
-    url = imported.get("/api/concerts").json[0]["image"]
+    url = imported.get("/api/concert-visits").json[0]["image"]
     response = imported.get(url)
     assert response.content_type == "image/jpeg"
     assert response.body == b"\xff\xd8band"
@@ -582,11 +582,11 @@ def test_image(imported: webtest.TestApp) -> None:
 
 
 def test_other_users_see_nothing(imported: webtest.TestApp, engine: Engine) -> None:
-    url = imported.get("/api/concerts").json[0]["image"]
+    url = imported.get("/api/concert-visits").json[0]["image"]
     imported.post("/auth/logout")
     sign_in(imported, sub="someone-else")
-    assert imported.get("/api/concerts").json == []
-    assert imported.get("/api/museums").json == []
+    assert imported.get("/api/concert-visits").json == []
+    assert imported.get("/api/museum-visits").json == []
     assert imported.get("/api/people").json == []
     assert imported.get("/api/organizations").json == []
     assert imported.get("/api/organization-types").json == []
@@ -604,7 +604,7 @@ def test_reimport_replaces(imported: webtest.TestApp, engine: Engine, tmp_path: 
             assert session.scalar(select(func.count()).select_from(model)) == count
         assert session.scalar(select(func.count()).select_from(concert_companions)) == 3
         assert session.scalar(select(func.count()).select_from(person_organizations)) == 3
-    assert len(imported.get("/api/concerts").json) == 3
+    assert len(imported.get("/api/concert-visits").json) == 3
 
 
 def test_unknown_field_stops_the_import(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
@@ -653,7 +653,7 @@ def people_ids(app: webtest.TestApp) -> dict[str, int]:
 def test_add_concert_with_photo(imported: webtest.TestApp) -> None:
     upload = imported.post("/api/images", upload_files=[("file", "show.jpg", JPEG)]).json
     ids = people_ids(imported)
-    concert = imported.post_json("/api/concerts", {
+    concert = imported.post_json("/api/concert-visits", {
         "name": "New Show", "performers": [ids["Alice Friend"]], "date": "2024-05",
         "date_timezone": "Asia/Jerusalem", "people": [ids["Bob Buddy"]], "tickets": "2",
         "broadcast": True, "image_id": upload["id"],
@@ -664,18 +664,18 @@ def test_add_concert_with_photo(imported: webtest.TestApp) -> None:
     assert concert["with"] == ["Bob Buddy"]
     assert concert["image"] == upload["url"]
     assert imported.get(upload["url"]).body == JPEG
-    assert "New Show" in [c["name"] for c in imported.get("/api/concerts").json]
+    assert "New Show" in [c["name"] for c in imported.get("/api/concert-visits").json]
 
 
 def test_add_validates(imported: webtest.TestApp) -> None:
-    imported.post_json("/api/concerts", {"name": ""}, status=400)
-    imported.post_json("/api/concerts", {"name": "x", "date": "2024-13"}, status=400)
-    imported.post_json("/api/concerts", {"name": "x", "date": "last year"}, status=400)
-    imported.post_json("/api/concerts", {"name": "x", "date_timezone": "Mars/Olympus"}, status=400)
-    imported.post_json("/api/concerts", {"name": "x", "people": [999]}, status=400)
-    imported.post_json("/api/museums", {"name": "x", "rating": 11}, status=400)
-    imported.post_json("/api/museums", {"name": "x", "latitude": 91, "longitude": 0}, status=400)
-    imported.post_json("/api/museums", {"name": "x", "latitude": "north", "longitude": 0}, status=400)
+    imported.post_json("/api/concert-visits", {"name": ""}, status=400)
+    imported.post_json("/api/concert-visits", {"name": "x", "date": "2024-13"}, status=400)
+    imported.post_json("/api/concert-visits", {"name": "x", "date": "last year"}, status=400)
+    imported.post_json("/api/concert-visits", {"name": "x", "date_timezone": "Mars/Olympus"}, status=400)
+    imported.post_json("/api/concert-visits", {"name": "x", "people": [999]}, status=400)
+    imported.post_json("/api/museum-visits", {"name": "x", "rating": 11}, status=400)
+    imported.post_json("/api/museum-visits", {"name": "x", "latitude": 91, "longitude": 0}, status=400)
+    imported.post_json("/api/museum-visits", {"name": "x", "latitude": "north", "longitude": 0}, status=400)
     # one coordinate without the other is no place
     imported.post_json("/api/organizations", {"name": "x", "latitude": 32.1}, status=400)
     imported.post_json("/api/people", {"first_name": ""}, status=400)
@@ -695,14 +695,14 @@ def test_person_with_no_name(imported: webtest.TestApp) -> None:
     # the description is what such a person is called, in pickers and elsewhere
     guide = imported.post_json("/api/people", {"description": "the guide at the Louvre"}, status=201).json
     assert (guide["first_name"], guide["surname"], guide["name"]) == ("", "", "the guide at the Louvre")
-    concert = imported.post_json("/api/concerts", {"name": "x", "people": [guide["id"]]}, status=201).json
+    concert = imported.post_json("/api/concert-visits", {"name": "x", "people": [guide["id"]]}, status=201).json
     assert concert["with"] == ["the guide at the Louvre"]
     imported.put_json(f"/api/people/{guide['id']}", {"description": " "}, status=400)
 
 
 def test_add_museum_and_person(imported: webtest.TestApp) -> None:
     person = imported.post_json("/api/people", {"first_name": "Carol", "description": "Zed"}, status=201).json
-    museum = imported.post_json("/api/museums", {
+    museum = imported.post_json("/api/museum-visits", {
         "name": "Prado", "city": "Madrid", "date": "2012", "rating": 9, "people": [person["id"]],
     }, status=201).json
     assert museum["date"] == "2012"
@@ -711,37 +711,37 @@ def test_add_museum_and_person(imported: webtest.TestApp) -> None:
 
 
 def test_museum_alone(imported: webtest.TestApp) -> None:
-    alone = imported.post_json("/api/museums", {"name": "Prado", "alone": True}, status=201).json
+    alone = imported.post_json("/api/museum-visits", {"name": "Prado", "alone": True}, status=201).json
     assert alone["alone"] is True
     assert alone["with"] == []
-    assert imported.post_json("/api/museums", {"name": "Tate"}, status=201).json["alone"] is False
+    assert imported.post_json("/api/museum-visits", {"name": "Tate"}, status=201).json["alone"] is False
     # alone with company is a contradiction
     person = imported.post_json("/api/people", {"first_name": "Carol"}, status=201).json
-    imported.post_json("/api/museums", {"name": "Uffizi", "alone": True, "people": [person["id"]]}, status=400)
+    imported.post_json("/api/museum-visits", {"name": "Uffizi", "alone": True, "people": [person["id"]]}, status=400)
 
 
 def test_addresses_and_coordinates(imported: webtest.TestApp) -> None:
-    museum = imported.post_json("/api/museums", {
+    museum = imported.post_json("/api/museum-visits", {
         "name": "Prado", "address": "Calle de Ruiz de Alarcón 23, Madrid, Spain", "latitude": "40.4138", "longitude": -3.6921,
     }, status=201).json
     assert (museum["address"], museum["latitude"], museum["longitude"]) == ("Calle de Ruiz de Alarcón 23, Madrid, Spain", 40.4138, -3.6921)
     # a dialog with the coordinates cleared leaves the place off the map
-    cleared = imported.put_json(f"/api/museums/{museum['id']}", dict(museum, people=[], latitude="", longitude="")).json
+    cleared = imported.put_json(f"/api/museum-visits/{museum['id']}", dict(museum, people=[], latitude="", longitude="")).json
     assert (cleared["latitude"], cleared["longitude"]) == (None, None)
     organization = imported.post_json("/api/organizations", {"name": "Glil", "address": "Kibbutz Glil Yam, Israel", "latitude": 32.15556, "longitude": 34.82361}, status=201).json
     assert (organization["latitude"], organization["longitude"]) == (32.15556, 34.82361)
 
 
 def test_edit_keeps_a_timestamp_sent_back_unchanged(imported: webtest.TestApp) -> None:
-    late = next(c for c in imported.get("/api/concerts").json if c["name"] == "Late Show")
+    late = next(c for c in imported.get("/api/concert-visits").json if c["name"] == "Late Show")
     body = dict(late, name="Late Late Show", people=[p["id"] for p in late["people"]][:1], performers=[p["id"] for p in late["performers"]])
-    edited = imported.put_json(f"/api/concerts/{late['id']}", body).json
+    edited = imported.put_json(f"/api/concert-visits/{late['id']}", body).json
     assert edited["name"] == "Late Late Show"
     assert edited["date"] == "2020-01-01T22:30:00Z"
     assert edited["with"] == ["Alice Friend"]
     # the photo stays when no new one is uploaded
     assert edited["image"] == late["image"]
-    edited = imported.put_json(f"/api/concerts/{late['id']}", dict(body, date="2020-01-02")).json
+    edited = imported.put_json(f"/api/concert-visits/{late['id']}", dict(body, date="2020-01-02")).json
     assert edited["date"] == "2020-01-02"
     assert edited["date_precision"] == "day"
 
@@ -751,7 +751,7 @@ def test_edit_person(imported: webtest.TestApp) -> None:
     bob = imported.put_json(f"/api/people/{ids['Bob Buddy']}", {"first_name": "Robert", "surname": "Buddy", "description": "x"}).json
     assert bob["name"] == "Robert Buddy"
     assert (bob["first_name"], bob["surname"]) == ("Robert", "Buddy")
-    louvre = next(m for m in imported.get("/api/museums").json if m["with"])
+    louvre = next(m for m in imported.get("/api/museum-visits").json if m["with"])
     assert louvre["with"] == ["Robert Buddy"]
     # no organizations sent: the person is linked to none
     assert bob["organizations"] == []
@@ -824,33 +824,33 @@ def test_add_edit_delete_organization(imported: webtest.TestApp, engine: Engine)
 def test_delete(imported: webtest.TestApp, engine: Engine) -> None:
     ids = people_ids(imported)
     imported.delete(f"/api/people/{ids['Alice Friend']}", status=204)
-    assert all("Alice Friend" not in c["with"] for c in imported.get("/api/concerts").json)
-    for concert in imported.get("/api/concerts").json:
-        imported.delete(f"/api/concerts/{concert['id']}", status=204)
-    assert imported.get("/api/concerts").json == []
+    assert all("Alice Friend" not in c["with"] for c in imported.get("/api/concert-visits").json)
+    for concert in imported.get("/api/concert-visits").json:
+        imported.delete(f"/api/concert-visits/{concert['id']}", status=204)
+    assert imported.get("/api/concert-visits").json == []
     with Session(engine) as session:
         # the concert photo went with its last concert; the museum one stays
         assert sorted(session.scalars(select(Image.filename)).all()) == ["acme.svg", "audiocourse-gc-337.jpg", "audiocourse-internal-1.jpg", "museum-15.jpg"]
         assert session.scalar(select(func.count()).select_from(concert_companions)) == 0
-    imported.delete("/api/concerts/1", status=404)
+    imported.delete("/api/concert-visits/1", status=404)
 
 
 def test_edit_replaces_photo_and_drops_the_old_one(imported: webtest.TestApp, engine: Engine) -> None:
     upload = imported.post("/api/images", upload_files=[("file", "new.jpg", JPEG)]).json
-    for concert in imported.get("/api/concerts").json:
+    for concert in imported.get("/api/concert-visits").json:
         if concert["image"]:
-            imported.put_json(f"/api/concerts/{concert['id']}", dict(concert, image_id=upload["id"], people=[], performers=[]))
+            imported.put_json(f"/api/concert-visits/{concert['id']}", dict(concert, image_id=upload["id"], people=[], performers=[]))
     with Session(engine) as session:
         assert "concert-the-band.jpg" not in session.scalars(select(Image.filename)).all()
 
 
 def test_others_cannot_touch(imported: webtest.TestApp) -> None:
-    concert = imported.get("/api/concerts").json[0]
+    concert = imported.get("/api/concert-visits").json[0]
     alice = people_ids(imported)["Alice Friend"]
     imported.post("/auth/logout")
     sign_in(imported, sub="someone-else")
-    imported.put_json(f"/api/concerts/{concert['id']}", {"name": "mine now"}, status=404)
-    imported.delete(f"/api/concerts/{concert['id']}", status=404)
+    imported.put_json(f"/api/concert-visits/{concert['id']}", {"name": "mine now"}, status=404)
+    imported.delete(f"/api/concert-visits/{concert['id']}", status=404)
     imported.delete(f"/api/people/{alice}", status=404)
     assert organization_ids(imported) == {}
     imported.post_json("/api/people", {"first_name": "x", "organizations": [1]}, status=400)
@@ -861,13 +861,13 @@ def test_others_cannot_touch(imported: webtest.TestApp) -> None:
     imported.post_json("/api/organizations", {"name": "x", "type_id": 1}, status=400)
     imported.put_json("/api/person-types/1", {"name": "mine now"}, status=404)
     imported.post_json("/api/people", {"first_name": "x", "type_ids": [1]}, status=400)
-    imported.post_json("/api/concerts", {"name": "x", "people": [alice]}, status=400)
+    imported.post_json("/api/concert-visits", {"name": "x", "people": [alice]}, status=400)
 
 
 # ─── stats ───────────────────────────────────────────────────────────────────
 
 def test_stats(imported: webtest.TestApp) -> None:
-    imported.post_json("/api/library", {"kind": "book", "title": "Dune", "status": "done"}, status=201)
+    imported.post_json("/api/library-entries", {"kind": "book", "title": "Dune", "status": "done"}, status=201)
     stats = imported.get("/api/stats").json
     assert (stats["concerts"], stats["museum_visits"], stats["museums"], stats["audio_courses"]) == (3, 3, 2, 2)
     assert (stats["people"], stats["organizations"], stats["images"]) == (5, 3, 5)

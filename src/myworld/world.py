@@ -226,7 +226,7 @@ def _newest_first(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(items, key=lambda item: (item["date_sort"], item["name"]), reverse=True)
 
 
-@bp.route("/api/concerts", methods=["GET"])
+@bp.route("/api/concert-visits", methods=["GET"])
 @auth.login_required
 def api_concerts() -> flask.Response:
     query = select(Concert).where(Concert.owner_id == flask.g.user.id).options(selectinload(Concert.people), selectinload(Concert.performers))
@@ -243,7 +243,7 @@ def api_audio_courses() -> flask.Response:
     return flask.jsonify(_newest_first([audio_course_json(c) for c in courses]))
 
 
-@bp.route("/api/youtube", methods=["GET"])
+@bp.route("/api/youtube-videos", methods=["GET"])
 @auth.login_required
 def api_youtube() -> flask.Response:
     query = select(YouTubeVideo).where(YouTubeVideo.owner_id == flask.g.user.id).options(selectinload(YouTubeVideo.device))
@@ -251,7 +251,7 @@ def api_youtube() -> flask.Response:
     return flask.jsonify(_newest_first([youtube_video_json(v) for v in videos]))
 
 
-@bp.route("/api/museums", methods=["GET"])
+@bp.route("/api/museum-visits", methods=["GET"])
 @auth.login_required
 def api_museums() -> flask.Response:
     query = select(Museum).where(Museum.owner_id == flask.g.user.id).options(selectinload(Museum.people))
@@ -549,7 +549,7 @@ def _apply_organization(organization: Organization, body: dict[str, Any]) -> Non
         organization.image_id = image_id
 
 
-@bp.route("/api/concerts", methods=["POST"])
+@bp.route("/api/concert-visits", methods=["POST"])
 @auth.login_required
 def api_concerts_add() -> tuple[flask.Response, int]:
     concert = Concert(owner_id=flask.g.user.id)
@@ -559,7 +559,7 @@ def api_concerts_add() -> tuple[flask.Response, int]:
     return flask.jsonify(concert_json(concert)), 201
 
 
-@bp.route("/api/concerts/<int:row_id>", methods=["PUT"])
+@bp.route("/api/concert-visits/<int:row_id>", methods=["PUT"])
 @auth.login_required
 def api_concerts_update(row_id: int) -> flask.Response:
     concert = _owned(Concert, row_id)
@@ -570,7 +570,7 @@ def api_concerts_update(row_id: int) -> flask.Response:
     return flask.jsonify(concert_json(concert))
 
 
-@bp.route("/api/museums", methods=["POST"])
+@bp.route("/api/museum-visits", methods=["POST"])
 @auth.login_required
 def api_museums_add() -> tuple[flask.Response, int]:
     museum = Museum(owner_id=flask.g.user.id)
@@ -580,7 +580,7 @@ def api_museums_add() -> tuple[flask.Response, int]:
     return flask.jsonify(museum_json(museum)), 201
 
 
-@bp.route("/api/museums/<int:row_id>", methods=["PUT"])
+@bp.route("/api/museum-visits/<int:row_id>", methods=["PUT"])
 @auth.login_required
 def api_museums_update(row_id: int) -> flask.Response:
     museum = _owned(Museum, row_id)
@@ -612,7 +612,7 @@ def api_audio_courses_update(row_id: int) -> flask.Response:
     return flask.jsonify(audio_course_json(course))
 
 
-@bp.route("/api/youtube", methods=["POST"])
+@bp.route("/api/youtube-videos", methods=["POST"])
 @auth.login_required
 def api_youtube_add() -> tuple[flask.Response, int]:
     video = YouTubeVideo(owner_id=flask.g.user.id)
@@ -622,7 +622,7 @@ def api_youtube_add() -> tuple[flask.Response, int]:
     return flask.jsonify(youtube_video_json(video)), 201
 
 
-@bp.route("/api/youtube/<int:row_id>", methods=["PUT"])
+@bp.route("/api/youtube-videos/<int:row_id>", methods=["PUT"])
 @auth.login_required
 def api_youtube_update(row_id: int) -> flask.Response:
     video = _owned(YouTubeVideo, row_id)
@@ -671,10 +671,10 @@ def api_organizations_update(row_id: int) -> flask.Response:
     return flask.jsonify(organization_json(organization))
 
 
-@bp.route("/api/<any(concerts, museums, 'audio-courses', youtube, people, organizations):what>/<int:row_id>", methods=["DELETE"])
+@bp.route("/api/<any('concert-visits', 'museum-visits', 'audio-courses', 'youtube-videos', people, organizations):what>/<int:row_id>", methods=["DELETE"])
 @auth.login_required
 def api_world_delete(what: str, row_id: int) -> flask.Response:
-    model = {"concerts": Concert, "museums": Museum, "audio-courses": AudioCourse, "youtube": YouTubeVideo, "people": Person, "organizations": Organization}[what]
+    model = {"concert-visits": Concert, "museum-visits": Museum, "audio-courses": AudioCourse, "youtube-videos": YouTubeVideo, "people": Person, "organizations": Organization}[what]
     # the ORM also removes the row's links (to people, to organizations, to concerts and museums)
     flask.g.db.delete(_owned(model, row_id))
     flask.g.db.flush()

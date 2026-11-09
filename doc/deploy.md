@@ -241,13 +241,13 @@ dropping the old free-text `people.company` column and renaming the
 first `companies` tables to `organizations`, then making
 `organization_types` and `organizations.type_id`, before deploying.
 
-- `GET /api/concerts`, `GET /api/museums`: newest first; the date comes as
+- `GET /api/concert-visits`, `GET /api/museum-visits`: newest first; the date comes as
   precisely as it is known (`date_precision`: time, day, month or year),
   and `people` holds the ids and names of who the user went with; a
   concert's `performers` are people too (ids and names). A museum visit
   also has `address`, `latitude` and `longitude` (`maps.md`), and `alone`:
   true when the user went alone, which is never sent with people.
-- `GET /api/youtube`: the YouTube videos watched, newest first (the
+- `GET /api/youtube-videos`: the YouTube videos watched, newest first (the
   watch history, with no dates, after), with `youtube_id`, rating,
   review, `device` (id and name), `watched_at`, and what YouTube says
   about it: `channel`, `category`, `duration` (seconds), `uploaded`,
@@ -268,7 +268,7 @@ a person is written with `type_ids`, a list.
   (how it is related to the user: ids and names of relation types), status, website, location, address, `latitude` and `longitude`, the logo as
   `image`, and `people` (ids and names).
 - `POST` to the same paths adds,
-  `PUT /api/<concerts|museums|audio-courses|youtube|people|organizations>/<id>` replaces the fields,
+  `PUT /api/<concert-visits|museum-visits|audio-courses|youtube-videos|people|organizations>/<id>` replaces the fields,
   `DELETE` removes. The date is typed as `YYYY`, `YYYY-MM` or
   `YYYY-MM-DD`; a date sent back exactly as it came keeps its stored
   precision, timestamps included. `people` and `organizations` are lists of
@@ -306,16 +306,19 @@ a person is written with `type_ids`, a list.
 
 The HTML under `src/myworld/html/` is static; `static/app.js` fetches
 `/api/config` (who is signed in, the kinds and statuses) and then reads and
-writes `/api/library` as JSON. The API is what a future mobile client or a
-script would use as well:
+writes `/api/library-entries` as JSON. The API is what a future mobile client or a
+script would use as well. A path for rows is named after their table,
+with hyphens for underscores (`library_entries` is
+`/api/library-entries`, `concert_visits` is `/api/concert-visits`); the
+others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
 
-- `GET /api/library[?kind=book]`: the user's entries.
-- `POST /api/library`: add (or update, if the work is already in the
+- `GET /api/library-entries[?kind=book]`: the user's entries.
+- `POST /api/library-entries`: add (or update, if the work is already in the
   library) with `kind`, `title`, `creator`, `year`, `status`, `rating`,
   `started_on`, `finished_on`, `notes`, and for films optionally
   `imdb_id`, `tmdb_id`, `rotten_tomatoes_id`.
-- `PUT /api/library/<work_id>`: update the per-user fields.
-- `DELETE /api/library/<work_id>`: remove from the library.
+- `PUT /api/library-entries/<work_id>`: update the per-user fields.
+- `DELETE /api/library-entries/<work_id>`: remove from the library.
 
 ## Data model
 

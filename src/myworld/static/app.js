@@ -538,7 +538,7 @@ function setupSidebar() {
 }
 
 async function loadEntries() {
-	state.entries = await api(`/api/library?kind=${encodeURIComponent(state.kind)}`);
+	state.entries = await api(`/api/library-entries?kind=${encodeURIComponent(state.kind)}`);
 	renderEntries();
 }
 
@@ -899,9 +899,9 @@ async function libraryPage() {
 		}
 		try {
 			if (state.editing) {
-				await api(`/api/library/${state.editing.work_id}`, { method: "PUT", body });
+				await api(`/api/library-entries/${state.editing.work_id}`, { method: "PUT", body });
 			} else {
-				await api("/api/library", { method: "POST", body });
+				await api("/api/library-entries", { method: "POST", body });
 			}
 			$("add-dialog").close();
 			await loadEntries();
@@ -1026,10 +1026,10 @@ function updateNavButtons() {
 
 // view -> [page title, API path, singular, sidebar label]; the rows are the signed-in user's own
 const WORLDS = {
-	concerts: ["My Concerts", "/api/concerts", "concert", "Concerts"],
-	museums: ["My Museums", "/api/museums", "museum", "Museums"],
+	concerts: ["My Concerts", "/api/concert-visits", "concert", "Concerts"],
+	museums: ["My Museums", "/api/museum-visits", "museum", "Museums"],
 	"audio-courses": ["Audio courses", "/api/audio-courses", "audio course", "Audio courses"],
-	youtube: ["YouTube videos", "/api/youtube", "YouTube video", "YouTube"],
+	youtube: ["YouTube videos", "/api/youtube-videos", "YouTube video", "YouTube"],
 	people: ["People", "/api/people", "person", "People"],
 	organizations: ["Organizations", "/api/organizations", "organization", "Organizations"],
 	"organization-types": ["Organization types", "/api/organization-types", "organization type", "Org"],
@@ -2755,7 +2755,7 @@ async function deleteEditing(button) {
 		$("add-dialog").close();
 		await refreshWorld();
 	} else {
-		await api(`/api/library/${state.editing.work_id}`, { method: "DELETE" });
+		await api(`/api/library-entries/${state.editing.work_id}`, { method: "DELETE" });
 		$("add-dialog").close();
 		await loadEntries();
 	}

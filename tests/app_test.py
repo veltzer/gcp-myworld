@@ -64,8 +64,8 @@ def test_library_requires_login(app: webtest.TestApp) -> None:
     assert response.status_int == 302
     assert response.location is not None
     assert response.location.endswith("/")
-    app.get("/api/library", status=401)
-    app.post_json("/api/library", {"kind": "book", "title": "x"}, status=401)
+    app.get("/api/library-entries", status=401)
+    app.post_json("/api/library-entries", {"kind": "book", "title": "x"}, status=401)
 
 
 def test_login_rejects_csrf_mismatch(app: webtest.TestApp) -> None:
@@ -108,9 +108,9 @@ def test_dev_login(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> Non
 
 def test_add_edit_delete(app: webtest.TestApp) -> None:
     sign_in(app)
-    assert app.get("/api/library?kind=book").json == []
+    assert app.get("/api/library-entries?kind=book").json == []
 
-    response = app.post_json("/api/library", {
+    response = app.post_json("/api/library-entries", {
         "kind": "book", "title": "Dune", "creator": "Frank Herbert", "year": "1965",
         "status": "done", "rating": 9, "finished_on": "2026-01-15", "notes": "spice",
     })
@@ -122,25 +122,25 @@ def test_add_edit_delete(app: webtest.TestApp) -> None:
     assert entry["finished_on"] == "2026-01-15"
     work_id = entry["work_id"]
 
-    [listed] = app.get("/api/library?kind=book").json
+    [listed] = app.get("/api/library-entries?kind=book").json
     assert listed["work_id"] == work_id
     # films are a separate shelf
-    assert app.get("/api/library?kind=film").json == []
+    assert app.get("/api/library-entries?kind=film").json == []
 
     # adding the same work again updates the existing entry
-    response = app.post_json("/api/library", {"kind": "book", "title": "Dune", "creator": "Frank Herbert", "year": 1965, "rating": 10})
+    response = app.post_json("/api/library-entries", {"kind": "book", "title": "Dune", "creator": "Frank Herbert", "year": 1965, "rating": 10})
     assert response.status_int == 200
     assert response.json["work_id"] == work_id
-    assert len(app.get("/api/library").json) == 1
+    assert len(app.get("/api/library-entries").json) == 1
 
-    updated = app.put_json(f"/api/library/{work_id}", {"status": "abandoned", "rating": "", "notes": "gave up"}).json
+    updated = app.put_json(f"/api/library-entries/{work_id}", {"status": "abandoned", "rating": "", "notes": "gave up"}).json
     assert updated["status"] == "abandoned"
     assert updated["rating"] is None
     assert updated["notes"] == "gave up"
 
-    app.delete(f"/api/library/{work_id}", status=204)
-    assert app.get("/api/library").json == []
-    app.delete(f"/api/library/{work_id}", status=404)
+    app.delete(f"/api/library-entries/{work_id}", status=204)
+    assert app.get("/api/library-entries").json == []
+    app.delete(f"/api/library-entries/{work_id}", status=404)
 
 
 def test_validation(app: webtest.TestApp) -> None:
@@ -156,31 +156,31 @@ def test_validation(app: webtest.TestApp) -> None:
         {"kind": "book", "title": ["x"]},
     ]
     for body in bad:
-        response = app.post_json("/api/library", body, status=400)
+        response = app.post_json("/api/library-entries", body, status=400)
         assert "error" in response.json
-    app.post("/api/library", "not json", status=400)
-    app.get("/api/library?kind=scroll", status=400)
+    app.post("/api/library-entries", "not json", status=400)
+    app.get("/api/library-entries?kind=scroll", status=400)
 
 
 def test_users_are_isolated(app: webtest.TestApp) -> None:
     sign_in(app, sub="alice")
-    entry = app.post_json("/api/library", {"kind": "film", "title": "Alien", "creator": "Ridley Scott", "year": 1979}).json
+    entry = app.post_json("/api/library-entries", {"kind": "film", "title": "Alien", "creator": "Ridley Scott", "year": 1979}).json
     work_id = entry["work_id"]
 
     app.post("/auth/logout")
     sign_in(app, sub="bob")
-    assert app.get("/api/library").json == []
+    assert app.get("/api/library-entries").json == []
     # bob cannot touch alice's entry, even though the work row is shared
-    app.put_json(f"/api/library/{work_id}", {"status": "done"}, status=404)
-    app.delete(f"/api/library/{work_id}", status=404)
+    app.put_json(f"/api/library-entries/{work_id}", {"status": "done"}, status=404)
+    app.delete(f"/api/library-entries/{work_id}", status=404)
 
     # bob adding the same film reuses the shared work row and gets his own entry
-    entry = app.post_json("/api/library", {"kind": "film", "title": "Alien", "creator": "Ridley Scott", "year": 1979, "rating": 7}).json
+    entry = app.post_json("/api/library-entries", {"kind": "film", "title": "Alien", "creator": "Ridley Scott", "year": 1979, "rating": 7}).json
     assert entry["work_id"] == work_id
     assert entry["rating"] == 7
     app.post("/auth/logout")
     sign_in(app, sub="alice")
-    [entry] = app.get("/api/library").json
+    [entry] = app.get("/api/library-entries").json
     assert entry["rating"] is None
 
 
@@ -232,10 +232,10 @@ def test_email_login_rejects_wrong_credentials(app: webtest.TestApp) -> None:
 def test_email_account_is_separate_from_google_account(app: webtest.TestApp) -> None:
     # the Google user in FAKE_CLAIMS has the same email; the accounts must not merge
     sign_in(app)
-    app.post_json("/api/library", {"kind": "book", "title": "Dune"})
+    app.post_json("/api/library-entries", {"kind": "book", "title": "Dune"})
     app.post("/auth/logout")
     app.post_json("/auth/email/register", {"email": "alice@example.com", "password": "correct horse"})
-    assert app.get("/api/library").json == []
+    assert app.get("/api/library-entries").json == []
     # a Google account cannot be entered through the password form
     app.post("/auth/logout")
     app.post_json("/auth/email/login", {"email": "alice@example.com", "password": "anything at all"}, status=401)

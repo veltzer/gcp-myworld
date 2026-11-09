@@ -129,24 +129,24 @@ def test_lookup_failure(app: webtest.TestApp) -> None:
 
 def test_ids_are_stored_with_the_work(app: webtest.TestApp) -> None:
     sign_in(app)
-    entry = app.post_json("/api/library", {
+    entry = app.post_json("/api/library-entries", {
         "kind": "film", "title": "Dune", "creator": "Denis Villeneuve", "year": 2021,
         "imdb_id": "tt1160419", "tmdb_id": "438631", "rotten_tomatoes_id": "m/dune_2021",
     }).json
     assert entry["imdb_id"] == "tt1160419"
     assert entry["tmdb_id"] == 438631
     assert entry["rotten_tomatoes_id"] == "m/dune_2021"
-    [listed] = app.get("/api/library?kind=film").json
+    [listed] = app.get("/api/library-entries?kind=film").json
     assert listed["tmdb_id"] == 438631
 
     # adding the same film again without ids keeps them; with different ids updates them
-    again = app.post_json("/api/library", {"kind": "film", "title": "Dune", "creator": "Denis Villeneuve", "year": 2021}).json
+    again = app.post_json("/api/library-entries", {"kind": "film", "title": "Dune", "creator": "Denis Villeneuve", "year": 2021}).json
     assert again["work_id"] == entry["work_id"]
     assert again["imdb_id"] == "tt1160419"
     bad = {"kind": "film", "title": "Dune", "creator": "Denis Villeneuve", "year": 2021, "tmdb_id": "not a number"}
-    app.post_json("/api/library", bad, status=400)
+    app.post_json("/api/library-entries", bad, status=400)
 
     # a book has no ids
-    book = app.post_json("/api/library", {"kind": "book", "title": "Dune", "creator": "Frank Herbert", "year": 1965}).json
+    book = app.post_json("/api/library-entries", {"kind": "book", "title": "Dune", "creator": "Frank Herbert", "year": 1965}).json
     assert book["imdb_id"] == ""
     assert book["tmdb_id"] is None

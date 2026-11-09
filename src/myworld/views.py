@@ -136,7 +136,7 @@ def api_config() -> flask.Response:
     })
 
 
-@bp.route("/api/library", methods=["GET"])
+@bp.route("/api/library-entries", methods=["GET"])
 @auth.login_required
 def api_library_list() -> flask.Response:
     """ The signed-in user's entries, optionally only those of one kind. """
@@ -148,7 +148,7 @@ def api_library_list() -> flask.Response:
     return flask.jsonify([_entry_json(e) for e in entries])
 
 
-@bp.route("/api/library", methods=["POST"])
+@bp.route("/api/library-entries", methods=["POST"])
 @auth.login_required
 def api_library_add() -> tuple[flask.Response, int]:
     body = json_body()
@@ -175,7 +175,7 @@ def api_library_add() -> tuple[flask.Response, int]:
     return flask.jsonify(_entry_json(entry)), 201 if created else 200
 
 
-@bp.route("/api/library/<int:work_id>", methods=["PUT"])
+@bp.route("/api/library-entries/<int:work_id>", methods=["PUT"])
 @auth.login_required
 def api_library_update(work_id: int) -> flask.Response:
     entry = _own_entry(work_id)
@@ -184,7 +184,7 @@ def api_library_update(work_id: int) -> flask.Response:
     return flask.jsonify(_entry_json(entry))
 
 
-@bp.route("/api/library/<int:work_id>", methods=["DELETE"])
+@bp.route("/api/library-entries/<int:work_id>", methods=["DELETE"])
 @auth.login_required
 def api_library_delete(work_id: int) -> flask.Response:
     entry = _own_entry(work_id)
