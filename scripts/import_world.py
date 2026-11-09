@@ -707,12 +707,34 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
     """
     Add owner's books from source, with their covers: a library entry for
     each book owner does not have yet (the work, which is shared, is reused
-    when there is one), so it can run again. Does not commit.
+    when there is one), so it can run again. An entry owner has already only
+    gets its cover, when it has none and source has one now. Does not commit.
     """
     items = _book_items(source)
     image_dir = source / "static" / "images"
     stored = {image.filename: image for image in session.scalars(select(Image).where(Image.owner_id == owner.id))}
-    added = skipped = images = uncovered = 0
+    added = skipped = images = uncovered = covered = 0
+
+    def book_cover(goodreads_id: str, simania_id: str) -> Image | None:
+        """ The book's cover, stored once per owner; None when veltzer.github.io has none (a few books). """
+        nonlocal images
+        name = f"book-goodreads-{goodreads_id}.jpg" if goodreads_id else f"book-simania-{simania_id}.jpg" if simania_id else ""
+        path = image_dir / name
+        if not name or not path.exists():
+            return None
+        data = path.read_bytes()
+        sha256 = hashlib.sha256(data).hexdigest()
+        cover = stored.get(name)
+        if cover is not None and cover.sha256 != sha256:
+            raise WorldImportError(f"{path}: an image of that name is stored already, with other contents")
+        if cover is None:
+            cover = Image(owner_id=owner.id, filename=name, content_type="image/jpeg", sha256=sha256, data=data)
+            session.add(cover)
+            session.flush()
+            stored[name] = cover
+            images += 1
+        return cover
+
     for item in items:
         title = _english_first(item["names"])["name"]
         creator = ", ".join(_english_first(alternatives)["name"] for alternatives in item["authors"])
@@ -729,25 +751,17 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
         work.simania_id = work.simania_id or str(simania_id)
         work.external_id = work.external_id or str(item.get("isbn", ""))
         session.flush()
-        if session.get(UserWork, (owner.id, work.id)) is not None:
+        entry = session.get(UserWork, (owner.id, work.id))
+        if entry is not None:
             skipped += 1
+            # a cover added to veltzer.github.io since: given to an entry that has none
+            if entry.image_id is None:
+                cover = book_cover(goodreads_id, simania_id)
+                if cover is not None:
+                    entry.image_id = cover.id
+                    covered += 1
             continue
-        cover = None
-        name = f"book-goodreads-{goodreads_id}.jpg" if goodreads_id else f"book-simania-{simania_id}.jpg" if simania_id else ""
-        path = image_dir / name
-        # veltzer.github.io has no cover for a few books either
-        if name and path.exists():
-            data = path.read_bytes()
-            sha256 = hashlib.sha256(data).hexdigest()
-            cover = stored.get(name)
-            if cover is not None and cover.sha256 != sha256:
-                raise WorldImportError(f"{path}: an image of that name is stored already, with other contents")
-            if cover is None:
-                cover = Image(owner_id=owner.id, filename=name, content_type="image/jpeg", sha256=sha256, data=data)
-                session.add(cover)
-                session.flush()
-                stored[name] = cover
-                images += 1
+        cover = book_cover(goodreads_id, simania_id)
         readings = item["readings"]
         # the latest dated reading, or else the last one listed
         dated = sorted((r for r in readings if not r.get("undated")), key=lambda r: str(r["date"]))
@@ -769,7 +783,10 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
         added += 1
         uncovered += cover is None
     session.flush()
-    return {"books": added, "books there already": skipped, "covers": images, "books with no cover": uncovered}
+    return {
+        "books": added, "books there already": skipped, "covers": images,
+        "covers given to books there already": covered, "books with no cover": uncovered,
+    }
 
 
 def import_youtube(session: Session, owner: User, source: Path) -> dict[str, int]:

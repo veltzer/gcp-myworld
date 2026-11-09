@@ -265,7 +265,8 @@ first `companies` tables to `organizations`, then making
   the rating and review of `text_books.yaml`) by
   `scripts/import_world.py --books`, which adds the books the account does
   not have yet and can run again; the covers come from
-  `static/images/book-*.jpg`. A book read is Done, one only owned is Want
+  `static/images/book-*.jpg`, and a book the account has already gets its
+  cover when it has none and the site has one now. A book read is Done, one only owned is Want
   to. Its rating, review and finish date are those of its latest dated
   reading; the other readings, the languages read and owned, the names in
   other languages, the publisher and the remark go into its notes.

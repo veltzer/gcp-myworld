@@ -496,8 +496,21 @@ def test_books_import_adds_once(imported: webtest.TestApp, engine: Engine, tmp_p
         counts = import_world.import_books(session, owner(session), source)
         session.commit()
     # the deleted one comes back, on the work there already, and its cover is stored again
-    assert counts == {"books": 1, "books there already": 2, "covers": 1, "books with no cover": 0}
+    assert counts == {"books": 1, "books there already": 2, "covers": 1, "covers given to books there already": 0, "books with no cover": 0}
     assert len(imported.get("/api/library-entries?kind=book").json) == 3
+
+
+def test_books_import_adds_a_new_cover(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    source = write_source(tmp_path / "again")
+    # the site has a cover for Chess now: running the import again gives it to the entry, and nothing else changes
+    (source / "static" / "images" / "book-simania-11971.jpg").write_bytes(b"\xff\xd8chess")
+    with Session(engine) as session:
+        counts = import_world.import_books(session, owner(session), source)
+        session.commit()
+    assert counts == {"books": 0, "books there already": 3, "covers": 1, "covers given to books there already": 1, "books with no cover": 0}
+    books = {b["title"]: b for b in imported.get("/api/library-entries?kind=book").json}
+    assert imported.get(books["Chess"]["image"]).body == b"\xff\xd8chess"
+    assert imported.get(books["The Hobbit"]["image"]).body == b"\xff\xd8hobbit"
 
 
 def test_books_unknown_field(engine: Engine, tmp_path: Path, app: webtest.TestApp) -> None:
