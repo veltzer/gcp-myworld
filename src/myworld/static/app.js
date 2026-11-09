@@ -1356,10 +1356,19 @@ function cardShell(item, subtitle, kind = "photo") {
 		img.alt = "";
 		img.loading = "lazy";
 		card.appendChild(img);
+	} else if (kind === "cover") {
+		// a book, film or album without a cover gets a blank one that says so, laid
+		// out in every layout like a real cover
+		card.classList.add("has-image", "is-cover");
+		const slot = el("div", "world-image cover-slot");
+		const blank = el("div", "cover-blank");
+		blank.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/></svg>';
+		blank.appendChild(el("span", null, "No cover"));
+		slot.appendChild(blank);
+		card.appendChild(slot);
 	} else {
-		// an empty slot where the image would be, of the same shape (a narrow one for a
-		// cover): the list layout keeps every row of a view the same shape
-		card.appendChild(el("div", `world-image no-image slot-${kind}`));
+		// an empty slot where the image would be: the list layout keeps every row the same shape
+		card.appendChild(el("div", "world-image no-image"));
 	}
 	const body = el("div", "world-body");
 	body.appendChild(el("h2", "world-title", item.name));
