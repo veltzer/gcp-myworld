@@ -420,8 +420,9 @@ function libraryCard(entry) {
 }
 
 // the sidebar's groups of views (the library's kinds come first, from the config)
+// The library kinds (books) come first in Datasets, ahead of these
 const NAV_GROUPS = [
-	["Experiences", ["concerts", "museums", "audio-courses", "youtube"]],
+	["Datasets", ["concerts", "museums", "audio-courses", "youtube"]],
 	["People", ["people", "organizations"]],
 	["Types", ["organization-types", "person-types", "relation-types", "devices"]],
 ];
@@ -453,12 +454,12 @@ function renderKinds() {
 			a.dataset.kind = kind;
 			return a;
 		});
-		const groups = NAV_GROUPS.map(([heading, views]) => sideGroup(heading, views.map((view) => {
+		const groups = NAV_GROUPS.map(([heading, views], i) => sideGroup(heading, [...(i === 0 ? library : []), ...views.map((view) => {
 			const a = sideLink(WORLDS[view][3], view, () => selectWorld(view).catch((e) => showError(e.message)));
 			a.dataset.world = view;
 			return a;
-		})));
-		nav.append(sideGroup("Library", library), ...groups);
+		})]));
+		nav.append(...groups);
 	}
 	markActive();
 }
