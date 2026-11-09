@@ -321,7 +321,7 @@ with hyphens for underscores (`library_entries` is
 others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
 
 - `GET /api/library-entries[?kind=book]`: the user's entries, each with
-  `image`, its cover (the user's own image, shown before the title).
+  `image`, its cover (the user's own image, the picture on its card).
 - `POST /api/library-entries`: add (or update, if the work is already in the
   library) with `kind`, `title`, `creator`, `year`, `status`, `rating`,
   `started_on`, `finished_on`, `notes`, `image_id` (an upload, see

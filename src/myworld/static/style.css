@@ -694,14 +694,9 @@ button.danger {
 	color: var(--muted);
 }
 
-/* a library entry's cover, before its title */
-.cover-thumb {
-	width: 2rem;
-	height: 3rem;
-	object-fit: cover;
-	vertical-align: middle;
-	margin-right: 0.5rem;
-	border-radius: 2px;
+/* a library card's catalog links, under its title */
+.world-body > .ids {
+	margin: 0.25rem 0 0;
 }
 
 .ids {
@@ -917,6 +912,14 @@ button.danger {
 	background: #fff;
 }
 
+/* a book, film or album cover: portrait, shown whole on a card */
+.world-card.is-cover .world-image {
+	aspect-ratio: 2 / 3;
+	max-height: 18rem;
+	object-fit: contain;
+	background: #f3f4f6;
+}
+
 /* cards: the image on top, the text under it */
 .layout-cards .world-card.is-logo .world-image {
 	border-bottom: 1px solid var(--line);
@@ -990,6 +993,12 @@ button.danger {
 	margin-right: 1rem;
 }
 
+.layout-list .world-card.is-cover .world-image {
+	width: 4.5rem;
+	max-height: none;
+	object-fit: cover;
+}
+
 .layout-list .credit {
 	display: none;
 }
@@ -1012,23 +1021,36 @@ button.danger {
 	flex: 1;
 }
 
-.layout-tiles .world-card.is-photo {
+.layout-tiles .world-card.is-cover .world-image {
+	max-height: none;
+	object-fit: cover;
+}
+
+.layout-tiles .world-card.is-photo,
+.layout-tiles .world-card.is-cover {
 	color: #fff;
 	border-color: transparent;
 }
 
-.layout-tiles .world-card.is-photo .world-body {
+.layout-tiles .world-card.is-photo .world-body,
+.layout-tiles .world-card.is-cover .world-body {
 	background: linear-gradient(rgb(0 0 0 / 55%), rgb(0 0 0 / 75%));
 }
 
 .layout-tiles .world-card.is-photo .world-subtitle,
+.layout-tiles .world-card.is-cover .world-subtitle,
 .layout-tiles .world-card.is-photo .world-details .label,
-.layout-tiles .world-card.is-photo .credit {
+.layout-tiles .world-card.is-cover .world-details .label,
+.layout-tiles .world-card.is-photo .credit,
+.layout-tiles .world-card.is-cover .credit {
 	color: rgb(255 255 255 / 75%);
 }
 
 .layout-tiles .world-card.is-photo .person-link,
-.layout-tiles .world-card.is-photo .world-details a {
+.layout-tiles .world-card.is-cover .person-link,
+.layout-tiles .world-card.is-photo .world-details a,
+.layout-tiles .world-card.is-cover .world-details a,
+.layout-tiles .world-card.is-cover .ids a {
 	color: #bfdbfe;
 }
 
@@ -1047,6 +1069,20 @@ button.danger {
 	aspect-ratio: 4 / 3;
 	justify-content: flex-end;
 	background: var(--line);
+}
+
+.layout-gallery .world-card.is-cover {
+	aspect-ratio: 2 / 3;
+}
+
+.layout-gallery .world-card.is-cover .world-image {
+	max-height: none;
+	object-fit: cover;
+}
+
+.layout-gallery .world-card.is-cover .world-body {
+	color: #fff;
+	background: linear-gradient(transparent, rgb(0 0 0 / 70%));
 }
 
 .layout-gallery .world-image {
@@ -1076,6 +1112,7 @@ button.danger {
 
 .layout-gallery .world-subtitle,
 .layout-gallery .world-details,
+.layout-gallery .ids,
 .layout-gallery .credit {
 	display: none;
 }

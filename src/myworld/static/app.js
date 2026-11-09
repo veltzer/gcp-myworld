@@ -197,15 +197,6 @@ function fillStatuses(select, selected) {
 	}
 }
 
-function cell(parent, className) {
-	const td = document.createElement("td");
-	if (className) {
-		td.className = className;
-	}
-	parent.appendChild(td);
-	return td;
-}
-
 // [field, label, url of the work on that catalog, id of the "open" link in the add form (films only)]
 const CATALOGS = [
 	["imdb_id", "IMDb", (id) => `https://www.imdb.com/title/${id}/`, "imdb-link"],
@@ -398,30 +389,27 @@ function editable(node, item) {
 	};
 }
 
-function renderRow(entry) {
-	const tr = document.createElement("tr");
-	const title = cell(tr, "title");
-	if (entry.image) {
-		const cover = el("img", "cover-thumb");
-		cover.src = entry.image;
-		cover.alt = "";
-		cover.loading = "lazy";
-		title.appendChild(cover);
-	}
-	title.append(entry.title);
+// A library entry as a card, laid out like every other card view; its cover
+// is the image, the catalog links (IMDb, Goodreads, ...) sit under the title.
+function libraryCard(entry) {
+	const { creator } = state.config.kinds[state.kind];
+	const { card, body, list } = cardShell({ ...entry, name: entry.title }, [entry.creator, entry.year].filter(Boolean).join(", "), "cover");
+	// the dialog edits the entry as it is
+	editable(card, entry);
 	const links = catalogLinks(entry);
 	if (links) {
-		title.appendChild(links);
+		body.insertBefore(links, list);
 	}
-	cell(tr).textContent = entry.creator;
-	cell(tr).textContent = entry.year ?? "";
-	cell(tr).textContent = state.config.statuses[entry.status] || entry.status;
-	cell(tr).textContent = entry.rating ?? "";
-	cell(tr).textContent = entry.started_on ?? "";
-	cell(tr).textContent = entry.finished_on ?? "";
-	cell(tr).textContent = entry.notes;
-	editable(tr, entry);
-	return tr;
+	detail(list, creator, entry.creator);
+	detail(list, "Year", entry.year === null ? "" : String(entry.year));
+	detail(list, "Status", state.config.statuses[entry.status] || entry.status);
+	if (entry.rating !== null) {
+		detail(list, "Rating", `${entry.rating}/${state.config.rating_max}`);
+	}
+	detail(list, "Started", entry.started_on ?? "");
+	detail(list, "Finished", entry.finished_on ?? "");
+	detail(list, "Notes", entry.notes);
+	return card;
 }
 
 // the sidebar's groups of views (the library's kinds come first, from the config)
@@ -551,13 +539,13 @@ async function loadEntries() {
 	renderEntries();
 }
 
-// The library table: searched and sorted with the same toolbar as every other tab.
+// The library's cards: searched and sorted with the same toolbar as every other tab.
 function renderEntries() {
 	const { plural } = state.config.kinds[state.kind];
 	const shown = rankBySearch(sortItems(state.entries.filter(searchMatches)));
 	setCount(state.kind, state.entries.length);
-	$("rows").replaceChildren(...shown.map(renderRow));
-	$("entries").hidden = shown.length === 0;
+	$("library-cards").replaceChildren(...shown.map(libraryCard));
+	$("library-cards").hidden = shown.length === 0;
 	$("empty").hidden = state.entries.length !== 0;
 	$("empty").textContent = `No ${plural.toLowerCase()} yet. Add one with the + button.`;
 	showCount(shown.length, state.entries.length, plural.toLowerCase());
@@ -777,7 +765,7 @@ function updateTools() {
 	// the stats, users and checks pages have nothing to search or add: both stay, disabled
 	$("world-search").disabled = PAGES.has(state.view);
 	$("fab").disabled = PAGES.has(state.view);
-	const cards = state.view in CARDS;
+	const cards = state.view in CARDS || state.view in state.config.kinds;
 	for (const layout of $("layouts").querySelectorAll("button")) {
 		layout.disabled = !cards || (layout.dataset.layout === "map" && !MAPPED.has(state.view));
 	}
@@ -822,7 +810,6 @@ async function selectKind(kind) {
 	const { plural, creator } = state.config.kinds[kind];
 	document.title = `${plural} - My World`;
 	$("creator-label").textContent = creator;
-	$("creator-column").textContent = creator;
 	renderKinds();
 	showError("");
 	await loadEntries();
@@ -1052,7 +1039,11 @@ const WORLDS = {
 const TYPED = { people: "person-types", organizations: "organization-types" };
 
 // the id of the form, row or card of a view: "organization type" -> "organization-type"
+// a view's name in ids: a world's noun ("museum-visit"), or a library kind ("book")
 function slug(view) {
+	if (!(view in WORLDS)) {
+		return view;
+	}
 	return WORLDS[view][2].toLowerCase().replace(/ /g, "-");
 }
 
@@ -1171,7 +1162,9 @@ function savedLayout() {
 function applyLayout(layout) {
 	state.layout = layout;
 	for (const name of Object.keys(LAYOUTS)) {
-		$("cards").classList.toggle(`layout-${name}`, name === layout);
+		for (const box of [$("cards"), $("library-cards")]) {
+			box.classList.toggle(`layout-${name}`, name === layout);
+		}
 	}
 	for (const button of $("layouts").querySelectorAll("button")) {
 		button.setAttribute("aria-pressed", String(button.dataset.layout === layout));
