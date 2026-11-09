@@ -130,7 +130,7 @@
 							<th>First name</th>
 							<th>Middle name</th>
 							<th>Surname</th>
-							<th>Type</th>
+							<th>Professions</th>
 							<th>Organizations</th>
 							<th>Relations</th>
 							<th>Description</th>
@@ -392,7 +392,7 @@
 					<label>Surname <input name="surname" pattern="\S*" title="One word, without spaces: hyphenate a surname of two words (Di-Meola)"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Types <select multiple data-chips="person-types" data-field="types" data-placeholder="Type a person type"><option value=""></option></select></label>
+					<label class="wide">Professions <select multiple data-chips="person-types" data-field="types" data-placeholder="Type a profession"><option value=""></option></select></label>
 					<label class="wide">Organizations <select multiple data-chips="organizations" data-field="organizations" data-placeholder="Type a name from Organizations"><option value=""></option></select></label>
 				</div>
 				<div class="row">
@@ -499,9 +499,9 @@
 					<button type="submit">Add</button>
 				</div>
 			</form>
-			<form id="person-type-form" class="dialog-form" hidden>
+			<form id="profession-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Name <input name="name" required placeholder="e.g. Friend"></label>
+					<label class="wide">Name <input name="name" required placeholder="e.g. Programmer"></label>
 				</div>
 				<div class="row">
 					<label class="wide">Description <input name="description"></label>

@@ -285,6 +285,9 @@ class Person(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # the account owner themselves: the person other people are friends,
+    # co-workers or girlfriends of (one per account, made by the import)
+    is_self: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     # "Dr.", "Sir": one word, before the first name; usually empty
     honorific: Mapped[str] = mapped_column(String(50), nullable=False, default="", server_default="")
     first_name: Mapped[str] = mapped_column(String(200), nullable=False, default="")

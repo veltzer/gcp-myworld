@@ -23,6 +23,7 @@ from myworld.models import (
     Organization,
     OrganizationType,
     Person,
+    PersonType,
     User,
     YouTubeVideo,
     concert_companions,
@@ -269,7 +270,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         counts = import_world.import_world(session, owner(session), write_source(tmp_path))
         session.commit()
     assert counts == {
-        "people": 7, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 6, "people with a type": 5,
+        "people": 7, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 3, "people with a profession": 4, "people related to the user": 2,
         "concerts": 3, "places": 1, "museums": 3, "audio courses": 2, "YouTube videos": 4, "devices": 3, "books": 3, "images": 7}
     return app
 
@@ -314,9 +315,9 @@ def test_person_relations(imported: webtest.TestApp) -> None:
     listed = {p["name"]: p for p in imported.get("/api/people").json}
     assert [(r["type"], r["person"]["id"]) for r in listed["Alice Friend"]["related"]] == [("Child of", ann["id"])]
     # one that reads the same both ways has no inverse
-    friend = imported.post_json("/api/person-relation-types", {"name": "Friend of", "description": "A friend"}, status=201).json
+    friend = imported.post_json("/api/person-relation-types", {"name": "Pen pal of", "description": "Writes letters"}, status=201).json
     imported.put_json(f"/api/people/{bob}", {"first_name": "Bob", "surname": "Buddy", "relations": [{"type_id": friend["id"], "person_id": alice}]})
-    assert "Friend of Bob Buddy" in [r["name"] for r in next(p for p in imported.get("/api/people").json if p["id"] == alice)["related"]]
+    assert "Pen pal of Bob Buddy" in [r["name"] for r in next(p for p in imported.get("/api/people").json if p["id"] == alice)["related"]]
     # an edit without relations keeps them; the user's own types and people only, never oneself
     imported.put_json(f"/api/people/{ann['id']}", {"first_name": "Ann", "description": "x"})
     assert len(next(p for p in imported.get("/api/people").json if p["id"] == ann["id"])["relations"]) == 1
@@ -328,7 +329,7 @@ def test_person_relations(imported: webtest.TestApp) -> None:
     # deleting a person takes their relations, both ways, with them
     imported.delete(f"/api/people/{ann['id']}", status=204)
     assert next(p for p in imported.get("/api/people").json if p["id"] == alice)["related"] == [
-        {"type_id": friend["id"], "type": "Friend of", "person": {"id": bob, "name": "Bob Buddy"}, "name": "Friend of Bob Buddy"},
+        {"type_id": friend["id"], "type": "Pen pal of", "person": {"id": bob, "name": "Bob Buddy"}, "name": "Pen pal of Bob Buddy"},
     ]
     imported.delete(f"/api/person-relation-types/{kinds['Mother of']['id']}", status=204)
 
@@ -664,14 +665,16 @@ def test_people_links_point_at_people(imported: webtest.TestApp) -> None:
 
 def test_people(imported: webtest.TestApp) -> None:
     people = imported.get("/api/people").json
-    # Robert Greenberg is a lecturer of audio_courses.yaml, Erich Kestner and J.R.R. Tolkien authors of books_read.yaml
-    assert [p["name"] for p in people] == ["Alice Friend", "Bob Buddy", "Erich Kestner", "J.R.R. Tolkien", "Robert Greenberg", "Singer", "The Band"]
-    alice, bob, *_ = people
+    # Robert Greenberg is a lecturer of audio_courses.yaml, Erich Kestner and J.R.R. Tolkien authors of books_read.yaml;
+    # Alice is the account owner's own person, the one the others are related to
+    assert [p["name"] for p in people] == ["Alice", "Alice Friend", "Bob Buddy", "Erich Kestner", "J.R.R. Tolkien", "Robert Greenberg", "Singer", "The Band"]
+    me, alice, bob, *_ = people
+    assert (me["is_self"], alice["is_self"]) == (True, False)
     assert alice["description"] == "Old friend"
     assert [c["name"] for c in alice["organizations"]] == ["Startup"]
     assert [c["name"] for c in bob["organizations"]] == ["Acme", "Startup"]
     # only the person and their organizations: their concerts and museums are not listed next to them
-    assert set(alice) == {"id", "name", "honorific", "first_name", "middle_name", "surname", "relations", "related", "types", "organizations", "description"}
+    assert set(alice) == {"id", "name", "is_self", "honorific", "first_name", "middle_name", "surname", "relations", "related", "types", "organizations", "description"}
 
 
 def test_organizations(imported: webtest.TestApp) -> None:
@@ -708,32 +711,67 @@ def test_organization_types(imported: webtest.TestApp) -> None:
     assert by_name["Acme"]["type"]["name"] == "Company"
 
 
-def test_person_types(imported: webtest.TestApp) -> None:
-    types = {t["name"]: t for t in imported.get("/api/person-types").json}
-    assert sorted(types) == sorted(import_world.PERSON_TYPES)
-    people = {p["name"]: [t["name"] for t in p["types"]] for p in imported.get("/api/people").json}
-    # Alice and Bob are at organizations; the two performers people.yaml does not have are Performers
-    assert people["Alice Friend"] == ["Co-Worker"]
-    assert people["Bob Buddy"] == ["Co-Worker"]
-    assert people["Singer"] == ["Performer"]
-    assert people["The Band"] == ["Performer"]
-    assert types["Performer"]["count"] == 2
-    friend = imported.post_json("/api/person-types", {"name": "Friend"}, status=201).json
-    alice = next(p for p in imported.get("/api/people").json if p["name"] == "Alice Friend")
-    neighbor = imported.post_json("/api/person-types", {"name": "Neighbor"}, status=201).json
-    # a person may be of several types at once
+def test_professions_and_relations(imported: webtest.TestApp) -> None:
+    professions = {t["name"]: t for t in imported.get("/api/person-types").json}
+    assert sorted(professions) == sorted(import_world.PERSON_TYPES)
+    people = {p["name"]: p for p in imported.get("/api/people").json}
+    me = people["Alice"]
+    # who performed is a Performer (Bob too, who is also a co-worker: one
+    # need not choose); Alice and Bob, at organizations, are the user's
+    # co-workers: a relation to the user's own person, not a person type
+    assert [t["name"] for t in people["Singer"]["types"]] == ["Performer"]
+    assert [t["name"] for t in people["Bob Buddy"]["types"]] == ["Performer"]
+    assert professions["Performer"]["count"] == 3
+    assert people["Alice Friend"]["types"] == []
+    assert [r["name"] for r in people["Alice Friend"]["relations"]] == ["Co-worker of Alice"]
+    assert sorted(r["name"] for r in me["related"]) == ["Co-worker of Alice Friend", "Co-worker of Bob Buddy"]
+    # a person may have several professions, several relations to people and several organizations
+    kinds = {k["name"]: k["id"] for k in imported.get("/api/person-relation-types").json}
+    organizations = {o["name"]: o["id"] for o in imported.get("/api/organizations").json}
+    programmer = imported.post_json("/api/person-types", {"name": "Programmer"}, status=201).json
+    alice = people["Alice Friend"]
     edited = imported.put_json(f"/api/people/{alice['id']}", {
-        "first_name": "Alice", "surname": "Friend", "type_ids": [neighbor["id"], friend["id"]],
+        "first_name": "Alice", "surname": "Friend",
+        "type_ids": [programmer["id"], professions["Performer"]["id"]],
+        "relations": [{"type_id": kinds["Co-worker of"], "person_id": me["id"]}, {"type_id": kinds["Friend of"], "person_id": people["Bob Buddy"]["id"]}],
+        "organizations": [organizations["Acme"], organizations["Old School"], organizations["Startup"]],
     }).json
-    assert edited["types"] == [{"id": friend["id"], "name": "Friend"}, {"id": neighbor["id"], "name": "Neighbor"}]
+    assert [t["name"] for t in edited["types"]] == ["Performer", "Programmer"]
+    assert [r["name"] for r in edited["relations"]] == ["Co-worker of Alice", "Friend of Bob Buddy"]
+    assert [o["name"] for o in edited["organizations"]] == ["Acme", "Old School", "Startup"]
     counts = {t["name"]: t["count"] for t in imported.get("/api/person-types").json}
-    assert (counts["Friend"], counts["Neighbor"], counts["Co-Worker"]) == (1, 1, 1)
-    imported.delete(f"/api/person-types/{friend['id']}", status=409)
+    assert (counts["Programmer"], counts["Performer"]) == (1, 4)
+    imported.delete(f"/api/person-types/{programmer['id']}", status=409)
     imported.put_json(f"/api/people/{alice['id']}", {"first_name": "Alice", "type_ids": [9999]}, status=400)
-    imported.put_json(f"/api/people/{alice['id']}", {"first_name": "Alice", "type_ids": friend["id"]}, status=400)
-    # taking a type off frees it for deleting
-    imported.put_json(f"/api/people/{alice['id']}", {"first_name": "Alice", "type_ids": [neighbor["id"]]})
-    imported.delete(f"/api/person-types/{friend['id']}", status=204)
+    imported.put_json(f"/api/people/{alice['id']}", {"first_name": "Alice", "type_ids": programmer["id"]}, status=400)
+    # taking a profession off frees it for deleting
+    imported.put_json(f"/api/people/{alice['id']}", {"first_name": "Alice", "type_ids": []})
+    imported.delete(f"/api/person-types/{programmer['id']}", status=204)
+
+
+def test_person_types_that_are_relations_become_relations(imported: webtest.TestApp, engine: Engine) -> None:
+    # a database from before: Friend and Family were person types
+    with Session(engine) as session:
+        user = owner(session)
+        friend = PersonType(owner_id=user.id, name="Friend", description="A friend")
+        family = PersonType(owner_id=user.id, name="Family", description="A relative")
+        bob = session.scalars(select(Person).where(Person.first_name == "Bob")).one()
+        singer = session.scalars(select(Person).where(Person.first_name == "Singer")).one()
+        bob.types.append(friend)
+        singer.types.append(family)
+        session.commit()
+        counts = import_world.give_types(session, user)
+        session.commit()
+    assert (counts["person types made relations"], counts["types added"]) == (2, 0)
+    people = {p["name"]: p for p in imported.get("/api/people").json}
+    # each is a relation to the user's own person now, and the types are gone; a profession stays
+    assert sorted(r["name"] for r in people["Bob Buddy"]["relations"]) == ["Co-worker of Alice", "Friend of Alice"]
+    assert ([t["name"] for t in people["Singer"]["types"]], [r["name"] for r in people["Singer"]["relations"]]) == (["Performer"], ["Relative of Alice"])
+    assert sorted(t["name"] for t in imported.get("/api/person-types").json) == sorted(import_world.PERSON_TYPES)
+    # running it again changes nothing
+    with Session(engine) as session:
+        again = import_world.give_types(session, owner(session))
+    assert again == {"types added": 0, "organizations given a type": 0, "people given a profession": 0, "people given a relation": 0, "person types made relations": 0}
 
 
 def test_split_name() -> None:
@@ -793,16 +831,17 @@ def test_people_may_share_a_name(imported: webtest.TestApp) -> None:
     assert [p["description"] for p in danas] == ["School", "Work"]
 
 
-def test_guessing_a_person_type() -> None:
+def test_guessing_professions_and_relations() -> None:
     def person(name: str, description: str = "") -> Person:
         honorific, first_name, middle_name, surname = import_world.split_name(name)
         return Person(honorific=honorific, first_name=first_name, middle_name=middle_name, surname=surname, description=description)
-    assert import_world._person_type(person("Doron Veltzer")) == "Family"
-    assert import_world._person_type(person("X", "My brother")) == "Family"
-    assert import_world._person_type(person("X", "My brothers ex-girlfriend")) is None
-    assert import_world._person_type(person("X", "Ex-girlfriend")) == "Girlfriend"
-    assert import_world._person_type(person("X", "Yaron's girlfriend")) is None
-    assert import_world._person_type(person("X", "Physics guy from MAFAT")) == "Co-Worker"
+    assert import_world._relation_to_user(person("Doron Veltzer")) == "Relative of"
+    assert import_world._relation_to_user(person("X", "My brother")) == "Relative of"
+    assert import_world._relation_to_user(person("X", "My brothers ex-girlfriend")) is None
+    assert import_world._relation_to_user(person("X", "Ex-girlfriend")) == "Girlfriend of"
+    assert import_world._relation_to_user(person("X", "Yaron's girlfriend")) is None
+    assert import_world._relation_to_user(person("X", "Physics guy from MAFAT")) == "Co-worker of"
+    assert import_world._profession(person("X")) is None
 
 
 def test_give_types_fills_only_what_is_missing(imported: webtest.TestApp, engine: Engine) -> None:
@@ -812,12 +851,14 @@ def test_give_types_fills_only_what_is_missing(imported: webtest.TestApp, engine
         session.commit()
         counts = import_world.give_types(session, owner(session))
         session.commit()
-    assert counts == {"types added": 1, "organizations given a type": 3, "people given a type": 0}
+    assert counts == {"types added": 1, "organizations given a type": 3, "people given a profession": 0, "people given a relation": 0, "person types made relations": 0}
     by_name = {o["name"]: o["type"]["name"] for o in imported.get("/api/organizations").json}
     # Old School's type came from the YAML, which this does not read: it gets the default
     assert by_name == {"Acme": "Company", "Old School": "Company", "Startup": "Company"}
     with Session(engine) as session:
-        assert import_world.give_types(session, owner(session)) == {"types added": 0, "organizations given a type": 0, "people given a type": 0}
+        assert import_world.give_types(session, owner(session)) == {
+            "types added": 0, "organizations given a type": 0, "people given a profession": 0, "people given a relation": 0, "person types made relations": 0,
+        }
 
 
 def test_edit_organization_types(imported: webtest.TestApp) -> None:
@@ -888,7 +929,7 @@ def test_reimport_replaces(imported: webtest.TestApp, engine: Engine, tmp_path: 
     with Session(engine) as session:
         import_world.import_world(session, owner(session), tmp_path)
         session.commit()
-        for model, count in ((Concert, 3), (Museum, 3), (AudioCourse, 2), (Person, 7), (Organization, 3), (Image, 7)):
+        for model, count in ((Concert, 3), (Museum, 3), (AudioCourse, 2), (Person, 8), (Organization, 3), (Image, 7)):
             assert session.scalar(select(func.count()).select_from(model)) == count
         assert session.scalar(select(func.count()).select_from(concert_companions)) == 3
         assert session.scalar(select(func.count()).select_from(person_organizations)) == 3
@@ -1158,15 +1199,15 @@ def test_stats(imported: webtest.TestApp) -> None:
     imported.post_json("/api/library-entries", {"kind": "book", "title": "Dune", "status": "done"}, status=201)
     stats = imported.get("/api/stats").json
     assert (stats["concerts"], stats["museum_visits"], stats["museums"], stats["audio_courses"]) == (3, 3, 2, 2)
-    assert (stats["people"], stats["organizations"], stats["images"]) == (7, 3, 7)
-    assert (stats["organization_types"], stats["person_types"]) == (7, 6)
+    assert (stats["people"], stats["organizations"], stats["images"]) == (8, 3, 7)
+    assert (stats["organization_types"], stats["person_types"]) == (7, 3)
     # Bob, Singer and The Band performed; Bob also went with the user, he counts once
     assert stats["performers"] == 3
     books = next(k for k in stats["library"] if k["kind"] == "book")
     # Dune and the three imported books
     assert books["total"] == 4
     assert books["by_status"] == {"Done": 3, "Want to": 1}
-    assert {t["name"]: t["count"] for t in stats["people_by_type"]} == {"Co-Worker": 2, "Performer": 2, "Lecturer": 1, "Book Author": 2}
+    assert {t["name"]: t["count"] for t in stats["people_by_type"]} == {"Performer": 3, "Book Author": 2, "Lecturer": 1, "No profession": 2}
     assert {t["name"]: t["count"] for t in stats["organizations_by_type"]} == {"Company": 2, "University": 1}
     assert stats["concerts_by_year"] == [{"year": 1989, "count": 1}, {"year": 2001, "count": 1}, {"year": 2020, "count": 1}]
     assert stats["museums_by_year"] == [{"year": 2010, "count": 2}, {"year": 2011, "count": 1}]

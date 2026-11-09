@@ -190,10 +190,18 @@ a database where it is plain how (`--dry-run` shows what it would change),
 and the import splits new names the same way (`src/myworld/names.py`),
 matching existing people however a name is spaced or hyphenated. Names are not unique: two people of the same
 name are two rows, and the pickers show each one's type and description to
-tell them apart. Each person may have any number of types (a neighbor and a friend) from
-the user's own person types enumeration (sidebar, Types, Person; an import starts with Family,
-Girlfriend, Performer, Co-Worker, Lecturer and Book Author and guesses them from the data: see
-`_person_type` in `scripts/import_world.py`). A book's authors are people
+tell them apart. A person may have any number of professions (a performer and a
+lecturer), from the user's own professions enumeration (sidebar, Types, Professions;
+kept in `person_types` and served at `/api/person-types`; an import starts
+with Performer, Lecturer and Book Author and guesses them from the data: see
+`_profession` in `scripts/import_world.py`). How a person is related to the
+user (friend, co-worker, girlfriend, relative, acquaintance, neighbour) is
+not a profession but a person relation to the user's own person (`is_self`,
+made by the import from the account's name): "Ada" is "Girlfriend of"
+"Mark". `scripts/import_world_cloud.sh --only-types` makes that person and
+turns the person types of a database from before that are relations
+(Family, Girlfriend, Co-Worker, Friend, Acquaintance, Neighbour) into
+relations to it, then drops those types. A book's authors are people
 too (Book Authors): the book's card links to them, and their Connections
 list the books they wrote. People are related to each other through the
 user's person relation types (sidebar, Types, Person relations; an import

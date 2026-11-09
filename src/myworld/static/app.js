@@ -673,7 +673,7 @@ const SORTS = {
 		["honorific", "Honorific", (p) => p.honorific, "asc"],
 		["middle_name", "Middle name", (p) => p.middle_name, "asc"],
 		["surname", "Surname", (p) => p.surname, "asc"],
-		["type", "Type", (p) => p.types[0]?.name, "asc"],
+		["type", "Profession", (p) => p.types[0]?.name, "asc"],
 		["organization", "Organization", (p) => p.organizations[0]?.name, "asc"],
 	],
 	organizations: [
@@ -1065,7 +1065,8 @@ const WORLDS = {
 	groups: ["Groups", "/api/groups", "group", "Groups"],
 	organizations: ["Organizations", "/api/organizations", "organization", "Organizations"],
 	"organization-types": ["Organization types", "/api/organization-types", "organization type", "Org"],
-	"person-types": ["Person types", "/api/person-types", "person type", "Person"],
+	// what a person does (performer, book author, ...); how they are related to people is a person relation
+	"person-types": ["Professions", "/api/person-types", "profession", "Professions"],
 	"relation-types": ["Relation types", "/api/relation-types", "relation type", "Org relations"],
 	"person-relation-types": ["Person relation types", "/api/person-relation-types", "person relation type", "Person relations"],
 	devices: ["Devices", "/api/devices", "device", "Devices"],
@@ -2457,7 +2458,7 @@ function renderStats(stats) {
 		statTile("Groups", stats.groups, "", "groups"),
 		statTile("Organizations", stats.organizations, "", "organizations"),
 		statTile("Organization types", stats.organization_types, "", "organization-types"),
-		statTile("Person types", stats.person_types, "", "person-types"),
+		statTile("Professions", stats.person_types, "", "person-types"),
 		statTile("Org relation types", stats.relation_types, "", "relation-types"),
 		statTile("Person relation types", stats.person_relation_types, "", "person-relation-types"),
 		statTile("Devices", stats.devices, "", "devices"),
@@ -2465,7 +2466,7 @@ function renderStats(stats) {
 	);
 	const charts = el("div", "stat-charts");
 	charts.append(
-		barChart("People by type (one with several types counts in each)", stats.people_by_type),
+		barChart("People by profession (one with several counts in each)", stats.people_by_type),
 		barChart("Organizations by type", stats.organizations_by_type),
 		barChart("Organizations by relation (one with several relations counts in each)", stats.organizations_by_relation),
 		yearChart("Concerts per year", stats.concerts_by_year, "concerts"),
@@ -2623,7 +2624,7 @@ function setupWorlds() {
 // ─── the add dialog ─────────────────────────────────────────────────────────
 
 // One dialog, opened by the + button, showing the form of whatever is on screen.
-const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "youtube-video-form", "place-form", "person-form", "group-form", "organization-form", "organization-type-form", "person-type-form", "relation-type-form", "person-relation-type-form", "device-form"];
+const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "youtube-video-form", "place-form", "person-form", "group-form", "organization-form", "organization-type-form", "profession-form", "relation-type-form", "person-relation-type-form", "device-form"];
 const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 
 function dialogError(message) {
@@ -2649,7 +2650,7 @@ function pickerNote(row) {
 		return "";
 	}
 	const named = row.first_name || row.middle_name || row.surname;
-	return [(row.types || []).map((t) => t.name).join("/"), named && row.description?.slice(0, 60)].filter(Boolean).join(" · ");
+	return [row.is_self && "you", (row.types || []).map((t) => t.name).join("/"), named && row.description?.slice(0, 60)].filter(Boolean).join(" · ");
 }
 
 // lists this long or shorter open on focus; longer ones only once something is typed

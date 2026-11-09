@@ -145,12 +145,11 @@ ORGANIZATION_TYPES = {
     "Non-profit": "A charity or other organization not run for profit",
 }
 DEFAULT_ORGANIZATION_TYPE = "Company"
-# the person types every import starts the user with
+# the professions (person types) every import starts the user with; how a
+# person is related to the user is a person relation instead (to the user's
+# own person, see self_person)
 PERSON_TYPES = {
-    "Family": "A relative",
-    "Girlfriend": "A girlfriend, now or before",
     "Performer": "Someone seen on stage",
-    "Co-Worker": "Someone worked with",
     "Lecturer": "Someone who taught a course I took",
     "Book Author": "Someone who wrote a book I read or own",
 }
@@ -165,6 +164,22 @@ PERSON_RELATION_TYPES = {
     "Sister of": ("Sibling of", "She shares a parent with them"),
     "Husband of": ("Spouse of", "He is married to them"),
     "Wife of": ("Spouse of", "She is married to them"),
+    "Relative of": ("", "Family, how exactly not said"),
+    "Girlfriend of": ("Boyfriend of", "A girlfriend, now or before"),
+    "Co-worker of": ("", "Worked together"),
+    "Friend of": ("", "A friend who is not a relative"),
+    "Acquaintance of": ("", "Knows them, not a friend"),
+    "Neighbour of": ("", "Lives or lived next door"),
+}
+# person types that are really how someone is related to the user: give_types
+# makes each a person relation to the user's own person and drops the type
+TYPE_TO_RELATION = {
+    "Family": "Relative of",
+    "Girlfriend": "Girlfriend of",
+    "Co-Worker": "Co-worker of",
+    "Friend": "Friend of",
+    "Acquaintance": "Acquaintance of",
+    "Neighbour": "Neighbour of",
 }
 # the relation types (how an organization is related to the user) every import
 # starts the user with, by the word organizations.yaml uses in its functions
@@ -177,7 +192,7 @@ RELATION_TYPES = {
     "publisher": ("Publisher", "I consumed media they published"),
     "education": ("Education", "I studied there"),
 }
-# what _person_type reads a person's type from
+# what _profession and _relation_to_user read a person from
 FAMILY_NAME = "Veltzer"
 FAMILY_DESCRIPTION = re.compile(r"my (brother|sister|mother|father|son|daughter|wife|husband|cousin|uncle|aunt)\b", re.IGNORECASE)
 GIRLFRIEND_DESCRIPTION = re.compile(r"(ex-)?girlfriend\b", re.IGNORECASE)
@@ -284,17 +299,8 @@ def split_name(name: str) -> tuple[str, str, str, str]:
     return naming.split_name(name) or ("", name, "", "")
 
 
-def _person_type(person: Person) -> str | None:
-    """
-    A first guess at what a person is, from what the data already says;
-    None when nothing does. Only ever used for people without a type.
-    """
-    if person.name.endswith(f" {FAMILY_NAME}") or FAMILY_DESCRIPTION.match(person.description):
-        return "Family"
-    if GIRLFRIEND_DESCRIPTION.match(person.description):
-        return "Girlfriend"
-    if person.organizations or CO_WORKER_DESCRIPTION.search(person.description):
-        return "Co-Worker"
+def _profession(person: Person) -> str | None:
+    """ A first guess at a person's profession, from what the data says; None when nothing does. """
     if person.performed:
         return "Performer"
     if person.lectured:
@@ -302,6 +308,37 @@ def _person_type(person: Person) -> str | None:
     if person.wrote:
         return "Book Author"
     return None
+
+
+def _relation_to_user(person: Person) -> str | None:
+    """ A first guess at how a person is related to the user (a person relation type); None when nothing says. """
+    if person.name.endswith(f" {FAMILY_NAME}") or FAMILY_DESCRIPTION.match(person.description):
+        return "Relative of"
+    if GIRLFRIEND_DESCRIPTION.match(person.description):
+        return "Girlfriend of"
+    if person.organizations or CO_WORKER_DESCRIPTION.search(person.description):
+        return "Co-worker of"
+    return None
+
+
+def self_person(session: Session, owner: User) -> Person:
+    """
+    owner's own person, the one others are related to: the one marked so, else
+    the one with owner's name (then marked), else a new one. Does not commit.
+    """
+    me = session.scalars(select(Person).where(Person.owner_id == owner.id, Person.is_self)).first()
+    if me is not None:
+        return me
+    named = [p for p in session.scalars(select(Person).where(Person.owner_id == owner.id)) if owner.name and naming.key(p.name) == naming.key(owner.name)]
+    if len(named) == 1:
+        named[0].is_self = True
+        return named[0]
+    honorific, first_name, middle_name, surname = split_name(owner.name or owner.email)
+    me = Person(owner_id=owner.id, honorific=honorific, first_name=first_name, middle_name=middle_name, surname=surname,
+                description="Me", is_self=True)
+    session.add(me)
+    session.flush()
+    return me
 
 
 def _starting_types[T: (OrganizationType, PersonType, RelationType)](
@@ -320,41 +357,74 @@ def _starting_types[T: (OrganizationType, PersonType, RelationType)](
 
 def give_types(session: Session, owner: User) -> dict[str, int]:
     """
-    Add the starting organization and person types, organization relation
-    types and person relation types owner does not have yet,
-    and give every organization and person of theirs without a type one
-    (organizations by name, else Company; people by _person_type), leaving
-    everything else as it is. Does not commit.
+    Add the starting organization types, professions, organization relation
+    types and person relation types owner does not have yet; make owner's own
+    person (self_person); turn the person types that are really relations
+    (TYPE_TO_RELATION: Friend, Co-Worker, ...) into person relations to it and
+    drop them; then give what has none a first guess: every organization a
+    type (by name, else Company), every person without a profession one
+    (_profession), and every person related to no one a relation to owner
+    (_relation_to_user). Everything else is left as it is. Does not commit.
     """
     org_types, org_added = _starting_types(session, owner, OrganizationType, ORGANIZATION_TYPES)
-    person_types, person_added = _starting_types(session, owner, PersonType, PERSON_TYPES)
+    professions, person_added = _starting_types(session, owner, PersonType, PERSON_TYPES)
     _, relation_added = _starting_types(session, owner, RelationType, dict(RELATION_TYPES.values()))
-    have = set(session.scalars(select(PersonRelationType.name).where(PersonRelationType.owner_id == owner.id)))
+    relation_types = {t.name: t for t in session.scalars(select(PersonRelationType).where(PersonRelationType.owner_id == owner.id))}
     person_relation_added = 0
     for name, (inverse, description) in PERSON_RELATION_TYPES.items():
-        if name not in have:
-            session.add(PersonRelationType(owner_id=owner.id, name=name, inverse=inverse, description=description))
+        if name not in relation_types:
+            relation_types[name] = PersonRelationType(owner_id=owner.id, name=name, inverse=inverse, description=description)
+            session.add(relation_types[name])
             person_relation_added += 1
     added = org_added + person_added + relation_added + person_relation_added
+    session.flush()
+    me = self_person(session, owner)
+    people = session.scalars(
+        select(Person)
+        .where(Person.owner_id == owner.id)
+        .options(
+            selectinload(Person.types), selectinload(Person.relations), selectinload(Person.related), selectinload(Person.organizations),
+            selectinload(Person.performed), selectinload(Person.lectured), selectinload(Person.wrote),
+        )
+    ).all()
+
+    def relate(person: Person, name: str) -> bool:
+        kind = relation_types[name]
+        if person is me or any(r.relation_type is kind and r.other is me for r in person.relations):
+            return False
+        person.relations.append(PersonRelation(relation_type=kind, other=me))
+        return True
+
+    made_relations = 0
+    for name, relation in TYPE_TO_RELATION.items():
+        kind = session.scalars(select(PersonType).where(PersonType.owner_id == owner.id, PersonType.name == name)).first()
+        if kind is None:
+            continue
+        for person in people:
+            if kind in person.types:
+                person.types.remove(kind)
+                made_relations += relate(person, relation)
+        session.delete(kind)
     typed = 0
     for organization in session.scalars(select(Organization).where(Organization.owner_id == owner.id, Organization.type_id.is_(None))):
         organization.type = org_types[type_for(organization.name)]
         typed += 1
-    people = session.scalars(
-        select(Person)
-        .where(Person.owner_id == owner.id, ~Person.types.any())
-        .options(
-            selectinload(Person.organizations), selectinload(Person.performed), selectinload(Person.lectured), selectinload(Person.wrote),
-        )
-    )
-    people_typed = 0
+    given_profession = given_relation = 0
     for person in people:
-        name = _person_type(person)
-        if name is not None:
-            person.types = [person_types[name]]
-            people_typed += 1
+        if person is me:
+            continue
+        name = _profession(person)
+        if name is not None and not person.types:
+            person.types = [professions[name]]
+            given_profession += 1
+        relation = _relation_to_user(person)
+        if relation is not None and not person.relations and not person.related:
+            given_relation += relate(person, relation)
     session.flush()
-    return {"types added": added, "organizations given a type": typed, "people given a type": people_typed}
+    return {
+        "types added": added, "organizations given a type": typed, "people given a profession": given_profession,
+        "people given a relation": given_relation, "person types made relations": made_relations,
+    }
 
 
 def find_owner(session: Session, email: str, subject: str | None) -> User:
@@ -552,7 +622,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     typed = give_types(session, owner)
     return {
         "people": len(people) + courses["lecturers added"] + books["authors added"], "organizations": len(organizations), "organization types": len(types),
-        "relation types": len(relation_types), "person types": len(PERSON_TYPES), "people with a type": typed["people given a type"],
+        "relation types": len(relation_types), "person types": len(PERSON_TYPES), "people with a profession": typed["people given a profession"], "people related to the user": typed["people given a relation"],
         "concerts": len(concert_items), "places": place.added, "museums": len(museum_items), "audio courses": courses["audio courses"],
         "YouTube videos": videos["YouTube videos"] + history["YouTube videos added"], "devices": courses["devices added"] + videos["devices added"],
         "books": books["books"], "images": len(images) + courses["images"] + books["covers"],
@@ -1020,7 +1090,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--only-types", action="store_true",
-        help="import nothing: only add the starting types and type the organizations and people that have none",
+        help="import nothing: only add the starting types, make the user's own person, turn relation-like person types into relations to it, and give a first guess to what has no type, profession or relation",
     )
     args = parser.parse_args()
     engine = make_engine()
@@ -1037,7 +1107,7 @@ def main() -> int:
                 counts = import_youtube(session, owner, args.source)
             elif args.audio_courses:
                 counts = import_audio_courses(session, owner, args.source)
-                counts["people given a type"] = give_types(session, owner)["people given a type"]
+                counts["people given a profession"] = give_types(session, owner)["people given a profession"]
             else:
                 counts = import_world(session, owner, args.source)
         except WorldImportError as e:

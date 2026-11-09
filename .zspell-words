@@ -1,4 +1,5 @@
 ASIN
+Ada
 CDN
 Dana
 Goodreads
@@ -42,6 +43,7 @@ lockfile
 mailto
 microsoft
 myworld
+neighbour
 oauth
 png
 postgresql

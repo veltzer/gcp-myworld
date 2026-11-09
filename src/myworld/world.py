@@ -229,6 +229,8 @@ def person_json(person: Person) -> dict[str, Any]:
     return {
         "id": person.id,
         "name": person.name,
+        # the account owner themselves
+        "is_self": person.is_self,
         "honorific": person.honorific,
         "first_name": person.first_name,
         "middle_name": person.middle_name,
@@ -922,7 +924,7 @@ def api_stats() -> flask.Response:
     people_by_type: dict[str, int] = {}
     for person in people:
         for kind in person.types or [None]:
-            name = kind.name if kind else "No type"
+            name = kind.name if kind else "No profession"
             people_by_type[name] = people_by_type.get(name, 0) + 1
     organizations_by_relation: dict[str, int] = {}
     for organization in organizations:

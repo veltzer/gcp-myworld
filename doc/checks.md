@@ -126,7 +126,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
 
 ### People (`people`)
 
-- `people-types`: every person has at least one person type.
+- `people-known`: every person has a profession, a relation to another
+  person, or an organization.
 - `people-names`: every honorific, first name and surname is one word (a
   surname of two words hyphenated, more names in the middle name). What
   `scripts/tidy_names.py` could not split is listed: mostly bands and
@@ -153,13 +154,13 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `organization-type-duplicates`: no account has two organization types
   of the same name (ignoring case and spaces at the ends).
 
-### Person types (`person-types`)
+### Professions (`person-types`)
 
-- `person-type-used`: every person type, of every account, is used by at
-  least one row; one used by nothing can go.
-- `person-type-descriptions`: every person type, of every account, has a
+- `person-type-used`: every profession, of every account, is someone's;
+  one nobody has can go.
+- `person-type-descriptions`: every profession, of every account, has a
   description, so its tooltip and page say what it means.
-- `person-type-duplicates`: no account has two person types of the same
+- `person-type-duplicates`: no account has two professions of the same
   name (ignoring case and spaces at the ends).
 
 ### Org relation types (`relation-types`)

@@ -77,7 +77,7 @@ def test_bad_logo(data: bytes, wanted: str) -> None:
 
 
 def test_every_check_describes_itself() -> None:
-    assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "people-types", "museum-dates", "organization-locations", "museum-addresses", "museum-locations", "museum-company",
+    assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "people-known", "museum-dates", "organization-locations", "museum-addresses", "museum-locations", "museum-company",
         "audio-course-lecturers", "audio-course-devices", "audio-course-status", "audio-course-reviews",
         "audio-course-covers", "audio-course-links", "audio-course-stalled", "audio-course-duplicates"} <= set(checks.CHECKS)
     for chosen in checks.CHECKS.values():
@@ -358,11 +358,11 @@ def test_person_types(engine: Engine) -> None:
             Person(owner_id=bob.id, description="the guide at the Louvre"),
         ])
         session.commit()
-        result = checks.CHECKS["people-types"].run(session)
+        result = checks.CHECKS["people-known"].run(session)
     assert result.checked == 3
     assert [(p.subject, p.message) for p in result.problems] == [
-        ("Eli (person 2, account 1)", "has no type"),
-        ("the guide at the Louvre (person 3, account 2)", "has no type"),
+        ("Eli (person 2, account 1)", "has no profession, relation or organization"),
+        ("the guide at the Louvre (person 3, account 2)", "has no profession, relation or organization"),
     ]
     assert [(p.link, p.owner) for p in result.problems] == [("people/2", 1), ("people/3", 2)]
 

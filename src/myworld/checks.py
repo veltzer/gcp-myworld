@@ -48,6 +48,7 @@ from myworld.models import (
     library_entry_authors,
     museum_companions,
     organization_relation_types,
+    person_organizations,
     person_type_links,
 )
 
@@ -103,7 +104,7 @@ DATASETS: dict[str, str] = {
     "places": "Places",
     "organizations": "Organizations",
     "organization-types": "Org types",
-    "person-types": "Person types",
+    "person-types": "Professions",
     "relation-types": "Org relation types",
     "person-relation-types": "Person relation types",
     "devices": "Devices",
@@ -282,15 +283,24 @@ def check_organization_locations(session: Session) -> Result:
 
 # ─── people ─────────────────────────────────────────────────────────────────
 
-@check("people-types", "Every person has a type", "people", "people")
-def check_person_types(session: Session) -> Result:
-    """ Every person, of every account, is categorized as at least one person type (family, co-worker, ...). """
-    typed = set(session.scalars(select(person_type_links.c.person_id)))
+@check("people-known", "Every person has a profession or a relation", "people", "people")
+def check_people_known(session: Session) -> Result:
+    """
+    Every person, of every account, says how they are known: a profession
+    (a person type: performer, book author, ...), a relation to another
+    person (friend of, mother of, ...) or an organization they are at.
+    """
+    known = (
+        set(session.scalars(select(person_type_links.c.person_id)))
+        | set(session.scalars(select(PersonRelation.person_id)))
+        | set(session.scalars(select(PersonRelation.other_id)))
+        | set(session.scalars(select(person_organizations.c.person_id)))
+    )
     people = session.scalars(select(Person).order_by(Person.owner_id, Person.first_name, Person.surname, Person.id)).all()
     problems = [
-        Problem(f"{person.name} (person {person.id}, account {person.owner_id})", "has no type", f"people/{person.id}", person.owner_id)
+        Problem(f"{person.name} (person {person.id}, account {person.owner_id})", "has no profession, relation or organization", f"people/{person.id}", person.owner_id)
         for person in people
-        if person.id not in typed
+        if person.id not in known
     ]
     return Result(checked=len(people), problems=problems)
 
