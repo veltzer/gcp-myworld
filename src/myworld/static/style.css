@@ -1240,6 +1240,17 @@ button.danger {
 	white-space: nowrap;
 }
 
+/* "+12 more" after the first links of a long list, and "Show fewer" once open */
+.more-links {
+	padding: 0 0.25rem;
+	font-size: 0.85rem;
+	white-space: nowrap;
+}
+
+.more-links-rest[hidden] {
+	display: none;
+}
+
 /* a relation with its person ("Mother of Dana") is one value: never split */
 .nowrap {
 	white-space: nowrap;

@@ -230,7 +230,10 @@ the toolbar goes to the first, previous, next and last page and picks 25,
 50 (the default), 100 or 200 rows per page, remembered in the browser. A new
 search, sort, filter or layout starts at the first page, a link to a row on
 another page opens that page, and the Map layout shows every place, with the
-pager disabled.
+pager disabled. Within a row or card, a list of links that can grow without
+bound (a person's relations and organizations, an organization's people, a
+place's concerts, a group's members) shows its first five and a "+N more"
+that opens the rest in place; a person's Connections show everything.
 
 A person may be at several organizations: the People tab links each one
 to its card in Organizations, and an organization card links back to its

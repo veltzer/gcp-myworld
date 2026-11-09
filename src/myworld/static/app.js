@@ -1152,18 +1152,54 @@ function detail(list, label, value) {
 }
 
 // Names as links to their place in the People or Organizations view, appended to parent.
-function appendLinks(parent, view, rows) {
-	rows.forEach((row, index) => {
+// a list of links shows this many; the rest open with a click on "+N more"
+const LINKS_SHOWN = 5;
+
+// count values appended to parent by add(index, into), comma separated: the
+// first LINKS_SHOWN, then a "+N more" button that shows the rest (and a
+// "Show fewer" that folds them again). One left over is shown rather than "+1 more".
+function appendLimited(parent, count, add) {
+	const first = count <= LINKS_SHOWN + 1 ? count : LINKS_SHOWN;
+	const item = (index, into) => {
 		if (index > 0) {
-			parent.append(", ");
+			into.append(", ");
 		}
+		add(index, into);
+	};
+	for (let index = 0; index < first; index++) {
+		item(index, parent);
+	}
+	if (first === count) {
+		return;
+	}
+	const rest = el("span", "more-links-rest");
+	rest.hidden = true;
+	for (let index = first; index < count; index++) {
+		item(index, rest);
+	}
+	const more = el("button", "text more-links", `+${(count - first).toLocaleString()} more`);
+	more.type = "button";
+	more.title = `Show all ${count.toLocaleString()}`;
+	more.onclick = () => {
+		rest.hidden = !rest.hidden;
+		more.textContent = rest.hidden ? `+${(count - first).toLocaleString()} more` : "Show fewer";
+		more.title = rest.hidden ? `Show all ${count.toLocaleString()}` : `Show only the first ${first}`;
+		// the button follows what it shows
+		parent.appendChild(more);
+	};
+	parent.append(rest, " ", more);
+}
+
+function appendLinks(parent, view, rows) {
+	appendLimited(parent, rows.length, (index, into) => {
+		const row = rows[index];
 		const a = el("a", "person-link", row.name);
 		a.href = `/library#${view}/${row.id}`;
 		a.onclick = (event) => {
 			event.preventDefault();
 			showRow(view, row.id).catch((e) => showError(e.message));
 		};
-		parent.appendChild(a);
+		into.appendChild(a);
 	});
 }
 
@@ -1681,13 +1717,11 @@ function personRelationTypeRow(kind) {
 
 // Links of a kind, each to a row of a view: "Mother of Dana, Child of Ruth", "Worked at Schema"
 function appendKindLinks(parent, view, links, field) {
-	links.forEach((link, index) => {
-		if (index > 0) {
-			parent.append(", ");
-		}
+	appendLimited(parent, links.length, (index, into) => {
+		const link = links[index];
 		const tie = el("span", "nowrap", `${link.type} `);
 		appendLinks(tie, view, [link[field]]);
-		parent.appendChild(tie);
+		into.appendChild(tie);
 	});
 }
 
