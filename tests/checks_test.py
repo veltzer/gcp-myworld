@@ -514,6 +514,8 @@ def test_concerts(engine: Engine) -> None:
             Concert(owner_id=alice.id, name="twice ", date_y=2012, **good),
             # the same name on another date is another concert
             Concert(owner_id=alice.id, name="Twice", date_y=2013, **good),
+            # a group on stage is a performer too
+            Concert(owner_id=alice.id, name="Group", date_y=2014, **dict(good, performers=[]), groups=[Group(owner_id=alice.id, name="Trio")]),
         ])
         session.commit()
 

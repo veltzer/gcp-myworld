@@ -69,7 +69,7 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `concert-places`: every concert, of every account, points to the place
   it was at (the Places page); one seen on TV need not.
 - `concert-performers`: every concert, of every account, has at least
-  one performer (a person).
+  one performer: a person or a group.
 - `concert-photos`: every concert, of every account, has a photo.
 - `concert-duplicates`: no account has two concerts of the same name on
   the same date (ignoring case and spaces at the ends).

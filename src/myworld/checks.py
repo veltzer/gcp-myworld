@@ -586,8 +586,8 @@ def check_concert_places(session: Session) -> Result:
 
 @check("concert-performers", "Every concert has a performer", "concerts", "concerts")
 def check_concert_performers(session: Session) -> Result:
-    """ Every concert, of every account, has at least one performer (a person). """
-    performed = set(session.scalars(select(concert_performers.c.concert_id)))
+    """ Every concert, of every account, has at least one performer: a person or a group. """
+    performed = set(session.scalars(select(concert_performers.c.concert_id))) | set(session.scalars(select(concert_groups.c.concert_id)))
     concerts = _concerts(session)
     return Result(checked=len(concerts), problems=[_concert_problem(c, "has no performer") for c in concerts if c.id not in performed])
 
