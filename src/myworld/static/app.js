@@ -1357,8 +1357,9 @@ function cardShell(item, subtitle, kind = "photo") {
 		img.loading = "lazy";
 		card.appendChild(img);
 	} else {
-		// an empty slot where the image would be: the list layout keeps every row the same shape
-		card.appendChild(el("div", "world-image no-image"));
+		// an empty slot where the image would be, of the same shape (a narrow one for a
+		// cover): the list layout keeps every row of a view the same shape
+		card.appendChild(el("div", `world-image no-image slot-${kind}`));
 	}
 	const body = el("div", "world-body");
 	body.appendChild(el("h2", "world-title", item.name));

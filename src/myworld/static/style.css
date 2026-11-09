@@ -993,7 +993,8 @@ button.danger {
 	margin-right: 1rem;
 }
 
-.layout-list .world-card.is-cover .world-image {
+.layout-list .world-card.is-cover .world-image,
+.layout-list .world-image.no-image.slot-cover {
 	width: 4.5rem;
 	max-height: none;
 	object-fit: cover;
