@@ -2,7 +2,8 @@
 
 """
 Find the latitude and longitude of every museum visit and organization that
-has an address but no coordinates yet, so it shows on the map.
+has an address, and every place (a concert hall, a club: name, city and
+country), that has no coordinates yet, so it shows on the map.
 
   scripts/geocode.py             look them up and save them
   scripts/geocode.py --dry-run   look them up, print, save nothing
@@ -15,6 +16,14 @@ tried as the name in its city ("Westminster Abbey, London"), then
 taken on its street, and then without its first parts, down to city and country; each line says which
 of these matched, so a place found only by its city is easy to spot and
 correct in the dialog. A museum visited twice is looked up once.
+
+A place has no address: it is looked up by its name in its city, then by
+the first part of its name ("Logus pub" of "Logus pub, Nahalat Binyamin"),
+each only when the match is a building or venue that carries the name; then
+by the rest of its name as a street or area in its city ("Nahalat Binyamin,
+Tel Aviv"), which places it roughly. A place only its city matches is left
+without coordinates rather than put at the city's centre. A place found gets
+the match as its address when it has none.
 
 The database is DATABASE_URL (default: the local sqlite file); for Cloud SQL
 run it through the proxy: scripts/with_cloud_db.sh scripts/geocode.py.
@@ -39,7 +48,7 @@ os.chdir(ROOT)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from myworld.models import Museum, Organization, make_engine
+from myworld.models import Museum, Organization, Place, make_engine
 
 NOMINATIM = "https://nominatim.openstreetmap.org/search"
 USER_AGENT = "myworld-geocode/1.0 (+https://github.com/veltzer/gcp-myworld)"
@@ -73,7 +82,11 @@ def address_parts(address: str) -> list[str]:
 
 
 # words that say what a place is, not which one: "Tel Aviv Museum" is not "Eretz Israel Museum"
-GENERIC = {"the", "and", "museum", "museums", "gallery", "art", "arts", "national", "university", "school", "center", "centre", "ltd", "inc", "group"}
+GENERIC = {
+    "the", "and", "museum", "museums", "gallery", "art", "arts", "national", "university", "school", "center", "centre", "ltd", "inc", "group",
+    # what a concert place is, not which one
+    "pub", "club", "bar", "cafe", "hall", "big", "small", "lawn", "port", "street", "house", "near",
+}
 
 
 def significant(text: str) -> set[str]:
@@ -88,7 +101,9 @@ def named(found: dict[str, Any], name: str, city: str) -> bool:
     needs more than "Tel Aviv").
     """
     own = significant(found["display_name"].split(",")[0])
-    return bool(own & (significant(name) - significant(city)))
+    # a name that is its city and generic words ("Tel Aviv Museum of Art") has only the city's words to match on
+    words = significant(name) - significant(city) or significant(name)
+    return bool(own & words)
 
 
 def geocode(name: str, address: str) -> tuple[float, float, str, str] | None:
@@ -122,6 +137,75 @@ def geocode(name: str, address: str) -> tuple[float, float, str, str] | None:
     return None
 
 
+def place_query_city(city: str, country: str) -> str:
+    """ The city and country as a map knows them ("Tel-Aviv" is "Tel Aviv"). """
+    return ", ".join(part for part in (city.replace("-", " "), country) if part)
+
+
+# the spellings maps use: "Givatayim Theatre", "Caesarea Amphitheater"
+SPELLINGS = [("Theater", "Theatre"), ("theater", "theatre"), ("amphitheatre", "amphitheater"), ("Amphitheatre", "Amphitheater")]
+
+
+def spellings(name: str) -> list[str]:
+    """ name, and name in the other spellings of its words. """
+    out = [name]
+    for one, other in SPELLINGS:
+        for known in list(out):
+            for a, b in ((one, other), (other, one)):
+                if a in known:
+                    out.append(known.replace(a, b))
+    return list(dict.fromkeys(out))
+
+
+def geocode_place(name: str, city: str, country: str) -> tuple[float, float, str, str] | None:
+    """
+    (latitude, longitude, how it was found, what it matched), or None. In
+    order: the name in its city, then the name's first part in its city, each
+    only on a building or venue that carries the name; then the rest of the
+    name as a street or area in the city, which places it roughly. Never only
+    the city.
+    """
+    if not city.strip():
+        # without a city, a name matches wherever in the country it is common: not a place
+        return None
+    where = place_query_city(city, country)
+    parts = [part.strip() for part in name.split(",") if part.strip()]
+    for query_name in dict.fromkeys([*spellings(name), *spellings(parts[0])]):
+        found = lookup(f"{query_name}, {where}" if where else query_name)
+        if found is not None and found["category"] not in AREAS and named(found, query_name, city):
+            return float(found["lat"]), float(found["lon"]), f"name {query_name!r} in {where!r}", found["display_name"]
+    for part in parts[1:]:
+        found = lookup(f"{part}, {where}" if where else part)
+        if found is not None and found["category"] in AREAS | ROADS and named(found, part, city):
+            return float(found["lat"]), float(found["lon"]), f"roughly, area {part!r} in {where!r}", found["display_name"]
+    return None
+
+
+def geocode_places(session: Session, every: bool) -> int:
+    """ Look up the places without coordinates (all of them with every); how many were not found. """
+    missed = 0
+    for place in session.scalars(select(Place).order_by(Place.id)):
+        if place.latitude is not None and not every:
+            continue
+        what = f"place {place.id}, {place.name}, {place.city}"
+        found = geocode_place(place.name, place.city, place.country)
+        if found is None:
+            missed += 1
+            print(f"MISS  {what}: {'no city to look in' if not place.city.strip() else 'nothing that carries its name'}")
+            continue
+        latitude, longitude, how, match = found
+        print(f"ok    {what}: {latitude:.5f},{longitude:.5f} (by {how}) = {match}")
+        place.latitude, place.longitude = latitude, longitude
+        if not place.address.strip():
+            place.address = match
+        if how.startswith("roughly"):
+            # say so where it is seen: the card's remark
+            note = f"Location approximate: {how.removeprefix('roughly, ')}."
+            if note not in place.remark:
+                place.remark = f"{place.remark} {note}".strip()
+    return missed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[1] if __doc__ else None)
     parser.add_argument("--dry-run", action="store_true", help="print what is found, save nothing")
@@ -151,6 +235,7 @@ def main() -> int:
             latitude, longitude, how, match = found
             print(f"ok    {what}: {latitude:.5f},{longitude:.5f} (by {how}) = {match}")
             row.latitude, row.longitude = latitude, longitude
+        missed += geocode_places(session, args.all)
         if args.dry_run:
             session.rollback()
         else:

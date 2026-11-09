@@ -39,6 +39,15 @@ says which of these matched, so a place found only by its street or its
 city is easy to spot and correct by hand in the dialog, where latitude
 and longitude can be typed.
 
-The `museum-addresses`, `museum-locations` and `organization-locations`
-checks (`checks.md`) list the rows that are missing an address or
-coordinates.
+A place (where a concert was) has no address, only a name, a city and a
+country: it is looked up by its name in its city, in the usual spellings
+("Theatre", "Amphitheater"), then by the first part of its name, each
+accepted only on a building or venue that carries the name; then by the
+rest of its name as a street or area ("Nahalat Binyamin"), which places it
+roughly and says so in the place's remark ("Location approximate: ...").
+A place only its city would match, or one with no city, is left without
+coordinates rather than put at the city's center.
+
+The `museum-addresses`, `museum-locations`, `organization-locations` and
+`place-locations` checks (`checks.md`) list the rows that are missing an
+address or coordinates.
