@@ -419,7 +419,7 @@ function renderRow(entry) {
 const NAV_GROUPS = [
 	["Experiences", ["concerts", "museums", "audio-courses", "youtube"]],
 	["People", ["people", "organizations"]],
-	["Lists", ["organization-types", "person-types", "relation-types", "devices"]],
+	["Types", ["organization-types", "person-types", "relation-types", "devices"]],
 ];
 
 function sideLink(label, key, open) {
@@ -1024,7 +1024,7 @@ function updateNavButtons() {
 
 // ─── concerts, museums, people, organizations ──────────────────────────────
 
-// view -> [page title, API path, singular, tab label]; the rows are the signed-in user's own
+// view -> [page title, API path, singular, sidebar label]; the rows are the signed-in user's own
 const WORLDS = {
 	concerts: ["My Concerts", "/api/concerts", "concert", "Concerts"],
 	museums: ["My Museums", "/api/museums", "museum", "Museums"],
@@ -1032,8 +1032,8 @@ const WORLDS = {
 	youtube: ["YouTube videos", "/api/youtube", "YouTube video", "YouTube"],
 	people: ["People", "/api/people", "person", "People"],
 	organizations: ["Organizations", "/api/organizations", "organization", "Organizations"],
-	"organization-types": ["Organization types", "/api/organization-types", "organization type", "Org types"],
-	"person-types": ["Person types", "/api/person-types", "person type", "Person types"],
+	"organization-types": ["Organization types", "/api/organization-types", "organization type", "Org"],
+	"person-types": ["Person types", "/api/person-types", "person type", "Person"],
 	"relation-types": ["Relation types", "/api/relation-types", "relation type", "Relations"],
 	devices: ["Devices", "/api/devices", "device", "Devices"],
 };
@@ -1556,7 +1556,7 @@ function personRow(person) {
 	return tr;
 }
 
-// A row of an enumeration (Org types, Person types, Relation types), with how many rows are of it.
+// A row of an enumeration (organization, person and relation types), with how many rows are of it.
 function typeRow(kind) {
 	const tr = el("tr");
 	tr.id = `${slug(state.view)}-${kind.id}`;
@@ -2675,7 +2675,7 @@ function prepareWorkForm(form, entry) {
 	}
 }
 
-// The organization dialog's type list: the user's own Org types, and "none".
+// The organization dialog's type list: the user's own organization types, and "none".
 async function fillTypes(select, typesView) {
 	const types = await worldList(typesView);
 	const none = document.createElement("option");

@@ -181,7 +181,7 @@ A person has a first name and a surname (a name that is not one, a band
 say, is all first name), and names are not unique: two people of the same
 name are two rows, and the pickers show each one's type and description to
 tell them apart. Each person may have any number of types (a neighbor and a friend) from
-the user's own Person types enumeration (the Person types tab; an import starts with Family,
+the user's own person types enumeration (sidebar, Types, Person; an import starts with Family,
 Girlfriend, Performer and Co-Worker and guesses them from the data: see
 `_person_type` in `scripts/import_world.py`). People and Organizations
 have a type filter next to the search.
@@ -193,7 +193,7 @@ picks people.
 
 Each organization is related to the user in one or more ways (taught
 there, consulted, studied there, ...): its relation types, an enumeration
-the user keeps on the Relation types tab and picks in the organization
+the user keeps on the sidebar's Types, Relations and picks in the organization
 dialog, shown on the card. An import starts the user with Teaching,
 Training provider, Consulting, Certification, Publisher and Education,
 from the `functions` field of `organizations.yaml`; the
@@ -201,8 +201,8 @@ from the `functions` field of `organizations.yaml`; the
 none.
 
 Each organization has a type (company, university, government, ...), shown
-on its card. The types are an enumeration the user keeps on the Org types
-tab: add, rename, describe or delete them there, and pick one in the
+on its card. The types are an enumeration the user keeps on the sidebar's Types,
+Org: add, rename, describe or delete them there, and pick one in the
 organization dialog. A type still in use cannot be deleted. An import
 starts the user with Company, University, College, Government, Public
 body, Military and Non-profit; `organizations.yaml` has no type field, so

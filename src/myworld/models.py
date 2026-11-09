@@ -212,7 +212,7 @@ class Image(Base):
 
 
 class PersonType(Base):
-    """ What a person is to the user: family, co-worker, ... (the Person types page). """
+    """ What a person is to the user: family, co-worker, ... (the sidebar's Types, Person). """
     __tablename__ = "person_types"
     __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_person_type_name"),)
 
@@ -267,7 +267,7 @@ class Person(Base):
 class OrganizationType(Base):
     """
     What an organization is: company, university, ... An enumeration the
-    user keeps themselves (the Org types page), so new values need no code.
+    user keeps themselves (the sidebar's Types, Org), so new values need no code.
     """
     __tablename__ = "organization_types"
     __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_organization_type_name"),)
