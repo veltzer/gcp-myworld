@@ -1568,6 +1568,26 @@ td.actions {
 	width: 100%;
 }
 
+/* a date: the picker and how much of it is known, side by side */
+.dialog-form .row label:has(.date-pick) {
+	flex: 2 1 16rem;
+}
+
+.date-pick {
+	display: flex;
+	gap: 0.4rem;
+}
+
+.dialog-form .row label .date-pick .date-day {
+	flex: 1 1 9rem;
+	min-width: 0;
+}
+
+.dialog-form .row label .date-pick .date-precision {
+	flex: 0 0 auto;
+	width: auto;
+}
+
 .dialog-form .row label.check {
 	flex: 0 0 auto;
 	flex-direction: row;

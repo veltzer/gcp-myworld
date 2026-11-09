@@ -68,6 +68,9 @@
 #   - books: library_works.goodreads_id and simania_id (catalog ids), and
 #     library_entries.image_id (the cover). Adding columns: run before the
 #     deploy.
+#   - people.middle_name, between the first name and the surname: adding a
+#     column, run before the deploy; then scripts/tidy_names.py (through
+#     scripts/with_cloud_db.sh for Cloud SQL) moves the middle names into it.
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -106,6 +109,7 @@ COLUMNS = [
     ("youtube_videos", "uploaded", "DATE"),
     ("youtube_videos", "views", "BIGINT"),
     ("youtube_videos", "unavailable", "BOOLEAN NOT NULL DEFAULT 0"),
+    ("people", "middle_name", "VARCHAR(200) NOT NULL DEFAULT ''"),
 ]
 
 url = os.environ.get("DATABASE_URL", "sqlite:///db.gi/myworld.sqlite")
@@ -346,7 +350,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
 	   OR (table_name = 'organizations' AND column_name IN ('type_id', 'functions'))
 	   OR (table_name = 'concerts' AND column_name = 'performers')
-	   OR (table_name = 'people' AND column_name IN ('name', 'type_id'))
+	   OR (table_name = 'people' AND column_name IN ('name', 'type_id', 'middle_name'))
 	   OR (table_name = 'person_types' AND column_name = 'id')
 	   OR (table_name IN ('museums', 'organizations') AND column_name IN ('address', 'latitude', 'longitude', 'alone'))
 	   OR (table_name = 'audio_courses' AND column_name IN ('device', 'device_id', 'link'))
@@ -640,6 +644,8 @@ if has "works.id:.*" || has "library_works.id:.*"; then
 	has "library_works.simania_id:.*" || need library_works.simania_id "ALTER TABLE library_works ADD COLUMN simania_id VARCHAR(20) NOT NULL DEFAULT ''"
 	has "library_entries.image_id:.*" || need library_entries.image_id "ALTER TABLE library_entries ADD COLUMN image_id INTEGER REFERENCES images (id) ON DELETE SET NULL"
 fi
+# people.middle_name (adding a column: run before the deploy)
+has "people.middle_name:.*" || need people.middle_name "ALTER TABLE people ADD COLUMN middle_name VARCHAR(200) NOT NULL DEFAULT ''"
 
 if (( ${#changed[@]} == 0 )); then
 	echo "${gcp_sql_instance}/${gcp_db_name}: up to date, nothing to migrate"

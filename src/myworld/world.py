@@ -15,7 +15,7 @@ import werkzeug
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from myworld import auth
+from myworld import auth, names
 from myworld.api import ApiError, coordinates, json_body, opt_int, text
 from myworld.models import (
     KINDS,
@@ -195,6 +195,7 @@ def person_json(person: Person) -> dict[str, Any]:
         "id": person.id,
         "name": person.name,
         "first_name": person.first_name,
+        "middle_name": person.middle_name,
         "surname": person.surname,
         "types": _refs(person.types),
         "organizations": _refs(person.organizations),
@@ -517,10 +518,15 @@ def _apply_person(person: Person, body: dict[str, Any]) -> None:
     # description, so it is only a person with none of the three, who could
     # not be picked in any picker, that is refused
     person.first_name = text(body, "first_name")
+    person.middle_name = " ".join(text(body, "middle_name").split())
     person.surname = text(body, "surname")
     person.description = text(body, "description")
-    if not person.first_name and not person.surname and not person.description:
-        raise ApiError(400, "a person needs a first name, a surname or a description")
+    # one word each; the middle name holds whatever comes between
+    for key, value in (("first_name", person.first_name), ("surname", person.surname)):
+        if names.has_space(value):
+            raise ApiError(400, f"{key}: one word, without spaces (a surname of two words is hyphenated; more names go in the middle name)")
+    if not person.first_name and not person.middle_name and not person.surname and not person.description:
+        raise ApiError(400, "a person needs a name or a description")
     person.organizations = owned_list(body, "organizations", Organization)
     person.types = owned_list(body, "type_ids", PersonType)
 

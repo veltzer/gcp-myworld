@@ -20,6 +20,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from myworld import names
 from myworld.models import (
     KINDS,
     YOUTUBE_ID_LENGTH,
@@ -281,6 +282,23 @@ def check_person_types(session: Session) -> Result:
         Problem(f"{person.name} (person {person.id}, account {person.owner_id})", "has no type", f"people/{person.id}", person.owner_id)
         for person in people
         if person.id not in typed
+    ]
+    return Result(checked=len(people), problems=problems)
+
+
+@check("people-names", "Every name is a first name, middle name and surname", "people", "people")
+def check_person_names(session: Session) -> Result:
+    """
+    Every person's first name and surname, of every account, is one word
+    (a surname of two words hyphenated, more names in the middle name).
+    What scripts/tidy_names.py could not split is listed: mostly a band or
+    a description kept whole in the first name, to fix by hand.
+    """
+    people = session.scalars(select(Person).order_by(Person.owner_id, Person.first_name, Person.surname, Person.id)).all()
+    problems = [
+        Problem(f"{person.name} (person {person.id}, account {person.owner_id})", f"{'first name' if names.has_space(person.first_name) else 'surname'} has spaces", f"people/{person.id}", person.owner_id)
+        for person in people
+        if names.has_space(person.first_name) or names.has_space(person.surname)
     ]
     return Result(checked=len(people), problems=problems)
 

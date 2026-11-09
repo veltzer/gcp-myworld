@@ -179,8 +179,15 @@ who the user went with. The import makes every performer a person,
 reusing one `people.yaml` already has; `scripts/migrate.sh` did the same
 for the free-text performer names already in the database.
 
-A person has a first name and a surname (a name that is not one, a band
-say, is all first name), and names are not unique: two people of the same
+A person has a first name, a middle name and a surname. The first name and
+the surname are one word each (a surname of two words is hyphenated,
+Di-Meola; the API refuses spaces in them); the middle name is whatever
+comes between and may be several words. A name that is not a person's (a
+band, say) stays whole in the first name, and the `people-names` check
+lists it to fix by hand. `scripts/tidy_names.py` splits the names already in
+a database where it is plain how (`--dry-run` shows what it would change),
+and the import splits new names the same way (`src/myworld/names.py`),
+matching existing people however a name is spaced or hyphenated. Names are not unique: two people of the same
 name are two rows, and the pickers show each one's type and description to
 tell them apart. Each person may have any number of types (a neighbor and a friend) from
 the user's own person types enumeration (sidebar, Types, Person; an import starts with Family,
@@ -287,8 +294,9 @@ a person is written with `type_ids`, a list.
   `image`, and `people` (ids and names).
 - `POST` to the same paths adds,
   `PUT /api/<concert-visits|museum-visits|audio-courses|youtube-videos|people|organizations>/<id>` replaces the fields,
-  `DELETE` removes. The date is typed as `YYYY`, `YYYY-MM` or
-  `YYYY-MM-DD`; a date sent back exactly as it came keeps its stored
+  `DELETE` removes. The date is sent as `YYYY`, `YYYY-MM` or
+  `YYYY-MM-DD` (the add and edit forms pick it with a date picker and a Day, Month
+  only or Year only choice, so it is always a real date); a date sent back exactly as it came keeps its stored
   precision, timestamps included. `people` and `organizations` are lists of
   ids, `type_id` an organization type id, and an organization's relation
   types are written as `relation_ids`, a list.

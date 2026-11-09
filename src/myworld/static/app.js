@@ -659,6 +659,7 @@ const SORTS = {
 	],
 	people: [
 		["first_name", "First name", (p) => p.first_name, "asc"],
+		["middle_name", "Middle name", (p) => p.middle_name, "asc"],
 		["surname", "Surname", (p) => p.surname, "asc"],
 		["type", "Type", (p) => p.types[0]?.name, "asc"],
 		["organization", "Organization", (p) => p.organizations[0]?.name, "asc"],
@@ -923,6 +924,7 @@ async function libraryPage() {
 	setupMovieSearch();
 	setupWorlds();
 	setupViewChecks();
+	setupDatePicks();
 	setupAddDialog();
 	renderKinds();
 	loadCounts().catch((e) => showError(e.message));
@@ -1582,7 +1584,7 @@ function personRow(person) {
 	button.innerHTML = LINK_ICON;
 	button.onclick = () => showConnections(person).catch((e) => showError(e.message));
 	links.appendChild(button);
-	tr.append(el("td", "title", person.first_name), el("td", "title", person.surname), kind, organizations, el("td", null, person.description), links);
+	tr.append(el("td", "title", person.first_name), el("td", "title", person.middle_name), el("td", "title", person.surname), kind, organizations, el("td", null, person.description), links);
 	editable(tr, person);
 	return tr;
 }
@@ -2562,7 +2564,7 @@ async function worldList(view) {
 // description too, since two people may share a name. A person with no name
 // is called by the description already, so it is not repeated.
 function chipLabel(row) {
-	const named = row.first_name || row.surname;
+	const named = row.first_name || row.middle_name || row.surname;
 	const more = [(row.types || []).map((t) => t.name).join("/"), named && row.description?.slice(0, 40)].filter(Boolean);
 	return more.length && "first_name" in row ? `${row.name} (${more.join(", ")})` : row.name;
 }
@@ -2659,6 +2661,36 @@ function setupChips(box) {
 // (with the reason shown) when some text names nothing that exists.
 function pendingChipsOk(form) {
 	return [...form.querySelectorAll("[data-chips]")].every((box) => box.pick(false));
+}
+
+// The date pickers of a form, from the date in their hidden field (YYYY,
+// YYYY-MM, YYYY-MM-DD or a timestamp): the picker always holds a real day,
+// and the precision says how much of it is known.
+function syncDatePicks(form) {
+	for (const box of form.querySelectorAll(".date-pick")) {
+		const value = box.querySelector("input[type=hidden]").value;
+		const [year, month, day] = value.split(/[-T]/);
+		box.dataset.original = value;
+		box.querySelector(".date-precision").value = !value || day ? "day" : month ? "month" : "year";
+		box.querySelector(".date-day").value = value ? `${year}-${month || "01"}-${day || "01"}` : "";
+	}
+}
+
+// Picking a day, or changing how much of it is known, writes the hidden
+// field: only ever a legal date. A date left as it was keeps its time.
+function setupDatePicks() {
+	for (const box of document.querySelectorAll(".date-pick")) {
+		const hidden = box.querySelector("input[type=hidden]");
+		const picker = box.querySelector(".date-day");
+		const precision = box.querySelector(".date-precision");
+		const update = () => {
+			const [year, month] = picker.value.split("-");
+			const value = !picker.value ? "" : { year, month: `${year}-${month}`, day: picker.value }[precision.value];
+			hidden.value = value && value === box.dataset.original?.slice(0, 10) ? box.dataset.original : value;
+		};
+		picker.addEventListener("input", update);
+		precision.addEventListener("change", update);
+	}
 }
 
 function resetForm(form) {
@@ -2785,6 +2817,7 @@ const WORLD_BODIES = {
 	},
 	people: async (form) => ({
 		first_name: form.elements.first_name.value,
+		middle_name: form.elements.middle_name.value,
 		surname: form.elements.surname.value,
 		type_ids: chosen(form, "types"),
 		organizations: chosen(form, "organizations"),
@@ -2952,6 +2985,7 @@ async function openDialog(item) {
 		if (item) {
 			fillWorldForm(form, item);
 		}
+		syncDatePicks(form);
 		if (form.elements.device_id) {
 			form.elements.device_id.value = item?.device ? item.device.id : "";
 		}

@@ -76,6 +76,7 @@ import yaml
 from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session, selectinload
 
+from myworld import names as naming
 from myworld.models import (
     AudioCourse,
     Concert,
@@ -162,7 +163,6 @@ RELATION_TYPES = {
 FAMILY_NAME = "Veltzer"
 FAMILY_DESCRIPTION = re.compile(r"my (brother|sister|mother|father|son|daughter|wife|husband|cousin|uncle|aunt)\b", re.IGNORECASE)
 GIRLFRIEND_DESCRIPTION = re.compile(r"(ex-)?girlfriend\b", re.IGNORECASE)
-TWO_WORD_NAME = re.compile(r"([A-Z][^ ]*) ([A-Z][^ ]*)")
 CO_WORKER_DESCRIPTION = re.compile(r"\bMAFAT\b|\bwork(ed)? with\b")
 # organizations.yaml has no type field (yet): these are the ones that are not a
 # company; a type field in the YAML (a type name) wins over this list
@@ -256,17 +256,14 @@ def type_for(name: str) -> str:
     return ORGANIZATION_TYPE_BY_NAME.get(name, DEFAULT_ORGANIZATION_TYPE)
 
 
-def split_name(name: str) -> tuple[str, str]:
+def split_name(name: str) -> tuple[str, str, str]:
     """
-    A whole name as (first name, surname): split only when it is plainly two
-    capitalized words ("Doron Veltzer", "Yaron Ben-Ami"); anything else ("Oded
-    from MAFAT", "The Band", three words) is all first name, to split by hand.
-    scripts/migrate.sh splits the names already in a database the same way.
+    A whole name as (first name, middle name, surname), split as
+    myworld.names.split_name does ("Jeffrey L. Kasser", "Al Di Meola"
+    becoming Di-Meola); what is not plainly a person's name ("Oded from
+    MAFAT", "The Band") is all first name, for the people-names check to list.
     """
-    match = TWO_WORD_NAME.fullmatch(name)
-    if match is None or match.group(1) == "The":
-        return name, ""
-    return match.group(1), match.group(2)
+    return naming.split_name(name) or (name, "", "")
 
 
 def _person_type(person: Person) -> str | None:
@@ -452,9 +449,9 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
             if name not in organizations:
                 organizations[name] = Organization(owner_id=owner.id, name=name, type=organization_type(DEFAULT_ORGANIZATION_TYPE))
                 session.add(organizations[name])
-        first_name, surname = split_name(item["name"])
+        first_name, middle_name, surname = split_name(item["name"])
         person = Person(
-            owner_id=owner.id, first_name=first_name, surname=surname, description=item.get("description", ""),
+            owner_id=owner.id, first_name=first_name, middle_name=middle_name, surname=surname, description=item.get("description", ""),
             organizations=[organizations[name] for name in names],
         )
         people[item["name"]] = person
@@ -475,8 +472,8 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
         names = [name.strip() for name in item.get("performers", []) if name.strip()]
         for name in names:
             if name not in people:
-                first_name, surname = split_name(name)
-                people[name] = Person(owner_id=owner.id, first_name=first_name, surname=surname, description="")
+                first_name, middle_name, surname = split_name(name)
+                people[name] = Person(owner_id=owner.id, first_name=first_name, middle_name=middle_name, surname=surname, description="")
                 session.add(people[name])
         return [people[name] for name in dict.fromkeys(names)]
 
@@ -565,19 +562,19 @@ def import_audio_courses(session: Session, owner: User, source: Path) -> dict[st
     session.flush()
     by_name: dict[str, list[Person]] = {}
     for person in session.scalars(select(Person).where(Person.owner_id == owner.id)):
-        by_name.setdefault(person.name, []).append(person)
+        by_name.setdefault(naming.key(person.name), []).append(person)
     added = 0
 
     def lecturer(name: str) -> Person:
         nonlocal added
-        found = by_name.get(name, [])
+        found = by_name.get(naming.key(name), [])
         if len(found) > 1:
             raise WorldImportError(f"audio_courses.yaml: {len(found)} people are called {name!r}; make the names differ first")
         if not found:
-            first_name, surname = split_name(name)
-            found = [Person(owner_id=owner.id, first_name=first_name, surname=surname, description="")]
+            first_name, middle_name, surname = split_name(name)
+            found = [Person(owner_id=owner.id, first_name=first_name, middle_name=middle_name, surname=surname, description="")]
             session.add(found[0])
-            by_name[name] = found
+            by_name[naming.key(name)] = found
             added += 1
         return found[0]
 
@@ -728,19 +725,19 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
     book_author = person_types["Book Author"]
     by_name: dict[str, list[Person]] = {}
     for person in session.scalars(select(Person).where(Person.owner_id == owner.id).options(selectinload(Person.types))):
-        by_name.setdefault(person.name, []).append(person)
+        by_name.setdefault(naming.key(person.name), []).append(person)
 
     def author(name: str) -> Person:
         """ owner's person called name, made a Book Author; a new one when there is none. """
         nonlocal people_added, typed
-        found = by_name.get(name, [])
+        found = by_name.get(naming.key(name), [])
         if len(found) > 1:
             raise WorldImportError(f"books_read.yaml: {len(found)} people are called {name!r}; make the names differ first")
         if not found:
-            first_name, surname = split_name(name)
-            found = [Person(owner_id=owner.id, first_name=first_name, surname=surname, description="", types=[])]
+            first_name, middle_name, surname = split_name(name)
+            found = [Person(owner_id=owner.id, first_name=first_name, middle_name=middle_name, surname=surname, description="", types=[])]
             session.add(found[0])
-            by_name[name] = found
+            by_name[naming.key(name)] = found
             people_added += 1
         if book_author not in found[0].types:
             found[0].types.append(book_author)

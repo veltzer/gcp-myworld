@@ -365,6 +365,57 @@ def test_person_types(engine: Engine) -> None:
     assert [(p.link, p.owner) for p in result.problems] == [("people/2", 1), ("people/3", 2)]
 
 
+def test_person_names(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(google_sub="alice", email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        session.add_all([
+            Person(owner_id=alice.id, first_name="John", middle_name="Ronald Reuel", surname="Tolkien"),
+            Person(owner_id=alice.id, first_name="Shay Zalman Trio"),
+            Person(owner_id=alice.id, first_name="Guy", surname="Bar Tor"),
+            Person(owner_id=alice.id, description="the guide at the Louvre"),
+        ])
+        session.commit()
+        result = checks.CHECKS["people-names"].run(session)
+    assert result.checked == 4
+    assert sorted((p.subject, p.message) for p in result.problems) == [
+        ("Guy Bar Tor (person 3, account 1)", "surname has spaces"),
+        ("Shay Zalman Trio (person 2, account 1)", "first name has spaces"),
+    ]
+
+
+def test_tidy_names_script(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'db.sqlite'}"
+    engine = create_engine(url)
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        alice = User(google_sub="alice", email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        session.add_all([
+            Person(owner_id=alice.id, first_name="Richard P. Feynman"),
+            Person(owner_id=alice.id, first_name="Guy", surname="Bar Tor"),
+            Person(owner_id=alice.id, first_name="Open stage"),
+        ])
+        session.commit()
+    root = Path(__file__).resolve().parent.parent
+    env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"} | {"DATABASE_URL": url}
+
+    def tidy(*args: str) -> str:
+        done = subprocess.run([sys.executable, str(root / "scripts" / "tidy_names.py"), *args], env=env, capture_output=True, text=True, check=True)
+        return done.stdout
+    assert tidy("--dry-run").splitlines()[-1] == "2 names would change"
+    assert tidy().splitlines()[-1] == "2 names changed"
+    assert tidy() == "0 names changed\n"
+    with Session(engine) as session:
+        people = session.scalars(select(Person).order_by(Person.id)).all()
+        assert [(p.first_name, p.middle_name, p.surname) for p in people] == [
+            ("Richard", "P.", "Feynman"), ("Guy", "", "Bar-Tor"), ("Open stage", "", ""),
+        ]
+    engine.dispose()
+
+
 def run_script(url: str, *args: str) -> subprocess.CompletedProcess[str]:
     root = Path(__file__).resolve().parent.parent
     # no PYTHONPATH: the script finds src/ by itself

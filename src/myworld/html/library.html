@@ -124,6 +124,7 @@
 					<thead>
 						<tr>
 							<th>First name</th>
+							<th>Middle name</th>
 							<th>Surname</th>
 							<th>Type</th>
 							<th>Organizations</th>
@@ -238,7 +239,7 @@
 					<label>Genre <input name="genre" placeholder="jazz, rock, ..."></label>
 				</div>
 				<div class="row">
-					<label>Date <input name="date" pattern="\d{4}(-\d{2}(-\d{2}(T[0-9:.]+Z)?)?)?" placeholder="YYYY-MM-DD, YYYY-MM or YYYY"></label>
+					<label>Date <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
 					<label class="wide">Venue <input name="venue"></label>
 					<label>City <input name="city"></label>
 					<label>Country <input name="country"></label>
@@ -276,7 +277,7 @@
 					<label>City <input name="city"></label>
 				</div>
 				<div class="row">
-					<label>Date <input name="date" pattern="\d{4}(-\d{2}(-\d{2}(T[0-9:.]+Z)?)?)?" placeholder="YYYY-MM-DD, YYYY-MM or YYYY"></label>
+					<label>Date <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
 					<label>Rating <input name="rating" type="number"></label>
 					<label>Tickets <input name="tickets" type="number" min="0" max="1000"></label>
 				</div>
@@ -315,7 +316,7 @@
 					<label class="wide">Lecturers <span class="chips" data-chips="people" data-field="lecturers"><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
 				</div>
 				<div class="row">
-					<label>Finished <input name="date" pattern="\d{4}(-\d{2}(-\d{2}(T[0-9:.]+Z)?)?)?" placeholder="YYYY-MM-DD, YYYY-MM or YYYY"></label>
+					<label>Finished <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
 					<label>Started <input name="started" pattern="\d{4}-\d{2}-\d{2}(T[0-9:.]+Z)?" placeholder="YYYY-MM-DD"></label>
 					<label>Progress <input name="progress" placeholder="e.g. 4/24"></label>
 					<label>Rating <input name="rating" type="number"></label>
@@ -352,7 +353,7 @@
 					<label class="wide">Name <input name="name" placeholder="none for a video YouTube no longer has"></label>
 				</div>
 				<div class="row">
-					<label>Watched <input name="date" pattern="\d{4}(-\d{2}(-\d{2}(T[0-9:.]+Z)?)?)?" placeholder="YYYY-MM-DD, YYYY-MM or YYYY"></label>
+					<label>Watched <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
 					<label>Rating <input name="rating" type="number"></label>
 				</div>
 				<div class="row">
@@ -370,8 +371,9 @@
 			</form>
 			<form id="person-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">First name <input name="first_name"></label>
-					<label class="wide">Surname <input name="surname"></label>
+					<label>First name <input name="first_name" pattern="\S*" title="One word, without spaces"></label>
+					<label>Middle name <input name="middle_name" title="Any names between the first name and the surname"></label>
+					<label>Surname <input name="surname" pattern="\S*" title="One word, without spaces: hyphenate a surname of two words (Di-Meola)"></label>
 				</div>
 				<div class="row">
 					<label class="wide">Types <span class="chips" data-chips="person-types" data-field="types"><input list="person-type-names" placeholder="Type a person type" autocomplete="off"></span></label>
