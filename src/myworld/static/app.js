@@ -2639,34 +2639,59 @@ async function worldList(view) {
 	return worldCache[view];
 }
 
-// What a picker suggests for a row: the name, and for people the type and
-// description too, since two people may share a name. A person with no name
-// is called by the description already, so it is not repeated.
-function chipLabel(row) {
+// ─── pickers over long lists: Tom Select (https://tom-select.js.org/) ───────
+
+// The grey line under a person in a picker: their types and description,
+// since two people may share a name. A person with no name is called by the
+// description already, so it is not repeated.
+function pickerNote(row) {
+	if (!("first_name" in row)) {
+		return "";
+	}
 	const named = row.first_name || row.middle_name || row.surname;
-	const more = [(row.types || []).map((t) => t.name).join("/"), named && row.description?.slice(0, 40)].filter(Boolean);
-	return more.length && "first_name" in row ? `${row.name} (${more.join(", ")})` : row.name;
+	return [(row.types || []).map((t) => t.name).join("/"), named && row.description?.slice(0, 60)].filter(Boolean).join(" · ");
 }
 
-// A picker (data-chips="people" or "organizations"): names from that view become
-// removable chips; the ids are sent.
-function addChip(box, person) {
-	if (box.selected.has(person.id)) {
-		return;
-	}
-	box.selected.set(person.id, person.name);
-	const chip = el("span", "chip", person.name);
-	const remove = el("button", "chip-remove", "\u00d7");
-	remove.type = "button";
-	remove.setAttribute("aria-label", `Remove ${person.name}`);
-	remove.onclick = () => {
-		box.selected.delete(person.id);
-		chip.remove();
-		syncAlone(box.closest("form"));
-	};
-	chip.appendChild(remove);
-	box.insertBefore(chip, box.querySelector("input"));
-	syncAlone(box.closest("form"));
+// lists this long or shorter open on focus; longer ones only once something is typed
+const PICKER_OPEN_ON_FOCUS = 15;
+
+// A picker on a select: only rows that exist can be picked, the best few
+// matches of what is typed are offered (a name before a note), and a
+// multiple select gives removable chips.
+function makePicker(select, onChange) {
+	const multiple = select.multiple;
+	return new TomSelect(select, {
+		maxItems: multiple ? null : 1,
+		placeholder: select.dataset.placeholder,
+		maxOptions: 8,
+		// the rows are all in memory: filter on every key, so Enter right after typing picks from what was typed
+		refreshThrottle: 0,
+		create: false,
+		hideSelected: true,
+		closeAfterSelect: !multiple,
+		searchField: [{ field: "text", weight: 2 }, { field: "sub", weight: 0.5 }],
+		plugins: multiple ? ["remove_button"] : ["clear_button"],
+		render: {
+			option: (data, esc) => `<div class="picker-option"><span>${esc(data.text)}</span>${data.sub ? `<small>${esc(data.sub)}</small>` : ""}</div>`,
+			item: (data, esc) => `<div>${esc(data.text)}</div>`,
+			no_results: (data, esc) => `<div class="no-results">No one matches “${esc(data.input)}”</div>`,
+		},
+		onChange: () => onChange?.(),
+	});
+}
+
+// What a picker offers: rows of a view, by name (or label), each with its note
+function setPickerRows(select, rows, label = (row) => row.name) {
+	const picker = select.tomselect;
+	picker.clear(true);
+	picker.clearOptions();
+	picker.addOptions(rows.map((row) => ({ value: String(row.id), text: label(row), sub: pickerNote(row) })));
+	picker.settings.openOnFocus = rows.length <= PICKER_OPEN_ON_FOCUS;
+	picker.refreshOptions(false);
+}
+
+function setPickerValue(select, ids) {
+	select.tomselect.setValue(ids.map(String), true);
 }
 
 // "I went alone" and the With picker exclude each other: with people chosen the
@@ -2676,71 +2701,73 @@ function syncAlone(form) {
 	if (!alone) {
 		return;
 	}
-	const box = form.querySelector("[data-field=people]");
-	alone.disabled = box.selected.size > 0;
-	box.querySelector("input").disabled = alone.checked;
-	box.classList.toggle("disabled", alone.checked);
+	const picker = form.querySelector("[data-field=people]").tomselect;
+	alone.disabled = picker.items.length > 0;
+	if (alone.checked) {
+		picker.disable();
+	} else {
+		picker.enable();
+	}
 }
 
-function setupChips(box) {
-	box.selected = new Map();
-	const input = box.querySelector("input");
-	// Only rows that exist can be picked: text that names none stays, marked
-	// invalid, and the form will not save while it is there (pendingChipsOk).
-	const pick = (quiet) => {
-		const name = input.value.trim();
-		input.classList.remove("invalid");
-		if (!name) {
-			return true;
-		}
-		const view = box.dataset.chips;
-		const rows = worldCache[view] || [];
-		const wanted = name.toLowerCase();
-		// a suggestion names one row exactly; a bare name only when no one else has it
-		let matches = rows.filter((row) => chipLabel(row).toLowerCase() === wanted);
-		if (matches.length === 0) {
-			matches = rows.filter((row) => row.name.toLowerCase() === wanted);
-		}
-		if (matches.length !== 1) {
-			input.classList.add("invalid");
-			if (!quiet) {
-				dialogError(matches.length
-					? `${matches.length} are called ${name}: pick one from the suggestions.`
-					: `${name} is not in ${WORLDS[view][0]}: pick one from the suggestions, or add it to ${WORLDS[view][0]} first.`);
-			}
-			return false;
-		}
-		const person = matches[0];
-		dialogError("");
-		addChip(box, person);
-		input.value = "";
-		return true;
-	};
-	box.pick = pick;
-	input.onkeydown = (event) => {
-		if (event.key === "Enter" || event.key === ",") {
-			event.preventDefault();
-			pick(false);
-		} else if (event.key === "Backspace" && !input.value && box.selected.size) {
-			const chips = box.querySelectorAll(".chip");
-			chips[chips.length - 1].querySelector("button").click();
-		}
-	};
-	// a pick from the suggestion list arrives as a replacement of the whole text
-	input.oninput = (event) => {
-		if (!(event instanceof InputEvent) || event.inputType === "insertReplacementText") {
-			pick(true);
-		}
-	};
-	// leaving the box with a name that matches nothing says so at once
-	input.onblur = () => pick(false);
+// ─── a person's relations to other people, in the person form ──────────────
+
+// the relations of the person being edited: [{type_id, type, person: {id, name}}]
+let editingRelations = [];
+
+function renderEditingRelations() {
+	const box = $("person-relations");
+	box.replaceChildren();
+	if (editingRelations.length === 0) {
+		box.appendChild(el("span", "empty", "None yet"));
+	}
+	editingRelations.forEach((relation, index) => {
+		const chip = el("span", "chip", `${relation.type} ${relation.person.name}`);
+		const remove = el("button", "chip-remove", "\u00d7");
+		remove.type = "button";
+		remove.setAttribute("aria-label", `Remove ${relation.type} ${relation.person.name}`);
+		remove.onclick = () => {
+			editingRelations.splice(index, 1);
+			renderEditingRelations();
+		};
+		chip.appendChild(remove);
+		box.appendChild(chip);
+	});
 }
 
-// Before saving: every picker's leftover text must turn into a chip; false
-// (with the reason shown) when some text names nothing that exists.
-function pendingChipsOk(form) {
-	// the person form's relation row too: a person left in its Of box is added, one that names no one stops the save
-	return [...form.querySelectorAll("[data-chips]")].every((box) => box.pick(false)) && (form.id !== "person-form" || pickRelation(false));
+// The relation row: pick the relation, then the person; picking the person
+// adds the pair (the person edited is never offered).
+async function prepareRelations(item) {
+	const [kinds, people] = await Promise.all([worldList("person-relation-types"), worldList("people")]);
+	editingRelations = (item?.relations || []).map((r) => ({ ...r }));
+	$("relation-type").replaceChildren(...kinds.map((k) => {
+		const option = document.createElement("option");
+		option.value = k.id;
+		option.textContent = k.name;
+		return option;
+	}));
+	const select = $("relation-person");
+	setPickerRows(select, people.filter((p) => p.id !== item?.id));
+	const picker = select.tomselect;
+	if (kinds.length) {
+		picker.enable();
+	} else {
+		picker.disable();
+	}
+	picker.off("change");
+	picker.on("change", (value) => {
+		const other = people.find((p) => String(p.id) === value);
+		const kind = kinds.find((k) => String(k.id) === $("relation-type").value);
+		if (!other || !kind) {
+			return;
+		}
+		if (!editingRelations.some((r) => r.type_id === kind.id && r.person.id === other.id)) {
+			editingRelations.push({ type_id: kind.id, type: kind.name, person: { id: other.id, name: other.name } });
+		}
+		picker.clear(true);
+		renderEditingRelations();
+	});
+	renderEditingRelations();
 }
 
 // The date pickers of a form, from the date in their hidden field (YYYY,
@@ -2773,118 +2800,10 @@ function setupDatePicks() {
 	}
 }
 
-// ─── a person's relations to other people, in the person form ──────────────
-
-// the relations of the person being edited: [{type_id, type, person: {id, name}}]
-let editingRelations = [];
-
-function renderEditingRelations() {
-	const box = $("person-relations");
-	box.replaceChildren();
-	if (editingRelations.length === 0) {
-		box.appendChild(el("span", "empty", "None yet"));
-	}
-	editingRelations.forEach((relation, index) => {
-		const chip = el("span", "chip", `${relation.type} ${relation.person.name}`);
-		const remove = el("button", "chip-remove", "\u00d7");
-		remove.type = "button";
-		remove.setAttribute("aria-label", `Remove ${relation.type} ${relation.person.name}`);
-		remove.onclick = () => {
-			editingRelations.splice(index, 1);
-			renderEditingRelations();
-		};
-		chip.appendChild(remove);
-		box.appendChild(chip);
-	});
-}
-
-// The people the relation row's Of text names: like the other pickers, a
-// suggestion names one exactly and a bare name ("Adam Dunski") counts when no
-// one else has it; never the person being edited, ignoring case.
-function relationMatches(people) {
-	const wanted = $("relation-person").value.trim().toLowerCase();
-	if (!wanted) {
-		return [];
-	}
-	const others = people.filter((p) => p.id !== state.editing?.id);
-	const exact = others.filter((p) => chipLabel(p).toLowerCase() === wanted);
-	return exact.length ? exact : others.filter((p) => p.name.toLowerCase() === wanted);
-}
-
-// set up per dialog by prepareRelations: turns the Of text into a relation;
-// false (with the reason shown) when the text names no one, or several
-let pickRelation = () => true;
-
-async function prepareRelations(item) {
-	const [kinds, people] = await Promise.all([worldList("person-relation-types"), worldList("people")]);
-	editingRelations = (item?.relations || []).map((r) => ({ ...r }));
-	$("relation-type").replaceChildren(...kinds.map((k) => {
-		const option = document.createElement("option");
-		option.value = k.id;
-		option.textContent = k.name;
-		return option;
-	}));
-	// the person form has no people picker of its own: the names the Of box suggests come from here
-	$("people-names").replaceChildren(...people.filter((p) => p.id !== item?.id).map((p) => {
-		const option = document.createElement("option");
-		option.value = chipLabel(p);
-		return option;
-	}));
-	const input = $("relation-person");
-	const add = $("relation-add");
-	input.value = "";
-	input.classList.remove("invalid");
-	const sync = () => {
-		input.classList.remove("invalid");
-		add.disabled = !kinds.length || relationMatches(people).length !== 1;
-	};
-	pickRelation = (quiet) => {
-		const name = input.value.trim();
-		if (!name) {
-			return true;
-		}
-		const matches = relationMatches(people);
-		const kind = kinds.find((k) => String(k.id) === $("relation-type").value);
-		if (matches.length !== 1 || !kind) {
-			input.classList.add("invalid");
-			if (!quiet) {
-				dialogError(matches.length > 1
-					? `Several people are called ${name}: pick one from the suggestions.`
-					: `${name} is not in People: pick one from the suggestions, or add them to People first.`);
-			}
-			return false;
-		}
-		const other = matches[0];
-		if (!editingRelations.some((r) => r.type_id === kind.id && r.person.id === other.id)) {
-			editingRelations.push({ type_id: kind.id, type: kind.name, person: { id: other.id, name: other.name } });
-		}
-		dialogError("");
-		input.value = "";
-		sync();
-		renderEditingRelations();
-		return true;
-	};
-	input.oninput = sync;
-	// Enter adds the relation, as in the other pickers, rather than saving the form
-	input.onkeydown = (event) => {
-		if (event.key === "Enter") {
-			event.preventDefault();
-			pickRelation(false);
-		}
-	};
-	add.onclick = () => pickRelation(false);
-	sync();
-	renderEditingRelations();
-}
-
 function resetForm(form) {
 	form.reset();
-	for (const box of form.querySelectorAll("[data-chips]")) {
-		box.selected.clear();
-		box.querySelector("input").classList.remove("invalid");
-		for (const chip of box.querySelectorAll(".chip")) {
-			chip.remove();
-		}
+	for (const select of form.querySelectorAll("[data-chips]")) {
+		select.tomselect.clear(true);
 	}
 	syncAlone(form);
 }
@@ -2909,7 +2828,7 @@ async function uploadPhoto(form) {
 
 // the ids picked in the chips box of field ("people", "performers", "organizations")
 function chosen(form, field) {
-	return [...form.querySelector(`[data-field=${field}]`).selected.keys()];
+	return form.querySelector(`[data-field=${field}]`).tomselect.getValue().map(Number);
 }
 
 function where() {
@@ -3073,9 +2992,6 @@ function setupWorldForm(view) {
 	form.onsubmit = async (event) => {
 		event.preventDefault();
 		dialogError("");
-		if (!pendingChipsOk(form)) {
-			return;
-		}
 		const submit = form.querySelector("button[type=submit]");
 		submit.disabled = true;
 		try {
@@ -3109,10 +3025,8 @@ function fillWorldForm(form, item) {
 			element.value = value ?? "";
 		}
 	}
-	for (const box of form.querySelectorAll("[data-chips]")) {
-		for (const row of item[box.dataset.field]) {
-			addChip(box, row);
-		}
+	for (const select of form.querySelectorAll("[data-chips]")) {
+		setPickerValue(select, item[select.dataset.field].map((row) => row.id));
 	}
 	if (form.elements.type_id) {
 		form.elements.type_id.value = item.type ? item.type.id : "";
@@ -3172,13 +3086,8 @@ async function openDialog(item) {
 	delete remove.dataset.armed;
 	dialogError("");
 	if (world) {
-		for (const box of form.querySelectorAll("[data-chips]")) {
-			const rows = await worldList(box.dataset.chips);
-			$(box.querySelector("input").getAttribute("list")).replaceChildren(...rows.map((row) => {
-				const option = document.createElement("option");
-				option.value = chipLabel(row);
-				return option;
-			}));
+		for (const select of form.querySelectorAll("[data-chips]")) {
+			setPickerRows(select, await worldList(select.dataset.chips));
 		}
 		if (form.elements.type_id) {
 			await fillTypes(form.elements.type_id, TYPED[state.view]);
@@ -3187,7 +3096,7 @@ async function openDialog(item) {
 			await fillTypes(form.elements.device_id, "devices");
 		}
 		if (form.elements.place_id) {
-			await fillTypes(form.elements.place_id, "places", placeName);
+			setPickerRows(form.elements.place_id, await worldList("places"), placeName);
 		}
 		resetForm(form);
 		if (state.view === "organizations" && !item) {
@@ -3202,7 +3111,7 @@ async function openDialog(item) {
 			form.elements.device_id.value = item?.device ? item.device.id : "";
 		}
 		if (form.elements.place_id) {
-			form.elements.place_id.value = item?.place ? item.place.id : "";
+			setPickerValue(form.elements.place_id, item?.place ? [item.place.id] : []);
 		}
 		if (form.id === "person-form") {
 			await prepareRelations(item);
@@ -3245,9 +3154,20 @@ function setupAddDialog() {
 	for (const button of dialog.querySelectorAll("button.delete")) {
 		button.onclick = () => deleteEditing(button).catch((e) => dialogError(e.message));
 	}
-	for (const box of dialog.querySelectorAll("[data-chips]")) {
-		setupChips(box);
+	for (const select of dialog.querySelectorAll("[data-chips]")) {
+		makePicker(select, () => syncAlone(select.closest("form")));
 	}
+	for (const select of dialog.querySelectorAll("[data-picker], #relation-person")) {
+		makePicker(select);
+	}
+	// In a picker, Escape closes its list and Enter picks the highlighted row;
+	// neither ever closes the dialog or saves the form, even when the list has
+	// already closed by itself (the edits would be lost, or saved half done)
+	dialog.addEventListener("keydown", (event) => {
+		if ((event.key === "Escape" || event.key === "Enter") && event.target.closest?.(".ts-wrapper")) {
+			event.preventDefault();
+		}
+	}, true);
 	$("museum-form").elements.alone.onchange = () => syncAlone($("museum-form"));
 	const { rating_min, rating_max } = state.config;
 	$("museum-form").elements.rating.min = rating_min;

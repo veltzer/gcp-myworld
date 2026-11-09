@@ -5,7 +5,10 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>My World</title>
 		<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+		<!-- the pickers over long lists (people, places, ...): Tom Select, https://tom-select.js.org/ -->
+		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tom-select/2.6.0/css/tom-select.default.min.css" integrity="sha512-9Ulg3D18qlDyBYsFiTipF+EJbYl1rCLAL766xaaxnCYkr2W9LU/t3AKKq523f3w3oOK5007rmsJcQ1HDnflIvw==" crossorigin="anonymous">
 		<link rel="stylesheet" href="/static/style.css">
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/tom-select/2.6.0/js/tom-select.complete.min.js" integrity="sha512-iYRFjWzVbUrSMW1pEM3z1uQlMBLr66Up/W6q/IFWb7PR1pvTz22ntvG5rQUSxH99kUsaafhb6qPbSm3j6AQvrQ==" crossorigin="anonymous" defer></script>
 		<script src="/static/app.js" defer></script>
 	</head>
 	<body data-page="library">
@@ -248,16 +251,16 @@
 					<label class="wide">Event <input name="event" placeholder="Festival, tour, occasion"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Groups <span class="chips" data-chips="groups" data-field="groups"><input list="group-names" placeholder="Type a name from Groups" autocomplete="off"></span></label>
-					<label class="wide">Performers <span class="chips" data-chips="people" data-field="performers"><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
+					<label class="wide">Groups <select multiple data-chips="groups" data-field="groups" data-placeholder="Type a name from Groups"><option value=""></option></select></label>
+					<label class="wide">Performers <select multiple data-chips="people" data-field="performers" data-placeholder="Type a name from People"><option value=""></option></select></label>
 					<label>Genre <input name="genre" placeholder="jazz, rock, ..."></label>
 				</div>
 				<div class="row">
 					<label>Date <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
-					<label class="wide">Place <select name="place_id" title="Where it was: add a new one on the Places page"></select></label>
+					<label class="wide">Place <select name="place_id" data-picker="places" data-placeholder="Type a place" title="Where it was: add a new one on the Places page"></select></label>
 				</div>
 				<div class="row">
-					<label class="wide">With <span class="chips" data-chips="people" data-field="people"><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
+					<label class="wide">With <select multiple data-chips="people" data-field="people" data-placeholder="Type a name from People"><option value=""></option></select></label>
 				</div>
 				<div class="row">
 					<label>Tickets <input name="tickets" type="number" min="0" max="1000"></label>
@@ -302,7 +305,7 @@
 					<label class="wide">Website <input name="url" type="url" placeholder="https://"></label>
 				</div>
 				<div class="row">
-					<label class="wide">With <span class="chips" data-chips="people" data-field="people"><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
+					<label class="wide">With <select multiple data-chips="people" data-field="people" data-placeholder="Type a name from People"><option value=""></option></select></label>
 					<label class="check"><input name="alone" type="checkbox"> I went alone</label>
 				</div>
 				<div class="row">
@@ -325,7 +328,7 @@
 					<label class="wide">Name <input name="name" required></label>
 				</div>
 				<div class="row">
-					<label class="wide">Lecturers <span class="chips" data-chips="people" data-field="lecturers"><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
+					<label class="wide">Lecturers <select multiple data-chips="people" data-field="lecturers" data-placeholder="Type a name from People"><option value=""></option></select></label>
 				</div>
 				<div class="row">
 					<label>Finished <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
@@ -389,16 +392,15 @@
 					<label>Surname <input name="surname" pattern="\S*" title="One word, without spaces: hyphenate a surname of two words (Di-Meola)"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Types <span class="chips" data-chips="person-types" data-field="types"><input list="person-type-names" placeholder="Type a person type" autocomplete="off"></span></label>
-					<label class="wide">Organizations <span class="chips" data-chips="organizations" data-field="organizations"><input list="organization-names" placeholder="Type a name from Organizations" autocomplete="off"></span></label>
+					<label class="wide">Types <select multiple data-chips="person-types" data-field="types" data-placeholder="Type a person type"><option value=""></option></select></label>
+					<label class="wide">Organizations <select multiple data-chips="organizations" data-field="organizations" data-placeholder="Type a name from Organizations"><option value=""></option></select></label>
 				</div>
 				<div class="row">
 					<label class="wide">Relations <span class="chips" id="person-relations"></span></label>
 				</div>
 				<div class="row">
 					<label>Relation <select id="relation-type" aria-label="Relation"></select></label>
-					<label class="wide">Of <input id="relation-person" list="people-names" placeholder="Type a name from People" autocomplete="off"></label>
-					<button type="button" class="text relation-add" id="relation-add" disabled>Add relation</button>
+					<label class="wide">Of <select id="relation-person" data-placeholder="Type a name from People: picking one adds the relation"></select></label>
 				</div>
 				<div class="row">
 					<label class="wide">Description <input name="description" placeholder="How you know them"></label>
@@ -416,7 +418,7 @@
 					<label>Type <select name="type_id"></select></label>
 				</div>
 				<div class="row">
-					<label class="wide">Relation to me <span class="chips" data-chips="relation-types" data-field="relations"><input list="relation-type-names" placeholder="Type a name from Relation types" autocomplete="off"></span></label>
+					<label class="wide">Relation to me <select multiple data-chips="relation-types" data-field="relations" data-placeholder="Type a name from Relation types"><option value=""></option></select></label>
 					<label>Status <input name="status" placeholder="active, acquired, defunct"></label>
 				</div>
 				<div class="row">
@@ -447,7 +449,7 @@
 					<label class="wide">Name <input name="name" required placeholder="Pink Floyd"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Members <span class="chips" data-chips="people" data-field="members"><input list="people-names" placeholder="Type a name from People" autocomplete="off"></span></label>
+					<label class="wide">Members <select multiple data-chips="people" data-field="members" data-placeholder="Type a name from People"><option value=""></option></select></label>
 				</div>
 				<div class="row">
 					<label class="wide">Description <input name="description" placeholder="jazz trio, rock band, ..."></label>
@@ -550,11 +552,6 @@
 					<button type="submit">Add</button>
 				</div>
 			</form>
-			<datalist id="people-names"></datalist>
-			<datalist id="organization-names"></datalist>
-			<datalist id="group-names"></datalist>
-			<datalist id="person-type-names"></datalist>
-			<datalist id="relation-type-names"></datalist>
 		</dialog>
 		<dialog id="connections-dialog" class="dialog" aria-labelledby="connections-title">
 			<h2 id="connections-title"></h2>

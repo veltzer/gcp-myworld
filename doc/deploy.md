@@ -207,6 +207,16 @@ how an organization is related to the user, is Org relations in the sidebar. Peo
 have a type filter next to the search; on a library kind (Books) the same control filters by status and by whether an entry has a
 cover, together (Done and No cover: the books read that have no cover).
 
+The pickers over the user's own rows (performers, people they went with,
+members, lecturers, types, organizations, groups, a concert's place, the
+other person of a relation) are Tom Select (https://tom-select.js.org/,
+Apache-2.0), loaded from cdnjs with its integrity hash, at an exact version
+as Leaflet is (a script from a CDN has no lockfile). Typing offers the best
+few matches, each with what tells two of the same name apart; a list of more
+than 15 rows opens only once something is typed. Only rows that exist can
+be picked, and in a picker Enter picks and Escape closes the list: neither
+saves the form or closes the dialog.
+
 A person may be at several organizations: the People tab links each one
 to its card in Organizations, and an organization card links back to its
 people. The person dialog picks organizations the way the concert dialog

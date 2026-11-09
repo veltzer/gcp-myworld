@@ -1656,21 +1656,81 @@ button.text.danger:hover {
 	color: var(--ink);
 }
 
-.chips input {
-	flex: 1;
-	min-width: 10rem;
+/* ─── pickers (Tom Select): the app's look ──────────────────────────────── */
+
+.dialog-form .row label .ts-wrapper {
+	width: 100%;
+}
+
+.ts-wrapper .ts-control {
+	font: inherit;
+	min-height: 2.35rem;
+	padding: 0.25rem 0.5rem;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: #fff;
+	color: var(--ink);
+	box-shadow: none;
+}
+
+.ts-wrapper.focus .ts-control {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 2px #2563eb33;
+}
+
+.ts-wrapper .ts-control input {
+	font: inherit;
+	color: var(--ink);
+}
+
+/* a chosen row in a multiple picker: a chip, as elsewhere */
+.ts-wrapper.multi .ts-control > .item {
 	border: none;
-	padding: 0.25rem 0.35rem;
+	border-radius: 999px;
+	background: #e8eefc;
+	color: var(--ink);
+	font-size: 0.85rem;
+	padding: 0.1rem 0.15rem 0.1rem 0.6rem;
+	/* a value is never split over two lines */
+	white-space: nowrap;
 }
 
-/* text in a picker that names nothing that exists */
-.chips input.invalid {
-	color: #b91c1c;
-	text-decoration: underline wavy #b91c1c;
+.ts-wrapper.plugin-remove_button .item .remove {
+	border-left: none;
+	color: var(--muted);
 }
 
-.chips input:focus {
-	outline: none;
+.ts-wrapper.disabled .ts-control {
+	opacity: 0.5;
+}
+
+.ts-dropdown {
+	font: inherit;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	box-shadow: 0 6px 18px #0000001f;
+	color: var(--ink);
+}
+
+.ts-dropdown .option {
+	padding: 0.4rem 0.6rem;
+}
+
+.ts-dropdown .active {
+	background: #e8eefc;
+	color: var(--ink);
+}
+
+/* a suggestion: the name, and under it what tells two of the same name apart */
+.picker-option small {
+	display: block;
+	color: var(--muted);
+	font-size: 0.8rem;
+}
+
+.ts-dropdown .no-results {
+	padding: 0.4rem 0.6rem;
+	color: var(--muted);
 }
 
 .chip {
@@ -1842,11 +1902,6 @@ button.text.check-toggle {
 .history {
 	display: inline-flex;
 	gap: 0.125rem;
-}
-
-/* "I went alone" ticked: the With picker is disabled, and looks it */
-.chips.disabled {
-	opacity: 0.5;
 }
 
 /* ─── one place on a map ─────────────────────────────────────────────────── */

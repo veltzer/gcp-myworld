@@ -1,4 +1,5 @@
 ASIN
+CDN
 Dana
 Goodreads
 London
@@ -37,6 +38,7 @@ imdb
 javascript
 jpeg
 json
+lockfile
 mailto
 microsoft
 myworld
