@@ -332,8 +332,17 @@ a person is written with `type_ids`, a list.
   people in it: ids and names, written as a list of ids) and `concerts`
   (ids and names, newest first). A name is a group once (409 for a
   second). Deleting a group keeps its people and its concerts.
+- An address is in three parts beside the row's city, which carries the
+  region and the country: `street` (one line as written there:
+  `Ibn Gabirol 30`, `88 7th Avenue South`, `1-2-3 Ginza`, or directions where
+  there is no street), `neighbourhood` (a ward or district too) and
+  `postcode`, any of them empty. Places, museum visits and organizations
+  have them, and `address`, the whole in one line in one order everywhere:
+  `Ibn Gabirol 30, Sarona, Tel Aviv 6473424, Israel`
+  (`src/myworld/addresses.py`; `scripts/split_addresses.py` split the old
+  one-line addresses).
 - `GET /api/places`: by name, with `city` (id, name, region and its
-  `country`, id and name; written as `city_id`), address, `latitude`,
+  `country`, id and name; written as `city_id`), the address parts, `latitude`,
   `longitude`, website, remark and `concerts` (ids and names, newest
   first). A name is a place once in each city (409 for a second). Deleting
   a place keeps its concerts, with no place.

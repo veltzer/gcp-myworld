@@ -97,6 +97,11 @@
 #   - cities.image_id and countries.image_id, with the photo's credit
 #     (image_source, image_license, image_author): adding columns, run before
 #     the deploy; scripts/fetch_pictures.py then fills them from Wikipedia.
+#   - addresses in parts: street, neighbourhood and postcode on places,
+#     museum_visits and organizations (adding columns: run before the
+#     deploy); scripts/split_addresses.py splits the one-line address into
+#     them, and with --drop (right after deploying the version without it)
+#     drops the old address column.
 #   - places: every concert's venue, city and country become a row of places
 #     (one per account, name and city; a concert with a city but no venue
 #     gives a place named after the city), concert_visits.place_id points to
@@ -424,6 +429,12 @@ for table in ("places", "museum_visits", "organizations"):
         db.execute(f"ALTER TABLE {table} ADD COLUMN city_id INTEGER REFERENCES cities (id) ON DELETE SET NULL")
         db.execute(f"CREATE INDEX IF NOT EXISTS ix_{table}_city_id ON {table} (city_id)")
         added.append(f"{table}.city_id")
+for table in ("places", "museum_visits", "organizations"):
+    existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+    for column, kind in (("street", "VARCHAR(300) NOT NULL DEFAULT ''"), ("neighbourhood", "VARCHAR(200) NOT NULL DEFAULT ''"), ("postcode", "VARCHAR(20) NOT NULL DEFAULT ''")):
+        if existing and column not in existing:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+            added.append(f"{table}.{column}")
 for table in ("cities", "countries"):
     existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
     for column, kind in (("image_id", "INTEGER REFERENCES images (id) ON DELETE SET NULL"), ("image_source", "VARCHAR(1000) NOT NULL DEFAULT ''"),
@@ -499,6 +510,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'person_organizations' AND column_name IN ('person_id', 'relation_type_id'))
 	   OR (table_name IN ('places', 'museum_visits', 'organizations') AND column_name IN ('city', 'city_id'))
 	   OR (table_name IN ('cities', 'countries') AND column_name IN ('id', 'image_id'))
+	   OR (table_name IN ('places', 'museum_visits', 'organizations') AND column_name = 'street')
 	   OR (table_name = 'person_types' AND column_name = 'id')
 	   OR (table_name IN ('museums', 'organizations') AND column_name IN ('address', 'latitude', 'longitude', 'alone'))
 	   OR (table_name = 'audio_courses' AND column_name IN ('device', 'device_id', 'link'))
@@ -864,6 +876,14 @@ for table in places museum_visits organizations; do
 			CREATE INDEX IF NOT EXISTS ix_cities_country_id ON cities (country_id);
 			ALTER TABLE ${table} ADD COLUMN city_id INTEGER REFERENCES cities (id) ON DELETE SET NULL;
 			CREATE INDEX IF NOT EXISTS ix_${table}_city_id ON ${table} (city_id)"
+	fi
+done
+# addresses in parts (adding columns: run before the deploy; scripts/split_addresses.py fills them)
+for table in places museum_visits organizations; do
+	if ! has "${table}.street:.*"; then
+		need "${table}.street" "ALTER TABLE ${table} ADD COLUMN street VARCHAR(300) NOT NULL DEFAULT '';
+			ALTER TABLE ${table} ADD COLUMN neighbourhood VARCHAR(200) NOT NULL DEFAULT '';
+			ALTER TABLE ${table} ADD COLUMN postcode VARCHAR(20) NOT NULL DEFAULT ''"
 	fi
 done
 # a photo for every city and country (adding columns: run before the deploy)

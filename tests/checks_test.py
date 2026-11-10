@@ -175,10 +175,10 @@ def test_organization_addresses(engine: Engine) -> None:
         session.add(alice)
         session.flush()
         session.add_all([
-            Organization(owner_id=alice.id, name="Acme", address="1 Main St., Haifa, Israel"),
+            Organization(owner_id=alice.id, name="Acme", street="1 Main St."),
             Organization(owner_id=alice.id, name="Bare"),
             # only spaces is no address either
-            Organization(owner_id=alice.id, name="Blank", address="  "),
+            Organization(owner_id=alice.id, name="Blank", street="  "),
         ])
         session.commit()
         result = checks.CHECKS["organization-addresses"].run(session)
@@ -214,9 +214,9 @@ def test_locations(engine: Engine) -> None:
         session.add_all([
             Organization(owner_id=alice.id, name="Acme", latitude=32.8, longitude=35.0),
             Organization(owner_id=alice.id, name="Lost"),
-            Museum(owner_id=alice.id, name="Louvre", address="Rue de Rivoli, 75001 Paris, France", latitude=48.86, longitude=2.34),
-            Museum(owner_id=alice.id, name="Prado", address="Calle de Ruiz de Alarcón 23, Madrid, Spain"),
-            Museum(owner_id=alice.id, name="Tate", address=" "),
+            Museum(owner_id=alice.id, name="Louvre", street="Rue de Rivoli", postcode="75001", latitude=48.86, longitude=2.34),
+            Museum(owner_id=alice.id, name="Prado", street="Calle de Ruiz de Alarcón 23"),
+            Museum(owner_id=alice.id, name="Tate", street=" "),
         ])
         session.commit()
         organizations = checks.CHECKS["organization-locations"].run(session)

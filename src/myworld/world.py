@@ -143,6 +143,16 @@ def country_json(country: Country) -> dict[str, Any]:
     }
 
 
+def _address_parts(row: Place | Museum | Organization) -> dict[str, str]:
+    return {"street": row.street, "neighbourhood": row.neighbourhood, "postcode": row.postcode}
+
+
+def _apply_address(row: Place | Museum | Organization, body: dict[str, Any]) -> None:
+    row.street = text(body, "street")
+    row.neighbourhood = text(body, "neighbourhood")
+    row.postcode = text(body, "postcode")
+
+
 def _place_ref(place: Place) -> dict[str, Any]:
     return {"id": place.id, "name": place.name, "city": city_ref(place.city)}
 
@@ -167,7 +177,9 @@ def place_json(place: Place) -> dict[str, Any]:
     concerts = _newest_first([{"id": c.id, "name": c.name, **_date_json(c)} for c in place.concerts])
     return {
         **_place_ref(place),
+        # the address in one line, and its parts (the city carries region and country)
         "address": place.address,
+        **_address_parts(place),
         "latitude": place.latitude,
         "longitude": place.longitude,
         "website": place.website,
@@ -195,7 +207,9 @@ def museum_json(museum: Museum) -> dict[str, Any]:
         **_date_json(museum),
         "date_timezone": museum.date_timezone,
         "city": city_ref(museum.city),
+        # the address in one line, and its parts (the city carries region and country)
         "address": museum.address,
+        **_address_parts(museum),
         "latitude": museum.latitude,
         "longitude": museum.longitude,
         "rating": museum.rating,
@@ -311,7 +325,9 @@ def organization_json(organization: Organization) -> dict[str, Any]:
         "website": organization.website,
         "location": organization.location,
         "city": city_ref(organization.city),
+        # the address in one line, and its parts (the city carries region and country)
         "address": organization.address,
+        **_address_parts(organization),
         "latitude": organization.latitude,
         "longitude": organization.longitude,
         "what_happened": organization.what_happened,
@@ -655,7 +671,7 @@ def _apply_place(place: Place, body: dict[str, Any]) -> None:
         raise ApiError(409, f"{name}{', ' + city.name if city else ''} is already in Places")
     place.name = name
     place.city = city
-    place.address = text(body, "address")
+    _apply_address(place, body)
     place.latitude, place.longitude = coordinates(body)
     place.website = text(body, "website")
     place.remark = text(body, "remark")
@@ -677,7 +693,7 @@ def _apply_group(group: Group, body: dict[str, Any]) -> None:
 def _apply_museum(museum: Museum, body: dict[str, Any], current: Museum | None) -> None:
     museum.name = text(body, "name", required=True)
     museum.city = _owned_city(body)
-    museum.address = text(body, "address")
+    _apply_address(museum, body)
     museum.latitude, museum.longitude = coordinates(body)
     museum.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
     museum.review = text(body, "review")
@@ -877,7 +893,7 @@ def _apply_organization(organization: Organization, body: dict[str, Any]) -> Non
     organization.website = text(body, "website")
     organization.location = text(body, "location")
     organization.city = _owned_city(body)
-    organization.address = text(body, "address")
+    _apply_address(organization, body)
     organization.latitude, organization.longitude = coordinates(body)
     organization.what_happened = text(body, "what_happened")
     organization.remark = text(body, "remark")

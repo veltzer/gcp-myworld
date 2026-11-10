@@ -14,7 +14,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from myworld import cities, names
+from myworld import addresses, cities, names
 from myworld.models import (
     AudioCourse,
     Concert,
@@ -401,6 +401,22 @@ def test_parsing_locations() -> None:
     assert cities.city_key("New York", "USA") == cities.city_key("New York", "United States of America")
     assert cities.better("Ramat Hasharon", "Ramat HaSharon") == "Ramat HaSharon"
     assert cities.better("Tel-Aviv", "Tel Aviv") == "Tel Aviv"
+
+
+def test_splitting_addresses() -> None:
+    # the city carries the region and the country: they are left out, the postcode found anywhere
+    assert addresses.split_text("23 Kaplan St., HaKirya, Tel Aviv 6473424, Israel", "Tel Aviv", "", "Israel") == ("23 Kaplan St.", "HaKirya", "6473424", True)
+    assert addresses.split_text("131 West 3rd Street, New York, NY 10012, USA", "New York", "New York", "United States of America") == ("131 West 3rd Street", "", "10012", True)
+    assert addresses.split_text("Rue de Rivoli, 75001 Paris, France", "Paris", "", "France") == ("Rue de Rivoli", "", "75001", True)
+    assert addresses.split_text("1-2-3 Ginza, Chuo-ku, Tokyo, Japan", "Tokyo", "", "Japan") == ("1-2-3 Ginza", "Chuo-ku", "", True)
+    # more than the parts hold is said, so the caller keeps the text
+    assert addresses.split_text("Infinity Park (7 HaPnina St.), Ra'anana, Israel", "Ra'anana", "", "Israel")[3] is False
+    assert addresses.split_text("Floor 3, Tower 2, Harbour View, 18 Harbour Road, Hong Kong", "Hong Kong", "", "Hong Kong")[3] is False
+    # the street in the country's order, from OpenStreetMap's parts
+    assert addresses.from_osm({"road": "Ibn Gabirol", "house_number": "30", "suburb": "Sarona", "postcode": "6473424"}, "Israel") == ("Ibn Gabirol 30", "Sarona", "6473424")
+    assert addresses.from_osm({"road": "7th Avenue South", "house_number": "88", "neighbourhood": "West Village"}, "United States of America") == ("88 7th Avenue South", "West Village", "")
+    assert addresses.compose("Ibn Gabirol 30", "Sarona", "Tel Aviv", "6473424", "Israel") == "Ibn Gabirol 30, Sarona, Tel Aviv 6473424, Israel"
+    assert addresses.compose("", "", "Mishmarot", "", "Israel") == "Mishmarot, Israel"
 
 
 def test_cities_and_countries(imported: webtest.TestApp) -> None:
@@ -1102,14 +1118,19 @@ def test_museum_alone(imported: webtest.TestApp) -> None:
 
 
 def test_addresses_and_coordinates(imported: webtest.TestApp) -> None:
+    spain = imported.post_json("/api/countries", {"name": "Spain"}, status=201).json
+    madrid = imported.post_json("/api/cities", {"name": "Madrid", "country_id": spain["id"]}, status=201).json
     museum = imported.post_json("/api/museum-visits", {
-        "name": "Prado", "address": "Calle de Ruiz de Alarcón 23, Madrid, Spain", "latitude": "40.4138", "longitude": -3.6921,
+        "name": "Prado", "street": "Calle de Ruiz de Alarcón 23", "neighbourhood": "Retiro", "postcode": "28014", "city_id": madrid["id"],
+        "latitude": "40.4138", "longitude": -3.6921,
     }, status=201).json
-    assert (museum["address"], museum["latitude"], museum["longitude"]) == ("Calle de Ruiz de Alarcón 23, Madrid, Spain", 40.4138, -3.6921)
+    # the parts, and the address in one line with the city and its country
+    assert (museum["street"], museum["neighbourhood"], museum["postcode"]) == ("Calle de Ruiz de Alarcón 23", "Retiro", "28014")
+    assert (museum["address"], museum["latitude"], museum["longitude"]) == ("Calle de Ruiz de Alarcón 23, Retiro, Madrid 28014, Spain", 40.4138, -3.6921)
     # a dialog with the coordinates cleared leaves the place off the map
     cleared = imported.put_json(f"/api/museum-visits/{museum['id']}", dict(museum, people=[], latitude="", longitude="")).json
     assert (cleared["latitude"], cleared["longitude"]) == (None, None)
-    organization = imported.post_json("/api/organizations", {"name": "Glil", "address": "Kibbutz Glil Yam, Israel", "latitude": 32.15556, "longitude": 34.82361}, status=201).json
+    organization = imported.post_json("/api/organizations", {"name": "Glil", "street": "Kibbutz Glil Yam", "latitude": 32.15556, "longitude": 34.82361}, status=201).json
     assert (organization["latitude"], organization["longitude"]) == (32.15556, 34.82361)
 
 

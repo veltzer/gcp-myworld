@@ -23,8 +23,9 @@ the first part of its name ("Logus pub" of "Logus pub, Nahalat Binyamin"),
 each only when the match is a building or venue that carries the name; then
 by the rest of its name as a street or area in its city ("Nahalat Binyamin,
 Tel Aviv"), which places it roughly. A place only its city matches is left
-without coordinates rather than put at the city's centre. A place found gets
-the match as its address when it has none.
+without coordinates rather than put at the city's centre. A place found where
+it is (not roughly) gets the match's street, neighbourhood and postcode when
+it has none.
 
 The database is DATABASE_URL (default: the local sqlite file); for Cloud SQL
 run it through the proxy: scripts/with_cloud_db.sh scripts/geocode.py.
@@ -49,6 +50,7 @@ os.chdir(ROOT)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from myworld.addresses import from_osm
 from myworld.models import City, Country, Museum, Organization, Place, make_engine
 
 NOMINATIM = "https://nominatim.openstreetmap.org/search"
@@ -67,7 +69,7 @@ UNMAPPED = re.compile(r"^(\d+(st|nd|rd|th) floor|floor \d+|suite \d+|building \d
 
 
 def lookup(query: str) -> dict[str, Any] | None:
-    url = f"{NOMINATIM}?{urllib.parse.urlencode({'q': query, 'format': 'jsonv2', 'limit': 1})}"
+    url = f"{NOMINATIM}?{urllib.parse.urlencode({'q': query, 'format': 'jsonv2', 'limit': 1, 'addressdetails': 1})}"
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept-Language": "en"})
     time.sleep(PAUSE)
     with urllib.request.urlopen(request, timeout=30) as response:
@@ -158,10 +160,10 @@ def spellings(name: str) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-def geocode_place(name: str, city: str, country: str) -> tuple[float, float, str, str] | None:
+def geocode_place(name: str, city: str, country: str) -> tuple[float, float, str, str, dict[str, str]] | None:
     """
-    (latitude, longitude, how it was found, what it matched), or None. In
-    order: the name in its city, then the name's first part in its city, each
+    (latitude, longitude, how it was found, what it matched, its address
+    parts), or None. In order: the name in its city, then the name's first part in its city, each
     only on a building or venue that carries the name; then the rest of the
     name as a street or area in the city, which places it roughly. Never only
     the city.
@@ -174,11 +176,11 @@ def geocode_place(name: str, city: str, country: str) -> tuple[float, float, str
     for query_name in dict.fromkeys([*spellings(name), *spellings(parts[0])]):
         found = lookup(f"{query_name}, {where}" if where else query_name)
         if found is not None and found["category"] not in AREAS and named(found, query_name, city):
-            return float(found["lat"]), float(found["lon"]), f"name {query_name!r} in {where!r}", found["display_name"]
+            return float(found["lat"]), float(found["lon"]), f"name {query_name!r} in {where!r}", found["display_name"], found.get("address", {})
     for part in parts[1:]:
         found = lookup(f"{part}, {where}" if where else part)
         if found is not None and found["category"] in AREAS | ROADS and named(found, part, city):
-            return float(found["lat"]), float(found["lon"]), f"roughly, area {part!r} in {where!r}", found["display_name"]
+            return float(found["lat"]), float(found["lon"]), f"roughly, area {part!r} in {where!r}", found["display_name"], found.get("address", {})
     return None
 
 
@@ -196,11 +198,12 @@ def geocode_places(session: Session, every: bool) -> int:
             missed += 1
             print(f"MISS  {what}: {'no city to look in' if not city else 'nothing that carries its name'}")
             continue
-        latitude, longitude, how, match = found
+        latitude, longitude, how, match, parts = found
         print(f"ok    {what}: {latitude:.5f},{longitude:.5f} (by {how}) = {match}")
         place.latitude, place.longitude = latitude, longitude
-        if not place.address.strip():
-            place.address = match
+        # the match's street, neighbourhood and postcode, for a place found where it is (not one found only roughly)
+        if not (place.street or place.neighbourhood or place.postcode) and not how.startswith("roughly"):
+            place.street, place.neighbourhood, place.postcode = from_osm(parts, country)
         if how.startswith("roughly"):
             # say so where it is seen: the card's remark
             note = f"Location approximate: {how.removeprefix('roughly, ')}."
@@ -248,8 +251,8 @@ def main() -> int:
         cache: dict[str, tuple[float, float, str, str] | None] = {}
         for row in rows:
             what = f"{type(row).__name__.lower()} {row.id}, {row.name}"
-            if not row.address.strip():
-                print(f"skip  {what}: no address")
+            if not row.street.strip():
+                print(f"skip  {what}: no street address")
                 continue
             if row.latitude is not None and not args.all:
                 continue

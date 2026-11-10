@@ -41,6 +41,8 @@ from sqlalchemy import (
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from myworld.addresses import compose
+
 # kind -> (display name, plural, what the "creator" column is called for that kind)
 KINDS: dict[str, tuple[str, str, str]] = {
     "book": ("Book", "Books", "Author"),
@@ -447,6 +449,23 @@ class _Located:
     longitude: Mapped[float | None] = mapped_column(Double, nullable=True)
 
 
+class _Addressed:
+    """
+    An address in three parts beside the row's city (which carries the
+    region and country; see myworld.addresses): the street line in local
+    order, the neighbourhood and the postcode; any may be empty.
+    """
+    street: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
+    neighbourhood: Mapped[str] = mapped_column(String(200), nullable=False, default="", server_default="")
+    postcode: Mapped[str] = mapped_column(String(20), nullable=False, default="", server_default="")
+
+    @property
+    def address(self) -> str:
+        """ The address in one line: "Ibn Gabirol 30, Sarona, Tel Aviv 6473424, Israel". """
+        city = getattr(self, "city", None)
+        return compose(self.street, self.neighbourhood, city.name if city else "", self.postcode, city.country.name if city and city.country else "")
+
+
 class _Pictured:
     """ A photo (or a flag) and the credit its license asks for. """
     image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
@@ -491,7 +510,7 @@ class City(_Pictured, _Located, Base):
     organizations: Mapped[list[Organization]] = relationship(back_populates="city")
 
 
-class Organization(_Located, Base):
+class Organization(_Addressed, _Located, Base):
     """
     An organization: one a person works at, or one the user taught at,
     consulted for, studied at, was certified by or bought media from
@@ -515,7 +534,6 @@ class Organization(_Located, Base):
     location: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     city_id: Mapped[int | None] = mapped_column(ForeignKey("cities.id", ondelete="SET NULL"), nullable=True, index=True)
     city: Mapped[City | None] = relationship(back_populates="organizations")
-    address: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     what_happened: Mapped[str] = mapped_column(Text, nullable=False, default="")
     remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
     details: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
@@ -541,7 +559,7 @@ class _Dated:
     date_timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="")
 
 
-class Place(Base):
+class Place(_Addressed, Base):
     """
     Where something happened: a hall, a club, a park ("Tmuna Theater", in
     the city Tel Aviv). A concert points to the place it was at. The same
@@ -556,7 +574,6 @@ class Place(Base):
     # the city it is in (the Cities page)
     city_id: Mapped[int | None] = mapped_column(ForeignKey("cities.id", ondelete="SET NULL"), nullable=True, index=True)
     city: Mapped[City | None] = relationship(back_populates="places")
-    address: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     latitude: Mapped[float | None] = mapped_column(Double, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Double, nullable=True)
     website: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
@@ -615,7 +632,7 @@ class Group(Base):
     concerts: Mapped[list[Concert]] = relationship(secondary=concert_groups, back_populates="groups")
 
 
-class Museum(_Dated, _Located, Base):
+class Museum(_Dated, _Addressed, _Located, Base):
     """ One visit to a museum; a museum visited twice is two rows. """
     __tablename__ = "museum_visits"
     __table_args__ = (
@@ -628,8 +645,6 @@ class Museum(_Dated, _Located, Base):
     # the city it is in (the Cities page)
     city_id: Mapped[int | None] = mapped_column(ForeignKey("cities.id", ondelete="SET NULL"), nullable=True, index=True)
     city: Mapped[City | None] = relationship(back_populates="museums")
-    # the street address of the museum, as for an organization
-    address: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     review: Mapped[str] = mapped_column(Text, nullable=False, default="")
     remark: Mapped[str] = mapped_column(Text, nullable=False, default="")

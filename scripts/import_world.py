@@ -77,6 +77,7 @@ from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session, selectinload
 
 from myworld import names as naming
+from myworld.addresses import split_text
 from myworld.cities import city_key, country_name, parse_location
 from myworld.models import (
     AudioCourse,
@@ -547,11 +548,11 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
             name=item["name"],
             type=organization_type(item.get("type") or type_for(item["name"])),
             relations=[relation_type(word) for word in dict.fromkeys(item.get("functions", []))],
-            **{key: item.get(key, "") for key in sorted(ORGANIZATION_COLUMNS - {"name", "type", "functions"})},
+            **{key: item.get(key, "") for key in sorted(ORGANIZATION_COLUMNS - {"name", "type", "functions", "address", "remark"})},
+            **_address(item.get("address", ""), item.get("remark", ""), city.of_location(item.get("location", ""))),
             details={key: _json_safe(item[key]) for key in sorted(ORGANIZATION_DETAILS) if key in item},
             # logos live in data/, as logos/<slug>.svg
             image=image(source / "data" / item["logo"], required=True) if "logo" in item else None,
-            city=city.of_location(item.get("location", "")),
         )
         organizations[organization.name] = organization
         session.add(organization)
@@ -1059,6 +1060,21 @@ class Devices:
             self.session.add(self.by_name[name])
             self.added += 1
         return self.by_name[name]
+
+
+def _address(address: str, remark: str, city: City | None) -> dict[str, Any]:
+    """
+    An organization's address of organizations.yaml in its parts, its city,
+    and its remark: the address as written is added to the remark when it
+    says more than the parts hold.
+    """
+    country = city.country.name if city and city.country else ""
+    street, neighbourhood, postcode, whole = split_text(address, city.name if city else "", city.region if city else "", country)
+    note = "" if whole or not address.strip() else f"Address as written: {address}"
+    return {
+        "street": street, "neighbourhood": neighbourhood, "postcode": postcode, "city": city,
+        "remark": f"{remark} {note}".strip() if note else remark,
+    }
 
 
 class Cities:
