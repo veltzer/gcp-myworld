@@ -169,6 +169,7 @@ def city_json(city: City) -> dict[str, Any]:
         "places": _refs(city.places),
         "museums": sorted(museums.values(), key=lambda m: m["name"]),
         "organizations": _refs(city.organizations),
+        "headquarters_of": _refs(city.headquarters_of),
     }
 
 
@@ -325,6 +326,7 @@ def organization_json(organization: Organization) -> dict[str, Any]:
         "website": organization.website,
         "location": organization.location,
         "city": city_ref(organization.city),
+        "headquarters": city_ref(organization.headquarters),
         # the address in one line, and its parts (the city carries region and country)
         "address": organization.address,
         **_address_parts(organization),
@@ -409,6 +411,7 @@ def api_organizations() -> flask.Response:
         .where(Organization.owner_id == flask.g.user.id)
         .options(
             selectinload(Organization.people), selectinload(Organization.type), selectinload(Organization.relations), selectinload(Organization.city).selectinload(City.country),
+            selectinload(Organization.headquarters).selectinload(City.country),
             selectinload(Organization.person_links).selectinload(PersonOrganization.relation_type),
             selectinload(Organization.person_links).selectinload(PersonOrganization.person),
         )
@@ -439,7 +442,9 @@ def api_groups() -> flask.Response:
 def api_cities() -> flask.Response:
     query = (
         select(City).where(City.owner_id == flask.g.user.id)
-        .options(selectinload(City.places), selectinload(City.museums), selectinload(City.organizations), selectinload(City.country))
+        .options(
+            selectinload(City.places), selectinload(City.museums), selectinload(City.organizations), selectinload(City.headquarters_of), selectinload(City.country),
+        )
         .order_by(City.name, City.id)
     )
     return flask.jsonify([city_json(c) for c in flask.g.db.execute(query).scalars().all()])
@@ -599,14 +604,14 @@ def _owned_place(body: dict[str, Any]) -> Place | None:
     return place
 
 
-def _owned_city(body: dict[str, Any]) -> City | None:
-    """ body's city_id, one of the user's own cities, or None for no city. """
-    city_id = opt_int(body, "city_id", 1, 2**31 - 1)
+def _owned_city(body: dict[str, Any], key: str = "city_id") -> City | None:
+    """ body's city_id (or key), one of the user's own cities, or None for no city. """
+    city_id = opt_int(body, key, 1, 2**31 - 1)
     if city_id is None:
         return None
     city = flask.g.db.get(City, city_id)
     if city is None or city.owner_id != flask.g.user.id:
-        raise ApiError(400, "city_id: unknown city")
+        raise ApiError(400, f"{key}: unknown city")
     return city
 
 
@@ -893,6 +898,7 @@ def _apply_organization(organization: Organization, body: dict[str, Any]) -> Non
     organization.website = text(body, "website")
     organization.location = text(body, "location")
     organization.city = _owned_city(body)
+    organization.headquarters = _owned_city(body, "headquarters_id")
     _apply_address(organization, body)
     organization.latitude, organization.longitude = coordinates(body)
     organization.what_happened = text(body, "what_happened")

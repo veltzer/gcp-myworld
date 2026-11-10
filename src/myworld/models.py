@@ -507,7 +507,9 @@ class City(_Pictured, _Located, Base):
 
     places: Mapped[list[Place]] = relationship(back_populates="city")
     museums: Mapped[list[Museum]] = relationship(back_populates="city")
-    organizations: Mapped[list[Organization]] = relationship(back_populates="city")
+    organizations: Mapped[list[Organization]] = relationship(back_populates="city", foreign_keys=lambda: Organization.city_id)
+    # the organizations whose headquarters are here
+    headquarters_of: Mapped[list[Organization]] = relationship(back_populates="headquarters", foreign_keys=lambda: Organization.headquarters_id)
 
 
 class Organization(_Addressed, _Located, Base):
@@ -530,10 +532,13 @@ class Organization(_Addressed, _Located, Base):
     # active, acquired, defunct, ...
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     website: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    # where it is, as written ("Santa Clara, California, USA (Nvidia)"), and the city that is
+    # where its headquarters are, as written ("Santa Clara, California, USA (Nvidia)"), and the city that is
     location: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    headquarters_id: Mapped[int | None] = mapped_column(ForeignKey("cities.id", ondelete="SET NULL"), nullable=True, index=True)
+    headquarters: Mapped[City | None] = relationship(back_populates="headquarters_of", foreign_keys=[headquarters_id])
+    # the city of its address: the office the user knew
     city_id: Mapped[int | None] = mapped_column(ForeignKey("cities.id", ondelete="SET NULL"), nullable=True, index=True)
-    city: Mapped[City | None] = relationship(back_populates="organizations")
+    city: Mapped[City | None] = relationship(back_populates="organizations", foreign_keys=[city_id])
     what_happened: Mapped[str] = mapped_column(Text, nullable=False, default="")
     remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
     details: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)

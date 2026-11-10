@@ -744,8 +744,8 @@ def _city_problem(city: City, message: str) -> Problem:
 
 @check("city-used", "Every city has something in it", "cities", "cities")
 def check_city_used(session: Session) -> Result:
-    """ Every city, of every account, has a place, a museum visit or an organization in it. """
-    cities, used = _cities(session), _ids(session, Place.city_id, Museum.city_id, Organization.city_id)
+    """ Every city, of every account, has a place, a museum visit, an organization or an organization's headquarters in it. """
+    cities, used = _cities(session), _ids(session, Place.city_id, Museum.city_id, Organization.city_id, Organization.headquarters_id)
     return Result(checked=len(cities), problems=[_city_problem(city, "nothing is in it") for city in cities if city.id not in used])
 
 

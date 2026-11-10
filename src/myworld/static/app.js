@@ -1559,6 +1559,7 @@ function cityCard(item) {
 	linksDetail(list, "Which places", "places", item.places);
 	linksDetail(list, "Museums", "museums", item.museums);
 	linksDetail(list, "Organizations", "organizations", item.organizations);
+	linksDetail(list, "Headquarters of", "organizations", item.headquarters_of);
 	detail(list, "Remark", item.remark);
 	photoCredit(body, item);
 	return card;
@@ -1598,7 +1599,9 @@ function organizationCard(item) {
 	const { card, list } = cardShell(item, item.location, "logo");
 	card.appendChild(placeButton(item));
 	linksDetail(list, "Type", "organization-types", item.type ? [item.type] : []);
+	// the office's city, and where its headquarters are when elsewhere
 	linksDetail(list, "City", "cities", item.city ? [item.city] : []);
+	linksDetail(list, "Headquarters", "cities", item.headquarters && item.headquarters.id !== item.city?.id ? [item.headquarters] : []);
 	// how it is related to me: links to the Relation types page
 	linksDetail(list, "Relation", "relation-types", item.relations);
 	detail(list, "Status", item.status);
@@ -3175,6 +3178,7 @@ const WORLD_BODIES = {
 			status: value("status"),
 			website: value("website"),
 			location: value("location"),
+			headquarters_id: value("headquarters_id"),
 			city_id: value("city_id"),
 			street: value("street"),
 			neighbourhood: value("neighbourhood"),

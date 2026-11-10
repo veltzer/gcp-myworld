@@ -550,6 +550,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
             relations=[relation_type(word) for word in dict.fromkeys(item.get("functions", []))],
             **{key: item.get(key, "") for key in sorted(ORGANIZATION_COLUMNS - {"name", "type", "functions", "address", "remark"})},
             **_address(item.get("address", ""), item.get("remark", ""), city.of_location(item.get("location", "")), city),
+            headquarters=city.of_location(item.get("location", "")),
             details={key: _json_safe(item[key]) for key in sorted(ORGANIZATION_DETAILS) if key in item},
             # logos live in data/, as logos/<slug>.svg
             image=image(source / "data" / item["logo"], required=True) if "logo" in item else None,

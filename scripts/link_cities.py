@@ -5,7 +5,8 @@ Point every place, museum visit and organization to its city (the cities
 table), and every city to its country (the countries table), making both
 from the text they had: a place's city and
 country, a museum visit's city (its country from the end of its address),
-an organization's location ("Santa Clara, California, USA (Nvidia)"; the
+an organization's location, for its headquarters (and its city when it has
+none yet: "Santa Clara, California, USA (Nvidia)"; the
 text stays, as it says more than the city). A city written two ways is one
 city (src/myworld/cities.py). Only rows not linked yet are linked; safe to
 run again. Run it after scripts/migrate.sh has added the city links and
@@ -72,6 +73,12 @@ def main() -> int:
             found = parse_location(location)
             if found is not None:
                 wanted.append(("organizations", row_id, owner, *found))
+        # an organization's headquarters, from its location ("Santa Clara, California, USA (Nvidia)")
+        if "headquarters_id" in columns(connection, "organizations"):
+            for row_id, owner, location in connection.execute(text("SELECT id, owner_id, location FROM organizations WHERE headquarters_id IS NULL")):
+                found = parse_location(location)
+                if found is not None:
+                    wanted.append(("organizations.headquarters_id", row_id, owner, *found))
         # the countries: those already there, then one per (owner, name) a city wanted is in
         countries: dict[tuple[int, str], int | None] = {}
         country_names: dict[int, str] = {}
@@ -109,12 +116,14 @@ def main() -> int:
                         {"owner": owner, "name": city["name"], "region": city["region"], "country": country_id},
                     ).scalar_one()
         linked: Counter[str] = Counter()
-        for table, row_id, owner, name, _, country in wanted:
+        for target, row_id, owner, name, _, country in wanted:
             city = cities[(owner, *city_key(name, country))]
-            linked[table] += 1
+            linked[target] += 1
+            table, _, column = target.partition(".")
             if not args.dry_run:
-                connection.execute(text(f"UPDATE {table} SET city_id = :city WHERE id = :id"), {"city": city["id"], "id": row_id})
-        print(f"{made_countries} countries and {made} cities made; {kept_countries} countries kept in a place's remark; linked {linked['places']} places, {linked['museum_visits']} museum visits, {linked['organizations']} organizations"
+                connection.execute(text(f"UPDATE {table} SET {column or 'city_id'} = :city WHERE id = :id"), {"city": city["id"], "id": row_id})
+        print(f"{made_countries} countries and {made} cities made; {kept_countries} countries kept in a place's remark; linked {linked['places']} places, {linked['museum_visits']} museum visits, {linked['organizations']} organizations, "
+              f"{linked['organizations.headquarters_id']} organizations' headquarters"
               + (" (dry run: nothing changed)" if args.dry_run else ""))
         if args.dry_run:
             connection.rollback()

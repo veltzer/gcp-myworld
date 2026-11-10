@@ -447,9 +447,15 @@ def test_cities_and_countries(imported: webtest.TestApp) -> None:
     france = imported.post_json("/api/countries", {"name": "France", "latitude": 46.6, "longitude": 1.9}, status=201).json
     paris = imported.put_json(f"/api/cities/{cities['Paris']['id']}", {"name": "Paris", "country_id": france["id"]}).json
     assert paris["country"] == {"id": france["id"], "name": "France"}
-    # an organization keeps its location as written and points to its city
+    # an organization keeps its location as written and points to its headquarters' city (and, with no address, its city)
     acme = next(o for o in imported.get("/api/organizations").json if o["name"] == "Acme")
-    assert (acme["location"], acme["city"]["name"]) == ("Tel Aviv, Israel", "Tel Aviv")
+    assert (acme["location"], acme["city"]["name"], acme["headquarters"]["name"]) == ("Tel Aviv, Israel", "Tel Aviv", "Tel Aviv")
+    assert [o["name"] for o in next(c for c in imported.get("/api/cities").json if c["name"] == "Tel Aviv")["headquarters_of"]] == ["Acme"]
+    # the office's city and the headquarters' are set apart
+    moved = imported.put_json(f"/api/organizations/{acme['id']}", dict(acme, city_id=paris["id"], headquarters_id=cities["Tel Aviv"]["id"], relation_ids=[])).json
+    assert (moved["city"]["name"], moved["headquarters"]["name"]) == ("Paris", "Tel Aviv")
+    imported.put_json(f"/api/organizations/{acme['id']}", dict(acme, headquarters_id=9999, relation_ids=[]), status=400)
+    imported.put_json(f"/api/organizations/{acme['id']}", dict(acme, city_id=cities["Tel Aviv"]["id"], headquarters_id=cities["Tel Aviv"]["id"], relation_ids=[]))
     # deleting a city keeps what was in it, with no city; deleting a country keeps its cities
     imported.delete(f"/api/countries/{france['id']}", status=204)
     assert next(c for c in imported.get("/api/cities").json if c["name"] == "Paris")["country"] is None

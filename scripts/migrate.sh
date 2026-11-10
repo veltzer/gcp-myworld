@@ -102,6 +102,9 @@
 #     deploy); scripts/split_addresses.py splits the one-line address into
 #     them, and with --drop (right after deploying the version without it)
 #     drops the old address column.
+#   - organizations.headquarters_id, the city of its headquarters (its
+#     location says it in words): adding a column, run before the deploy;
+#     scripts/link_cities.py then links it from the location.
 #   - places: every concert's venue, city and country become a row of places
 #     (one per account, name and city; a concert with a city but no venue
 #     gives a place named after the city), concert_visits.place_id points to
@@ -435,6 +438,11 @@ for table in ("places", "museum_visits", "organizations"):
         if existing and column not in existing:
             db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
             added.append(f"{table}.{column}")
+organization_columns = {row[1] for row in db.execute("PRAGMA table_info(organizations)")}
+if organization_columns and "headquarters_id" not in organization_columns:
+    db.execute("ALTER TABLE organizations ADD COLUMN headquarters_id INTEGER REFERENCES cities (id) ON DELETE SET NULL")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_organizations_headquarters_id ON organizations (headquarters_id)")
+    added.append("organizations.headquarters_id")
 for table in ("cities", "countries"):
     existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
     for column, kind in (("image_id", "INTEGER REFERENCES images (id) ON DELETE SET NULL"), ("image_source", "VARCHAR(1000) NOT NULL DEFAULT ''"),
@@ -511,6 +519,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name IN ('places', 'museum_visits', 'organizations') AND column_name IN ('city', 'city_id'))
 	   OR (table_name IN ('cities', 'countries') AND column_name IN ('id', 'image_id'))
 	   OR (table_name IN ('places', 'museum_visits', 'organizations') AND column_name = 'street')
+	   OR (table_name = 'organizations' AND column_name = 'headquarters_id')
 	   OR (table_name = 'person_types' AND column_name = 'id')
 	   OR (table_name IN ('museums', 'organizations') AND column_name IN ('address', 'latitude', 'longitude', 'alone'))
 	   OR (table_name = 'audio_courses' AND column_name IN ('device', 'device_id', 'link'))
@@ -886,6 +895,11 @@ for table in places museum_visits organizations; do
 			ALTER TABLE ${table} ADD COLUMN postcode VARCHAR(20) NOT NULL DEFAULT ''"
 	fi
 done
+# an organization's headquarters city (adding a column: run before the deploy; scripts/link_cities.py fills it)
+if has "organizations.street:.*" && ! has "organizations.headquarters_id:.*"; then
+	need organizations.headquarters_id "ALTER TABLE organizations ADD COLUMN headquarters_id INTEGER REFERENCES cities (id) ON DELETE SET NULL;
+		CREATE INDEX IF NOT EXISTS ix_organizations_headquarters_id ON organizations (headquarters_id)"
+fi
 # a photo for every city and country (adding columns: run before the deploy)
 for table in cities countries; do
 	if has "${table}.id:.*" && ! has "${table}.image_id:.*"; then

@@ -356,7 +356,10 @@ a person is written with `type_ids`, a list.
   `image_license` and `image_author`, the credit its license asks for);
   `scripts/fetch_pictures.py` takes them from Wikipedia and Wikidata. A museum
   visit's and an organization's `city` are as a place's (`city_id`); an
-  organization keeps its `location` as written, which often says more.
+  organization keeps its `location` as written, which often says more, and
+  points to two cities: `city`, its address's (the office the user knew), and
+  `headquarters` (written as `headquarters_id`), the one its location names;
+  a city lists the organizations headquartered in it as `headquarters_of`.
 - `GET /api/organizations`: by name, with `type` (id and name), `relations`
   (how it is related to the user: ids and names of relation types), status, website, location, address, `latitude` and `longitude`, the logo as
   `image`, and `people` (ids and names).

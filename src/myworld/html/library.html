@@ -443,8 +443,8 @@
 			<form id="organization-form" class="dialog-form" hidden>
 				<div class="row">
 					<label class="wide">Name <input name="name" required></label>
-					<label class="wide">Location <input name="location" placeholder="As written: city, region, country, and anything more"></label>
-					<label>City <select name="city_id" data-picker="cities" data-placeholder="Type a city" title="Add a new one on the Cities page"></select></label>
+					<label class="wide">Headquarters, as written <input name="location" placeholder="City, region, country, and anything more"></label>
+					<label>Headquarters <select name="headquarters_id" data-picker="cities" data-placeholder="Type a city" title="The city of its headquarters; add a new one on the Cities page"></select></label>
 					<label>Type <select name="type_id"></select></label>
 				</div>
 				<div class="row">
@@ -461,6 +461,7 @@
 					<label class="wide">Street <input name="street" placeholder="Ibn Gabirol 30, 88 7th Avenue South, 1-2-3 Ginza" title="One line, as written there: street and number, building, floor; or directions where there is no street"></label>
 					<label>Neighbourhood <input name="neighbourhood" title="A neighbourhood, ward or district: Sarona, Greenwich Village"></label>
 					<label>Postcode <input name="postcode"></label>
+					<label>City <select name="city_id" data-picker="cities" data-placeholder="Type a city" title="The city of its address: the office you knew"></select></label>
 				</div>
 				<div class="row">
 					<label>Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
