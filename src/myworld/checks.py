@@ -763,6 +763,13 @@ def check_city_locations(session: Session) -> Result:
     return Result(checked=len(cities), problems=[_city_problem(city, "has no latitude and longitude") for city in cities if city.latitude is None or city.longitude is None])
 
 
+@check("city-photos", "Every city has a photo", "cities", "cities")
+def check_city_photos(session: Session) -> Result:
+    """ Every city, of every account, has a photo (scripts/fetch_pictures.py takes Wikipedia's). """
+    cities = _cities(session)
+    return Result(checked=len(cities), problems=[_city_problem(city, "has no photo") for city in cities if city.image_id is None])
+
+
 @check("city-duplicates", "No city is listed twice", "cities", "cities")
 def check_city_duplicates(session: Session) -> Result:
     """ No account has one city twice: the same name and country, however spaced, hyphenated or capitalized ("Tel-Aviv", "Tel Aviv"). """
@@ -801,6 +808,13 @@ def check_country_locations(session: Session) -> Result:
     """ Every country, of every account, has a latitude and a longitude (scripts/geocode.py finds them). """
     countries = _countries(session)
     return Result(checked=len(countries), problems=[_country_problem(c, "has no latitude and longitude") for c in countries if c.latitude is None or c.longitude is None])
+
+
+@check("country-flags", "Every country has its flag", "countries", "countries")
+def check_country_flags(session: Session) -> Result:
+    """ Every country, of every account, has its flag (scripts/fetch_pictures.py takes Wikipedia's). """
+    countries = _countries(session)
+    return Result(checked=len(countries), problems=[_country_problem(c, "has no flag") for c in countries if c.image_id is None])
 
 
 @check("country-duplicates", "No country is listed twice", "countries", "countries")

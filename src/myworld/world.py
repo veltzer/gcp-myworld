@@ -127,10 +127,15 @@ def city_ref(city: City | None) -> dict[str, Any] | None:
     return None if city is None else {"id": city.id, "name": city.name, "region": city.region, "country": country_ref(city.country)}
 
 
+def _picture_json(row: City | Country) -> dict[str, Any]:
+    return {"image": image_url(row.image_id), "image_source": row.image_source, "image_license": row.image_license, "image_author": row.image_author}
+
+
 def country_json(country: Country) -> dict[str, Any]:
     return {
         "id": country.id,
         "name": country.name,
+        **_picture_json(country),
         "latitude": country.latitude,
         "longitude": country.longitude,
         "remark": country.remark,
@@ -147,6 +152,7 @@ def city_json(city: City) -> dict[str, Any]:
     museums = {m.name: {"id": m.id, "name": m.name} for m in sorted(city.museums, key=lambda m: m.id)}
     return {
         **(city_ref(city) or {}),
+        **_picture_json(city),
         "latitude": city.latitude,
         "longitude": city.longitude,
         "remark": city.remark,
@@ -536,6 +542,8 @@ def drop_unused_images() -> None:
         select(Organization.image_id).where(Organization.image_id.is_not(None)),
         select(AudioCourse.image_id).where(AudioCourse.image_id.is_not(None)),
         select(UserWork.image_id).where(UserWork.image_id.is_not(None)),
+        select(City.image_id).where(City.image_id.is_not(None)),
+        select(Country.image_id).where(Country.image_id.is_not(None)),
     )
     for image in db.execute(select(Image).where(Image.owner_id == flask.g.user.id, Image.id.not_in(used))).scalars():
         db.delete(image)
@@ -605,6 +613,17 @@ def _apply_country(country: Country, body: dict[str, Any]) -> None:
     country.name = name
     country.latitude, country.longitude = coordinates(body)
     country.remark = text(body, "remark")
+    _apply_picture(country, body)
+
+
+def _apply_picture(row: City | Country, body: dict[str, Any]) -> None:
+    # a photo is only ever replaced by a new upload, never blanked by omission
+    image_id = owned_image(body)
+    if image_id is not None:
+        row.image_id = image_id
+    row.image_source = text(body, "image_source")
+    row.image_license = text(body, "image_license")
+    row.image_author = text(body, "image_author")
 
 
 def _apply_city(city: City, body: dict[str, Any]) -> None:
@@ -621,6 +640,7 @@ def _apply_city(city: City, body: dict[str, Any]) -> None:
     city.name, city.region, city.country = name, region, country
     city.latitude, city.longitude = coordinates(body)
     city.remark = text(body, "remark")
+    _apply_picture(city, body)
 
 
 def _apply_place(place: Place, body: dict[str, Any]) -> None:

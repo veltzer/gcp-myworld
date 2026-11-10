@@ -94,6 +94,9 @@
 #     places.country and museum_visits.city (and key a place by its city_id):
 #     run it again right after deploying the version that no longer has them.
 #     organizations.location stays: it says more than the city.
+#   - cities.image_id and countries.image_id, with the photo's credit
+#     (image_source, image_license, image_author): adding columns, run before
+#     the deploy; scripts/fetch_pictures.py then fills them from Wikipedia.
 #   - places: every concert's venue, city and country become a row of places
 #     (one per account, name and city; a concert with a city but no venue
 #     gives a place named after the city), concert_visits.place_id points to
@@ -421,6 +424,13 @@ for table in ("places", "museum_visits", "organizations"):
         db.execute(f"ALTER TABLE {table} ADD COLUMN city_id INTEGER REFERENCES cities (id) ON DELETE SET NULL")
         db.execute(f"CREATE INDEX IF NOT EXISTS ix_{table}_city_id ON {table} (city_id)")
         added.append(f"{table}.city_id")
+for table in ("cities", "countries"):
+    existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+    for column, kind in (("image_id", "INTEGER REFERENCES images (id) ON DELETE SET NULL"), ("image_source", "VARCHAR(1000) NOT NULL DEFAULT ''"),
+                         ("image_license", "VARCHAR(100) NOT NULL DEFAULT ''"), ("image_author", "VARCHAR(300) NOT NULL DEFAULT ''")):
+        if existing and column not in existing:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+            added.append(f"{table}.{column}")
 place_columns = {row[1] for row in db.execute("PRAGMA table_info(places)")}
 museum_columns = {row[1] for row in db.execute("PRAGMA table_info(museum_visits)")}
 if "city" in place_columns or "city" in museum_columns:
@@ -488,6 +498,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'concert_visits' AND column_name = 'venue')
 	   OR (table_name = 'person_organizations' AND column_name IN ('person_id', 'relation_type_id'))
 	   OR (table_name IN ('places', 'museum_visits', 'organizations') AND column_name IN ('city', 'city_id'))
+	   OR (table_name IN ('cities', 'countries') AND column_name IN ('id', 'image_id'))
 	   OR (table_name = 'person_types' AND column_name = 'id')
 	   OR (table_name IN ('museums', 'organizations') AND column_name IN ('address', 'latitude', 'longitude', 'alone'))
 	   OR (table_name = 'audio_courses' AND column_name IN ('device', 'device_id', 'link'))
@@ -853,6 +864,15 @@ for table in places museum_visits organizations; do
 			CREATE INDEX IF NOT EXISTS ix_cities_country_id ON cities (country_id);
 			ALTER TABLE ${table} ADD COLUMN city_id INTEGER REFERENCES cities (id) ON DELETE SET NULL;
 			CREATE INDEX IF NOT EXISTS ix_${table}_city_id ON ${table} (city_id)"
+	fi
+done
+# a photo for every city and country (adding columns: run before the deploy)
+for table in cities countries; do
+	if has "${table}.id:.*" && ! has "${table}.image_id:.*"; then
+		need "${table}.image_id" "ALTER TABLE ${table} ADD COLUMN image_id INTEGER REFERENCES images (id) ON DELETE SET NULL;
+			ALTER TABLE ${table} ADD COLUMN image_source VARCHAR(1000) NOT NULL DEFAULT '';
+			ALTER TABLE ${table} ADD COLUMN image_license VARCHAR(100) NOT NULL DEFAULT '';
+			ALTER TABLE ${table} ADD COLUMN image_author VARCHAR(300) NOT NULL DEFAULT ''"
 	fi
 done
 # the old city text goes once every row that names a city is linked (right after deploying the version without it)

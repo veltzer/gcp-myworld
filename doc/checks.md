@@ -130,6 +130,7 @@ By dataset: the key is the page's name in the app (`#book`) and what
   in it.
 - `city-countries`: every city says which country it is in.
 - `city-locations`: every city has a latitude and a longitude.
+- `city-photos`: every city has a photo.
 - `city-duplicates`: no account has one city twice, however spaced,
   hyphenated or capitalized ("Tel-Aviv", "Tel Aviv").
 
@@ -137,6 +138,7 @@ By dataset: the key is the page's name in the app (`#book`) and what
 
 - `country-used`: every country has a city in it.
 - `country-locations`: every country has a latitude and a longitude.
+- `country-flags`: every country has its flag.
 - `country-duplicates`: no account has one country twice, however it is
   written ("USA", "United States of America").
 

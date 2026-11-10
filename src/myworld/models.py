@@ -447,7 +447,15 @@ class _Located:
     longitude: Mapped[float | None] = mapped_column(Double, nullable=True)
 
 
-class Country(_Located, Base):
+class _Pictured:
+    """ A photo (or a flag) and the credit its license asks for. """
+    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
+    image_source: Mapped[str] = mapped_column(String(1000), nullable=False, default="", server_default="")
+    image_license: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="")
+    image_author: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
+
+
+class Country(_Pictured, _Located, Base):
     """ A country; cities point to the one they are in. A name is a country once. """
     __tablename__ = "countries"
     __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_country_name"),)
@@ -460,7 +468,7 @@ class Country(_Located, Base):
     cities: Mapped[list[City]] = relationship(back_populates="country")
 
 
-class City(_Located, Base):
+class City(_Pictured, _Located, Base):
     """
     A city (or a town, a village, a kibbutz): name, region (a state or
     province, where addresses name one) and the country it is in (the

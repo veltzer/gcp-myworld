@@ -342,7 +342,10 @@ a person is written with `type_ids`, a list.
   `places`, `museums` and `organizations` (ids and names). A name is a city
   once in each region of a country. `GET /api/countries`: by name, with
   `latitude`, `longitude`, remark and `cities`. Deleting a city keeps what
-  was in it, with no city; deleting a country keeps its cities. A museum
+  was in it, with no city; deleting a country keeps its cities. A city has
+  a photo and a country its flag (`image`, with `image_source`,
+  `image_license` and `image_author`, the credit its license asks for);
+  `scripts/fetch_pictures.py` takes them from Wikipedia and Wikidata. A museum
   visit's and an organization's `city` are as a place's (`city_id`); an
   organization keeps its `location` as written, which often says more.
 - `GET /api/organizations`: by name, with `type` (id and name), `relations`

@@ -1495,17 +1495,23 @@ function concertCard(item) {
 	}
 	detail(list, "Review", item.review);
 	detail(list, "Remark", item.remark);
-	if (item.image && item.image_source) {
-		const credit = el("p", "credit");
-		const a = el("a", null, "Photo");
-		a.href = item.image_source;
-		a.target = "_blank";
-		a.rel = "noopener";
-		const who = [item.image_author, item.image_license].filter(Boolean).join(", ");
-		credit.append(a, who ? `: ${who}` : "");
-		body.appendChild(credit);
-	}
+	photoCredit(body, item);
 	return card;
+}
+
+// The credit a photo's license asks for, under the card: "Photo: author, license", linked to where it comes from
+function photoCredit(body, item, what = "Photo") {
+	if (!item.image || !item.image_source) {
+		return;
+	}
+	const credit = el("p", "credit");
+	const a = el("a", null, what);
+	a.href = item.image_source;
+	a.target = "_blank";
+	a.rel = "noopener";
+	const who = [item.image_author, item.image_license].filter(Boolean).join(", ");
+	credit.append(a, who ? `: ${who}` : "");
+	body.appendChild(credit);
 }
 
 // "Tmuna Theater, Tel Aviv": a place's name with its city, when it has one
@@ -1545,7 +1551,7 @@ function groupCard(item) {
 }
 
 function cityCard(item) {
-	const { card, list } = cardShell(item, [item.region, item.country?.name].filter(Boolean).join(", "));
+	const { card, body, list } = cardShell(item, [item.region, item.country?.name].filter(Boolean).join(", "));
 	card.appendChild(placeButton(item));
 	linksDetail(list, "Country", "countries", item.country ? [item.country] : []);
 	// what is in it, each always counted (0 too), then which
@@ -1554,14 +1560,17 @@ function cityCard(item) {
 	linksDetail(list, "Museums", "museums", item.museums);
 	linksDetail(list, "Organizations", "organizations", item.organizations);
 	detail(list, "Remark", item.remark);
+	photoCredit(body, item);
 	return card;
 }
 
+// a country's picture is its flag, shown whole as a logo is
 function countryCard(item) {
-	const { card, list } = cardShell(item, `${item.cities.length.toLocaleString()} ${item.cities.length === 1 ? "city" : "cities"}`);
+	const { card, body, list } = cardShell(item, `${item.cities.length.toLocaleString()} ${item.cities.length === 1 ? "city" : "cities"}`, "logo");
 	card.appendChild(placeButton(item));
 	linksDetail(list, "Cities", "cities", item.cities);
 	detail(list, "Remark", item.remark);
+	photoCredit(body, item, "Flag");
 	return card;
 }
 
@@ -2990,6 +2999,16 @@ function resetForm(form) {
 	syncAlone(form);
 }
 
+// a photo upload and its credit, as the city and country forms send them
+async function pictureFields(form) {
+	return {
+		image_id: await uploadPhoto(form),
+		image_source: form.elements.image_source.value,
+		image_license: form.elements.image_license.value,
+		image_author: form.elements.image_author.value,
+	};
+}
+
 async function uploadPhoto(form) {
 	const file = form.elements.photo.files[0];
 	if (!file) {
@@ -3114,11 +3133,12 @@ const WORLD_BODIES = {
 			latitude: value("latitude"),
 			longitude: value("longitude"),
 			remark: value("remark"),
+			...(await pictureFields(form)),
 		};
 	},
 	countries: async (form) => {
 		const value = (name) => form.elements[name].value;
-		return { name: value("name"), latitude: value("latitude"), longitude: value("longitude"), remark: value("remark") };
+		return { name: value("name"), latitude: value("latitude"), longitude: value("longitude"), remark: value("remark"), ...(await pictureFields(form)) };
 	},
 	places: async (form) => {
 		const value = (name) => form.elements[name].value;
