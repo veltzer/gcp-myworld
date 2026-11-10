@@ -49,7 +49,8 @@ def parse_location(text: str) -> tuple[str, str, str] | None:
     "City, Region, Country" for countries with regions, "Place, City,
     Country" (the city second) for others.
     """
-    text = re.sub(r"\([^)]*\)", "", text.split(";")[0])
+    # a remark in brackets goes, an unclosed one ("(Nexxen; also ...)" cut at the ";") to the end
+    text = re.sub(r"\([^)]*(\)|$)", "", text.split(";")[0])
     parts = [" ".join(part.split()) for part in text.split(",")]
     parts = [part for part in parts if part]
     if not parts:

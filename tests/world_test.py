@@ -14,7 +14,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from myworld import names
+from myworld import cities, names
 from myworld.models import (
     AudioCourse,
     Concert,
@@ -385,6 +385,22 @@ def test_places(imported: webtest.TestApp) -> None:
     imported.delete(f"/api/places/{barby['id']}", status=204)
     assert next(c for c in imported.get("/api/concert-visits").json if c["name"] == "Late Show")["place"] is None
     assert imported.get("/api/stats").json["places"] == 2
+
+
+def test_parsing_locations() -> None:
+    assert cities.parse_location("Santa Clara, California, USA (Nvidia)") == ("Santa Clara", "California", "United States of America")
+    assert cities.parse_location("Tel Aviv, Israel (Nexxen International; also a New York office)") == ("Tel Aviv", "", "Israel")
+    assert cities.parse_location("Palo Alto, California, USA (HP Inc); HPE is in Spring, Texas") == ("Palo Alto", "California", "United States of America")
+    assert cities.parse_location("Kibbutz Glil Yam, Herzliya, Israel") == ("Herzliya", "", "Israel")
+    assert cities.parse_location("Beersheba area (Kiryat HaTikshuv), Israel") == ("Beersheba", "", "Israel")
+    assert cities.parse_location("Maidenhead, UK") == ("Maidenhead", "", "United Kingdom")
+    assert cities.parse_location("Gibraltar") == ("Gibraltar", "", "Gibraltar")
+    assert cities.parse_location("") is None
+    # one city however written, under the better spelling
+    assert cities.city_key("Tel-Aviv", "Israel") == cities.city_key("tel aviv", "Israel")
+    assert cities.city_key("New York", "USA") == cities.city_key("New York", "United States of America")
+    assert cities.better("Ramat Hasharon", "Ramat HaSharon") == "Ramat HaSharon"
+    assert cities.better("Tel-Aviv", "Tel Aviv") == "Tel Aviv"
 
 
 def test_cities_and_countries(imported: webtest.TestApp) -> None:
