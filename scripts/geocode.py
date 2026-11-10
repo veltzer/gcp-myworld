@@ -212,6 +212,25 @@ def geocode_places(session: Session, every: bool) -> int:
     return missed
 
 
+def lookup_city(name: str, region: str, country: str) -> dict[str, Any] | None:
+    """
+    A city by Nominatim's structured search (city, state, country), which
+    answers with the town itself rather than a county of the same name
+    ("Santa Clara" the city, not Santa Clara County); the free-text search
+    when that finds nothing.
+    """
+    params = {"city": name, "format": "jsonv2", "limit": 1}
+    if region:
+        params["state"] = region
+    if country:
+        params["country"] = country
+    request = urllib.request.Request(f"{NOMINATIM}?{urllib.parse.urlencode(params)}", headers={"User-Agent": USER_AGENT, "Accept-Language": "en"})
+    time.sleep(PAUSE)
+    with urllib.request.urlopen(request, timeout=30) as response:
+        found = json.load(response)
+    return found[0] if found else lookup(", ".join(part for part in (name, region, country) if part))
+
+
 def geocode_cities(session: Session, every: bool) -> int:
     """
     Look up the countries and cities without coordinates (all of them with
@@ -224,11 +243,13 @@ def geocode_cities(session: Session, every: bool) -> int:
         if row.latitude is not None and not every:
             continue
         if isinstance(row, City):
-            query = ", ".join(part for part in (row.name, row.region, row.country.name if row.country else "") if part)
+            country = row.country.name if row.country else ""
+            query = ", ".join(part for part in (row.name, row.region, country) if part)
+            found = lookup_city(row.name, row.region, country)
         else:
             query = row.name
+            found = lookup(query)
         what = f"{type(row).__name__.lower()} {row.id}, {query}"
-        found = lookup(query)
         if found is None:
             missed += 1
             print(f"MISS  {what}: nothing")
