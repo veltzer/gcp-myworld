@@ -40,37 +40,87 @@ def from_osm(parts: dict[str, str], country: str) -> tuple[str, str, str]:
     return street, neighbourhood, parts.get("postcode", "")
 
 
-def split_text(text: str, city: str, region: str, country: str) -> tuple[str, str, str, bool]:
+# a city part's postcode as written around the world ("753 20 Uppsala", "1012 AB Amsterdam"): the tokens with digits
+CODE_TOKEN = re.compile(r"^[A-Z]{0,2}\d[\dA-Z-]*$")
+
+
+def parse_address(text: str, cities: set[str] | frozenset[str] = frozenset(), country_hint: str = "") -> dict[str, str | bool]:
     """
-    (street, neighbourhood, postcode, whole) from an address typed as one line,
-    "23 Kaplan St., HaKirya, Tel Aviv 6473424, Israel": the parts that are the
-    city, its region or its country are left out (the city carries them), a
-    postcode is found anywhere, the first part left is the street and the
-    next the neighbourhood. whole is False when more was written than fits
-    (a third part, a remark in brackets), so the caller can keep the text.
+    An address typed in one line, in its parts: street, neighbourhood,
+    postcode, city, region, country, and whole (False when more was written
+    than the parts hold, so the caller keeps the text). The country is the
+    last part ("country_hint" when there is only one part); the region the
+    next for countries with regions ("California", "Massachusetts"); the
+    postcode anywhere; the city the last part that is one of cities (keys
+    from myworld.cities.city_key), else the last part left; the street every
+    part up to the last with a number in it ("Atrium Tower, 18th Floor, 2
+    Jabotinsky St."), and the neighbourhood the part after it.
     """
     whole = True
-    if re.search(r"\([^)]*\)", text):
+    if "(" in text:
         whole = False
-        text = re.sub(r"\([^)]*\)", "", text)
+        text = re.sub(r"\([^)]*(\)|$)", "", text)
     postcode = ""
     found = POSTCODE.search(text)
     if found:
         postcode = found.group(1)
         text = text[:found.start()] + text[found.end():]
-    known = {city_key(name, "")[0] for name in (city, region, country, country_name(country)) if name}
-
-    def kept(part: str) -> bool:
-        # the city, its region, its country however written ("USA"), or a state's code ("NY") is the city's to carry
-        if city_key(part, "")[0] in known or city_key(country_name(part), "")[0] in known:
-            return False
-        return not (country_name(country) in REGIONED and re.fullmatch(r"[A-Z]{2}", part))
-
     parts = [" ".join(part.split()) for part in text.split(",")]
-    parts = [part for part in parts if part and kept(part)]
-    if len(parts) > 2:
+    parts = [part for part in parts if part]
+    country = country_name(parts.pop()) if len(parts) > 1 else country_name(country_hint)
+    region = ""
+    if country in REGIONED and len(parts) > 1 and not re.search(r"\d", parts[-1]):
+        region = parts.pop()
+    # a state's code ("NY") is not a part of its own
+    parts = [part for part in parts if not (country in REGIONED and re.fullmatch(r"[A-Z]{2}", part))]
+    city = ""
+    for index in range(len(parts) - 1, -1, -1):
+        name = " ".join(token for token in parts[index].split() if not CODE_TOKEN.match(token))
+        if city_key(name, "")[0] in cities:
+            city = name
+            # what follows the city (a county: "Surrey") is said but not kept in a part
+            whole = whole and index == len(parts) - 1
+            parts = parts[:index]
+            break
+    else:
+        if city_key(country, "")[0] in cities:
+            # a city that is its country (Hong Kong, Singapore, Gibraltar): every part left is the address
+            city = country
+        elif len(parts) > 1:
+            last = parts.pop().split()
+            codes = [token for token in last if CODE_TOKEN.match(token)]
+            city = " ".join(token for token in last if not CODE_TOKEN.match(token))
+            postcode = postcode or " ".join(codes)
+            # a neighbourhood named with its city ("Herzliya Pituach", "South Netanya") is in that city
+            words = city_key(city, "")[0].split()
+            inside = [known for known in cities if known != city_key(city, "")[0] and _within(known.split(), words)]
+            if inside:
+                parts.append(city)
+                city = max(inside, key=len)
+    numbered = [index for index, part in enumerate(parts) if re.search(r"\d", part)]
+    cut = numbered[-1] + 1 if numbered else min(1, len(parts))
+    street, rest = ", ".join(parts[:cut]), parts[cut:]
+    if len(rest) > 1:
         whole = False
-    return (parts[0] if parts else ""), (parts[1] if len(parts) > 1 else ""), postcode, whole
+    return {
+        "street": street, "neighbourhood": rest[0] if rest else "", "postcode": postcode,
+        "city": city, "region": region, "country": country, "whole": whole,
+    }
+
+
+def _within(short: list[str], long: list[str]) -> bool:
+    """ Whether the words short are a run of the words long. """
+    return any(long[i:i + len(short)] == short for i in range(len(long) - len(short) + 1))
+
+
+def split_text(text: str, city: str, region: str, country: str) -> tuple[str, str, str, bool]:
+    """
+    (street, neighbourhood, postcode, whole) of an address typed in one line
+    of a row in city (in region and country): see parse_address. whole is
+    False when more was written than fits, so the caller can keep the text.
+    """
+    parsed = parse_address(text, {city_key(city, "")[0]} if city else set(), country)
+    return str(parsed["street"]), str(parsed["neighbourhood"]), str(parsed["postcode"]), bool(parsed["whole"])
 
 
 def compose(street: str, neighbourhood: str, city: str, postcode: str, country: str) -> str:

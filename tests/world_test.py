@@ -407,11 +407,23 @@ def test_splitting_addresses() -> None:
     # the city carries the region and the country: they are left out, the postcode found anywhere
     assert addresses.split_text("23 Kaplan St., HaKirya, Tel Aviv 6473424, Israel", "Tel Aviv", "", "Israel") == ("23 Kaplan St.", "HaKirya", "6473424", True)
     assert addresses.split_text("131 West 3rd Street, New York, NY 10012, USA", "New York", "New York", "United States of America") == ("131 West 3rd Street", "", "10012", True)
+    # a building and its floor before the street stay in the street line; a postcode written its own way is found
+    assert addresses.split_text("Atrium Tower, 18th Floor, 2 Jabotinsky St., Ramat Gan 5250501, Israel", "Ramat Gan", "", "Israel") == (
+        "Atrium Tower, 18th Floor, 2 Jabotinsky St.", "", "5250501", True,
+    )
+    assert addresses.parse_address("Bangårdsgatan 8, 753 20 Uppsala, Sweden")["city"] == "Uppsala"
+    assert addresses.parse_address("Bangårdsgatan 8, 753 20 Uppsala, Sweden")["postcode"] == "753 20"
+    # the city is the one the user has, even with a county after it (kept as written: "whole" is False)
+    redhill = addresses.parse_address("3rd Floor, Forum House, 41-51 Brighton Road, Redhill, Surrey RH1 6YS, United Kingdom", {cities.city_key("Redhill", "")[0]})
+    assert (redhill["street"], redhill["city"], redhill["postcode"], redhill["whole"]) == ("3rd Floor, Forum House, 41-51 Brighton Road", "Redhill", "RH1 6YS", False)
     assert addresses.split_text("Rue de Rivoli, 75001 Paris, France", "Paris", "", "France") == ("Rue de Rivoli", "", "75001", True)
     assert addresses.split_text("1-2-3 Ginza, Chuo-ku, Tokyo, Japan", "Tokyo", "", "Japan") == ("1-2-3 Ginza", "Chuo-ku", "", True)
     # more than the parts hold is said, so the caller keeps the text
     assert addresses.split_text("Infinity Park (7 HaPnina St.), Ra'anana, Israel", "Ra'anana", "", "Israel")[3] is False
-    assert addresses.split_text("Floor 3, Tower 2, Harbour View, 18 Harbour Road, Hong Kong", "Hong Kong", "", "Hong Kong")[3] is False
+    # a city that is its country: every part is the address
+    assert addresses.split_text("Floor 3, Tower 2, Harbour View, 18 Harbour Road, Hong Kong", "Hong Kong", "", "Hong Kong") == (
+        "Floor 3, Tower 2, Harbour View, 18 Harbour Road", "", "", True,
+    )
     # the street in the country's order, from OpenStreetMap's parts
     assert addresses.from_osm({"road": "Ibn Gabirol", "house_number": "30", "suburb": "Sarona", "postcode": "6473424"}, "Israel") == ("Ibn Gabirol 30", "Sarona", "6473424")
     assert addresses.from_osm({"road": "7th Avenue South", "house_number": "88", "neighbourhood": "West Village"}, "United States of America") == ("88 7th Avenue South", "West Village", "")

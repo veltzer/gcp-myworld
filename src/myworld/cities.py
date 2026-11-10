@@ -29,9 +29,11 @@ def country_name(text: str) -> str:
 
 
 def city_key(name: str, country: str) -> tuple[str, str]:
-    """ The same however it is spaced, hyphenated or capitalized: "Tel-Aviv" is "Tel Aviv". """
+    """ The same however it is spaced, hyphenated, capitalized or transliterated: "Tel-Aviv" is "Tel Aviv". """
     def norm(text: str) -> str:
-        return " ".join(text.replace("-", " ").split()).casefold()
+        # transliterations differ in apostrophes and doubled letters: "Ra'anana" / "Raanana", "Yokneam Illit" / "Yokneam Ilit"
+        text = " ".join(text.replace("-", " ").replace("'", "").replace("\u2019", "").split()).casefold()
+        return re.sub(r"(.)\1", r"\1", text)
     return norm(name), norm(country_name(country))
 
 
