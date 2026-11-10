@@ -618,7 +618,7 @@ class Concert(_Dated, Base):
     groups: Mapped[list[Group]] = relationship(secondary=concert_groups, back_populates="concerts")
 
 
-class Group(Base):
+class Group(_Pictured, Base):
     """
     A group of people known by its own name: a band ("Pink Floyd"), a trio,
     a choir. Its members are the user's people; a concert points to the

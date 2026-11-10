@@ -127,7 +127,7 @@ def city_ref(city: City | None) -> dict[str, Any] | None:
     return None if city is None else {"id": city.id, "name": city.name, "region": city.region, "country": country_ref(city.country)}
 
 
-def _picture_json(row: City | Country) -> dict[str, Any]:
+def _picture_json(row: City | Country | Group) -> dict[str, Any]:
     return {"image": image_url(row.image_id), "image_source": row.image_source, "image_license": row.image_license, "image_author": row.image_author}
 
 
@@ -195,6 +195,7 @@ def group_json(group: Group) -> dict[str, Any]:
         "name": group.name,
         "description": group.description,
         "website": group.website,
+        **_picture_json(group),
         "members": _refs(group.members),
         # the concerts it performed at, newest first
         "concerts": [{"id": c["id"], "name": c["name"]} for c in _newest_first([{"id": c.id, "name": c.name, **_date_json(c)} for c in group.concerts])],
@@ -565,6 +566,7 @@ def drop_unused_images() -> None:
         select(UserWork.image_id).where(UserWork.image_id.is_not(None)),
         select(City.image_id).where(City.image_id.is_not(None)),
         select(Country.image_id).where(Country.image_id.is_not(None)),
+        select(Group.image_id).where(Group.image_id.is_not(None)),
     )
     for image in db.execute(select(Image).where(Image.owner_id == flask.g.user.id, Image.id.not_in(used))).scalars():
         db.delete(image)
@@ -637,7 +639,7 @@ def _apply_country(country: Country, body: dict[str, Any]) -> None:
     _apply_picture(country, body)
 
 
-def _apply_picture(row: City | Country, body: dict[str, Any]) -> None:
+def _apply_picture(row: City | Country | Group, body: dict[str, Any]) -> None:
     # a photo is only ever replaced by a new upload, never blanked by omission
     image_id = owned_image(body)
     if image_id is not None:
@@ -693,6 +695,7 @@ def _apply_group(group: Group, body: dict[str, Any]) -> None:
     group.members = members
     group.description = text(body, "description")
     group.website = text(body, "website")
+    _apply_picture(group, body)
 
 
 def _apply_museum(museum: Museum, body: dict[str, Any], current: Museum | None) -> None:

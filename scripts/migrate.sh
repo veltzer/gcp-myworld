@@ -97,6 +97,7 @@
 #   - cities.image_id and countries.image_id, with the photo's credit
 #     (image_source, image_license, image_author): adding columns, run before
 #     the deploy; scripts/fetch_pictures.py then fills them from Wikipedia.
+#     groups.image_id and its credit the same way, later.
 #   - addresses in parts: street, neighbourhood and postcode on places,
 #     museum_visits and organizations (adding columns: run before the
 #     deploy); scripts/split_addresses.py splits the one-line address into
@@ -443,7 +444,7 @@ if organization_columns and "headquarters_id" not in organization_columns:
     db.execute("ALTER TABLE organizations ADD COLUMN headquarters_id INTEGER REFERENCES cities (id) ON DELETE SET NULL")
     db.execute("CREATE INDEX IF NOT EXISTS ix_organizations_headquarters_id ON organizations (headquarters_id)")
     added.append("organizations.headquarters_id")
-for table in ("cities", "countries"):
+for table in ("cities", "countries", "groups"):
     existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
     for column, kind in (("image_id", "INTEGER REFERENCES images (id) ON DELETE SET NULL"), ("image_source", "VARCHAR(1000) NOT NULL DEFAULT ''"),
                          ("image_license", "VARCHAR(100) NOT NULL DEFAULT ''"), ("image_author", "VARCHAR(300) NOT NULL DEFAULT ''")):
@@ -517,7 +518,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'concert_visits' AND column_name = 'venue')
 	   OR (table_name = 'person_organizations' AND column_name IN ('person_id', 'relation_type_id'))
 	   OR (table_name IN ('places', 'museum_visits', 'organizations') AND column_name IN ('city', 'city_id'))
-	   OR (table_name IN ('cities', 'countries') AND column_name IN ('id', 'image_id'))
+	   OR (table_name IN ('cities', 'countries', 'groups') AND column_name IN ('id', 'image_id'))
 	   OR (table_name IN ('places', 'museum_visits', 'organizations') AND column_name = 'street')
 	   OR (table_name = 'organizations' AND column_name = 'headquarters_id')
 	   OR (table_name = 'person_types' AND column_name = 'id')
@@ -901,7 +902,7 @@ if has "organizations.street:.*" && ! has "organizations.headquarters_id:.*"; th
 		CREATE INDEX IF NOT EXISTS ix_organizations_headquarters_id ON organizations (headquarters_id)"
 fi
 # a photo for every city and country (adding columns: run before the deploy)
-for table in cities countries; do
+for table in cities countries groups; do
 	if has "${table}.id:.*" && ! has "${table}.image_id:.*"; then
 		need "${table}.image_id" "ALTER TABLE ${table} ADD COLUMN image_id INTEGER REFERENCES images (id) ON DELETE SET NULL;
 			ALTER TABLE ${table} ADD COLUMN image_source VARCHAR(1000) NOT NULL DEFAULT '';

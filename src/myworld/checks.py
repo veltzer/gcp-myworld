@@ -666,6 +666,13 @@ def check_group_used(session: Session) -> Result:
     return Result(checked=len(groups), problems=[_group_problem(group, "performed at no concert") for group in groups if group.id not in used])
 
 
+@check("group-photos", "Every group has a photo", "groups", "groups")
+def check_group_photos(session: Session) -> Result:
+    """ Every group, of every account, has a photo (scripts/fetch_pictures.py takes Wikipedia's, or one of a member). """
+    groups = _groups(session)
+    return Result(checked=len(groups), problems=[_group_problem(group, "has no photo") for group in groups if group.image_id is None])
+
+
 @check("group-duplicates", "No group is listed twice", "groups", "groups")
 def check_group_duplicates(session: Session) -> Result:
     """ No account has two groups of the same name (ignoring case and spaces). """

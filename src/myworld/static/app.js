@@ -1541,12 +1541,13 @@ function placeCard(item) {
 }
 
 function groupCard(item) {
-	const { card, list } = cardShell(item, item.description);
+	const { card, body, list } = cardShell(item, item.description);
 	// how many people are in it, always shown (0 too), then who they are
 	detail(list, "Members", String(item.members.length));
 	linksDetail(list, "Who", "people", item.members);
 	linksDetail(list, "Performed at", "concerts", item.concerts);
 	websiteDetail(list, item.website);
+	photoCredit(body, item);
 	return card;
 }
 
@@ -3128,6 +3129,7 @@ const WORLD_BODIES = {
 		members: chosen(form, "members"),
 		description: form.elements.description.value,
 		website: form.elements.website.value,
+		...(await pictureFields(form)),
 	}),
 	cities: async (form) => {
 		const value = (name) => form.elements[name].value;

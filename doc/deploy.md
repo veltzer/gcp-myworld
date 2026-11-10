@@ -328,7 +328,10 @@ first `companies` tables to `organizations`, then making
 - `GET /api/people`: `first_name`, `surname`, `name` (the two together),
   `types` (ids and names), description and `organizations` (ids and names);
 a person is written with `type_ids`, a list.
-- `GET /api/groups`: by name, with description, website, `members` (the
+- `GET /api/groups`: by name, with description, website, a photo (`image`
+  with its credit, as a city's; `scripts/fetch_pictures.py --only groups`
+  takes the group's own from Wikipedia, else a member's, credited with whose
+  it is, never a fair-use file), `members` (the
   people in it: ids and names, written as a list of ids) and `concerts`
   (ids and names, newest first). A name is a group once (409 for a
   second). Deleting a group keeps its people and its concerts.
