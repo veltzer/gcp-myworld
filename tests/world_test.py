@@ -299,7 +299,7 @@ def test_concerts(imported: webtest.TestApp) -> None:
     # the two shows share one photo
     assert band["image"] == late["image"]
     # where it was is a place; a show without a venue is at none
-    assert {k: v for k, v in band["place"].items() if k != "id"} == {"name": "The Hall", "city": "", "country": "Israel"}
+    assert {k: v for k, v in band["place"].items() if k != "id"} == {"name": "The Hall", "city": None}
     assert late["place"] is None
 
 
@@ -360,23 +360,59 @@ def test_groups(imported: webtest.TestApp) -> None:
 
 def test_places(imported: webtest.TestApp) -> None:
     [hall] = imported.get("/api/places").json
-    assert (hall["name"], hall["country"], [c["name"] for c in hall["concerts"]]) == ("The Hall", "Israel", ["The Band"])
-    barby = imported.post_json("/api/places", {"name": "Barby", "city": "Tel-Aviv", "country": "Israel", "latitude": 32.05, "longitude": 34.76}, status=201).json
-    assert (barby["latitude"], barby["concerts"]) == (32.05, [])
+    # a place with a country but no city keeps the country in its remark
+    assert (hall["name"], hall["city"], hall["remark"], [c["name"] for c in hall["concerts"]]) == (
+        "The Hall", None, "In Israel; the city is not known.", ["The Band"],
+    )
+    # Israel and Tel Aviv came with the import (Acme is there)
+    israel = next(c for c in imported.get("/api/countries").json if c["name"] == "Israel")
+    tel_aviv = next(c for c in imported.get("/api/cities").json if c["name"] == "Tel Aviv")
+    haifa = imported.post_json("/api/cities", {"name": "Haifa", "country_id": israel["id"]}, status=201).json
+    barby = imported.post_json("/api/places", {"name": "Barby", "city_id": tel_aviv["id"], "latitude": 32.05, "longitude": 34.76}, status=201).json
+    assert (barby["latitude"], barby["concerts"], barby["city"]["name"], barby["city"]["country"]["name"]) == (32.05, [], "Tel Aviv", "Israel")
     # one name once in a city; in another city it is another place
-    imported.post_json("/api/places", {"name": "Barby", "city": "Tel-Aviv"}, status=409)
-    imported.post_json("/api/places", {"name": "Barby", "city": "Haifa"}, status=201)
-    imported.post_json("/api/places", {"city": "Haifa"}, status=400)
+    imported.post_json("/api/places", {"name": "Barby", "city_id": tel_aviv["id"]}, status=409)
+    imported.post_json("/api/places", {"name": "Barby", "city_id": haifa["id"]}, status=201)
+    imported.post_json("/api/places", {"name": "Barby", "city_id": 9999}, status=400)
+    imported.post_json("/api/places", {"city_id": haifa["id"]}, status=400)
     # a concert points to one of the user's own places
     late = next(c for c in imported.get("/api/concert-visits").json if c["name"] == "Late Show")
     moved = imported.put_json(f"/api/concert-visits/{late['id']}", {"name": "Late Show", "date": late["date"], "place_id": barby["id"]}).json
-    assert moved["place"] == {"id": barby["id"], "name": "Barby", "city": "Tel-Aviv", "country": "Israel"}
+    assert moved["place"] == {"id": barby["id"], "name": "Barby", "city": {"id": tel_aviv["id"], "name": "Tel Aviv", "region": "", "country": {"id": israel["id"], "name": "Israel"}}}
     imported.put_json(f"/api/concert-visits/{late['id']}", {"name": "Late Show", "place_id": 9999}, status=400)
     assert [c["name"] for c in next(p for p in imported.get("/api/places").json if p["id"] == barby["id"])["concerts"]] == ["Late Show"]
     # deleting a place keeps its concerts, with no place
     imported.delete(f"/api/places/{barby['id']}", status=204)
     assert next(c for c in imported.get("/api/concert-visits").json if c["name"] == "Late Show")["place"] is None
     assert imported.get("/api/stats").json["places"] == 2
+
+
+def test_cities_and_countries(imported: webtest.TestApp) -> None:
+    cities = {c["name"]: c for c in imported.get("/api/cities").json}
+    # the import made them from the text: the museums' Paris, Acme's "Tel Aviv, Israel"
+    assert (cities["Paris"]["country"], [m["name"] for m in cities["Paris"]["museums"]]) == (None, ["The Louvre"])
+    assert (cities["Tel Aviv"]["country"]["name"], [o["name"] for o in cities["Tel Aviv"]["organizations"]]) == ("Israel", ["Acme"])
+    israel = next(c for c in imported.get("/api/countries").json if c["name"] == "Israel")
+    assert [c["name"] for c in israel["cities"]] == ["Tel Aviv"]
+    # a city is a name in a region of a country once; the user's own countries only
+    imported.post_json("/api/cities", {"name": "Tel Aviv", "country_id": israel["id"]}, status=409)
+    imported.post_json("/api/cities", {"name": "Portland", "region": "Oregon"}, status=201)
+    imported.post_json("/api/cities", {"name": "Portland", "region": "Maine"}, status=201)
+    imported.post_json("/api/cities", {"name": "Nowhere", "country_id": 9999}, status=400)
+    imported.post_json("/api/countries", {"name": "Israel"}, status=409)
+    france = imported.post_json("/api/countries", {"name": "France", "latitude": 46.6, "longitude": 1.9}, status=201).json
+    paris = imported.put_json(f"/api/cities/{cities['Paris']['id']}", {"name": "Paris", "country_id": france["id"]}).json
+    assert paris["country"] == {"id": france["id"], "name": "France"}
+    # an organization keeps its location as written and points to its city
+    acme = next(o for o in imported.get("/api/organizations").json if o["name"] == "Acme")
+    assert (acme["location"], acme["city"]["name"]) == ("Tel Aviv, Israel", "Tel Aviv")
+    # deleting a city keeps what was in it, with no city; deleting a country keeps its cities
+    imported.delete(f"/api/countries/{france['id']}", status=204)
+    assert next(c for c in imported.get("/api/cities").json if c["name"] == "Paris")["country"] is None
+    imported.delete(f"/api/cities/{cities['Paris']['id']}", status=204)
+    assert all(m["city"] is None for m in imported.get("/api/museum-visits").json if m["name"] == "The Louvre")
+    stats = imported.get("/api/stats").json
+    assert (stats["cities"], stats["countries"]) == (len(cities) + 2 - 1, 1)
 
 
 def test_performers_are_people(imported: webtest.TestApp) -> None:
@@ -1032,7 +1068,7 @@ def test_person_with_no_name(imported: webtest.TestApp) -> None:
 def test_add_museum_and_person(imported: webtest.TestApp) -> None:
     person = imported.post_json("/api/people", {"first_name": "Carol", "description": "Zed"}, status=201).json
     museum = imported.post_json("/api/museum-visits", {
-        "name": "Prado", "city": "Madrid", "date": "2012", "rating": 9, "people": [person["id"]],
+        "name": "Prado", "date": "2012", "rating": 9, "people": [person["id"]],
     }, status=201).json
     assert museum["date"] == "2012"
     assert museum["with"] == ["Carol"]

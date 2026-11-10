@@ -447,6 +447,42 @@ class _Located:
     longitude: Mapped[float | None] = mapped_column(Double, nullable=True)
 
 
+class Country(_Located, Base):
+    """ A country; cities point to the one they are in. A name is a country once. """
+    __tablename__ = "countries"
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_country_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    cities: Mapped[list[City]] = relationship(back_populates="country")
+
+
+class City(_Located, Base):
+    """
+    A city (or a town, a village, a kibbutz): name, region (a state or
+    province, where addresses name one) and the country it is in (the
+    Countries page). Places, museum visits and organizations point to the
+    city they are in. A name is a city once in each region of a country.
+    """
+    __tablename__ = "cities"
+    __table_args__ = (UniqueConstraint("owner_id", "name", "region", "country_id", name="uq_city_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    region: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    country_id: Mapped[int | None] = mapped_column(ForeignKey("countries.id", ondelete="SET NULL"), nullable=True, index=True)
+    country: Mapped[Country | None] = relationship(back_populates="cities")
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    places: Mapped[list[Place]] = relationship(back_populates="city")
+    museums: Mapped[list[Museum]] = relationship(back_populates="city")
+    organizations: Mapped[list[Organization]] = relationship(back_populates="city")
+
+
 class Organization(_Located, Base):
     """
     An organization: one a person works at, or one the user taught at,
@@ -467,7 +503,10 @@ class Organization(_Located, Base):
     # active, acquired, defunct, ...
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     website: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    # where it is, as written ("Santa Clara, California, USA (Nvidia)"), and the city that is
     location: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    city_id: Mapped[int | None] = mapped_column(ForeignKey("cities.id", ondelete="SET NULL"), nullable=True, index=True)
+    city: Mapped[City | None] = relationship(back_populates="organizations")
     address: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     what_happened: Mapped[str] = mapped_column(Text, nullable=False, default="")
     remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -496,18 +535,19 @@ class _Dated:
 
 class Place(Base):
     """
-    Where something happened: a hall, a club, a park ("Tmuna Theater",
-    Tel-Aviv). A concert points to the place it was at. The same name may be
-    a place in two cities, but only once in each.
+    Where something happened: a hall, a club, a park ("Tmuna Theater", in
+    the city Tel Aviv). A concert points to the place it was at. The same
+    name may be a place in two cities, but only once in each.
     """
     __tablename__ = "places"
-    __table_args__ = (UniqueConstraint("owner_id", "name", "city", name="uq_place_name"),)
+    __table_args__ = (UniqueConstraint("owner_id", "name", "city_id", name="uq_place_name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(300), nullable=False)
-    city: Mapped[str] = mapped_column(String(100), nullable=False, default="")
-    country: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    # the city it is in (the Cities page)
+    city_id: Mapped[int | None] = mapped_column(ForeignKey("cities.id", ondelete="SET NULL"), nullable=True, index=True)
+    city: Mapped[City | None] = relationship(back_populates="places")
     address: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     latitude: Mapped[float | None] = mapped_column(Double, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Double, nullable=True)
@@ -577,7 +617,9 @@ class Museum(_Dated, _Located, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(300), nullable=False)
-    city: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    # the city it is in (the Cities page)
+    city_id: Mapped[int | None] = mapped_column(ForeignKey("cities.id", ondelete="SET NULL"), nullable=True, index=True)
+    city: Mapped[City | None] = relationship(back_populates="museums")
     # the street address of the museum, as for an organization
     address: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)

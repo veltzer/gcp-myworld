@@ -77,9 +77,12 @@ from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session, selectinload
 
 from myworld import names as naming
+from myworld.cities import city_key, country_name, parse_location
 from myworld.models import (
     AudioCourse,
+    City,
     Concert,
+    Country,
     Device,
     Group,
     Image,
@@ -485,7 +488,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     for entry in session.scalars(select(UserWork).where(UserWork.user_id == owner.id, UserWork.image_id.is_not(None))):
         entry.image_id = None
     session.flush()
-    for model in (AudioCourse, YouTubeVideo, Device, Concert, Place, Group, Museum, Person, Organization, OrganizationType, PersonType, RelationType, PersonRelationType, PersonOrganizationType, Image):
+    for model in (AudioCourse, YouTubeVideo, Device, Concert, Place, Group, Museum, Person, Organization, City, Country, OrganizationType, PersonType, RelationType, PersonRelationType, PersonOrganizationType, Image):
         session.execute(delete(model).where(model.owner_id == owner.id))
     session.flush()
 
@@ -534,6 +537,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     for word in RELATION_TYPES:
         relation_type(word)
 
+    city = Cities(session, owner)
     organizations: dict[str, Organization] = {}
     for item in organization_items:
         if item["name"] in organizations:
@@ -547,6 +551,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
             details={key: _json_safe(item[key]) for key in sorted(ORGANIZATION_DETAILS) if key in item},
             # logos live in data/, as logos/<slug>.svg
             image=image(source / "data" / item["logo"], required=True) if "logo" in item else None,
+            city=city.of_location(item.get("location", "")),
         )
         organizations[organization.name] = organization
         session.add(organization)
@@ -589,7 +594,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
                 session.add(people[name])
         return [people[name] for name in dict.fromkeys(names)]
 
-    place = Places(session, owner)
+    place = Places(session, owner, city)
     for item in concert_items:
         session.add(Concert(
             owner_id=owner.id,
@@ -618,7 +623,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
         session.add(Museum(
             owner_id=owner.id,
             name=item["name"],
-            city=item.get("city", ""),
+            city=city(item.get("city", ""), "", ""),
             rating=item.get("rating"),
             review=item.get("review", ""),
             remark=item.get("remark", ""),
@@ -1056,6 +1061,52 @@ class Devices:
         return self.by_name[name]
 
 
+class Cities:
+    """
+    owner's cities and countries: city(name, region, country) is the city of
+    that name in that country (however spaced or hyphenated), made the first
+    time it is named, with its country; a city named without a country is the
+    one city of that name there is, if there is one. None for no name.
+    """
+
+    def __init__(self, session: Session, owner: User) -> None:
+        self.session = session
+        self.owner = owner
+        self.countries = {c.name.casefold(): c for c in session.scalars(select(Country).where(Country.owner_id == owner.id))}
+        self.cities = {
+            city_key(c.name, c.country.name if c.country else ""): c
+            for c in session.scalars(select(City).where(City.owner_id == owner.id).options(selectinload(City.country)))
+        }
+
+    def country(self, name: str) -> Country | None:
+        name = country_name(name)
+        if not name:
+            return None
+        if name.casefold() not in self.countries:
+            self.countries[name.casefold()] = Country(owner_id=self.owner.id, name=name, remark="")
+            self.session.add(self.countries[name.casefold()])
+        return self.countries[name.casefold()]
+
+    def __call__(self, name: str, region: str, country: str) -> City | None:
+        name = name.strip()
+        if not name:
+            return None
+        if not country.strip():
+            same = [c for (n, _), c in self.cities.items() if n == city_key(name, "")[0]]
+            if len(same) == 1:
+                return same[0]
+        key = city_key(name, country)
+        if key not in self.cities:
+            self.cities[key] = City(owner_id=self.owner.id, name=name, region=region, country=self.country(country), remark="")
+            self.session.add(self.cities[key])
+        return self.cities[key]
+
+    def of_location(self, location: str) -> City | None:
+        """ The city an organization's location names ("Santa Clara, California, USA (Nvidia)"). """
+        found = parse_location(location)
+        return None if found is None else self(*found)
+
+
 class Places:
     """
     owner's places by name and city: place(venue, city, country) is the one
@@ -1063,22 +1114,30 @@ class Places:
     venue is at a place named after the city, one with neither at none.
     """
 
-    def __init__(self, session: Session, owner: User) -> None:
+    def __init__(self, session: Session, owner: User, cities: Cities) -> None:
         self.session = session
         self.owner = owner
-        self.by_name = {(p.name, p.city): p for p in session.scalars(select(Place).where(Place.owner_id == owner.id))}
+        self.cities = cities
+        # keyed by the city object, which a new place's city is too before it has an id
+        self.by_name: dict[tuple[str, int | None], Place] = {
+            (p.name, id(p.city) if p.city else None): p
+            for p in session.scalars(select(Place).where(Place.owner_id == owner.id).options(selectinload(Place.city)))
+        }
         self.added = 0
 
     def __call__(self, venue: str, city: str, country: str) -> Place | None:
-        name, city = venue.strip() or city.strip(), city.strip()
+        name = venue.strip() or city.strip()
         if not name:
             return None
-        if (name, city) not in self.by_name:
-            self.by_name[name, city] = Place(owner_id=self.owner.id, name=name, city=city, country=country.strip())
-            self.session.add(self.by_name[name, city])
+        where = self.cities(city, "", country)
+        key = (name, id(where) if where is not None else None)
+        if key not in self.by_name:
+            # a country with no city is kept in the remark: a place's country is its city's
+            remark = f"In {country_name(country)}; the city is not known." if where is None and country.strip() else ""
+            self.by_name[key] = Place(owner_id=self.owner.id, name=name, city=where, remark=remark)
+            self.session.add(self.by_name[key])
             self.added += 1
-        return self.by_name[name, city]
-
+        return self.by_name[key]
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[1] if __doc__ else None)

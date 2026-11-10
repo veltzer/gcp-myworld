@@ -422,7 +422,7 @@ function libraryCard(entry) {
 // the sidebar's groups of views (the library's kinds come first, from the config)
 // The library kinds (books) come first in Datasets, ahead of these
 const NAV_GROUPS = [
-	["Datasets", ["concerts", "museums", "audio-courses", "youtube", "places"]],
+	["Datasets", ["concerts", "museums", "audio-courses", "youtube", "places", "cities", "countries"]],
 	["People", ["people", "groups", "organizations"]],
 	["Types", ["organization-types", "person-types", "relation-types", "person-relation-types", "person-organization-types", "devices"]],
 ];
@@ -480,7 +480,7 @@ async function loadCounts() {
 	}
 	const keys = {
 		concerts: "concerts", museums: "museum_visits", "audio-courses": "audio_courses", youtube: "youtube_videos",
-		places: "places", people: "people", groups: "groups", organizations: "organizations", "organization-types": "organization_types",
+		places: "places", cities: "cities", countries: "countries", people: "people", groups: "groups", organizations: "organizations", "organization-types": "organization_types",
 		"person-types": "person_types", "relation-types": "relation_types", "person-relation-types": "person_relation_types",
 		"person-organization-types": "person_organization_types", devices: "devices",
 	};
@@ -637,14 +637,14 @@ const SORTS = {
 		["date", "Date", (c) => c.date_sort, "desc"],
 		["name", "Name", (c) => c.name, "asc"],
 		["place", "Place", (c) => c.place?.name, "asc"],
-		["city", "City", (c) => c.place?.city, "asc"],
+		["city", "City", (c) => c.place?.city?.name, "asc"],
 		["genre", "Genre", (c) => c.genre, "asc"],
 		["tickets", "Tickets", (c) => c.tickets, "desc"],
 	],
 	museums: [
 		["date", "Date", (m) => m.date_sort, "desc"],
 		["name", "Name", (m) => m.name, "asc"],
-		["city", "City", (m) => m.city, "asc"],
+		["city", "City", (m) => m.city?.name, "asc"],
 		["rating", "Rating", (m) => m.rating, "desc"],
 		["tickets", "Tickets", (m) => m.tickets, "desc"],
 	],
@@ -664,6 +664,15 @@ const SORTS = {
 		["duration", "Length", (v) => v.duration, "desc"],
 		["uploaded", "Uploaded", (v) => v.uploaded, "desc"],
 	],
+	cities: [
+		["name", "Name", (c) => c.name, "asc"],
+		["country", "Country", (c) => c.country?.name, "asc"],
+		["places", "Places", (c) => c.places.length, "desc"],
+	],
+	countries: [
+		["name", "Name", (c) => c.name, "asc"],
+		["cities", "Cities", (c) => c.cities.length, "desc"],
+	],
 	groups: [
 		["name", "Name", (g) => g.name, "asc"],
 		["members", "Members", (g) => g.members.length, "desc"],
@@ -671,8 +680,8 @@ const SORTS = {
 	],
 	places: [
 		["name", "Name", (p) => p.name, "asc"],
-		["city", "City", (p) => p.city, "asc"],
-		["country", "Country", (p) => p.country, "asc"],
+		["city", "City", (p) => p.city?.name, "asc"],
+		["country", "Country", (p) => p.city?.country?.name, "asc"],
 		["concerts", "Concerts", (p) => p.concerts.length, "desc"],
 	],
 	people: [
@@ -1076,6 +1085,8 @@ const WORLDS = {
 	"audio-courses": ["Audio courses", "/api/audio-courses", "audio course", "Audio courses"],
 	youtube: ["YouTube videos", "/api/youtube-videos", "YouTube video", "YouTube"],
 	places: ["Places", "/api/places", "place", "Places"],
+	cities: ["Cities", "/api/cities", "city", "Cities"],
+	countries: ["Countries", "/api/countries", "country", "Countries"],
 	people: ["People", "/api/people", "person", "People"],
 	groups: ["Groups", "/api/groups", "group", "Groups"],
 	organizations: ["Organizations", "/api/organizations", "organization", "Organizations"],
@@ -1283,7 +1294,7 @@ function setupLayouts() {
 // ─── the map layout ─────────────────────────────────────────────────────────
 
 // The views whose items have a latitude and longitude; on the others the Map button is disabled.
-const MAPPED = new Set(["museums", "organizations", "places"]);
+const MAPPED = new Set(["museums", "organizations", "places", "cities", "countries"]);
 // Leaflet, from cdnjs, loaded the first time a map is shown
 const LEAFLET = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/";
 const LEAFLET_JS = ["leaflet.js", "sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH"];
@@ -1392,7 +1403,7 @@ async function openPlace(item) {
 	const L = await loadLeaflet();
 	const point = [item.latitude, item.longitude];
 	$("place-title").textContent = item.name;
-	$("place-address").textContent = item.address || item.location || item.city || "";
+	$("place-address").textContent = item.address || item.location || (item.city ? cityName(item.city) : "") || item.country?.name || "";
 	$("place-osm").href = `https://www.openstreetmap.org/?mlat=${item.latitude}&mlon=${item.longitude}#map=17/${item.latitude}/${item.longitude}`;
 	$("place-dialog").showModal();
 	if (!placeMap) {
@@ -1417,7 +1428,7 @@ function mapPopup(group) {
 	const box = el("div", "map-popup");
 	const first = group[0];
 	box.appendChild(el("strong", null, first.name));
-	const where = first.address || first.city || first.location;
+	const where = first.address || first.location || (first.city ? cityName(first.city) : "") || first.country?.name;
 	if (where) {
 		box.appendChild(el("p", null, where));
 	}
@@ -1497,14 +1508,23 @@ function concertCard(item) {
 	return card;
 }
 
-// "Tmuna Theater, Tel-Aviv": a place's name with its city, when it has one
+// "Tmuna Theater, Tel Aviv": a place's name with its city, when it has one
 function placeName(place) {
-	return [place.name, place.city].filter(Boolean).join(", ");
+	return [place.name, place.city?.name].filter(Boolean).join(", ");
 }
 
+// "Santa Clara, California, United States of America": a city with its region and country
+function cityName(city) {
+	return [city.name, city.region, city.country?.name].filter(Boolean).join(", ");
+}
+
+// how a single picker names the rows of a view
+const PICKER_LABELS = { places: placeName, cities: cityName };
+
 function placeCard(item) {
-	const { card, list } = cardShell(item, [item.city, item.country].filter(Boolean).join(", "));
+	const { card, list } = cardShell(item, [item.city?.name, item.city?.country?.name].filter(Boolean).join(", "));
 	card.appendChild(placeButton(item));
+	linksDetail(list, "City", "cities", item.city ? [item.city] : []);
 	detail(list, "Address", item.address);
 	// how many concerts were there, always shown (0 too), then which
 	detail(list, "Concerts", String(item.concerts.length));
@@ -1524,9 +1544,31 @@ function groupCard(item) {
 	return card;
 }
 
-function museumCard(item) {
-	const { card, list } = cardShell(item, item.city);
+function cityCard(item) {
+	const { card, list } = cardShell(item, [item.region, item.country?.name].filter(Boolean).join(", "));
 	card.appendChild(placeButton(item));
+	linksDetail(list, "Country", "countries", item.country ? [item.country] : []);
+	// what is in it, each always counted (0 too), then which
+	detail(list, "Places", String(item.places.length));
+	linksDetail(list, "Which places", "places", item.places);
+	linksDetail(list, "Museums", "museums", item.museums);
+	linksDetail(list, "Organizations", "organizations", item.organizations);
+	detail(list, "Remark", item.remark);
+	return card;
+}
+
+function countryCard(item) {
+	const { card, list } = cardShell(item, `${item.cities.length.toLocaleString()} ${item.cities.length === 1 ? "city" : "cities"}`);
+	card.appendChild(placeButton(item));
+	linksDetail(list, "Cities", "cities", item.cities);
+	detail(list, "Remark", item.remark);
+	return card;
+}
+
+function museumCard(item) {
+	const { card, list } = cardShell(item, item.city?.name);
+	card.appendChild(placeButton(item));
+	linksDetail(list, "City", "cities", item.city ? [item.city] : []);
 	detail(list, "Date", formatDate(item));
 	detail(list, "Address", item.address);
 	if (item.rating !== null) {
@@ -1547,6 +1589,7 @@ function organizationCard(item) {
 	const { card, list } = cardShell(item, item.location, "logo");
 	card.appendChild(placeButton(item));
 	linksDetail(list, "Type", "organization-types", item.type ? [item.type] : []);
+	linksDetail(list, "City", "cities", item.city ? [item.city] : []);
 	// how it is related to me: links to the Relation types page
 	linksDetail(list, "Relation", "relation-types", item.relations);
 	detail(list, "Status", item.status);
@@ -1621,7 +1664,7 @@ function youtubeCard(item) {
 	return card;
 }
 
-const CARDS = { concerts: concertCard, museums: museumCard, "audio-courses": audioCourseCard, youtube: youtubeCard, places: placeCard, groups: groupCard, organizations: organizationCard };
+const CARDS = { concerts: concertCard, museums: museumCard, "audio-courses": audioCourseCard, youtube: youtubeCard, places: placeCard, cities: cityCard, countries: countryCard, groups: groupCard, organizations: organizationCard };
 
 // Material "link"
 const LINK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>';
@@ -2569,6 +2612,8 @@ function renderStats(stats) {
 		statTile("Audio courses", stats.audio_courses, "", "audio-courses"),
 		statTile("YouTube videos", stats.youtube_videos, "", "youtube"),
 		statTile("Places", stats.places, "", "places"),
+		statTile("Cities", stats.cities, "", "cities"),
+		statTile("Countries", stats.countries, "", "countries"),
 		statTile("People", stats.people, "", "people"),
 		statTile("Groups", stats.groups, "", "groups"),
 		statTile("Organizations", stats.organizations, "", "organizations"),
@@ -2746,7 +2791,7 @@ function setupWorlds() {
 // ─── the add dialog ─────────────────────────────────────────────────────────
 
 // One dialog, opened by the + button, showing the form of whatever is on screen.
-const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "youtube-video-form", "place-form", "person-form", "group-form", "organization-form", "organization-type-form", "profession-form", "relation-type-form", "person-relation-type-form", "person-org-relation-type-form", "device-form"];
+const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "youtube-video-form", "place-form", "city-form", "country-form", "person-form", "group-form", "organization-form", "organization-type-form", "profession-form", "relation-type-form", "person-relation-type-form", "person-org-relation-type-form", "device-form"];
 const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 
 function dialogError(message) {
@@ -3038,7 +3083,7 @@ const WORLD_BODIES = {
 		const value = (name) => form.elements[name].value;
 		return {
 			name: value("name"),
-			city: value("city"),
+			city_id: value("city_id"),
 			address: value("address"),
 			latitude: value("latitude"),
 			longitude: value("longitude"),
@@ -3060,12 +3105,26 @@ const WORLD_BODIES = {
 		description: form.elements.description.value,
 		website: form.elements.website.value,
 	}),
+	cities: async (form) => {
+		const value = (name) => form.elements[name].value;
+		return {
+			name: value("name"),
+			region: value("region"),
+			country_id: value("country_id"),
+			latitude: value("latitude"),
+			longitude: value("longitude"),
+			remark: value("remark"),
+		};
+	},
+	countries: async (form) => {
+		const value = (name) => form.elements[name].value;
+		return { name: value("name"), latitude: value("latitude"), longitude: value("longitude"), remark: value("remark") };
+	},
 	places: async (form) => {
 		const value = (name) => form.elements[name].value;
 		return {
 			name: value("name"),
-			city: value("city"),
-			country: value("country"),
+			city_id: value("city_id"),
 			address: value("address"),
 			latitude: value("latitude"),
 			longitude: value("longitude"),
@@ -3092,6 +3151,7 @@ const WORLD_BODIES = {
 			status: value("status"),
 			website: value("website"),
 			location: value("location"),
+			city_id: value("city_id"),
 			address: value("address"),
 			latitude: value("latitude"),
 			longitude: value("longitude"),
@@ -3236,8 +3296,9 @@ async function openDialog(item) {
 		if (form.elements.device_id) {
 			await fillTypes(form.elements.device_id, "devices");
 		}
-		if (form.elements.place_id) {
-			setPickerRows(form.elements.place_id, await worldList("places"), placeName);
+		// single pickers over a view (a concert's place, a city, a country): its rows, by the view's label
+		for (const select of form.querySelectorAll("select[data-picker]")) {
+			setPickerRows(select, await worldList(select.dataset.picker), PICKER_LABELS[select.dataset.picker] || ((row) => row.name));
 		}
 		resetForm(form);
 		if (state.view === "organizations" && !item) {
@@ -3251,8 +3312,10 @@ async function openDialog(item) {
 		if (form.elements.device_id) {
 			form.elements.device_id.value = item?.device ? item.device.id : "";
 		}
-		if (form.elements.place_id) {
-			setPickerValue(form.elements.place_id, item?.place ? [item.place.id] : []);
+		// and the row it has: place_id shows item.place, city_id item.city, ...
+		for (const select of form.querySelectorAll("select[data-picker]")) {
+			const chosen = item?.[select.name.replace(/_id$/, "")];
+			setPickerValue(select, chosen ? [chosen.id] : []);
 		}
 		if (form.id === "person-form") {
 			await preparePersonLinks(item);

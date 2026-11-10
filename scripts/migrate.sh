@@ -85,6 +85,15 @@
 #     relation_type_id), so two people-organization links may differ by kind.
 #     The new code writes the kind and the old code cannot, so run this right
 #     after deploying that version; then --only-types adds the other kinds.
+#   - countries and cities: their tables (create_all makes them; made here too; a
+#     city points to its country) and a
+#     city_id on places, museum_visits and organizations (adding columns:
+#     run before the deploy); then scripts/link_cities.py makes the cities
+#     from the text and links every row. Only once every place and museum
+#     visit that names a city is linked does this drop places.city,
+#     places.country and museum_visits.city (and key a place by its city_id):
+#     run it again right after deploying the version that no longer has them.
+#     organizations.location stays: it says more than the city.
 #   - places: every concert's venue, city and country become a row of places
 #     (one per account, name and city; a concert with a city but no venue
 #     gives a place named after the city), concert_visits.place_id points to
@@ -391,6 +400,60 @@ if link_columns and "relation_type_id" not in link_columns:
     db.execute("DROP TABLE person_organizations")
     db.execute("ALTER TABLE person_organizations_new RENAME TO person_organizations")
     added.append("person_organizations.relation_type_id (every link Worked at)")
+db.execute("""CREATE TABLE IF NOT EXISTS countries (
+    id INTEGER PRIMARY KEY,
+    owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL, latitude FLOAT, longitude FLOAT, remark TEXT NOT NULL,
+    CONSTRAINT uq_country_name UNIQUE (owner_id, name))""")
+db.execute("CREATE INDEX IF NOT EXISTS ix_countries_owner_id ON countries (owner_id)")
+db.execute("""CREATE TABLE IF NOT EXISTS cities (
+    id INTEGER PRIMARY KEY,
+    owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL, region VARCHAR(100) NOT NULL,
+    country_id INTEGER REFERENCES countries (id) ON DELETE SET NULL,
+    latitude FLOAT, longitude FLOAT, remark TEXT NOT NULL,
+    CONSTRAINT uq_city_name UNIQUE (owner_id, name, region, country_id))""")
+db.execute("CREATE INDEX IF NOT EXISTS ix_cities_owner_id ON cities (owner_id)")
+db.execute("CREATE INDEX IF NOT EXISTS ix_cities_country_id ON cities (country_id)")
+for table in ("places", "museum_visits", "organizations"):
+    existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+    if existing and "city_id" not in existing:
+        db.execute(f"ALTER TABLE {table} ADD COLUMN city_id INTEGER REFERENCES cities (id) ON DELETE SET NULL")
+        db.execute(f"CREATE INDEX IF NOT EXISTS ix_{table}_city_id ON {table} (city_id)")
+        added.append(f"{table}.city_id")
+place_columns = {row[1] for row in db.execute("PRAGMA table_info(places)")}
+museum_columns = {row[1] for row in db.execute("PRAGMA table_info(museum_visits)")}
+if "city" in place_columns or "city" in museum_columns:
+    unlinked = 0
+    if "city" in place_columns:
+        unlinked += db.execute("SELECT count(*) FROM places WHERE trim(city) <> '' AND city_id IS NULL").fetchone()[0]
+        # a country with no city must be in the remark before the column goes
+        unlinked += db.execute("SELECT count(*) FROM places WHERE trim(city) = '' AND trim(country) <> '' AND remark NOT LIKE '%the city is not known%'").fetchone()[0]
+    if "city" in museum_columns:
+        unlinked += db.execute("SELECT count(*) FROM museum_visits WHERE trim(city) <> '' AND city_id IS NULL").fetchone()[0]
+    if unlinked:
+        print(f"{path}: {unlinked} places and museum visits name a city they are not linked to: run scripts/link_cities.py, then this again")
+    else:
+        if "city" in place_columns:
+            # sqlite cannot drop a column its key names: the table is made again, keyed by the city's id, and the rows copied
+            db.execute("""CREATE TABLE places_new (
+                id INTEGER PRIMARY KEY,
+                owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+                name VARCHAR(300) NOT NULL,
+                city_id INTEGER REFERENCES cities (id) ON DELETE SET NULL,
+                address VARCHAR(500) NOT NULL, latitude FLOAT, longitude FLOAT,
+                website VARCHAR(1000) NOT NULL, remark TEXT NOT NULL,
+                CONSTRAINT uq_place_name UNIQUE (owner_id, name, city_id))""")
+            db.execute("""INSERT INTO places_new (id, owner_id, name, city_id, address, latitude, longitude, website, remark)
+                SELECT id, owner_id, name, city_id, address, latitude, longitude, website, remark FROM places""")
+            db.execute("DROP TABLE places")
+            db.execute("ALTER TABLE places_new RENAME TO places")
+            db.execute("CREATE INDEX IF NOT EXISTS ix_places_owner_id ON places (owner_id)")
+            db.execute("CREATE INDEX IF NOT EXISTS ix_places_city_id ON places (city_id)")
+            added.append("places.city, places.country (in cities now)")
+        if "city" in museum_columns:
+            db.execute("ALTER TABLE museum_visits DROP COLUMN city")
+            added.append("museum_visits.city (in cities now)")
 if not db.execute("SELECT 1 FROM users WHERE role = 'admin'").fetchone():
     oldest = db.execute("SELECT min(id) FROM users").fetchone()[0]
     if oldest is not None:
@@ -424,6 +487,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'people' AND column_name IN ('name', 'type_id', 'middle_name', 'honorific', 'is_self'))
 	   OR (table_name = 'concert_visits' AND column_name = 'venue')
 	   OR (table_name = 'person_organizations' AND column_name IN ('person_id', 'relation_type_id'))
+	   OR (table_name IN ('places', 'museum_visits', 'organizations') AND column_name IN ('city', 'city_id'))
 	   OR (table_name = 'person_types' AND column_name = 'id')
 	   OR (table_name IN ('museums', 'organizations') AND column_name IN ('address', 'latitude', 'longitude', 'alone'))
 	   OR (table_name = 'audio_courses' AND column_name IN ('device', 'device_id', 'link'))
@@ -768,6 +832,46 @@ if has "person_organizations.person_id:.*" && ! has "person_organizations.relati
 		END
 		\$\$;
 		ALTER TABLE person_organizations ADD CONSTRAINT person_organizations_pkey PRIMARY KEY (person_id, organization_id, relation_type_id)"
+fi
+# cities: the table and the links (adding: run before the deploy)
+for table in places museum_visits organizations; do
+	if ! has "${table}.city_id:.*"; then
+		need "${table}.city_id" "CREATE TABLE IF NOT EXISTS countries (
+				id SERIAL PRIMARY KEY,
+				owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+				name VARCHAR(100) NOT NULL, latitude DOUBLE PRECISION, longitude DOUBLE PRECISION, remark TEXT NOT NULL,
+				CONSTRAINT uq_country_name UNIQUE (owner_id, name));
+			CREATE INDEX IF NOT EXISTS ix_countries_owner_id ON countries (owner_id);
+			CREATE TABLE IF NOT EXISTS cities (
+				id SERIAL PRIMARY KEY,
+				owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+				name VARCHAR(100) NOT NULL, region VARCHAR(100) NOT NULL,
+				country_id INTEGER REFERENCES countries (id) ON DELETE SET NULL,
+				latitude DOUBLE PRECISION, longitude DOUBLE PRECISION, remark TEXT NOT NULL,
+				CONSTRAINT uq_city_name UNIQUE (owner_id, name, region, country_id));
+			CREATE INDEX IF NOT EXISTS ix_cities_owner_id ON cities (owner_id);
+			CREATE INDEX IF NOT EXISTS ix_cities_country_id ON cities (country_id);
+			ALTER TABLE ${table} ADD COLUMN city_id INTEGER REFERENCES cities (id) ON DELETE SET NULL;
+			CREATE INDEX IF NOT EXISTS ix_${table}_city_id ON ${table} (city_id)"
+	fi
+done
+# the old city text goes once every row that names a city is linked (right after deploying the version without it)
+if { has "places.city:.*" || has "museum_visits.city:.*"; } && has "places.city_id:.*" && has "museum_visits.city_id:.*"; then
+	unlinked="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
+		SELECT $(has "places.city:.*" && echo "(SELECT count(*) FROM places WHERE (btrim(city) <> '' AND city_id IS NULL) OR (btrim(city) = '' AND btrim(country) <> '' AND remark NOT LIKE '%the city is not known%'))" || echo 0)
+			+ $(has "museum_visits.city:.*" && echo "(SELECT count(*) FROM museum_visits WHERE btrim(city) <> '' AND city_id IS NULL)" || echo 0)")"
+	if [[ "${unlinked}" != "0" ]]; then
+		echo "${unlinked} places and museum visits name a city they are not linked to: run scripts/link_cities.py, then this again" >&2
+	else
+		if has "places.city:.*"; then
+			need "places.city, places.country (in cities now)" "ALTER TABLE places DROP CONSTRAINT IF EXISTS uq_place_name;
+				ALTER TABLE places DROP COLUMN city, DROP COLUMN country;
+				ALTER TABLE places ADD CONSTRAINT uq_place_name UNIQUE (owner_id, name, city_id)"
+		fi
+		if has "museum_visits.city:.*"; then
+			need "museum_visits.city (in cities now)" "ALTER TABLE museum_visits DROP COLUMN city"
+		fi
+	fi
 fi
 
 if (( ${#changed[@]} == 0 )); then

@@ -2,8 +2,9 @@
 
 """
 Find the latitude and longitude of every museum visit and organization that
-has an address, and every place (a concert hall, a club: name, city and
-country), that has no coordinates yet, so it shows on the map.
+has an address, every place (a concert hall, a club: a name in a city),
+and every city and country, that has no coordinates yet, so it shows on
+the map.
 
   scripts/geocode.py             look them up and save them
   scripts/geocode.py --dry-run   look them up, print, save nothing
@@ -48,7 +49,7 @@ os.chdir(ROOT)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from myworld.models import Museum, Organization, Place, make_engine
+from myworld.models import City, Country, Museum, Organization, Place, make_engine
 
 NOMINATIM = "https://nominatim.openstreetmap.org/search"
 USER_AGENT = "myworld-geocode/1.0 (+https://github.com/veltzer/gcp-myworld)"
@@ -187,11 +188,13 @@ def geocode_places(session: Session, every: bool) -> int:
     for place in session.scalars(select(Place).order_by(Place.id)):
         if place.latitude is not None and not every:
             continue
-        what = f"place {place.id}, {place.name}, {place.city}"
-        found = geocode_place(place.name, place.city, place.country)
+        city = place.city.name if place.city else ""
+        country = place.city.country.name if place.city and place.city.country else ""
+        what = f"place {place.id}, {place.name}, {city}"
+        found = geocode_place(place.name, city, country)
         if found is None:
             missed += 1
-            print(f"MISS  {what}: {'no city to look in' if not place.city.strip() else 'nothing that carries its name'}")
+            print(f"MISS  {what}: {'no city to look in' if not city else 'nothing that carries its name'}")
             continue
         latitude, longitude, how, match = found
         print(f"ok    {what}: {latitude:.5f},{longitude:.5f} (by {how}) = {match}")
@@ -203,6 +206,32 @@ def geocode_places(session: Session, every: bool) -> int:
             note = f"Location approximate: {how.removeprefix('roughly, ')}."
             if note not in place.remark:
                 place.remark = f"{place.remark} {note}".strip()
+    return missed
+
+
+def geocode_cities(session: Session, every: bool) -> int:
+    """
+    Look up the countries and cities without coordinates (all of them with
+    every): a city by its name, region and country, a country by its name;
+    the match is the town or the country itself. How many were not found.
+    """
+    missed = 0
+    rows: list[Country | City] = [*session.scalars(select(Country).order_by(Country.id)), *session.scalars(select(City).order_by(City.id))]
+    for row in rows:
+        if row.latitude is not None and not every:
+            continue
+        if isinstance(row, City):
+            query = ", ".join(part for part in (row.name, row.region, row.country.name if row.country else "") if part)
+        else:
+            query = row.name
+        what = f"{type(row).__name__.lower()} {row.id}, {query}"
+        found = lookup(query)
+        if found is None:
+            missed += 1
+            print(f"MISS  {what}: nothing")
+            continue
+        row.latitude, row.longitude = float(found["lat"]), float(found["lon"])
+        print(f"ok    {what}: {row.latitude:.5f},{row.longitude:.5f} = {found['display_name']}")
     return missed
 
 
@@ -236,6 +265,7 @@ def main() -> int:
             print(f"ok    {what}: {latitude:.5f},{longitude:.5f} (by {how}) = {match}")
             row.latitude, row.longitude = latitude, longitude
         missed += geocode_places(session, args.all)
+        missed += geocode_cities(session, args.all)
         if args.dry_run:
             session.rollback()
         else:

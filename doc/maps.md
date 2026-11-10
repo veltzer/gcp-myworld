@@ -48,6 +48,9 @@ roughly and says so in the place's remark ("Location approximate: ...").
 A place only its city would match, or one with no city, is left without
 coordinates rather than put at the city's center.
 
+Cities and countries are looked up by their names (a city with its region
+and country): the match is the town or the country itself.
+
 The `museum-addresses`, `museum-locations`, `organization-locations` and
 `place-locations` checks (`checks.md`) list the rows that are missing an
 address or coordinates.

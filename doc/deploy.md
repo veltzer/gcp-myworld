@@ -332,10 +332,19 @@ a person is written with `type_ids`, a list.
   people in it: ids and names, written as a list of ids) and `concerts`
   (ids and names, newest first). A name is a group once (409 for a
   second). Deleting a group keeps its people and its concerts.
-- `GET /api/places`: by name, with city, country, address, `latitude`,
+- `GET /api/places`: by name, with `city` (id, name, region and its
+  `country`, id and name; written as `city_id`), address, `latitude`,
   `longitude`, website, remark and `concerts` (ids and names, newest
   first). A name is a place once in each city (409 for a second). Deleting
   a place keeps its concerts, with no place.
+- `GET /api/cities`: by name, with region, `country` (id and name; written
+  as `country_id`), `latitude`, `longitude`, remark and what is in it:
+  `places`, `museums` and `organizations` (ids and names). A name is a city
+  once in each region of a country. `GET /api/countries`: by name, with
+  `latitude`, `longitude`, remark and `cities`. Deleting a city keeps what
+  was in it, with no city; deleting a country keeps its cities. A museum
+  visit's and an organization's `city` are as a place's (`city_id`); an
+  organization keeps its `location` as written, which often says more.
 - `GET /api/organizations`: by name, with `type` (id and name), `relations`
   (how it is related to the user: ids and names of relation types), status, website, location, address, `latitude` and `longitude`, the logo as
   `image`, and `people` (ids and names).
@@ -429,7 +438,8 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   one row per thing done (see "Concerts, museums, people and
   organizations").
     - `places` (where things happened: a concert's `place_id` points to
-  one), `groups` (named groups of people: a band), `people`,
+  one), `cities` (places, museum visits and organizations point to the one
+  they are in) and `countries` (a city points to its own), `groups` (named groups of people: a band), `people`,
   `organizations`, `images`.
     - `disabled_checks`: the database checks an admin turned off for
   themselves (see `checks.md`).

@@ -118,11 +118,27 @@ By dataset: the key is the page's name in the app (`#book`) and what
 ### Places (`places`)
 
 - `place-used`: every place has at least one concert that was there.
-- `place-cities`: every place says which city and country it is in.
+- `place-cities`: every place says which city it is in.
 - `place-locations`: every place has a latitude and a longitude, so the
   Map layout shows it.
 - `place-duplicates`: no account has two places of the same name in the
   same city (ignoring case and spaces).
+
+### Cities (`cities`)
+
+- `city-used`: every city has a place, a museum visit or an organization
+  in it.
+- `city-countries`: every city says which country it is in.
+- `city-locations`: every city has a latitude and a longitude.
+- `city-duplicates`: no account has one city twice, however spaced,
+  hyphenated or capitalized ("Tel-Aviv", "Tel Aviv").
+
+### Countries (`countries`)
+
+- `country-used`: every country has a city in it.
+- `country-locations`: every country has a latitude and a longitude.
+- `country-duplicates`: no account has one country twice, however it is
+  written ("USA", "United States of America").
 
 ### People (`people`)
 

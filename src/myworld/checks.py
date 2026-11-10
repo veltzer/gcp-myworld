@@ -21,11 +21,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from myworld import names
+from myworld.cities import city_key, country_name
 from myworld.models import (
     KINDS,
     YOUTUBE_ID_LENGTH,
     AudioCourse,
+    City,
     Concert,
+    Country,
     Device,
     Group,
     Image,
@@ -104,6 +107,8 @@ DATASETS: dict[str, str] = {
     "people": "People",
     "groups": "Groups",
     "places": "Places",
+    "cities": "Cities",
+    "countries": "Countries",
     "organizations": "Organizations",
     "organization-types": "Org types",
     "person-types": "Professions",
@@ -680,11 +685,11 @@ def check_group_duplicates(session: Session) -> Result:
 # ─── places ─────────────────────────────────────────────────────────────────
 
 def _places(session: Session) -> list[Place]:
-    return list(session.scalars(select(Place).order_by(Place.owner_id, Place.name, Place.city, Place.id)))
+    return list(session.scalars(select(Place).order_by(Place.owner_id, Place.name, Place.id)))
 
 
 def _place_problem(place: Place, message: str) -> Problem:
-    where = f"{place.name}, {place.city}" if place.city else place.name
+    where = f"{place.name}, {place.city.name}" if place.city else place.name
     return Problem(f"{where} (place {place.id}, account {place.owner_id})", message, f"places/{place.id}", place.owner_id)
 
 
@@ -695,16 +700,11 @@ def check_place_used(session: Session) -> Result:
     return Result(checked=len(places), problems=[_place_problem(place, "nothing happened there") for place in places if place.id not in used])
 
 
-@check("place-cities", "Every place has a city and a country", "places", "places")
+@check("place-cities", "Every place is in a city", "places", "places")
 def check_place_cities(session: Session) -> Result:
-    """ Every place, of every account, says which city and country it is in. """
+    """ Every place, of every account, says which city it is in (the Cities page). """
     places = _places(session)
-    problems = []
-    for place in places:
-        missing = [what for what, value in (("city", place.city), ("country", place.country)) if not value.strip()]
-        if missing:
-            problems.append(_place_problem(place, f"has no {' and no '.join(missing)}"))
-    return Result(checked=len(places), problems=problems)
+    return Result(checked=len(places), problems=[_place_problem(place, "has no city") for place in places if place.city_id is None])
 
 
 @check("place-locations", "Every place is on the map", "places", "places")
@@ -719,9 +719,9 @@ def check_place_locations(session: Session) -> Result:
 def check_place_duplicates(session: Session) -> Result:
     """ No account has two places of the same name in the same city (ignoring case and spaces). """
     places = _places(session)
-    seen: dict[tuple[int, str, str], list[Place]] = {}
+    seen: dict[tuple[int, str, int], list[Place]] = {}
     for place in places:
-        seen.setdefault((place.owner_id, " ".join(place.name.lower().split()), " ".join(place.city.lower().split())), []).append(place)
+        seen.setdefault((place.owner_id, " ".join(place.name.lower().split()), place.city_id or 0), []).append(place)
     problems = [
         _place_problem(place, f"has the same name and city as {len(same) - 1} other place{'s' if len(same) > 2 else ''} of the account")
         for same in seen.values()
@@ -729,6 +729,89 @@ def check_place_duplicates(session: Session) -> Result:
         for place in same
     ]
     return Result(checked=len(places), problems=problems)
+
+
+# ─── cities ─────────────────────────────────────────────────────────────────
+
+def _cities(session: Session) -> list[City]:
+    return list(session.scalars(select(City).order_by(City.owner_id, City.name, City.id)))
+
+
+def _city_problem(city: City, message: str) -> Problem:
+    where = f"{city.name}, {city.country.name}" if city.country else city.name
+    return Problem(f"{where} (city {city.id}, account {city.owner_id})", message, f"cities/{city.id}", city.owner_id)
+
+
+@check("city-used", "Every city has something in it", "cities", "cities")
+def check_city_used(session: Session) -> Result:
+    """ Every city, of every account, has a place, a museum visit or an organization in it. """
+    cities, used = _cities(session), _ids(session, Place.city_id, Museum.city_id, Organization.city_id)
+    return Result(checked=len(cities), problems=[_city_problem(city, "nothing is in it") for city in cities if city.id not in used])
+
+
+@check("city-countries", "Every city has a country", "cities", "cities")
+def check_city_countries(session: Session) -> Result:
+    """ Every city, of every account, says which country it is in. """
+    cities = _cities(session)
+    return Result(checked=len(cities), problems=[_city_problem(city, "has no country") for city in cities if city.country_id is None])
+
+
+@check("city-locations", "Every city is on the map", "cities", "cities")
+def check_city_locations(session: Session) -> Result:
+    """ Every city, of every account, has a latitude and a longitude (scripts/geocode.py finds them). """
+    cities = _cities(session)
+    return Result(checked=len(cities), problems=[_city_problem(city, "has no latitude and longitude") for city in cities if city.latitude is None or city.longitude is None])
+
+
+@check("city-duplicates", "No city is listed twice", "cities", "cities")
+def check_city_duplicates(session: Session) -> Result:
+    """ No account has one city twice: the same name and country, however spaced, hyphenated or capitalized ("Tel-Aviv", "Tel Aviv"). """
+    cities = _cities(session)
+    seen: dict[tuple[int, str, str], list[City]] = {}
+    for city in cities:
+        seen.setdefault((city.owner_id, *city_key(city.name, city.country.name if city.country else "")), []).append(city)
+    problems = [
+        _city_problem(city, f"is the same city as {len(same) - 1} other{'s' if len(same) > 2 else ''} of the account")
+        for same in seen.values()
+        if len(same) > 1
+        for city in same
+    ]
+    return Result(checked=len(cities), problems=problems)
+
+
+# ─── countries ──────────────────────────────────────────────────────────────
+
+def _countries(session: Session) -> list[Country]:
+    return list(session.scalars(select(Country).order_by(Country.owner_id, Country.name, Country.id)))
+
+
+def _country_problem(country: Country, message: str) -> Problem:
+    return Problem(f"{country.name} (country {country.id}, account {country.owner_id})", message, f"countries/{country.id}", country.owner_id)
+
+
+@check("country-used", "Every country has a city", "countries", "countries")
+def check_country_used(session: Session) -> Result:
+    """ Every country, of every account, has at least one city in it. """
+    countries, used = _countries(session), _ids(session, City.country_id)
+    return Result(checked=len(countries), problems=[_country_problem(c, "has no city") for c in countries if c.id not in used])
+
+
+@check("country-locations", "Every country is on the map", "countries", "countries")
+def check_country_locations(session: Session) -> Result:
+    """ Every country, of every account, has a latitude and a longitude (scripts/geocode.py finds them). """
+    countries = _countries(session)
+    return Result(checked=len(countries), problems=[_country_problem(c, "has no latitude and longitude") for c in countries if c.latitude is None or c.longitude is None])
+
+
+@check("country-duplicates", "No country is listed twice", "countries", "countries")
+def check_country_duplicates(session: Session) -> Result:
+    """ No account has one country twice, however it is written ("USA", "United States of America"). """
+    countries = _countries(session)
+    seen: dict[tuple[int, str], list[Country]] = {}
+    for country in countries:
+        seen.setdefault((country.owner_id, country_name(country.name).casefold()), []).append(country)
+    problems = [_country_problem(c, "is the same country as another of the account") for same in seen.values() if len(same) > 1 for c in same]
+    return Result(checked=len(countries), problems=problems)
 
 
 def _enumeration_checks(dataset: str, model: _Enumeration, used: Callable[[Session], set[int]]) -> None:

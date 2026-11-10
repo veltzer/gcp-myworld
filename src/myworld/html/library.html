@@ -308,7 +308,7 @@
 			<form id="museum-form" class="dialog-form" hidden>
 				<div class="row">
 					<label class="wide">Name <input name="name" required placeholder="e.g. Louvre"></label>
-					<label>City <input name="city"></label>
+					<label>City <select name="city_id" data-picker="cities" data-placeholder="Type a city" title="Add a new one on the Cities page"></select></label>
 				</div>
 				<div class="row">
 					<label>Date <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
@@ -439,7 +439,8 @@
 			<form id="organization-form" class="dialog-form" hidden>
 				<div class="row">
 					<label class="wide">Name <input name="name" required></label>
-					<label class="wide">Location <input name="location" placeholder="City, country"></label>
+					<label class="wide">Location <input name="location" placeholder="As written: city, region, country, and anything more"></label>
+					<label>City <select name="city_id" data-picker="cities" data-placeholder="Type a city" title="Add a new one on the Cities page"></select></label>
 					<label>Type <select name="type_id"></select></label>
 				</div>
 				<div class="row">
@@ -488,11 +489,46 @@
 					<button type="submit">Add</button>
 				</div>
 			</form>
+			<form id="city-form" class="dialog-form" hidden>
+				<div class="row">
+					<label class="wide">Name <input name="name" required placeholder="Tel Aviv"></label>
+					<label>Region <input name="region" placeholder="A state or province" title="Where addresses name one: California, Ontario"></label>
+					<label>Country <select name="country_id" data-picker="countries" data-placeholder="Type a country" title="Add a new one on the Countries page"></select></label>
+				</div>
+				<div class="row">
+					<label>Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
+					<label>Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Remark <input name="remark"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="country-form" class="dialog-form" hidden>
+				<div class="row">
+					<label class="wide">Name <input name="name" required placeholder="Israel"></label>
+				</div>
+				<div class="row">
+					<label>Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
+					<label>Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Remark <input name="remark"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
 			<form id="place-form" class="dialog-form" hidden>
 				<div class="row">
 					<label class="wide">Name <input name="name" required placeholder="Tmuna Theater"></label>
-					<label>City <input name="city"></label>
-					<label>Country <input name="country"></label>
+					<label>City <select name="city_id" data-picker="cities" data-placeholder="Type a city" title="Add a new one on the Cities page"></select></label>
 				</div>
 				<div class="row">
 					<label class="wide">Address <input name="address"></label>

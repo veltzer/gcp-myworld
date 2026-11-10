@@ -24,7 +24,9 @@ from myworld.models import (
     STATUSES,
     YOUTUBE_ID_LENGTH,
     AudioCourse,
+    City,
     Concert,
+    Country,
     Device,
     Group,
     Image,
@@ -84,7 +86,7 @@ def _names(people: list[Person]) -> list[str]:
     return sorted(p.name for p in people)
 
 
-def _refs(rows: list[Person] | list[Organization] | list[PersonType] | list[RelationType] | list[Group] | list[Concert]) -> list[dict[str, Any]]:
+def _refs(rows: list[Person] | list[Organization] | list[PersonType] | list[RelationType] | list[Group] | list[Concert] | list[Place] | list[City]) -> list[dict[str, Any]]:
     """ Names with the ids the People and Organizations views link to, each row once (a person may be linked to one organization twice). """
     unique = {row.id: row for row in rows}.values()
     return [{"id": row.id, "name": row.name} for row in sorted(unique, key=lambda row: row.name)]
@@ -116,8 +118,42 @@ def concert_json(concert: Concert) -> dict[str, Any]:
     }
 
 
+def country_ref(country: Country | None) -> dict[str, Any] | None:
+    return None if country is None else {"id": country.id, "name": country.name}
+
+
+def city_ref(city: City | None) -> dict[str, Any] | None:
+    """ A city as other rows show it: its id, name, region and country; None for no city. """
+    return None if city is None else {"id": city.id, "name": city.name, "region": city.region, "country": country_ref(city.country)}
+
+
+def country_json(country: Country) -> dict[str, Any]:
+    return {
+        "id": country.id,
+        "name": country.name,
+        "latitude": country.latitude,
+        "longitude": country.longitude,
+        "remark": country.remark,
+        "cities": _refs(country.cities),
+    }
+
+
 def _place_ref(place: Place) -> dict[str, Any]:
-    return {"id": place.id, "name": place.name, "city": place.city, "country": place.country}
+    return {"id": place.id, "name": place.name, "city": city_ref(place.city)}
+
+
+def city_json(city: City) -> dict[str, Any]:
+    # a museum visited twice is one museum here
+    museums = {m.name: {"id": m.id, "name": m.name} for m in sorted(city.museums, key=lambda m: m.id)}
+    return {
+        **(city_ref(city) or {}),
+        "latitude": city.latitude,
+        "longitude": city.longitude,
+        "remark": city.remark,
+        "places": _refs(city.places),
+        "museums": sorted(museums.values(), key=lambda m: m["name"]),
+        "organizations": _refs(city.organizations),
+    }
 
 
 def place_json(place: Place) -> dict[str, Any]:
@@ -152,7 +188,7 @@ def museum_json(museum: Museum) -> dict[str, Any]:
         "name": museum.name,
         **_date_json(museum),
         "date_timezone": museum.date_timezone,
-        "city": museum.city,
+        "city": city_ref(museum.city),
         "address": museum.address,
         "latitude": museum.latitude,
         "longitude": museum.longitude,
@@ -268,6 +304,7 @@ def organization_json(organization: Organization) -> dict[str, Any]:
         "status": organization.status,
         "website": organization.website,
         "location": organization.location,
+        "city": city_ref(organization.city),
         "address": organization.address,
         "latitude": organization.latitude,
         "longitude": organization.longitude,
@@ -292,7 +329,7 @@ def _newest_first(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 @auth.login_required
 def api_concerts() -> flask.Response:
     query = select(Concert).where(Concert.owner_id == flask.g.user.id).options(
-        selectinload(Concert.people), selectinload(Concert.performers), selectinload(Concert.place), selectinload(Concert.groups),
+        selectinload(Concert.people), selectinload(Concert.performers), selectinload(Concert.place).selectinload(Place.city).selectinload(City.country), selectinload(Concert.groups),
     )
     concerts = flask.g.db.execute(query).scalars().all()
     return flask.jsonify(_newest_first([concert_json(c) for c in concerts]))
@@ -318,7 +355,7 @@ def api_youtube() -> flask.Response:
 @bp.route("/api/museum-visits", methods=["GET"])
 @auth.login_required
 def api_museums() -> flask.Response:
-    query = select(Museum).where(Museum.owner_id == flask.g.user.id).options(selectinload(Museum.people))
+    query = select(Museum).where(Museum.owner_id == flask.g.user.id).options(selectinload(Museum.people), selectinload(Museum.city).selectinload(City.country))
     museums = flask.g.db.execute(query).scalars().all()
     return flask.jsonify(_newest_first([museum_json(m) for m in museums]))
 
@@ -349,7 +386,7 @@ def api_organizations() -> flask.Response:
         select(Organization)
         .where(Organization.owner_id == flask.g.user.id)
         .options(
-            selectinload(Organization.people), selectinload(Organization.type), selectinload(Organization.relations),
+            selectinload(Organization.people), selectinload(Organization.type), selectinload(Organization.relations), selectinload(Organization.city).selectinload(City.country),
             selectinload(Organization.person_links).selectinload(PersonOrganization.relation_type),
             selectinload(Organization.person_links).selectinload(PersonOrganization.person),
         )
@@ -362,7 +399,7 @@ def api_organizations() -> flask.Response:
 @bp.route("/api/places", methods=["GET"])
 @auth.login_required
 def api_places() -> flask.Response:
-    query = select(Place).where(Place.owner_id == flask.g.user.id).options(selectinload(Place.concerts)).order_by(Place.name, Place.city, Place.id)
+    query = select(Place).where(Place.owner_id == flask.g.user.id).options(selectinload(Place.concerts), selectinload(Place.city).selectinload(City.country)).order_by(Place.name, Place.id)
     places = flask.g.db.execute(query).scalars().all()
     return flask.jsonify([place_json(p) for p in places])
 
@@ -373,6 +410,24 @@ def api_groups() -> flask.Response:
     query = select(Group).where(Group.owner_id == flask.g.user.id).options(selectinload(Group.members), selectinload(Group.concerts)).order_by(Group.name)
     groups = flask.g.db.execute(query).scalars().all()
     return flask.jsonify([group_json(g) for g in groups])
+
+
+@bp.route("/api/cities", methods=["GET"])
+@auth.login_required
+def api_cities() -> flask.Response:
+    query = (
+        select(City).where(City.owner_id == flask.g.user.id)
+        .options(selectinload(City.places), selectinload(City.museums), selectinload(City.organizations), selectinload(City.country))
+        .order_by(City.name, City.id)
+    )
+    return flask.jsonify([city_json(c) for c in flask.g.db.execute(query).scalars().all()])
+
+
+@bp.route("/api/countries", methods=["GET"])
+@auth.login_required
+def api_countries() -> flask.Response:
+    query = select(Country).where(Country.owner_id == flask.g.user.id).options(selectinload(Country.cities)).order_by(Country.name)
+    return flask.jsonify([country_json(c) for c in flask.g.db.execute(query).scalars().all()])
 
 
 @bp.route("/api/images/<int:image_id>", methods=["GET"])
@@ -466,7 +521,7 @@ def owned_image(body: dict[str, Any]) -> int | None:
     return image_id
 
 
-def _owned(model: type[Concert | Museum | AudioCourse | YouTubeVideo | Person | Organization | Place | Group | OrganizationType | PersonType | RelationType | PersonRelationType | PersonOrganizationType | Device], row_id: int) -> Any:
+def _owned(model: type[Concert | Museum | AudioCourse | YouTubeVideo | Person | Organization | Place | Group | City | Country | OrganizationType | PersonType | RelationType | PersonRelationType | PersonOrganizationType | Device], row_id: int) -> Any:
     row = flask.g.db.get(model, row_id)
     if row is None or row.owner_id != flask.g.user.id:
         raise ApiError(404, "no such entry")
@@ -520,17 +575,66 @@ def _owned_place(body: dict[str, Any]) -> Place | None:
     return place
 
 
-def _apply_place(place: Place, body: dict[str, Any]) -> None:
+def _owned_city(body: dict[str, Any]) -> City | None:
+    """ body's city_id, one of the user's own cities, or None for no city. """
+    city_id = opt_int(body, "city_id", 1, 2**31 - 1)
+    if city_id is None:
+        return None
+    city = flask.g.db.get(City, city_id)
+    if city is None or city.owner_id != flask.g.user.id:
+        raise ApiError(400, "city_id: unknown city")
+    return city
+
+
+def _owned_country(body: dict[str, Any]) -> Country | None:
+    """ body's country_id, one of the user's own countries, or None for no country. """
+    country_id = opt_int(body, "country_id", 1, 2**31 - 1)
+    if country_id is None:
+        return None
+    country = flask.g.db.get(Country, country_id)
+    if country is None or country.owner_id != flask.g.user.id:
+        raise ApiError(400, "country_id: unknown country")
+    return country
+
+
+def _apply_country(country: Country, body: dict[str, Any]) -> None:
     name = text(body, "name", required=True)
-    city = text(body, "city")
+    clash = flask.g.db.execute(select(Country.id).where(Country.owner_id == flask.g.user.id, Country.name == name, Country.id != country.id)).first()
+    if clash is not None:
+        raise ApiError(409, f"{name} is already in Countries")
+    country.name = name
+    country.latitude, country.longitude = coordinates(body)
+    country.remark = text(body, "remark")
+
+
+def _apply_city(city: City, body: dict[str, Any]) -> None:
+    name = text(body, "name", required=True)
+    region, country = text(body, "region"), _owned_country(body)
     clash = flask.g.db.execute(
-        select(Place.id).where(Place.owner_id == flask.g.user.id, Place.name == name, Place.city == city, Place.id != place.id)
+        select(City.id).where(
+            City.owner_id == flask.g.user.id, City.name == name, City.region == region,
+            City.country_id == country.id if country else City.country_id.is_(None), City.id != city.id,
+        )
     ).first()
     if clash is not None:
-        raise ApiError(409, f"{name}{', ' + city if city else ''} is already in Places")
+        raise ApiError(409, f"{name}{', ' + country.name if country else ''} is already in Cities")
+    city.name, city.region, city.country = name, region, country
+    city.latitude, city.longitude = coordinates(body)
+    city.remark = text(body, "remark")
+
+
+def _apply_place(place: Place, body: dict[str, Any]) -> None:
+    name = text(body, "name", required=True)
+    city = _owned_city(body)
+    clash = flask.g.db.execute(
+        select(Place.id).where(
+            Place.owner_id == flask.g.user.id, Place.name == name, Place.city_id == city.id if city else Place.city_id.is_(None), Place.id != place.id,
+        )
+    ).first()
+    if clash is not None:
+        raise ApiError(409, f"{name}{', ' + city.name if city else ''} is already in Places")
     place.name = name
     place.city = city
-    place.country = text(body, "country")
     place.address = text(body, "address")
     place.latitude, place.longitude = coordinates(body)
     place.website = text(body, "website")
@@ -552,7 +656,7 @@ def _apply_group(group: Group, body: dict[str, Any]) -> None:
 
 def _apply_museum(museum: Museum, body: dict[str, Any], current: Museum | None) -> None:
     museum.name = text(body, "name", required=True)
-    museum.city = text(body, "city")
+    museum.city = _owned_city(body)
     museum.address = text(body, "address")
     museum.latitude, museum.longitude = coordinates(body)
     museum.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
@@ -752,6 +856,7 @@ def _apply_organization(organization: Organization, body: dict[str, Any]) -> Non
     organization.status = text(body, "status")
     organization.website = text(body, "website")
     organization.location = text(body, "location")
+    organization.city = _owned_city(body)
     organization.address = text(body, "address")
     organization.latitude, organization.longitude = coordinates(body)
     organization.what_happened = text(body, "what_happened")
@@ -882,6 +987,44 @@ def api_organizations_update(row_id: int) -> flask.Response:
     return flask.jsonify(organization_json(organization))
 
 
+@bp.route("/api/cities", methods=["POST"])
+@auth.login_required
+def api_cities_add() -> tuple[flask.Response, int]:
+    city = City(owner_id=flask.g.user.id)
+    _apply_city(city, json_body())
+    flask.g.db.add(city)
+    flask.g.db.commit()
+    return flask.jsonify(city_json(city)), 201
+
+
+@bp.route("/api/cities/<int:row_id>", methods=["PUT"])
+@auth.login_required
+def api_cities_update(row_id: int) -> flask.Response:
+    city = _owned(City, row_id)
+    _apply_city(city, json_body())
+    flask.g.db.commit()
+    return flask.jsonify(city_json(city))
+
+
+@bp.route("/api/countries", methods=["POST"])
+@auth.login_required
+def api_countries_add() -> tuple[flask.Response, int]:
+    country = Country(owner_id=flask.g.user.id)
+    _apply_country(country, json_body())
+    flask.g.db.add(country)
+    flask.g.db.commit()
+    return flask.jsonify(country_json(country)), 201
+
+
+@bp.route("/api/countries/<int:row_id>", methods=["PUT"])
+@auth.login_required
+def api_countries_update(row_id: int) -> flask.Response:
+    country = _owned(Country, row_id)
+    _apply_country(country, json_body())
+    flask.g.db.commit()
+    return flask.jsonify(country_json(country))
+
+
 @bp.route("/api/places", methods=["POST"])
 @auth.login_required
 def api_places_add() -> tuple[flask.Response, int]:
@@ -920,10 +1063,10 @@ def api_groups_update(row_id: int) -> flask.Response:
     return flask.jsonify(group_json(group))
 
 
-@bp.route("/api/<any('concert-visits', 'museum-visits', 'audio-courses', 'youtube-videos', people, organizations, places, groups):what>/<int:row_id>", methods=["DELETE"])
+@bp.route("/api/<any('concert-visits', 'museum-visits', 'audio-courses', 'youtube-videos', people, organizations, places, groups, cities, countries):what>/<int:row_id>", methods=["DELETE"])
 @auth.login_required
 def api_world_delete(what: str, row_id: int) -> flask.Response:
-    model = {"concert-visits": Concert, "museum-visits": Museum, "audio-courses": AudioCourse, "youtube-videos": YouTubeVideo, "people": Person, "organizations": Organization, "places": Place, "groups": Group}[what]
+    model = {"concert-visits": Concert, "museum-visits": Museum, "audio-courses": AudioCourse, "youtube-videos": YouTubeVideo, "people": Person, "organizations": Organization, "places": Place, "groups": Group, "cities": City, "countries": Country}[what]
     # the ORM also removes the row's links (to people, to organizations, to concerts and museums);
     # the concerts at a deleted place are kept, with no place
     flask.g.db.delete(_owned(model, row_id))
@@ -1018,6 +1161,8 @@ def api_stats() -> flask.Response:
         "people": len(people),
         "organizations": len(organizations),
         "places": count(Place),
+        "cities": count(City),
+        "countries": count(Country),
         "groups": count(Group),
         "organization_types": count(OrganizationType),
         "person_types": count(PersonType),
