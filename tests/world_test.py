@@ -8,6 +8,7 @@ from pathlib import Path
 
 import flask
 import import_world
+import link_authors
 import pytest
 import webtest
 from sqlalchemy import delete, func, select, update
@@ -719,6 +720,15 @@ def test_book_authors_are_people(imported: webtest.TestApp) -> None:
     assert [a["name"] for a in entry["authors"]] == ["J.R.R. Tolkien", "Garry Kasparov"]
     [garry] = [p for p in imported.get("/api/people").json if p["id"] == kasparov["id"]]
     assert [t["name"] for t in garry["types"]] == ["Book Author"]
+
+
+
+def test_link_authors_names() -> None:
+    # the names in a book's creator text, each once
+    assert link_authors.author_names("Garry Kasparov") == ["Garry Kasparov"]
+    assert link_authors.author_names("Kernighan, Ritchie") == ["Kernighan", "Ritchie"]
+    assert link_authors.author_names("Brian Kernighan and Dennis Ritchie & Ken Thompson; Brian Kernighan") == ["Brian Kernighan", "Dennis Ritchie", "Ken Thompson"]
+    assert link_authors.author_names("  ") == []
 
 
 CHESS_WITHOUT_AUTHOR = '        simania_id: "11971"\n    authors: []\n'
