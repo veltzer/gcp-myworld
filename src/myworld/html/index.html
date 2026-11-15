@@ -28,20 +28,36 @@
 						My World
 					</a>
 					<h1>Welcome back</h1>
-					<p class="lede">Sign in to open your library.</p>
+					<p class="lede">Sign in to open your library: pick how.</p>
 					<p id="error" class="warning" hidden></p>
 
-					<div class="google">
-						<div id="signin" class="gsi-slot"></div>
-						<div id="signin-loading" class="gsi-placeholder" aria-hidden="true"></div>
-						<p id="signin-missing" class="hint" hidden>
-							Google sign-in is not configured on this server (GOOGLE_CLIENT_ID is not set).
-						</p>
+					<!-- how to sign in: one icon each; Google's is its own button, drawn by Google's script -->
+					<div class="methods" role="group" aria-label="Sign in with">
+						<div class="method">
+							<div id="signin" class="method-icon gsi-slot" title="Sign in with Google">
+								<div id="signin-button"></div>
+								<span id="signin-loading" class="gsi-placeholder" aria-hidden="true"></span>
+								<span id="signin-off" class="method-button off" aria-disabled="true" title="Google sign-in is not configured on this server" hidden>
+									<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 2.9-2.2 5.4-4.7 7.1l7.6 5.9c4.4-4.1 6.9-10.1 6.9-17.5z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.6-5.9c-2.1 1.4-4.9 2.3-8.3 2.3-6.2 0-11.5-4.1-13.4-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>
+								</span>
+							</div>
+							<span class="method-name">Google</span>
+						</div>
+						<div class="method">
+							<a class="method-icon method-button provider" data-provider="github" href="/auth/oauth/github" title="Sign in with GitHub" aria-label="Sign in with GitHub">
+								<img src="/static/github.svg" alt="">
+							</a>
+							<span class="method-name">GitHub</span>
+						</div>
+						<div class="method">
+							<button type="button" id="email-method" class="method-icon method-button" title="Sign in with your email" aria-label="Sign in with your email" aria-expanded="false" aria-controls="email-form">
+								<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/></svg>
+							</button>
+							<span class="method-name">Email</span>
+						</div>
 					</div>
 
-					<div class="divider"><span>or with your email</span></div>
-
-					<form id="email-form" class="email-form" novalidate>
+					<form id="email-form" class="email-form" novalidate hidden>
 						<label class="field">
 							<span>Email</span>
 							<input name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
@@ -59,15 +75,6 @@
 							<button type="button" id="email-mode" class="link">Create an account</button>
 						</p>
 					</form>
-
-					<div class="divider"><span>or</span></div>
-
-					<div class="providers">
-						<a class="provider" data-provider="github" href="/auth/oauth/github">
-							<img src="/static/github.svg" alt="">
-							<span>Continue with GitHub</span>
-						</a>
-					</div>
 
 					<form id="dev-login" class="dev-login" method="post" action="/auth/dev-login" hidden>
 						<label for="dev-email">Development login (no Google):</label>

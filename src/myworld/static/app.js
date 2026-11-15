@@ -78,22 +78,40 @@ function loadGoogleSignIn(clientId) {
 			ux_mode: "redirect",
 			login_uri: `${window.location.origin}/auth/login`,
 		});
-		google.accounts.id.renderButton($("signin"), {
-			type: "standard",
+		// Google's own round icon button: a click on it is the Google sign-in
+		google.accounts.id.renderButton($("signin-button"), {
+			type: "icon",
 			size: "large",
 			theme: "outline",
-			text: "continue_with",
-			shape: "pill",
-			logo_alignment: "left",
-			width: Math.min(360, $("signin").clientWidth || 360),
+			shape: "circle",
 		});
 		$("signin-loading").hidden = true;
 	};
 	script.onerror = () => {
-		$("signin-loading").hidden = true;
+		googleOff("Could not load Google sign-in: check your connection and reload");
 		showError("Could not load Google sign-in. Check your connection and reload.");
 	};
 	document.head.appendChild(script);
+}
+
+// Google's icon, greyed out in its place, when it cannot be used
+function googleOff(why) {
+	$("signin-loading").hidden = true;
+	$("signin-off").hidden = false;
+	$("signin-off").title = why;
+}
+
+// the email icon opens the email form under the icons, and closes it again
+function setupEmailMethod() {
+	const button = $("email-method");
+	button.onclick = () => {
+		const open = $("email-form").hidden;
+		$("email-form").hidden = !open;
+		button.setAttribute("aria-expanded", String(open));
+		if (open) {
+			$("email-form").elements.email.focus();
+		}
+	};
 }
 
 function setupProviders(configured) {
@@ -172,10 +190,10 @@ async function indexPage() {
 	if (config.google_client_id) {
 		loadGoogleSignIn(config.google_client_id);
 	} else {
-		$("signin-loading").hidden = true;
-		$("signin-missing").hidden = false;
+		googleOff("Google sign-in is not configured on this server (GOOGLE_CLIENT_ID is not set)");
 	}
 	setupProviders(config.providers);
+	setupEmailMethod();
 	setupEmailForm(config.password_min_length);
 	$("dev-login").hidden = !config.dev_login;
 }

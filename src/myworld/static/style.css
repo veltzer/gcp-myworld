@@ -237,22 +237,103 @@ body {
 	color: var(--muted);
 }
 
-.google {
-	position: relative;
-	min-height: 44px;
-}
-
-.gsi-slot {
+/* the ways to sign in: a round icon each, its name under it */
+.methods {
 	display: flex;
 	justify-content: center;
+	gap: 2rem;
+	margin: 0.5rem 0 1.25rem;
+}
+
+.method {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.4rem;
+}
+
+.method-name {
+	font-size: 0.85rem;
+	color: var(--muted);
+}
+
+/* 40px: the size of Google's large icon button, which cannot be drawn larger */
+.method-icon {
+	position: relative;
+	width: 40px;
+	height: 40px;
+}
+
+/* Google's own icon button, drawn by its script, centered in the same round slot */
+.gsi-slot {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+/* Google's G has no size of its own and takes its parent's, which this page's layout leaves at 0: the 18px of its large button */
+#signin-button svg {
+	width: 18px;
+	height: 18px;
+}
+
+.method-button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	border: 1px solid var(--line);
+	border-radius: 50%;
+	background: #fff;
+	color: var(--ink);
+	cursor: pointer;
+	transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+
+.gsi-slot .method-button {
+	width: 40px;
+	height: 40px;
+}
+
+.method-button img,
+.method-button svg {
+	width: 20px;
+	height: 20px;
+	fill: currentcolor;
+}
+
+.method-button:hover {
+	border-color: #9ca3af;
+	box-shadow: 0 4px 12px rgb(30 41 59 / 8%);
+}
+
+.method-button:active {
+	transform: translateY(1px);
+}
+
+/* the method picked: the email icon while its form is open */
+.method-button[aria-expanded="true"] {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px rgb(37 99 235 / 15%);
+}
+
+/* hidden wins over the display above: the email form until its icon opens it, Google's greyed icon while it works */
+.method-button[hidden],
+.email-form[hidden] {
+	display: none;
+}
+
+.method-button.off {
+	opacity: 0.5;
+	cursor: not-allowed;
+	box-shadow: none;
+	transform: none;
 }
 
 .gsi-placeholder {
 	position: absolute;
 	inset: 0;
-	margin: 0 auto;
-	max-width: 360px;
-	border-radius: 6px;
+	border-radius: 50%;
 	background: linear-gradient(90deg, #eef0f4 25%, #f8f9fb 50%, #eef0f4 75%);
 	background-size: 200% 100%;
 	animation: shimmer 1.4s linear infinite;
@@ -263,32 +344,6 @@ body {
 	to {
 		background-position: -200% 0;
 	}
-}
-
-.hint {
-	margin: 0.5rem 0 0;
-	font-size: 0.85rem;
-	color: var(--muted);
-	text-align: center;
-}
-
-.divider {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-	margin: 1.25rem 0;
-	font-size: 0.8rem;
-	color: var(--muted);
-	text-transform: uppercase;
-	letter-spacing: 0.08em;
-}
-
-.divider::before,
-.divider::after {
-	content: "";
-	flex: 1;
-	height: 1px;
-	background: var(--line);
 }
 
 .email-form {
@@ -378,53 +433,6 @@ button:disabled {
 	font-size: 0.85rem;
 	text-align: center;
 	color: var(--muted);
-}
-
-.providers {
-	display: flex;
-	flex-direction: column;
-	gap: 0.6rem;
-}
-
-.provider {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-	padding: 0.6rem 0.9rem;
-	border: 1px solid var(--line);
-	border-radius: 10px;
-	background: #fff;
-	color: var(--ink);
-	font-weight: 500;
-	text-decoration: none;
-	transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
-}
-
-.provider img {
-	width: 20px;
-	height: 20px;
-}
-
-.provider span {
-	flex: 1;
-	text-align: center;
-	margin-right: 20px;
-}
-
-.provider:hover {
-	border-color: #9ca3af;
-	box-shadow: 0 4px 12px rgb(30 41 59 / 8%);
-}
-
-.provider:active {
-	transform: translateY(1px);
-}
-
-.provider.off {
-	opacity: 0.5;
-	cursor: not-allowed;
-	box-shadow: none;
-	transform: none;
 }
 
 .dev-login {
