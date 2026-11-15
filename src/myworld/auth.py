@@ -16,8 +16,12 @@ provider, the callback exchanges the code for an access token and asks the
 provider who the user is. A provider is offered only when its client id
 and secret are set in the environment.
 
-Users are matched by a provider-qualified subject (see User.google_sub),
-never by email, since emails can change and be reassigned.
+Each way of signing in is a login (models.Login), found by its
+provider-qualified subject, never by email, since emails can change and be
+reassigned. A login leads to its user, the person, who owns the data and
+is the same whichever way they signed in: a login joins the user of its
+email once the provider vouches for that email (see sign_in). The Flask
+session holds only the login's id.
 """
 
 import dataclasses
@@ -34,10 +38,11 @@ import requests
 import werkzeug
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from myworld.models import ROLE_ADMIN, User
+from myworld.models import ROLE_ADMIN, Login, User, utcnow
 
 bp = flask.Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -66,28 +71,62 @@ def verify_google_token(token: str) -> dict[str, Any]:
     return id_token.verify_oauth2_token(token, google_requests.Request(), audience)
 
 
-def get_or_create_user(session: Session, claims: dict[str, Any]) -> User:
-    user = session.query(User).filter_by(google_sub=claims["sub"]).one_or_none()
-    if user is None:
-        user = User(google_sub=claims["sub"])
-        session.add(user)
-    user.email = claims.get("email", "")
-    user.name = claims.get("name", "")
-    user.picture = claims.get("picture", "")
+def sign_in(session: Session, claims: dict[str, Any], password_hash: str | None = None) -> Login:
+    """
+    Find or make the login of claims["sub"] (provider-qualified), refresh
+    what the provider reports (email, name, picture, and in "verified"
+    whether it vouches for the email), and give it its user when it has
+    none: the verified user of its email when the email is verified, made
+    on first sight, else a user of its own that no other login joins. A
+    login keeps the user it joined. Commits; returns the login.
+    """
+    login = session.scalars(select(Login).where(Login.subject == claims["sub"])).one_or_none()
+    now = utcnow()
+    email = str(claims.get("email", "")).strip().lower()
+    verified = bool(claims.get("verified")) and bool(email)
+    if login is None:
+        login = Login(subject=claims["sub"], created_at=now)
+        session.add(login)
+    login.email = email
+    login.name = claims.get("name", "") or ""
+    login.picture = claims.get("picture", "") or ""
+    login.verified = verified
+    if password_hash is not None:
+        login.password_hash = password_hash
+    login.last_login = now
+    if login.user is None:
+        # a new login is not flushed before it has its user
+        with session.no_autoflush:
+            user = session.scalars(select(User).where(User.verified, User.email == email).order_by(User.id)).first() if verified else None
+        if user is None:
+            user = User(email=email, verified=verified, name=login.name or email.split("@")[0], picture=login.picture, created_at=now)
+            session.add(user)
+        login.user = user
+    user = login.user
+    user.name = user.name or login.name
+    user.picture = user.picture or login.picture
+    user.last_login = now
     session.commit()
-    return user
+    return login
+
+
+def current_login() -> Login | None:
+    """ The login this session came through, or None when signed out. """
+    login_id = flask.session.get("login_id")
+    if login_id is None:
+        return None
+    login: Login | None = flask.g.db.get(Login, login_id)
+    return login
 
 
 def current_user() -> User | None:
-    user_id = flask.session.get("user_id")
-    if user_id is None:
-        return None
-    return flask.g.db.get(User, user_id)
+    login = current_login()
+    return None if login is None else login.user
 
 
-def start_session(user: User) -> None:
+def start_session(login: Login) -> None:
     flask.session.clear()
-    flask.session["user_id"] = user.id
+    flask.session["login_id"] = login.id
 
 
 def login_required(view: Callable[..., Any]) -> Callable[..., Any]:
@@ -135,8 +174,11 @@ def login() -> werkzeug.Response:
         claims = verify_google_token(flask.request.form.get("credential", ""))
     except ValueError:
         flask.abort(401, "Invalid Google sign-in token")
-    user = get_or_create_user(flask.g.db, claims)
-    start_session(user)
+    login = sign_in(flask.g.db, {
+        "sub": f"google:{claims['sub']}", "email": claims.get("email", ""), "name": claims.get("name", ""),
+        "picture": claims.get("picture", ""), "verified": bool(claims.get("email_verified")),
+    })
+    start_session(login)
     return flask.redirect(flask.url_for("views.library"))
 
 
@@ -157,12 +199,13 @@ def _email_credentials() -> tuple[str, str]:
     return email, password
 
 
-def _email_user(email: str) -> User | None:
-    return flask.g.db.query(User).filter_by(google_sub=f"email:{email}").one_or_none()
+def _email_login(email: str) -> Login | None:
+    login: Login | None = flask.g.db.scalars(select(Login).where(Login.subject == f"email:{email}")).one_or_none()
+    return login
 
 
-def _signed_in(user: User) -> flask.Response:
-    start_session(user)
+def _signed_in(login: Login) -> flask.Response:
+    start_session(login)
     return flask.jsonify({"next": flask.url_for("views.library")})
 
 
@@ -171,27 +214,24 @@ def email_register() -> flask.Response:
     email, password = _email_credentials()
     if len(password) < PASSWORD_MIN_LENGTH:
         flask.abort(400, f"use at least {PASSWORD_MIN_LENGTH} characters for the password")
-    if _email_user(email) is not None:
+    if _email_login(email) is not None:
         flask.abort(409, "there is already an account with this email, sign in instead")
-    user = User(
-        google_sub=f"email:{email}",
-        email=email,
-        name=email.split("@")[0],
-        password_hash=generate_password_hash(password),
-    )
-    flask.g.db.add(user)
-    flask.g.db.commit()
-    return _signed_in(user)
+    # an address typed in proves nothing: the login is unverified, with a user of its own
+    login = sign_in(flask.g.db, {"sub": f"email:{email}", "email": email, "name": email.split("@")[0], "verified": False},
+                    password_hash=generate_password_hash(password))
+    return _signed_in(login)
 
 
 @bp.route("/email/login", methods=["POST"])
 def email_login() -> flask.Response:
     email, password = _email_credentials()
-    user = _email_user(email)
+    login = _email_login(email)
     # one message for both failures, so the form does not reveal which emails have accounts
-    if user is None or user.password_hash is None or not check_password_hash(user.password_hash, password):
+    if login is None or login.password_hash is None or not check_password_hash(login.password_hash, password):
         flask.abort(401, "wrong email or password")
-    return _signed_in(user)
+    login.last_login = login.user.last_login = utcnow()
+    flask.g.db.commit()
+    return _signed_in(login)
 
 
 # ─── other providers (oauth 2.0 authorization code) ─────────────────────────
@@ -275,17 +315,18 @@ def fetch_claims(provider: OAuthProvider, token: str) -> dict[str, Any]:
         raise OAuthError(f"{provider.name} did not tell us who you are")
     info = response.json()
     # GitHub is the only provider so far; a second one gets its own branch here.
-    email = info.get("email") or ""
-    if not email:
-        # the profile email is only public if the user chose so; the emails endpoint is not
-        emails = requests.get(f"{provider.userinfo_url}/emails", headers=headers, timeout=HTTP_TIMEOUT)
-        if emails.ok:
-            email = next((e["email"] for e in emails.json() if e.get("primary") and e.get("verified")), "")
+    # Only the verified primary address counts: the profile email is whatever
+    # the user typed there and is not necessarily verified.
+    email = ""
+    emails = requests.get(f"{provider.userinfo_url}/emails", headers=headers, timeout=HTTP_TIMEOUT)
+    if emails.ok:
+        email = next((e["email"] for e in emails.json() if e.get("primary") and e.get("verified")), "")
     return {
         "sub": f"{provider.key}:{info['id']}",
         "email": email,
         "name": info.get("name") or info.get("login") or "",
         "picture": info.get("avatar_url") or "",
+        "verified": bool(email),
     }
 
 
@@ -320,8 +361,7 @@ def oauth_callback(provider: str) -> werkzeug.Response:
         claims = fetch_claims(oauth, token)
     except (OAuthError, requests.RequestException, ValueError, KeyError):
         return flask.redirect(flask.url_for("views.index", error=f"{oauth.name} sign-in failed, try again"))
-    user = get_or_create_user(flask.g.db, claims)
-    start_session(user)
+    start_session(sign_in(flask.g.db, claims))
     return flask.redirect(flask.url_for("views.library"))
 
 
@@ -334,9 +374,8 @@ def dev_login() -> werkzeug.Response:
     email = flask.request.form.get("email", "").strip().lower()
     if not email:
         flask.abort(400, "email is required")
-    claims = {"sub": f"dev:{email}", "email": email, "name": email.split("@")[0]}
-    user = get_or_create_user(flask.g.db, claims)
-    start_session(user)
+    # local only: the address typed is taken as proven, so joining can be tried out
+    start_session(sign_in(flask.g.db, {"sub": f"dev:{email}", "email": email, "name": email.split("@")[0], "verified": True}))
     return flask.redirect(flask.url_for("views.library"))
 
 

@@ -4,17 +4,17 @@ or takes the admin role, but the last admin cannot be demoted.
 """
 
 import webtest
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.engine import Engine
 
-from myworld.models import ROLE_ADMIN, User
+from myworld.models import ROLE_ADMIN, Login, User
 from tests.conftest import sign_in
 
 
 def make_admin(engine: Engine, sub: str) -> None:
     """ What scripts/migrate.sh does for the first admin. """
     with engine.begin() as connection:
-        connection.execute(update(User).where(User.google_sub == sub).values(role=ROLE_ADMIN))
+        connection.execute(update(User).where(User.id.in_(select(Login.user_id).where(Login.subject == "google:" + sub))).values(role=ROLE_ADMIN))
 
 
 def test_new_accounts_are_users(app: webtest.TestApp) -> None:
@@ -35,7 +35,7 @@ def test_admin_delegates(app: webtest.TestApp, engine: Engine) -> None:
     make_admin(engine, "alice")
     assert app.get("/api/config").json["user"]["role"] == "admin"
     users = app.get("/api/users").json
-    assert [(u["id"], u["provider"], u["role"]) for u in users] == [(1, "google", "user"), (2, "google", "admin")]
+    assert [(u["id"], u["methods"], u["role"]) for u in users] == [(1, ["google"], "user"), (2, ["google"], "admin")]
     # the last admin stays one
     app.put_json("/api/users/2", {"role": "user"}, status=409)
     app.put_json("/api/users/1", {"role": "root"}, status=400)

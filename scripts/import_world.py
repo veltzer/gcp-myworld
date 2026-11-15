@@ -453,14 +453,16 @@ def give_types(session: Session, owner: User) -> dict[str, int]:
 
 
 def find_owner(session: Session, email: str, subject: str | None) -> User:
-    users = session.execute(select(User).where(User.email == email)).scalars().all()
+    users = session.execute(select(User).where(User.email == email).options(selectinload(User.logins))).scalars().all()
     if subject is not None:
-        users = [u for u in users if u.google_sub == subject]
+        # a login's subject; a bare one is Google's, as it once was kept
+        wanted = {subject, f"google:{subject}"}
+        users = [u for u in users if any(login.subject in wanted for login in u.logins)]
     if not users:
         raise WorldImportError(f"no account for {email}{f' with subject {subject}' if subject else ''}: sign in once first")
     if len(users) > 1:
-        subjects = ", ".join(u.google_sub for u in users)
-        raise WorldImportError(f"{email} has several accounts, pick one with --subject: {subjects}")
+        subjects = "; ".join(f"account {u.id}: " + ", ".join(login.subject for login in u.logins) for u in users)
+        raise WorldImportError(f"{email} has several accounts, pick one with --subject (one of its logins): {subjects}")
     return users[0]
 
 
@@ -1291,7 +1293,7 @@ class Places:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[1] if __doc__ else None)
     parser.add_argument("--email", required=True, help="email of the account that will own the data")
-    parser.add_argument("--subject", help="the account's subject (users.google_sub) when the email has several")
+    parser.add_argument("--subject", help="one of the account's logins (logins.subject, e.g. google:1087...) when the email has several accounts")
     parser.add_argument("--source", type=Path, default=Path(__file__).resolve().parent.parent.parent / "veltzer.github.io")
     parser.add_argument("--dry-run", action="store_true", help="do it all and print what was done, then roll it back")
     parser.add_argument(
@@ -1341,7 +1343,7 @@ def main() -> int:
         except WorldImportError as e:
             print(f"import_world: {e}", file=sys.stderr)
             return 1
-        who = f"{owner.email} ({owner.google_sub})"
+        who = f"{owner.email} (account {owner.id})"
         if args.dry_run:
             session.rollback()
         else:

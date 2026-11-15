@@ -21,6 +21,7 @@ from myworld.models import (
     RATING_MAX,
     RATING_MIN,
     STATUSES,
+    Login,
     Person,
     PersonType,
     UserWork,
@@ -171,10 +172,42 @@ def _own_entry(work_id: int) -> UserWork:
     return entry
 
 
+def _login_json(login: Login, current: Login, email: str) -> dict[str, Any]:
+    """ One way of signing in, as the account panel shows it: the one in use first. """
+    return {
+        "method": login.method,
+        "provider_id": login.provider_id,
+        # what the provider reports, only when it is news: not the account's
+        # email again, nor a password login's id (which is its email)
+        "email": "" if login.email in (login.provider_id, email) else login.email,
+        "last": login.last_login.date().isoformat() if login.last_login else "",
+        "current": login.id == current.id,
+        "verified": login.verified,
+    }
+
+
+def _account_json(login: Login) -> dict[str, Any]:
+    """ Who is signed in, for the top bar and its account panel. """
+    user = login.user
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "picture": user.picture,
+        "role": user.role,
+        # the account panel: whether the email is proven theirs, since when, how this
+        # session signed in, and every way they sign in
+        "verified": user.verified,
+        "since": user.created_at.date().isoformat(),
+        "method": login.method,
+        "logins": [_login_json(other, login, user.email) for other in sorted(user.logins, key=lambda o: (o.id != login.id, o.id))],
+    }
+
+
 @bp.route("/api/config", methods=["GET"])
 def api_config() -> flask.Response:
     """ Everything the browser side needs to render: who is signed in and the vocabularies. """
-    user = auth.current_user()
+    login = auth.current_login()
     return flask.jsonify({
         "google_client_id": auth.client_id(),
         "dev_login": auth.dev_login_enabled(),
@@ -187,16 +220,7 @@ def api_config() -> flask.Response:
         "locales": LOCALES,
         "rating_min": RATING_MIN,
         "rating_max": RATING_MAX,
-        "user": None if user is None else {
-            "id": user.id,
-            "email": user.email,
-            "name": user.name,
-            "picture": user.picture,
-            "role": user.role,
-            # how they signed in, and who that provider says they are: the account menu
-            "provider": user.provider,
-            "provider_id": user.provider_id,
-        },
+        "user": None if login is None else _account_json(login),
     })
 
 

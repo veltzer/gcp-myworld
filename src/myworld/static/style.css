@@ -115,6 +115,84 @@ body {
 	white-space: nowrap;
 }
 
+/* every way the person signs in, under the details */
+.account-heading {
+	margin: 0.9rem 0 0.5rem;
+	padding-top: 0.75rem;
+	font-size: 0.85rem;
+	border-top: 1px solid var(--line);
+}
+
+.account-logins {
+	display: flex;
+	flex-direction: column;
+	gap: 0.6rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.account-login {
+	display: flex;
+	gap: 0.6rem;
+	align-items: flex-start;
+}
+
+.login-icon {
+	flex: none;
+	width: 20px;
+	height: 20px;
+	margin-top: 0.1rem;
+}
+
+.account-login-name {
+	display: flex;
+	gap: 0.4rem;
+	align-items: center;
+	font-weight: 600;
+	font-size: 0.9rem;
+}
+
+.account-login-meta,
+.account-note {
+	color: var(--muted);
+	font-size: 0.8rem;
+	/* an id or an email is never split over two lines: the menu widens instead */
+	white-space: nowrap;
+}
+
+.account-note {
+	max-width: 22rem;
+	margin: 0.75rem 0 0;
+	line-height: 1.4;
+	white-space: normal;
+}
+
+.badge {
+	padding: 0.05rem 0.45rem;
+	border-radius: 999px;
+	background: #e8eefc;
+	color: var(--accent);
+	font-size: 0.7rem;
+	font-weight: 600;
+}
+
+/* on a phone the name is not at the right edge: the panel spans the screen under the top bar */
+@media (width <= 600px) {
+	.account {
+		position: static;
+	}
+
+	.account-menu {
+		position: fixed;
+		top: 3.5rem;
+		right: 1rem;
+		left: 1rem;
+		min-width: 0;
+		overflow-x: auto;
+	}
+}
+
 .content {
 	max-width: 1100px;
 	margin: 0 auto;

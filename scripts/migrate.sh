@@ -123,6 +123,15 @@
 #     before the deploy), the ISBN copied over from library_works.external_id,
 #     which is dropped by a run after deploying the version that no longer
 #     reads it; scripts/fetch_book_details.py then fills them and the years.
+#   - sign-in through logins (models.Login), the users being the people: run
+#     before the deploy, it makes the logins table with one login per account
+#     (its google_sub, a bare one Google's, with the password hash), marks an
+#     account verified when a login of it is (every way but a password),
+#     joins the accounts of one verified email into the oldest where the
+#     others own nothing, and lets users.google_sub be empty. Run again after
+#     deploying the version that signs in through logins: it gives a login to
+#     an account the old version made meanwhile, joins again, and drops
+#     users.google_sub and users.password_hash.
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -140,10 +149,10 @@ if [[ "${1:-}" == "--local" ]]; then
 	python - <<'PY'
 import os
 import sqlite3
+import sys
 
 # (table, column, sqlite type); sqlite ignores VARCHAR lengths, so the wider google_sub needs nothing
 COLUMNS = [
-    ("users", "password_hash", "VARCHAR(300)"),
     ("works", "imdb_id", "VARCHAR(20) NOT NULL DEFAULT ''"),
     ("works", "tmdb_id", "INTEGER"),
     ("works", "rotten_tomatoes_id", "VARCHAR(200) NOT NULL DEFAULT ''"),
@@ -508,6 +517,64 @@ if "city" in place_columns or "city" in museum_columns:
         if "city" in museum_columns:
             db.execute("ALTER TABLE museum_visits DROP COLUMN city")
             added.append("museum_visits.city (in cities now)")
+# sign-in through logins: one per way of signing in, the users being the people.
+# Each account's subject becomes its login (a bare one Google's), the accounts
+# of one verified email become one where all but the oldest own nothing, and
+# users is made again without google_sub and password_hash (sqlite cannot drop
+# a unique column)
+user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
+if "google_sub" in user_columns:
+    db.execute("""CREATE TABLE IF NOT EXISTS logins (
+        id INTEGER PRIMARY KEY,
+        subject VARCHAR(400) NOT NULL UNIQUE,
+        user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        email VARCHAR(320) NOT NULL DEFAULT '',
+        name VARCHAR(200) NOT NULL DEFAULT '',
+        picture VARCHAR(1000) NOT NULL DEFAULT '',
+        verified BOOLEAN NOT NULL DEFAULT 0,
+        password_hash VARCHAR(300),
+        created_at DATETIME NOT NULL,
+        last_login DATETIME)""")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_logins_user_id ON logins (user_id)")
+    hash_column = "password_hash" if "password_hash" in user_columns else "NULL"
+    db.execute(f"""INSERT INTO logins (subject, user_id, email, name, picture, verified, password_hash, created_at)
+        SELECT CASE WHEN instr(google_sub, ':') = 0 THEN 'google:' || google_sub ELSE google_sub END,
+               id, lower(email), name, picture, google_sub NOT LIKE 'email:%', {hash_column}, created_at
+        FROM users WHERE google_sub IS NOT NULL AND id NOT IN (SELECT user_id FROM logins)""")
+    owned = [(table, column) for (table,) in db.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT IN ('logins', 'users')")
+             for column in ("owner_id", "user_id") if column in {row[1] for row in db.execute(f"PRAGMA table_info({table})")}]
+    verified_users = db.execute("""SELECT id, lower(email), role FROM users
+        WHERE EXISTS (SELECT 1 FROM logins WHERE logins.user_id = users.id AND logins.verified) ORDER BY id""").fetchall()
+    keep: dict[str, tuple[int, str]] = {}
+    for user_id, email, role in verified_users:
+        if email not in keep:
+            keep[email] = (user_id, role)
+            continue
+        kept = keep[email][0]
+        owns = sum(db.execute(f"SELECT count(*) FROM {table} WHERE {column} = ?", (user_id,)).fetchone()[0] for table, column in owned)
+        if owns:
+            print(f"account {user_id} has the verified email of account {kept} but owns {owns} rows: both stay", file=sys.stderr)
+            continue
+        db.execute("UPDATE logins SET user_id = ? WHERE user_id = ?", (kept, user_id))
+        if role == "admin":
+            db.execute("UPDATE users SET role = 'admin' WHERE id = ?", (kept,))
+        db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        added.append(f"account {user_id} joined to account {kept}")
+    db.execute("""CREATE TABLE users_new (
+        id INTEGER PRIMARY KEY,
+        email VARCHAR(320) NOT NULL,
+        verified BOOLEAN NOT NULL DEFAULT 0,
+        name VARCHAR(200) NOT NULL,
+        picture VARCHAR(1000) NOT NULL,
+        role VARCHAR(20) NOT NULL DEFAULT 'user',
+        created_at DATETIME NOT NULL,
+        last_login DATETIME)""")
+    db.execute("""INSERT INTO users_new (id, email, verified, name, picture, role, created_at)
+        SELECT id, lower(email), EXISTS (SELECT 1 FROM logins WHERE logins.user_id = users.id AND logins.verified), name, picture, role, created_at
+        FROM users""")
+    db.execute("DROP TABLE users")
+    db.execute("ALTER TABLE users_new RENAME TO users")
+    added.append("logins (users.google_sub and password_hash in them now)")
 if not db.execute("SELECT 1 FROM users WHERE role = 'admin'").fetchone():
     oldest = db.execute("SELECT min(id) FROM users").fetchone()[0]
     if oldest is not None:
@@ -529,7 +596,8 @@ source .gcp.conf
 present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	SELECT table_name || '.' || column_name || ':' || COALESCE(character_maximum_length::text, '')
 	FROM information_schema.columns
-	WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash', 'role'))
+	WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash', 'role', 'verified', 'last_login'))
+	   OR (table_name = 'logins' AND column_name = 'subject')
 	   OR (table_name = 'works' AND column_name IN ('id', 'imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
 	   OR (table_name IN ('museums', 'concerts') AND column_name = 'id')
 	   OR (table_name = 'library_works' AND column_name IN ('id', 'goodreads_id', 'simania_id', 'title_locale', 'isbn', 'openlibrary_id', 'external_id'))
@@ -562,8 +630,11 @@ need() {
 	changed+=("${1}")
 	statements+=("${2};")
 }
-has "users.password_hash:.*" || need users.password_hash "ALTER TABLE users ADD COLUMN password_hash VARCHAR(300)"
-has "users.google_sub:400" || need "users.google_sub (wider)" "ALTER TABLE users ALTER COLUMN google_sub TYPE VARCHAR(400)"
+# the old sign-in columns, until logins hold what they did
+if ! has "logins.subject:.*" && has "users.google_sub:.*"; then
+	has "users.password_hash:.*" || need users.password_hash "ALTER TABLE users ADD COLUMN password_hash VARCHAR(300)"
+	has "users.google_sub:400" || need "users.google_sub (wider)" "ALTER TABLE users ALTER COLUMN google_sub TYPE VARCHAR(400)"
+fi
 # these steps use the old table names: they only apply to a database that still has them
 if has "works.id:.*"; then
 	has "works.imdb_id:.*" || need works.imdb_id "ALTER TABLE works ADD COLUMN imdb_id VARCHAR(20) NOT NULL DEFAULT ''"
@@ -968,6 +1039,82 @@ if { has "places.city:.*" || has "museum_visits.city:.*"; } && has "places.city_
 		if has "museum_visits.city:.*"; then
 			need "museum_visits.city (in cities now)" "ALTER TABLE museum_visits DROP COLUMN city"
 		fi
+	fi
+fi
+
+# sign-in through logins, the users being the people (before the deploy, and again after it)
+read -r -d '' fill_logins <<'SQL' || true
+INSERT INTO logins (subject, user_id, email, name, picture, verified, password_hash, created_at)
+	SELECT s.subject, u.id, lower(u.email), u.name, u.picture, u.google_sub NOT LIKE 'email:%', u.password_hash, u.created_at
+	FROM users u, LATERAL (SELECT CASE WHEN position(':' in u.google_sub) = 0 THEN 'google:' || u.google_sub ELSE u.google_sub END AS subject) s
+	WHERE u.google_sub IS NOT NULL
+	  AND NOT EXISTS (SELECT 1 FROM logins l WHERE l.user_id = u.id)
+	  AND NOT EXISTS (SELECT 1 FROM logins l WHERE l.subject = s.subject);
+UPDATE users u SET verified = EXISTS (SELECT 1 FROM logins l WHERE l.user_id = u.id AND l.verified), email = lower(u.email);
+-- the accounts of one verified email become the oldest of them, each that owns nothing (a row of
+-- any table with an owner_id or a user_id); one that owns something stays, and is named. An
+-- account left with no login (the old version made it again for a login that has moved) and
+-- owning nothing goes.
+DO $$
+DECLARE
+	account record;
+	owned record;
+	owns bigint;
+	n bigint;
+BEGIN
+	FOR account IN
+		SELECT u.id, u.role, (SELECT min(k.id) FROM users k WHERE k.verified AND k.email = u.email) AS keep,
+		       NOT EXISTS (SELECT 1 FROM logins l WHERE l.user_id = u.id) AS bare
+		FROM users u ORDER BY u.id
+	LOOP
+		CONTINUE WHEN NOT account.bare AND (account.keep IS NULL OR account.keep = account.id);
+		owns := 0;
+		FOR owned IN
+			SELECT c.table_name, c.column_name FROM information_schema.columns c
+			WHERE c.table_schema = current_schema() AND c.column_name IN ('owner_id', 'user_id') AND c.table_name NOT IN ('logins', 'users')
+		LOOP
+			EXECUTE format('SELECT count(*) FROM %I WHERE %I = $1', owned.table_name, owned.column_name) INTO n USING account.id;
+			owns := owns + n;
+		END LOOP;
+		IF owns > 0 THEN
+			RAISE NOTICE 'account % owns % rows: it stays', account.id, owns;
+			CONTINUE;
+		END IF;
+		IF NOT account.bare THEN
+			UPDATE logins SET user_id = account.keep WHERE user_id = account.id;
+			IF account.role = 'admin' THEN
+				UPDATE users SET role = 'admin' WHERE id = account.keep;
+			END IF;
+		END IF;
+		DELETE FROM users WHERE id = account.id;
+	END LOOP;
+END
+$$
+SQL
+if has "users.google_sub:.*"; then
+	if ! has "logins.subject:.*"; then
+		adds=""
+		has "users.verified:.*" || adds+="ALTER TABLE users ADD COLUMN verified BOOLEAN NOT NULL DEFAULT false;"
+		has "users.last_login:.*" || adds+="ALTER TABLE users ADD COLUMN last_login TIMESTAMP WITHOUT TIME ZONE;"
+		need "logins (one per account), accounts of one verified email joined" "CREATE TABLE logins (
+				id SERIAL PRIMARY KEY,
+				subject VARCHAR(400) NOT NULL,
+				user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+				email VARCHAR(320) NOT NULL DEFAULT '',
+				name VARCHAR(200) NOT NULL DEFAULT '',
+				picture VARCHAR(1000) NOT NULL DEFAULT '',
+				verified BOOLEAN NOT NULL DEFAULT false,
+				password_hash VARCHAR(300),
+				created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+				last_login TIMESTAMP WITHOUT TIME ZONE,
+				CONSTRAINT logins_subject_key UNIQUE (subject));
+			CREATE INDEX ix_logins_user_id ON logins (user_id);
+			${adds}
+			ALTER TABLE users ALTER COLUMN google_sub DROP NOT NULL;
+			${fill_logins}"
+	else
+		need "users.google_sub, users.password_hash (in logins now)" "${fill_logins};
+			ALTER TABLE users DROP COLUMN google_sub, DROP COLUMN password_hash"
 	fi
 fi
 

@@ -20,7 +20,13 @@ FAKE_CLAIMS: dict[str, Any] = {
     "email": "alice@example.com",
     "name": "Alice",
     "picture": "https://example.com/alice.png",
+    "email_verified": True,
 }
+
+
+def fake_claims(token: str) -> dict[str, Any]:
+    """ What Google says of a token: the token is the sub; each sub but Alice's has an email of its own. """
+    return dict(FAKE_CLAIMS, sub=token, email=FAKE_CLAIMS["email"] if token == FAKE_CLAIMS["sub"] else f"{token}@example.com")
 
 
 @pytest.fixture(name="engine")
@@ -37,7 +43,7 @@ def fixture_app(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> webtest.Test
     monkeypatch.setenv("SECRET_KEY", "test-secret")
     monkeypatch.delenv("K_SERVICE", raising=False)
     monkeypatch.delenv("CANONICAL_HOST", raising=False)
-    monkeypatch.setattr(auth, "verify_google_token", lambda token: dict(FAKE_CLAIMS, sub=token))
+    monkeypatch.setattr(auth, "verify_google_token", fake_claims)
     return webtest.TestApp(create_app(engine))
 
 

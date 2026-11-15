@@ -12,6 +12,7 @@ from typing import Any
 import flask
 import sqlalchemy
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 from myworld import auth, checks
 from myworld.api import ApiError, json_body
@@ -25,7 +26,9 @@ def user_json(user: User) -> dict[str, Any]:
         "id": user.id,
         "email": user.email,
         "name": user.name,
-        "provider": user.provider,
+        # every way they sign in: google, github, email, dev
+        "methods": [login.method for login in user.logins],
+        "verified": user.verified,
         "role": user.role,
         "created_at": user.created_at.isoformat(timespec="seconds"),
     }
@@ -34,7 +37,7 @@ def user_json(user: User) -> dict[str, Any]:
 @bp.route("/api/users", methods=["GET"])
 @auth.admin_required
 def api_users() -> flask.Response:
-    users = flask.g.db.execute(select(User).order_by(User.id)).scalars().all()
+    users = flask.g.db.execute(select(User).options(selectinload(User.logins)).order_by(User.id)).scalars().all()
     return flask.jsonify([user_json(u) for u in users])
 
 

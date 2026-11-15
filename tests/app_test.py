@@ -87,8 +87,10 @@ def test_login_then_index_redirects(app: webtest.TestApp) -> None:
     assert app.get("/library").status_int == 200
     config = app.get("/api/config").json
     assert config["user"]["email"] == "alice@example.com"
-    # the account menu: a Google account's id is its bare sub
-    assert (config["user"]["provider"], config["user"]["provider_id"]) == ("google", "1234567890")
+    # the account panel: how this session signed in, and every way this person signs in
+    assert (config["user"]["method"], config["user"]["verified"]) == ("google", True)
+    [login] = config["user"]["logins"]
+    assert (login["method"], login["provider_id"], login["current"], login["email"]) == ("google", "1234567890", True, "")
     app.post("/auth/logout")
     assert app.get("/api/config").json["user"] is None
 
@@ -298,9 +300,9 @@ def test_oauth_callback(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -
         assert redirect_uri.endswith("/auth/oauth/github/callback")
         return "access-token"
 
-    def fake_claims(provider: auth.OAuthProvider, token: str) -> dict[str, str]:
+    def fake_claims(provider: auth.OAuthProvider, token: str) -> dict[str, str | bool]:
         assert (provider.key, token) == ("github", "access-token")
-        return {"sub": "github:42", "email": "dave@example.com", "name": "Dave", "picture": ""}
+        return {"sub": "github:42", "email": "dave@example.com", "name": "Dave", "picture": "", "verified": True}
 
     monkeypatch.setattr(auth, "exchange_code", fake_exchange)
     monkeypatch.setattr(auth, "fetch_claims", fake_claims)
@@ -317,10 +319,11 @@ def test_oauth_callback(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -
     assert response.location is not None
     assert response.location.endswith("/library")
     assert exchanged == [("github", "abc")]
-    assert app.get("/api/config").json["user"] == {
-        "id": 1, "email": "dave@example.com", "name": "Dave", "picture": "", "role": "user",
-        "provider": "github", "provider_id": "42",
+    user = app.get("/api/config").json["user"]
+    assert {k: user[k] for k in ("id", "email", "name", "role", "method", "verified")} == {
+        "id": 1, "email": "dave@example.com", "name": "Dave", "role": "user", "method": "github", "verified": True,
     }
+    assert [(login["method"], login["provider_id"]) for login in user["logins"]] == [("github", "42")]
 
 
 def test_oauth_callback_failures_return_to_landing(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -347,3 +350,55 @@ def test_oauth_callback_failures_return_to_landing(app: webtest.TestApp, monkeyp
     assert response.location is not None
     assert "failed" in response.location
     assert app.get("/api/config").json["user"] is None
+
+
+# ─── one person, many ways to sign in ────────────────────────────────────────
+
+def github_as(monkeypatch: pytest.MonkeyPatch, app: webtest.TestApp, claims: dict[str, str | bool]) -> None:
+    """ Go through GitHub's sign-in, GitHub saying claims. """
+    configure_github(monkeypatch)
+    monkeypatch.setattr(auth, "exchange_code", lambda provider, code, redirect_uri: "token")
+    monkeypatch.setattr(auth, "fetch_claims", lambda provider, token: claims)
+    start = app.get("/auth/oauth/github")
+    assert start.location is not None
+    state = start.location.split("state=")[1].split("&")[0]
+    app.get(f"/auth/oauth/github/callback?code=c&state={state}", status=302)
+
+
+def test_logins_of_one_verified_email_are_one_account(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    sign_in(app)
+    first = app.get("/api/config").json["user"]
+    app.post("/auth/logout")
+    # GitHub vouches for the same address (any case): the same account, with both ways
+    github_as(monkeypatch, app, {"sub": "github:7", "email": "Alice@Example.com", "name": "alice-gh", "picture": "", "verified": True})
+    user = app.get("/api/config").json["user"]
+    assert (user["id"], user["method"]) == (first["id"], "github")
+    assert [(login["method"], login["current"]) for login in user["logins"]] == [("github", True), ("google", False)]
+    # and Google again reaches it too
+    app.post("/auth/logout")
+    sign_in(app)
+    assert [login["method"] for login in app.get("/api/config").json["user"]["logins"]] == ["google", "github"]
+
+
+def test_unproven_emails_join_nothing(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    sign_in(app)
+    alice = app.get("/api/config").json["user"]["id"]
+    app.post("/auth/logout")
+    # GitHub with no verified address: an account of its own
+    github_as(monkeypatch, app, {"sub": "github:8", "email": "", "name": "anon", "picture": "", "verified": False})
+    stranger = app.get("/api/config").json["user"]
+    assert stranger["id"] != alice and stranger["verified"] is False
+    app.post("/auth/logout")
+    # a password account under Alice's address is not Alice's
+    app.post_json("/auth/email/register", {"email": "alice@example.com", "password": "long enough"})
+    squatter = app.get("/api/config").json["user"]
+    assert squatter["id"] not in (alice, stranger["id"]) and squatter["verified"] is False
+    assert squatter["logins"][0]["verified"] is False
+    # signing in with the password again reaches that same account
+    app.post("/auth/logout")
+    app.post_json("/auth/email/login", {"email": "alice@example.com", "password": "long enough"})
+    assert app.get("/api/config").json["user"]["id"] == squatter["id"]
+    # and Google still reaches Alice's
+    app.post("/auth/logout")
+    sign_in(app)
+    assert app.get("/api/config").json["user"]["id"] == alice

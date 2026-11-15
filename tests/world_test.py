@@ -1198,11 +1198,15 @@ def test_find_owner(app: webtest.TestApp, engine: Engine) -> None:
     with Session(engine) as session, pytest.raises(import_world.WorldImportError, match="sign in once"):
         owner(session, "nobody@example.com")
     sign_in(app)
-    sign_in(app, sub="second-google-account")
+    # a password account of the same email is an account of its own (its email is not proven)
+    app.post_json("/auth/email/register", {"email": "alice@example.com", "password": "long enough"})
     with Session(engine) as session:
         with pytest.raises(import_world.WorldImportError, match="several accounts"):
             owner(session)
-        assert import_world.find_owner(session, "alice@example.com", "1234567890").google_sub == "1234567890"
+        # by a login's subject, or the bare Google sub it once was
+        google = import_world.find_owner(session, "alice@example.com", "1234567890")
+        assert import_world.find_owner(session, "alice@example.com", "google:1234567890").id == google.id
+        assert import_world.find_owner(session, "alice@example.com", "email:alice@example.com").id != google.id
 
 
 # ─── adding, editing, deleting ───────────────────────────────────────────────

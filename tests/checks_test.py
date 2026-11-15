@@ -30,6 +30,7 @@ from myworld.models import (
     DisabledCheck,
     Group,
     Image,
+    Login,
     Museum,
     Organization,
     Person,
@@ -100,8 +101,8 @@ def test_a_name_is_registered_once() -> None:
 def fill(engine: Engine) -> None:
     """ Two accounts: alice's organizations are fine, bob has a bad logo and an organization without one. """
     with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
-        bob = User(google_sub="bob", email="bob@example.com")
+        alice = User(email="alice@example.com")
+        bob = User(email="bob@example.com")
         session.add_all([alice, bob])
         session.flush()
         good = Image(owner_id=alice.id, filename="acme.svg", content_type="image/svg+xml", sha256="", data=GOOD)
@@ -137,7 +138,7 @@ def test_checks_api_is_for_admins(app: webtest.TestApp, engine: Engine) -> None:
     app.get("/api/checks", status=403)
     app.get("/api/checks/logos", status=403)
     with engine.begin() as connection:
-        connection.execute(update(User).where(User.google_sub == "carol").values(role=ROLE_ADMIN))
+        connection.execute(update(User).where(User.id.in_(select(Login.user_id).where(Login.subject == "google:" + "carol"))).values(role=ROLE_ADMIN))
     listed = app.get("/api/checks").json
     assert sorted(c["name"] for c in listed) == sorted(checks.CHECKS)
     # grouped by dataset, in the order of DATASETS
@@ -155,7 +156,7 @@ def test_checks_api_is_for_admins(app: webtest.TestApp, engine: Engine) -> None:
 
 def test_organization_relations(engine: Engine) -> None:
     with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
+        alice = User(email="alice@example.com")
         session.add(alice)
         session.flush()
         teaching = RelationType(owner_id=alice.id, name="Teaching")
@@ -171,7 +172,7 @@ def test_organization_relations(engine: Engine) -> None:
 
 def test_organization_addresses(engine: Engine) -> None:
     with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
+        alice = User(email="alice@example.com")
         session.add(alice)
         session.flush()
         session.add_all([
@@ -189,7 +190,7 @@ def test_organization_addresses(engine: Engine) -> None:
 
 def test_museum_dates(engine: Engine) -> None:
     with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
+        alice = User(email="alice@example.com")
         session.add(alice)
         session.flush()
         session.add_all([
@@ -208,7 +209,7 @@ def test_museum_dates(engine: Engine) -> None:
 
 def test_locations(engine: Engine) -> None:
     with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
+        alice = User(email="alice@example.com")
         session.add(alice)
         session.flush()
         session.add_all([
@@ -229,7 +230,7 @@ def test_locations(engine: Engine) -> None:
 
 def test_museum_company(engine: Engine) -> None:
     with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
+        alice = User(email="alice@example.com")
         session.add(alice)
         session.flush()
         friend = Person(owner_id=alice.id, first_name="Dana")
@@ -252,7 +253,7 @@ def test_museum_company(engine: Engine) -> None:
 def test_audio_courses(engine: Engine) -> None:
     now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
     with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
+        alice = User(email="alice@example.com")
         session.add(alice)
         session.flush()
         lecturer = Person(owner_id=alice.id, first_name="Robert", surname="Greenberg")
@@ -298,8 +299,8 @@ def test_audio_courses(engine: Engine) -> None:
 
 def test_books(engine: Engine) -> None:
     with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
-        bob = User(google_sub="bob", email="bob@example.com")
+        alice = User(email="alice@example.com")
+        bob = User(email="bob@example.com")
         session.add_all([alice, bob])
         session.flush()
         cover = Image(owner_id=alice.id, filename="b.jpg", content_type="image/jpeg", sha256="0" * 64, data=b"\xff\xd8")
@@ -351,8 +352,8 @@ def test_books(engine: Engine) -> None:
 
 def test_person_types(engine: Engine) -> None:
     with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
-        bob = User(google_sub="bob", email="bob@example.com")
+        alice = User(email="alice@example.com")
+        bob = User(email="bob@example.com")
         session.add_all([alice, bob])
         session.flush()
         family = PersonType(owner_id=alice.id, name="family")
@@ -374,7 +375,7 @@ def test_person_types(engine: Engine) -> None:
 
 def test_person_names(engine: Engine) -> None:
     with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
+        alice = User(email="alice@example.com")
         session.add(alice)
         session.flush()
         session.add_all([
@@ -399,7 +400,7 @@ def test_tidy_names_script(tmp_path: Path) -> None:
     engine = create_engine(url)
     Base.metadata.create_all(engine)
     with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
+        alice = User(email="alice@example.com")
         session.add(alice)
         session.flush()
         session.add_all([
@@ -466,7 +467,7 @@ def test_script(tmp_path: Path) -> None:
 
 def test_youtube(engine: Engine) -> None:
     with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
+        alice = User(email="alice@example.com")
         session.add(alice)
         session.flush()
         desktop = Device(owner_id=alice.id, name="Desktop")
@@ -504,7 +505,7 @@ def test_every_page_has_checks() -> None:
 
 def test_concerts(engine: Engine) -> None:
     with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
+        alice = User(email="alice@example.com")
         session.add(alice)
         session.flush()
         band = Person(owner_id=alice.id, first_name="The Band")
@@ -540,7 +541,7 @@ def test_concerts(engine: Engine) -> None:
 
 def test_groups(engine: Engine) -> None:
     with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
+        alice = User(email="alice@example.com")
         session.add(alice)
         session.flush()
         roger = Person(owner_id=alice.id, first_name="Roger")
@@ -564,7 +565,7 @@ def test_groups(engine: Engine) -> None:
 
 def test_places(engine: Engine) -> None:
     with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
+        alice = User(email="alice@example.com")
         session.add(alice)
         session.flush()
         tel_aviv = City(owner_id=alice.id, name="Tel Aviv", country=Country(owner_id=alice.id, name="Israel"))
@@ -591,7 +592,7 @@ def test_places(engine: Engine) -> None:
 
 def test_enumerations(engine: Engine) -> None:
     with Session(engine) as session:
-        alice = User(google_sub="alice", email="alice@example.com")
+        alice = User(email="alice@example.com")
         session.add(alice)
         session.flush()
         friend = PersonType(owner_id=alice.id, name="Friend", description="A friend")
@@ -622,7 +623,7 @@ def test_checks_can_be_turned_off(app: webtest.TestApp, engine: Engine) -> None:
     sign_in(app, "carol")
     app.put("/api/disabled-checks/logos", status=403)
     with engine.begin() as connection:
-        connection.execute(update(User).where(User.google_sub == "carol").values(role=ROLE_ADMIN))
+        connection.execute(update(User).where(User.id.in_(select(Login.user_id).where(Login.subject == "google:" + "carol"))).values(role=ROLE_ADMIN))
     assert all(c["enabled"] for c in app.get("/api/checks").json)
     app.put("/api/disabled-checks/logos", status=204)
     # turning it off again is fine
@@ -634,7 +635,7 @@ def test_checks_can_be_turned_off(app: webtest.TestApp, engine: Engine) -> None:
     app.post("/auth/logout")
     sign_in(app, "dave")
     with engine.begin() as connection:
-        connection.execute(update(User).where(User.google_sub == "dave").values(role=ROLE_ADMIN))
+        connection.execute(update(User).where(User.id.in_(select(Login.user_id).where(Login.subject == "google:" + "dave"))).values(role=ROLE_ADMIN))
     assert app.get("/api/disabled-checks").json == []
     app.post("/auth/logout")
     sign_in(app, "carol")

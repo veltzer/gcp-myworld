@@ -92,41 +92,82 @@ ROLES = (ROLE_USER, ROLE_ADMIN)
 
 
 class User(Base):
+    """
+    A person with an account, who owns the data. They sign in through any
+    number of logins (Login): with Google, with GitHub, with a password. A
+    login joins the user of its email once that email is proven to be the
+    person's (Google's email_verified, GitHub's verified primary address),
+    so the same person signing in either way reaches the same data. An
+    address typed into the password form proves nothing: a password login
+    gets a user of its own, unverified, that no other login ever joins;
+    otherwise anyone could register someone's address and walk into their
+    account.
+    """
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    # The stable identity the user signed in with, qualified by how they did
-    # it: a bare Google "sub" claim for Google (the original and still the
-    # main method), "github:<id>", "email:<address>" or
-    # "dev:<address>" for the others. Kept under its historical column name;
-    # emails can change so they are never the key for third-party sign-in.
-    google_sub: Mapped[str] = mapped_column(String(400), unique=True, nullable=False)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
+    # whether the email is proven to be this person's: only a verified user is joined by logins of its email
+    verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     picture: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    # only for accounts created with "sign in with email"; werkzeug hash
-    password_hash: Mapped[str | None] = mapped_column(String(300), nullable=True)
     # what the account may do on the site, one of ROLES: an admin can also see
     # every account and change its role (the Users page) and run checks over
     # the whole database. The first admin is made by scripts/migrate.sh.
     role: Mapped[str] = mapped_column(String(20), nullable=False, default=ROLE_USER, server_default=ROLE_USER)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    last_login: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
     works: Mapped[list[UserWork]] = relationship(  # pylint: disable=used-before-assignment
         back_populates="user", cascade="all, delete-orphan",
     )
+    # every way this person signs in
+    logins: Mapped[list[Login]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", order_by=lambda: Login.id,  # pylint: disable=used-before-assignment
+    )
+
+
+class Login(Base):
+    """
+    One way of signing in, keyed by the provider-qualified subject: the
+    stable identity the provider vouches for, never the email, which can
+    change and be given to someone else.
+
+        google:<sub>      Sign in with Google (the ID token's "sub")
+        github:<id>       GitHub (the numeric user id)
+        email:<address>   email and password, registered here
+        dev:<address>     the local development login (never on Cloud Run)
+
+    A login joins a user once and stays: should the provider's address change
+    later, the login keeps its user rather than moving to another.
+    """
+    __tablename__ = "logins"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    subject: Mapped[str] = mapped_column(String(400), unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # what the provider last reported
+    email: Mapped[str] = mapped_column(String(320), nullable=False, default="")
+    name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    picture: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    # whether the provider vouches for the email (never for a password login)
+    verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    # only for a password login; werkzeug hash
+    password_hash: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    last_login: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="logins")
 
     @property
-    def provider(self) -> str:
-        """ How the account signs in: google, github, email or dev, from its subject. """
-        prefix, colon, _ = self.google_sub.partition(":")
-        return prefix if colon else "google"
+    def method(self) -> str:
+        """ How it signs in: google, github, email or dev. """
+        return self.subject.partition(":")[0]
 
     @property
     def provider_id(self) -> str:
-        """ Who the provider says the account is: the Google sub, the GitHub user id, the email address. """
-        prefix, colon, rest = self.google_sub.partition(":")
-        return rest if colon else prefix
+        """ Who the provider says it is: the Google sub, the GitHub user id, the email address. """
+        return self.subject.partition(":")[2]
 
 
 class Work(Base):

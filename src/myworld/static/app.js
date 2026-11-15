@@ -905,32 +905,62 @@ async function selectKind(kind, hash = kind) {
 	await loadEntries();
 }
 
-// how each sign-in method is named, and what its own id for the user is called
+// how each sign-in method is named, what its own id for the person is called, and its icon (static/<icon>.svg)
 const PROVIDERS = {
-	google: ["Google", "Google ID"],
-	github: ["GitHub", "GitHub user ID"],
-	email: ["Email and password", "Email"],
-	dev: ["Development login", "Email"],
+	google: ["Google", "Google ID", "google"],
+	github: ["GitHub", "GitHub user ID", "github"],
+	email: ["Email and password", "Email", "email"],
+	dev: ["Development login", "Email", "email"],
 };
 
-// The menu under the avatar and name: how the user signed in and as whom.
+function methodOf(key) {
+	const [name, idLabel, icon] = PROVIDERS[key] || [key, "ID", "email"];
+	return { name, idLabel, icon };
+}
+
+function methodIcon(key) {
+	const img = el("img", "login-icon");
+	img.src = `/static/${methodOf(key).icon}.svg`;
+	img.alt = "";
+	return img;
+}
+
+// The panel under the avatar and name: who is signed in, how, and every way they sign in.
 function setupAccountMenu(user) {
-	const [method, idLabel] = PROVIDERS[user.provider] || [user.provider, "ID"];
 	const rows = [
-		["Signed in with", method],
-		[idLabel, user.provider_id],
 		["Email", user.email],
-		["Account", `#${user.id}`],
+		["Signed in with", methodOf(user.method).name],
 		["Role", user.role === "admin" ? "Admin" : "User"],
+		["Account", `#${user.id}`],
+		["Since", user.since],
 	];
-	// an email account's id is its email: said once
-	const seen = new Set();
-	$("account-details").replaceChildren(...rows.filter(([label, value]) => {
-		const key = `${label}=${value}`;
-		const repeat = seen.has(key);
-		seen.add(key);
-		return value && !repeat;
-	}).flatMap(([label, value]) => [el("dt", null, label), el("dd", null, value)]));
+	$("account-details").replaceChildren(...rows.flatMap(([label, value]) => [el("dt", null, label), el("dd", null, value)]));
+	const count = user.logins.length;
+	$("account-logins-heading").textContent = count === 1 ? "Your way to sign in" : `Your ${count} ways to sign in`;
+	$("account-logins").replaceChildren(...user.logins.map((login) => {
+		const method = methodOf(login.method);
+		const li = el("li", "account-login");
+		const text = el("div");
+		const name = el("div", "account-login-name", method.name);
+		if (login.current) {
+			name.appendChild(el("span", "badge", "this session"));
+		}
+		text.append(name, el("div", "account-login-meta", `${method.idLabel} ${login.provider_id}`));
+		if (login.email) {
+			text.appendChild(el("div", "account-login-meta", `reports ${login.email}`));
+		}
+		if (login.method === "email" && !login.verified) {
+			text.appendChild(el("div", "account-login-meta", "email not verified"));
+		} else if (login.last) {
+			text.appendChild(el("div", "account-login-meta", `last used ${login.last}`));
+		}
+		li.append(methodIcon(login.method), text);
+		return li;
+	}));
+	// a password account's email is not proven: nothing joins it
+	$("account-note").textContent = user.verified
+		? "Signing in with Google or GitHub under this same verified email always reaches this same account."
+		: "This account's email is not verified, so it stays an account of its own: signing in with Google or GitHub under this email reaches another one.";
 	const button = $("account-button");
 	const menu = $("account-menu");
 	const show = (open) => {
@@ -2203,7 +2233,7 @@ function renderUsers(users) {
 		tr.append(
 			el("td", "title", user.name),
 			el("td", null, user.email),
-			el("td", null, user.provider),
+			el("td", null, user.methods.map((method) => methodOf(method).name).join(", ")),
 			el("td", null, user.created_at.slice(0, 10)),
 			el("td", null),
 		);
