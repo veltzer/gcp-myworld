@@ -956,6 +956,9 @@ async function libraryPage() {
 				body[el.name] = el.value;
 			}
 		}
+		if (state.editingView === "book") {
+			body.authors = chosen(form, "authors");
+		}
 		try {
 			body.image_id = await uploadPhoto(form);
 			if (state.editing) {
@@ -3277,7 +3280,7 @@ function fillWorldForm(form, item) {
 
 // The work form: a new entry starts empty (with the film search for films); an
 // existing one shows its work, which is shared with other users and so read only.
-function prepareWorkForm(form, entry) {
+async function prepareWorkForm(form, entry) {
 	const film = state.config.tmdb && state.kind === "film" && !entry;
 	if (state.config.tmdb) {
 		movieIdsReset();
@@ -3292,6 +3295,16 @@ function prepareWorkForm(form, entry) {
 		form.elements[name].value = values[name] ?? "";
 	}
 	form.elements.photo.value = "";
+	// a book's authors are the user's people, any number of them; the picker
+	// stays in its place for the other kinds, disabled
+	const authors = $("book-authors").tomselect;
+	setPickerRows($("book-authors"), await worldList("people"));
+	setPickerValue($("book-authors"), (entry?.authors || []).map((a) => a.id));
+	if (state.kind === "book") {
+		authors.enable();
+	} else {
+		authors.disable();
+	}
 	for (const name of MOVIE_FIELDS) {
 		form.elements[name].readOnly = Boolean(entry);
 	}
@@ -3365,7 +3378,7 @@ async function openDialog(item) {
 		}
 		syncAlone(form);
 	} else {
-		prepareWorkForm(form, item);
+		await prepareWorkForm(form, item);
 	}
 	// another view was opened while the lists loaded: its dialog is not this one
 	if (state.view !== view) {

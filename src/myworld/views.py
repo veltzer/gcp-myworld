@@ -20,6 +20,7 @@ from myworld.models import (
     RATING_MIN,
     STATUSES,
     Person,
+    PersonType,
     UserWork,
     Work,
 )
@@ -104,9 +105,14 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any]) -> None:
     image_id = world.owned_image(body)
     if image_id is not None:
         entry.image_id = image_id
-    # the authors, ids of the user's people, are set only when sent
+    # the authors, ids of the user's people (any number), are set only when sent;
+    # each is a Book Author, when the user keeps that profession
     if "authors" in body:
         entry.authors = world.owned_list(body, "authors", Person)
+        book_author = flask.g.db.scalars(select(PersonType).where(PersonType.owner_id == flask.g.user.id, PersonType.name == "Book Author")).first()
+        for author in entry.authors if book_author else []:
+            if book_author not in author.types:
+                author.types.append(book_author)
 
 
 def _apply_work_ids(work: Work, body: dict[str, Any]) -> None:

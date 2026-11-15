@@ -713,6 +713,12 @@ def test_book_authors_are_people(imported: webtest.TestApp) -> None:
     # an edit that does not send the authors keeps them
     entry = imported.put_json(f"/api/library-entries/{work_id}", {"status": "done"}).json
     assert [a["name"] for a in entry["authors"]] == ["J.R.R. Tolkien"]
+    # a book may have several authors, and each one linked becomes a Book Author
+    kasparov = imported.post_json("/api/people", {"first_name": "Garry", "surname": "Kasparov"}, status=201).json
+    entry = imported.put_json(f"/api/library-entries/{work_id}", {"status": "done", "authors": [tolkien["id"], kasparov["id"]]}).json
+    assert [a["name"] for a in entry["authors"]] == ["J.R.R. Tolkien", "Garry Kasparov"]
+    [garry] = [p for p in imported.get("/api/people").json if p["id"] == kasparov["id"]]
+    assert [t["name"] for t in garry["types"]] == ["Book Author"]
 
 
 CHESS_WITHOUT_AUTHOR = '        simania_id: "11971"\n    authors: []\n'
