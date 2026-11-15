@@ -110,19 +110,17 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any]) -> None:
 
 
 def _apply_work_ids(work: Work, body: dict[str, Any]) -> None:
-    """ Catalog ids from the film search; only ever filled in, never blanked. """
-    imdb_id = text(body, "imdb_id")
-    if imdb_id:
-        work.imdb_id = imdb_id
+    """ Catalog ids from the film search, filled in only where the work has none yet.
+
+    A work is shared by every user who has it, so one user's request must not
+    change the links every other user sees: an id once set is never replaced.
+    """
     tmdb_id = opt_int(body, "tmdb_id", 1, 2**31 - 1)
-    if tmdb_id is not None:
+    if tmdb_id is not None and work.tmdb_id is None:
         work.tmdb_id = tmdb_id
-    rotten_tomatoes_id = text(body, "rotten_tomatoes_id")
-    if rotten_tomatoes_id:
-        work.rotten_tomatoes_id = rotten_tomatoes_id
-    for key in ("goodreads_id", "simania_id"):
+    for key in ("imdb_id", "rotten_tomatoes_id", "goodreads_id", "simania_id"):
         value = text(body, key)
-        if value:
+        if value and not getattr(work, key):
             setattr(work, key, value)
 
 

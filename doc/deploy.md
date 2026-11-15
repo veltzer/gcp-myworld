@@ -271,9 +271,13 @@ the app neither shows nor edits (old websites, map points, logo sources,
 ...) are kept in `organizations.details`. The photos are stored in the
 database too (the `images` table), so the database, and its Cloud SQL
 backups, hold all of it. The import replaces everything the user had in
-these tables in one transaction, so it is safe to run again, and stops on
-any YAML field it does not know rather than dropping it. The account must
-exist, so sign in once first:
+these tables in one transaction, and stops on any YAML field it does not
+know rather than dropping it. It is for an empty account: when the account
+has any of these rows already it stops, because replacing them would lose
+every edit made in the app since; `--replace-everything you@example.com`
+(the account's email again) replaces them anyway. The `--books`,
+`--youtube-history` and `--only-types` modes add to what is there and can
+run again. The account must exist, so sign in once first:
 
 ```bash
 # local sqlite (or whatever DATABASE_URL says)

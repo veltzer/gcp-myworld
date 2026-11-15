@@ -1011,9 +1011,22 @@ def test_other_users_see_nothing(imported: webtest.TestApp, engine: Engine) -> N
         assert session.scalar(select(func.count()).select_from(Concert)) == 3
 
 
+def test_reimport_refuses_an_account_with_data(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    """ The full import replaces everything, so on an account with data it stops unless told to replace. """
+    with Session(engine) as session:
+        concert = session.scalars(select(Concert)).first()
+        assert concert is not None
+        concert.remark = "edited in the app"
+        session.commit()
+    with Session(engine) as session, pytest.raises(import_world.WorldImportError, match="--replace-everything alice@example.com"):
+        import_world.import_world(session, owner(session), tmp_path)
+    remarks = [concert["remark"] for concert in imported.get("/api/concert-visits").json]
+    assert "edited in the app" in remarks
+
+
 def test_reimport_replaces(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
     with Session(engine) as session:
-        import_world.import_world(session, owner(session), tmp_path)
+        import_world.import_world(session, owner(session), tmp_path, replace=True)
         session.commit()
         for model, count in ((Concert, 3), (Museum, 3), (AudioCourse, 2), (Person, 8), (Organization, 3), (Image, 7)):
             assert session.scalar(select(func.count()).select_from(model)) == count

@@ -184,6 +184,27 @@ def test_users_are_isolated(app: webtest.TestApp) -> None:
     assert entry["rating"] is None
 
 
+def test_shared_work_ids_are_only_filled(app: webtest.TestApp) -> None:
+    """ A work is shared: one user can give it a missing id, never change the one every user sees. """
+    book = {"kind": "book", "title": "Solaris", "creator": "Stanislaw Lem", "year": 1961}
+    sign_in(app, sub="alice")
+    entry = app.post_json("/api/library-entries", {**book, "goodreads_id": "95558"}).json
+    assert (entry["goodreads_id"], entry["simania_id"]) == ("95558", "")
+
+    app.post("/auth/logout")
+    sign_in(app, sub="bob")
+    entry = app.post_json("/api/library-entries", {**book, "goodreads_id": "666", "simania_id": "1234"}).json
+    # the empty id is filled in, the set one stays
+    assert (entry["goodreads_id"], entry["simania_id"]) == ("95558", "1234")
+    entry = app.put_json(f"/api/library-entries/{entry['work_id']}", {"goodreads_id": "777", "simania_id": "9"}).json
+    assert (entry["goodreads_id"], entry["simania_id"]) == ("95558", "1234")
+
+    app.post("/auth/logout")
+    sign_in(app, sub="alice")
+    [entry] = app.get("/api/library-entries").json
+    assert (entry["goodreads_id"], entry["simania_id"]) == ("95558", "1234")
+
+
 # ─── email and password ──────────────────────────────────────────────────────
 
 def test_email_register_and_login(app: webtest.TestApp) -> None:

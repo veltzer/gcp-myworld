@@ -2,13 +2,6 @@
 
 Findings from a code scan on 2026-10-04, re-checked and extended by a review on 2026-11-15.
 
-## High
-
-- `src/myworld/views.py:112` - `Work` rows are shared between all users (`src/myworld/models.py:116`), yet `_apply_work_ids` lets any signed-in user overwrite `imdb_id`, `tmdb_id` and `rotten_tomatoes_id` on an existing shared work with whatever the request body carries, changing the IMDb/RT links every other user sees for that title. Only fill ids that are currently empty, or resolve ids server-side from `tmdb_id` instead of trusting the client.
-- `scripts/import_world.py:459` - the default mode (only `--email`) bulk-deletes the account's concerts, museums, people, organizations, places, groups, cities, countries, types, devices, audio courses, YouTube videos, images and book entries and re-creates them from the YAML; `scripts/import_world_cloud.sh` points it at Cloud SQL. Run again after the user has edited data in the UI, every UI edit and every fetched picture is gone. Refuse when the account already has rows unless an explicit `--replace-everything` (repeating the email) is given; `tests/world_test.py:1014` `test_reimport_replaces` locks in the current behaviour.
-- `src/myworld/static/app.js:1790` - People and the six type/device views (`TABLES`) are tables, and `updateTools` (`:816`) disables List/Cards/Tiles/Gallery on them; Users, Checks and Schema are fixed pages. Every view should have the four layouts: add card makers for people and the type views and put them in `CARDS`.
-- `src/myworld/static/app.js:546` - `loadEntries` assigns `state.entries` after `await api(...)` without checking `state.kind` is still the one requested; click Books then Films quickly and a late Books response shows books under Films, and an edit PUTs against the wrong kind. Capture the kind before the await and drop stale responses (same pattern in `fillTypeFilter` `:1861` and `openDialog` `:3306`, which can open the old view's form and delete with `WORLDS[state.view]` of the new one).
-
 ## Medium
 
 - `src/myworld/views.py:185` - adding a work that is already in the library finds the existing `UserWork` and `_apply_entry_fields` (`:92`) resets everything the body omits: status becomes "done", rating, dates and notes are blanked, and the response is a 200. Return 409 for an existing entry, or apply only the fields present.

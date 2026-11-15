@@ -591,10 +591,6 @@ button.danger {
 	display: inline;
 }
 
-.actions {
-	white-space: nowrap;
-}
-
 .empty {
 	color: var(--muted);
 }
@@ -1270,10 +1266,6 @@ button.danger {
 	text-decoration: underline;
 }
 
-#people-rows tr.highlight td {
-	background: #eff6ff;
-}
-
 .world-card.highlight {
 	outline: 2px solid var(--accent);
 }
@@ -1496,11 +1488,6 @@ a.stat-tile:hover {
 	width: 20px;
 	height: 20px;
 	fill: currentColor;
-}
-
-td.actions {
-	width: 1px;
-	text-align: right;
 }
 
 .connections h3 {

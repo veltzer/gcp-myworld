@@ -34,9 +34,14 @@ each video, no date or review); a video in both is one row. Their
 thumbnails are YouTube's own, so there is no image to import. Their devices
 are the same list as the audio courses'.
 
-Everything the user had in these tables is replaced, in one transaction, so
-the script is safe to run again. Unknown fields in the YAML stop the import
-rather than being dropped, so nothing is lost on the way in.
+The full import (no mode flag) replaces everything the user had in these
+tables, in one transaction. It is meant for an empty account: when the
+account has any of these rows already it stops, since replacing them would
+lose every edit made in the app since the last import, unless
+--replace-everything is given with the account's email again. The --books,
+--youtube-history and --only-types modes add to what is there and are safe
+to run again. Unknown fields in the YAML stop the import rather than being
+dropped, so nothing is lost on the way in.
 
 The user must have signed in at least once; pass the email they signed in
 with (and --subject when that email has several accounts, e.g. Google and
@@ -73,7 +78,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import yaml
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, func, insert, select
 from sqlalchemy.orm import Session, selectinload
 
 from myworld import names as naming
@@ -456,8 +461,37 @@ def find_owner(session: Session, email: str, subject: str | None) -> User:
     return users[0]
 
 
-def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
-    """ Replace owner's concerts, museums, people, organizations and images with those under source. Does not commit. """
+# what the full import deletes and makes again, so what an account must not have unless it is replaced on purpose
+REPLACED_MODELS = (
+    AudioCourse, YouTubeVideo, Device, Concert, Place, Group, Museum, Person, Organization, City, Country,
+    OrganizationType, PersonType, RelationType, PersonRelationType, PersonOrganizationType, Image,
+)
+
+
+def existing_rows(session: Session, owner: User) -> dict[str, int]:
+    """ How many rows of each table the full import would replace owner has, the empty ones left out. """
+    counts = {
+        model.__tablename__: session.scalar(select(func.count()).select_from(model).where(model.owner_id == owner.id)) or 0
+        for model in REPLACED_MODELS
+    }
+    counts["books"] = session.scalar(select(func.count()).select_from(UserWork).where(
+        UserWork.user_id == owner.id, UserWork.work_id.in_(select(Work.id).where(Work.kind == "book")),
+    )) or 0
+    return {table: count for table, count in counts.items() if count}
+
+
+def import_world(session: Session, owner: User, source: Path, replace: bool = False) -> dict[str, int]:
+    """ Replace owner's concerts, museums, people, organizations and images with those under source. Does not commit.
+
+    Stops when owner has any of these rows already, unless replace: the rows may hold edits made in the app.
+    """
+    existing = existing_rows(session, owner)
+    if existing and not replace:
+        what = ", ".join(f"{count} {table}" for table, count in existing.items())
+        raise WorldImportError(
+            f"the account has data already ({what}); the full import deletes it all and loses every edit made in the app."
+            f" Add only what is missing with --books, --youtube-history or --only-types, or pass --replace-everything {owner.email} to replace it anyway",
+        )
     people_items = _items(source, "people", PERSON_FIELDS)
     organization_items = _items(source, "organizations", ORGANIZATION_FIELDS)
     concert_items = _items(source, "concerts", CONCERT_FIELDS)
@@ -489,7 +523,7 @@ def import_world(session: Session, owner: User, source: Path) -> dict[str, int]:
     for entry in session.scalars(select(UserWork).where(UserWork.user_id == owner.id, UserWork.image_id.is_not(None))):
         entry.image_id = None
     session.flush()
-    for model in (AudioCourse, YouTubeVideo, Device, Concert, Place, Group, Museum, Person, Organization, City, Country, OrganizationType, PersonType, RelationType, PersonRelationType, PersonOrganizationType, Image):
+    for model in REPLACED_MODELS:
         session.execute(delete(model).where(model.owner_id == owner.id))
     session.flush()
 
@@ -1188,7 +1222,13 @@ def main() -> int:
         "--only-types", action="store_true",
         help="import nothing: only add the starting types, make the user's own person, turn relation-like person types into relations to it, and give a first guess to what has no type, profession or relation",
     )
+    parser.add_argument(
+        "--replace-everything", metavar="EMAIL",
+        help="let the full import delete and replace an account that has data already, losing every edit made in the app; give the account's email again to confirm",
+    )
     args = parser.parse_args()
+    if args.replace_everything is not None and args.replace_everything != args.email:
+        parser.error("--replace-everything must repeat the --email of the account to replace")
     engine = make_engine()
     with Session(engine) as session:
         try:
@@ -1205,7 +1245,7 @@ def main() -> int:
                 counts = import_audio_courses(session, owner, args.source)
                 counts["people given a profession"] = give_types(session, owner)["people given a profession"]
             else:
-                counts = import_world(session, owner, args.source)
+                counts = import_world(session, owner, args.source, replace=args.replace_everything is not None)
         except WorldImportError as e:
             print(f"import_world: {e}", file=sys.stderr)
             return 1

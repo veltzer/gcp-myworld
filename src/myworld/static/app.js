@@ -184,7 +184,8 @@ async function indexPage() {
 
 // view is a kind of work ("book", ...) or one of WORLDS ("concerts", ...)
 // editing is the item open in the dialog, null when adding
-const state = { config: null, kind: "book", view: "concerts", entries: [], editing: null, layout: "cards" };
+// editingView: the view the open dialog belongs to, which its save and delete go to
+const state = { config: null, kind: "book", view: "concerts", entries: [], editing: null, editingView: null, layout: "cards" };
 
 function fillStatuses(select, selected) {
 	select.replaceChildren();
@@ -544,10 +545,18 @@ function setupSidebar() {
 }
 
 async function loadEntries() {
-	state.entries = await api(`/api/library-entries?kind=${encodeURIComponent(state.kind)}`);
+	const kind = state.kind;
+	const entries = await api(`/api/library-entries?kind=${encodeURIComponent(kind)}`);
+	// another view was opened while these loaded: they are not what is on screen
+	if (state.view !== kind) {
+		return;
+	}
+	state.entries = entries;
 	// the statuses in the filter, with how many entries have each
-	await fillTypeFilter(state.kind);
-	renderEntries();
+	await fillTypeFilter(kind);
+	if (state.view === kind) {
+		renderEntries();
+	}
 }
 
 // The library's cards: searched and sorted with the same toolbar as every other tab.
@@ -941,7 +950,7 @@ async function libraryPage() {
 	form.onsubmit = async (event) => {
 		event.preventDefault();
 		dialogError("");
-		const body = { kind: state.kind };
+		const body = { kind: state.editingView };
 		for (const el of form.elements) {
 			if (el.name && el.type !== "file") {
 				body[el.name] = el.value;
@@ -1677,7 +1686,25 @@ function youtubeCard(item) {
 	return card;
 }
 
-const CARDS = { concerts: concertCard, museums: museumCard, "audio-courses": audioCourseCard, youtube: youtubeCard, places: placeCard, cities: cityCard, countries: countryCard, groups: groupCard, organizations: organizationCard };
+// every view's card maker: each view has the List, Cards, Tiles and Gallery layouts
+const CARDS = {
+	concerts: concertCard,
+	museums: museumCard,
+	"audio-courses": audioCourseCard,
+	youtube: youtubeCard,
+	places: placeCard,
+	cities: cityCard,
+	countries: countryCard,
+	groups: groupCard,
+	organizations: organizationCard,
+	people: personCard,
+	"organization-types": typeCard,
+	"person-types": typeCard,
+	"relation-types": typeCard,
+	"person-relation-types": typeCard,
+	"person-organization-types": typeCard,
+	devices: typeCard,
+};
 
 // Material "link"
 const LINK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>';
@@ -1731,71 +1758,48 @@ async function showConnections(person) {
 	$("connections-dialog").showModal();
 }
 
-function personRow(person) {
-	const tr = el("tr");
-	tr.id = `person-${person.id}`;
-	const kind = el("td");
-	appendLinks(kind, "person-types", person.types);
-	const organizations = el("td");
-	appendKindLinks(organizations, "organizations", person.organization_links, "organization");
-	const relations = el("td");
-	appendRelations(relations, person);
-	const links = el("td", "actions");
-	const button = el("button", "icon-button");
+// the pin's corner on a person's card: how they are connected to the user
+function connectionsButton(person) {
+	const button = el("button", "icon-button place-button");
 	button.type = "button";
 	button.title = `How you are connected to ${person.name}`;
 	button.setAttribute("aria-label", button.title);
 	button.innerHTML = LINK_ICON;
 	button.onclick = () => showConnections(person).catch((e) => showError(e.message));
-	links.appendChild(button);
-	tr.append(el("td", "title", person.honorific), el("td", "title", person.first_name), el("td", "title", person.middle_name), el("td", "title", person.surname), kind, organizations, relations, el("td", null, person.description), links);
-	editable(tr, person);
-	return tr;
+	return button;
 }
 
-// A row of an enumeration (organization, person and relation types), with how many rows are of it.
-function typeRow(kind) {
-	const tr = el("tr");
-	tr.id = `${slug(state.view)}-${kind.id}`;
-	tr.append(el("td", "title", kind.name), el("td", null, kind.description), el("td", "number", kind.count));
-	editable(tr, kind);
-	return tr;
+function personCard(item) {
+	const { card, list } = cardShell(item, item.description);
+	card.appendChild(connectionsButton(item));
+	linksDetail(list, "Profession", "person-types", item.types);
+	// each with how they are linked: "Worked at Schema", "Mother of Dana"
+	linksDetail(list, "Organizations", "organizations", item.organization_links.map((link) => ({ id: link.organization.id, name: link.name })));
+	linksDetail(list, "Relations", "people", [...item.relations, ...item.related].map((r) => ({ id: r.person.id, name: r.name })));
+	return card;
 }
 
-// A person relation type, with how it reads the other way ("Mother of" / "Child of")
-function personRelationTypeRow(kind) {
-	const tr = el("tr");
-	tr.id = `${slug(state.view)}-${kind.id}`;
-	tr.append(el("td", "title", kind.name), el("td", "title", kind.inverse || kind.name), el("td", null, kind.description), el("td", "number", kind.count));
-	editable(tr, kind);
-	return tr;
-}
-
-// Links of a kind, each to a row of a view: "Mother of Dana, Child of Ruth", "Worked at Schema"
-function appendKindLinks(parent, view, links, field) {
-	appendLimited(parent, links.length, (index, into) => {
-		const link = links[index];
-		const tie = el("span", "nowrap", `${link.type} `);
-		appendLinks(tie, view, [link[field]]);
-		into.appendChild(tie);
-	});
-}
-
-// A person's relations to other people, both ways
-function appendRelations(parent, person) {
-	appendKindLinks(parent, "people", [...person.relations, ...person.related], "person");
-}
-
-// views shown as a table rather than cards: view -> [table id, tbody id, row maker]
-const TABLES = {
-	people: ["people", "people-rows", personRow],
-	"organization-types": ["types", "type-rows", typeRow],
-	"person-types": ["person-types-table", "person-type-rows", typeRow],
-	"relation-types": ["relation-types-table", "relation-type-rows", typeRow],
-	"person-relation-types": ["person-relation-types-table", "person-relation-type-rows", personRelationTypeRow],
-	"person-organization-types": ["person-organization-types-table", "person-organization-type-rows", typeRow],
-	devices: ["devices-table", "device-rows", typeRow],
+// what the rows of each enumeration view are counted in
+const TYPE_COUNTS = {
+	"organization-types": "Organizations",
+	"person-types": "People",
+	"relation-types": "Organizations",
+	"person-relation-types": "Relations",
+	"person-organization-types": "Links",
+	devices: "Audio courses",
 };
+
+// A row of an enumeration (types, relation types, devices), with how many rows are of it;
+// a person relation type also with how it reads the other way ("Mother of" / "Child of")
+function typeCard(item) {
+	const { card, list } = cardShell(item, item.description);
+	if ("inverse" in item) {
+		detail(list, "Other way", item.inverse || item.name);
+	}
+	// always shown, 0 too
+	detail(list, TYPE_COUNTS[state.view], String(item.count));
+	return card;
+}
 
 // The filter next to the search, in groups. On a view whose rows have a
 // type (people, organizations) one group picks types; on a library kind
@@ -1862,6 +1866,10 @@ async function fillTypeFilter(view) {
 	const button = $("type-filter");
 	const menu = $("type-filter-menu");
 	const spec = await filterSpec(view);
+	// the control is shared by every view: only the one on screen fills it
+	if (state.view !== view) {
+		return;
+	}
 	menu.hidden = true;
 	button.setAttribute("aria-expanded", "false");
 	// a view with nothing to filter by keeps the control, disabled
@@ -2037,17 +2045,12 @@ function renderWorld() {
 	const view = state.view;
 	const items = worldCache[view] || [];
 	const shown = rankBySearch(sortItems(items.filter((item) => typeMatches(item) && searchMatches(item))));
-	const table = TABLES[view];
-	const map = !table && showsMap();
+	const map = showsMap();
 	// a page at a time, but the map shows every place
 	const page = pageOf(shown, listKey(view), !map);
-	$("cards").hidden = Boolean(table) || map;
-	$("cards").replaceChildren(...(table || map ? [] : page.map(CARDS[view])));
+	$("cards").hidden = map;
+	$("cards").replaceChildren(...(map ? [] : page.map(CARDS[view])));
 	$("world-map").hidden = !map;
-	for (const [name, [tableId, rowsId, row]] of Object.entries(TABLES)) {
-		$(tableId).hidden = name !== view || shown.length === 0;
-		$(rowsId).replaceChildren(...(name === view ? page.map(row) : []));
-	}
 	// "Audio courses" -> "audio courses"; a name with capitals inside ("YouTube videos") stays
 	const title = WORLDS[view][0].replace(/^My /, "");
 	const what = /^.+[A-Z]/.test(title) ? title : title.toLowerCase();
@@ -2665,9 +2668,6 @@ async function selectWorld(view, hash = view) {
 	if (!worldCache[view]) {
 		$("world-count").textContent = "Loading...";
 		$("cards").replaceChildren();
-		for (const [tableId] of Object.values(TABLES)) {
-			$(tableId).hidden = true;
-		}
 		worldCache[view] = await api(path);
 		await fillTypeFilter(view);
 		if (state.view === view) {
@@ -2711,8 +2711,13 @@ async function refreshWorld() {
 	}
 	const view = state.view;
 	worldCache[view] = await api(WORLDS[view][1]);
+	if (state.view !== view) {
+		return;
+	}
 	await fillTypeFilter(view);
-	renderWorld();
+	if (state.view === view) {
+		renderWorld();
+	}
 }
 
 // Open the People or Organizations view at one row or card, scrolled to and highlighted.
@@ -3304,13 +3309,14 @@ async function fillTypes(select, typesView, label = (t) => t.name) {
 
 // The + button (item null) or a click on an item: the dialog with the form of the view on screen.
 async function openDialog(item) {
-	state.editing = item;
-	const world = WORLDS[state.view];
-	const form = world ? $(`${slug(state.view)}-form`) : $("add-form");
+	// the view is fixed here: the lists below load before the dialog shows, and another view may be opened meanwhile
+	const view = state.view;
+	const world = WORLDS[view];
+	const form = world ? $(`${slug(view)}-form`) : $("add-form");
 	for (const id of DIALOG_FORMS) {
 		$(id).hidden = $(id) !== form;
 	}
-	const noun = world ? world[2] : state.config.kinds[state.kind].name.toLowerCase();
+	const noun = world ? world[2] : state.config.kinds[view].name.toLowerCase();
 	$("dialog-title").textContent = item ? `Edit ${noun}` : `Add ${/^[aeiou]/.test(noun) ? "an" : "a"} ${noun}`;
 	form.querySelector("button[type=submit]").textContent = item ? "Save" : "Add";
 	const remove = form.querySelector("button.delete");
@@ -3323,7 +3329,7 @@ async function openDialog(item) {
 			setPickerRows(select, await worldList(select.dataset.chips));
 		}
 		if (form.elements.type_id) {
-			await fillTypes(form.elements.type_id, TYPED[state.view]);
+			await fillTypes(form.elements.type_id, TYPED[view]);
 		}
 		if (form.elements.device_id) {
 			await fillTypes(form.elements.device_id, "devices");
@@ -3333,8 +3339,9 @@ async function openDialog(item) {
 			setPickerRows(select, await worldList(select.dataset.picker), PICKER_LABELS[select.dataset.picker] || ((row) => row.name));
 		}
 		resetForm(form);
-		if (state.view === "organizations" && !item) {
-			const company = worldCache["organization-types"].find((t) => t.name === "Company");
+		if (view === "organizations" && !item) {
+			// through worldList: a reload of another view may have dropped the cached types meanwhile
+			const company = (await worldList("organization-types")).find((t) => t.name === "Company");
 			form.elements.type_id.value = company ? company.id : "";
 		}
 		if (item) {
@@ -3356,6 +3363,12 @@ async function openDialog(item) {
 	} else {
 		prepareWorkForm(form, item);
 	}
+	// another view was opened while the lists loaded: its dialog is not this one
+	if (state.view !== view) {
+		return;
+	}
+	state.editing = item;
+	state.editingView = view;
 	$("add-dialog").showModal();
 	const first = [...form.querySelectorAll("input")].find((i) => i.offsetParent !== null && !i.readOnly);
 	if (first) {
@@ -3370,7 +3383,7 @@ async function deleteEditing(button) {
 		button.textContent = "Delete for good?";
 		return;
 	}
-	const world = WORLDS[state.view];
+	const world = WORLDS[state.editingView];
 	if (world) {
 		await api(`${world[1]}/${state.editing.id}`, { method: "DELETE" });
 		$("add-dialog").close();
