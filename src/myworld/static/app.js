@@ -205,6 +205,7 @@ const CATALOGS = [
 	["rotten_tomatoes_id", "RT", (id) => `https://www.rottentomatoes.com/${id}`, "rt-link"],
 	["goodreads_id", "Goodreads", (id) => `https://www.goodreads.com/book/show/${id}`, null],
 	["simania_id", "Simania", (id) => `https://simania.co.il/bookdetails.php?item_id=${id}`, null],
+	["openlibrary_id", "Open Library", (id) => `https://openlibrary.org/works/${id}`, null],
 ];
 
 // The read-only id fields of the add form: the values come from the search, never typed.
@@ -412,7 +413,9 @@ function libraryCard(entry) {
 	} else {
 		detail(list, creator, entry.creator);
 	}
-	detail(list, "Year", entry.year === null ? "" : String(entry.year));
+	// a year before the common era is negative: -375 is 375 BCE
+	detail(list, "Year", entry.year === null ? "" : entry.year < 0 ? `${-entry.year} BCE` : String(entry.year));
+	detail(list, "ISBN", entry.isbn);
 	detail(list, "Read in", entry.locale ? localeName(entry.locale) : "");
 	// its titles but the one shown, each with its language
 	const others = [{ locale: entry.title_locale, title: entry.main_title }, ...entry.titles].filter((t) => t.title !== entry.title);
@@ -3437,9 +3440,9 @@ async function prepareWorkForm(form, entry) {
 	} else {
 		authors.disable();
 	}
-	for (const name of MOVIE_FIELDS) {
-		form.elements[name].readOnly = Boolean(entry);
-	}
+	// the work is shared: its title stays as it is, and its year can only be filled in while it has none
+	form.elements.title.readOnly = Boolean(entry);
+	form.elements.year.readOnly = Boolean(entry) && entry.year !== null;
 }
 
 // The organization dialog's type list: the user's own organization types, and "none".

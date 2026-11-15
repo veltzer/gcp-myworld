@@ -1016,7 +1016,7 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
         work.creator = work.creator or creator
         work.goodreads_id = work.goodreads_id or str(goodreads_id)
         work.simania_id = work.simania_id or str(simania_id)
-        work.external_id = work.external_id or str(item.get("isbn", ""))
+        work.isbn = work.isbn or str(item.get("isbn", ""))
         session.flush()
         other_titles(item, work, main_name)
         entry = session.get(UserWork, (owner.id, work.id))

@@ -140,8 +140,10 @@ class Work(Base):
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     creator: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # ISBN and the like, for future enrichment from public catalogs
-    external_id: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    # books: the ISBN (of the edition read, when it is known which) and the Open
+    # Library work ("OL27482W"); scripts/fetch_book_details.py fills them and the year
+    isbn: Mapped[str] = mapped_column(String(20), nullable=False, default="", server_default="")
+    openlibrary_id: Mapped[str] = mapped_column(String(20), nullable=False, default="", server_default="")
     # films: filled from The Movie Database when the work is added through the search (see movies.py)
     imdb_id: Mapped[str] = mapped_column(String(20), nullable=False, default="")
     tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

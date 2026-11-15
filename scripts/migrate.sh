@@ -119,6 +119,10 @@
 #     other titles and of people's names in other languages are made by
 #     create_all; scripts/import_world_cloud.sh --books then fills them, and
 #     the languages, from books_read.yaml.
+#   - books: library_works.isbn and openlibrary_id (adding columns, run
+#     before the deploy), the ISBN copied over from library_works.external_id,
+#     which is dropped by a run after deploying the version that no longer
+#     reads it; scripts/fetch_book_details.py then fills them and the years.
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -372,6 +376,17 @@ for table, column, kind in [
     if existing and column not in existing:
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
         added.append(f"{table}.{column}")
+# a book's ISBN in a column of its own name (external_id held it), and its Open Library work
+work_columns = {row[1] for row in db.execute("PRAGMA table_info(library_works)")}
+if work_columns:
+    for column in ("isbn", "openlibrary_id"):
+        if column not in work_columns:
+            db.execute(f"ALTER TABLE library_works ADD COLUMN {column} VARCHAR(20) NOT NULL DEFAULT ''")
+            added.append(f"library_works.{column}")
+    if "external_id" in work_columns:
+        db.execute("UPDATE library_works SET isbn = substr(external_id, 1, 20) WHERE isbn = '' AND external_id <> ''")
+        db.execute("ALTER TABLE library_works DROP COLUMN external_id")
+        added.append("library_works.external_id -> isbn")
 concert_columns = {row[1] for row in db.execute("PRAGMA table_info(concert_visits)")}
 if "venue" in concert_columns:
     db.execute("""CREATE TABLE IF NOT EXISTS places (
@@ -517,7 +532,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash', 'role'))
 	   OR (table_name = 'works' AND column_name IN ('id', 'imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
 	   OR (table_name IN ('museums', 'concerts') AND column_name = 'id')
-	   OR (table_name = 'library_works' AND column_name IN ('id', 'goodreads_id', 'simania_id', 'title_locale'))
+	   OR (table_name = 'library_works' AND column_name IN ('id', 'goodreads_id', 'simania_id', 'title_locale', 'isbn', 'openlibrary_id', 'external_id'))
 	   OR (table_name = 'library_entries' AND column_name IN ('image_id', 'locale'))
 	   OR (table_name = 'people' AND column_name = 'company')
 	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
@@ -833,6 +848,19 @@ has "people.is_self:.*" || need people.is_self "ALTER TABLE people ADD COLUMN is
 if has "library_works.id:.*"; then
 	has "library_works.title_locale:.*" || need library_works.title_locale "ALTER TABLE library_works ADD COLUMN title_locale VARCHAR(10) NOT NULL DEFAULT 'en'"
 	has "library_entries.locale:.*" || need library_entries.locale "ALTER TABLE library_entries ADD COLUMN locale VARCHAR(10) NOT NULL DEFAULT ''"
+fi
+# a book's ISBN (copied from external_id) and Open Library work (adding columns: run before the deploy);
+# external_id goes in a run after deploying the version that no longer reads it
+if has "library_works.id:.*"; then
+	if ! has "library_works.isbn:.*"; then
+		copy=""
+		has "library_works.external_id:.*" && copy="; UPDATE library_works SET isbn = left(external_id, 20) WHERE external_id <> ''"
+		need library_works.isbn "ALTER TABLE library_works ADD COLUMN isbn VARCHAR(20) NOT NULL DEFAULT ''${copy}"
+	elif has "library_works.external_id:.*"; then
+		need "library_works.external_id (dropped)" "UPDATE library_works SET isbn = left(external_id, 20) WHERE isbn = '' AND external_id <> '';
+			ALTER TABLE library_works DROP COLUMN external_id"
+	fi
+	has "library_works.openlibrary_id:.*" || need library_works.openlibrary_id "ALTER TABLE library_works ADD COLUMN openlibrary_id VARCHAR(20) NOT NULL DEFAULT ''"
 fi
 # concert venues become places (right after deploying the version that has them)
 if has "concert_visits.venue:.*"; then

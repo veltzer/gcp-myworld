@@ -83,6 +83,8 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
         "tmdb_id": entry.work.tmdb_id,
         "rotten_tomatoes_id": entry.work.rotten_tomatoes_id,
         "goodreads_id": entry.work.goodreads_id,
+        "isbn": entry.work.isbn,
+        "openlibrary_id": entry.work.openlibrary_id,
         # who wrote it, as the user's people (the People view links to them), named in the language it was read in
         "authors": [{"id": p.id, "name": p.name_in(entry.locale)} for p in entry.authors],
         "simania_id": entry.work.simania_id,
@@ -111,6 +113,10 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any]) -> None:
     entry.started_on = opt_date(body, "started_on")
     entry.finished_on = opt_date(body, "finished_on")
     entry.notes = text(body, "notes")
+    # the year it came out, on the shared work: only filled in, never changed
+    year = opt_int(body, "year", -3000, 3000)
+    if year is not None and entry.work.year is None:
+        entry.work.year = year
     if "locale" in body:
         locale = text(body, "locale")
         if locale and locale not in LOCALES:
@@ -152,7 +158,7 @@ def _apply_work_ids(work: Work, body: dict[str, Any]) -> None:
     tmdb_id = opt_int(body, "tmdb_id", 1, 2**31 - 1)
     if tmdb_id is not None and work.tmdb_id is None:
         work.tmdb_id = tmdb_id
-    for key in ("imdb_id", "rotten_tomatoes_id", "goodreads_id", "simania_id"):
+    for key in ("imdb_id", "rotten_tomatoes_id", "goodreads_id", "simania_id", "isbn", "openlibrary_id"):
         value = text(body, key)
         if value and not getattr(work, key):
             setattr(work, key, value)
@@ -216,7 +222,8 @@ def api_library_add() -> tuple[flask.Response, int]:
     title = text(body, "title", required=True)
     # a book's author text is its authors' names, as the import writes it ("Kernighan, Ritchie"), when none is sent
     creator = text(body, "creator") or ", ".join(p.name for p in world.owned_list(body, "authors", Person))
-    year = opt_int(body, "year", 0, 3000)
+    # a year before the common era is negative (Plato's Republic, -375)
+    year = opt_int(body, "year", -3000, 3000)
     db = flask.g.db
     work = db.execute(
         select(Work).where(Work.kind == kind, Work.title == title, Work.creator == creator, Work.year == year)

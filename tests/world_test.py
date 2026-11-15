@@ -6,6 +6,7 @@ import gzip
 import json
 from pathlib import Path
 
+import fetch_book_details
 import flask
 import import_world
 import link_authors
@@ -828,6 +829,36 @@ def test_names_in_languages(imported: webtest.TestApp) -> None:
     imported.put_json(f"/api/library-entries/{book['work_id']}", {"locale": "xx"}, status=400)
     imported.post_json("/api/library-entries", {"kind": "book", "title": "X", "title_locale": "xx"}, status=400)
     assert imported.get("/api/config").json["locales"]["he"] == "Hebrew"
+
+
+def test_book_year_and_ids(imported: webtest.TestApp) -> None:
+    # the year it came out, the ISBN and the Open Library work are only filled in on the shared work
+    book = imported.post_json("/api/library-entries", {"kind": "book", "title": "The Republic", "isbn": "9780140455113", "openlibrary_id": "OL123W"}).json
+    assert (book["year"], book["isbn"], book["openlibrary_id"]) == (None, "9780140455113", "OL123W")
+    dated = imported.put_json(f"/api/library-entries/{book['work_id']}", {"year": -375}).json
+    assert dated["year"] == -375
+    assert imported.put_json(f"/api/library-entries/{book['work_id']}", {"year": 1999}).json["year"] == -375
+    again = imported.post_json("/api/library-entries", {"kind": "book", "title": "The Republic", "year": -375, "isbn": "0", "openlibrary_id": "OL9W"}).json
+    assert (again["work_id"], again["isbn"], again["openlibrary_id"]) == (book["work_id"], "9780140455113", "OL123W")
+
+
+def test_fetch_book_details_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    pages = {
+        "https://www.goodreads.com/book/show/1": '<p>First published February 17, 1884</p>"isbn":"1568461933","isbn13":"9781568461939"',
+        "https://www.goodreads.com/book/show/2": '<p>First published 380 BC</p>',
+        "https://www.goodreads.com/book/show/3": '"publicationTime":1094022000000,"isbn":"0140455116"',
+        "https://simania.co.il/bookdetails.php?item_id=4": '{\\"isbn\\": \\"0\\", \\"datePublished\\": \\"1985\\"}',
+        "https://simania.co.il/bookdetails.php?item_id=5": '"isbn": "965-13-0001-2", "datePublished": "2001"',
+    }
+    monkeypatch.setattr(fetch_book_details, "get", pages.get)
+    assert fetch_book_details.goodreads("1") == {"year": 1884, "isbn": "9781568461939"}
+    assert fetch_book_details.goodreads("2") == {"year": -380}
+    assert fetch_book_details.goodreads("3") == {"year": 2004, "isbn": "0140455116"}
+    assert fetch_book_details.goodreads("9") == {}
+    # Simania says "0" for no ISBN
+    assert fetch_book_details.simania("4") == {"year": 1985}
+    assert fetch_book_details.simania("5") == {"year": 2001, "isbn": "965130001" + "2"}
+    assert fetch_book_details.plain("The Hobbit: or There and Back Again") == fetch_book_details.plain("the  hobbit")
 
 
 def test_books_unknown_field(engine: Engine, tmp_path: Path, app: webtest.TestApp) -> None:

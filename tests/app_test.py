@@ -152,7 +152,7 @@ def test_validation(app: webtest.TestApp) -> None:
         {"kind": "book", "title": "x", "rating": "lots"},
         {"kind": "book", "title": "x", "status": "meh"},
         {"kind": "book", "title": "x", "finished_on": "yesterday"},
-        {"kind": "book", "title": "x", "year": -5},
+        {"kind": "book", "title": "x", "year": -3001},
         {"kind": "book", "title": ["x"]},
     ]
     for body in bad:
