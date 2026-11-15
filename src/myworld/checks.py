@@ -580,6 +580,13 @@ def check_book_authors(session: Session) -> Result:
     return Result(checked=len(books), problems=[_entry_problem(b, "has no author") for b in books if (b.user_id, b.work_id) not in written])
 
 
+@check("book-languages", "Every book read says the language it was read in", "books", "book")
+def check_book_languages(session: Session) -> Result:
+    """ Every book in a library, of every account, that was read (not one only wanted) says the language it was read in: it is shown in it. """
+    books = [b for b in _entries(session, "book") if b.status != "wishlist"]
+    return Result(checked=len(books), problems=[_entry_problem(b, "does not say the language it was read in") for b in books if not b.locale])
+
+
 # ─── concerts ───────────────────────────────────────────────────────────────
 
 def _concerts(session: Session) -> list[Concert]:

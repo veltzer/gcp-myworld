@@ -441,6 +441,16 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   the user's people, sets the authors; left out, they stay as they are.
 - `PUT /api/library-entries/<work_id>`: update the per-user fields, the
   cover and (when sent) the authors.
+- Names in languages (codes from `/api/config`'s `locales`): an entry's
+  `locale` is the language the user read it in, and the entry is shown in
+  it: `title` is its title in that language and each author's `name` theirs
+  (the main ones where it has none in it). `main_title` and `title_locale`
+  are the main title and its language (`title_locale` is sent when the book
+  is added), `titles` the others, `{locale, title}`, any number in one
+  language; `titles` sent are added to the work's, never taken away, as the
+  work is shared. A person's `names` are their names in other languages
+  than English, `{locale, name}`, one per language, replaced when sent;
+  `name` is the English one, which every view but a book shows.
 - `DELETE /api/library-entries/<work_id>`: remove from the library.
 
 ## Data model

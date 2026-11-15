@@ -18,7 +18,9 @@ from sqlalchemy.orm import selectinload
 from myworld import auth, names
 from myworld.api import ApiError, coordinates, json_body, opt_int, text
 from myworld.models import (
+    DEFAULT_LOCALE,
     KINDS,
+    LOCALES,
     RATING_MAX,
     RATING_MIN,
     STATUSES,
@@ -34,6 +36,7 @@ from myworld.models import (
     Organization,
     OrganizationType,
     Person,
+    PersonName,
     PersonOrganization,
     PersonOrganizationType,
     PersonRelation,
@@ -296,6 +299,8 @@ def person_json(person: Person) -> dict[str, Any]:
         "first_name": person.first_name,
         "middle_name": person.middle_name,
         "surname": person.surname,
+        # their name in other languages ("he": "חיים שפירא"); "name" is the English one
+        "names": [{"locale": n.locale, "name": n.name} for n in person.names],
         "types": _refs(person.types),
         # each organization they are linked to, once; and the links, each of a kind ("Worked at Schema")
         "organizations": _refs(person.organizations),
@@ -392,7 +397,7 @@ def api_people() -> flask.Response:
         select(Person)
         .where(Person.owner_id == flask.g.user.id)
         .options(
-            selectinload(Person.organizations), selectinload(Person.types),
+            selectinload(Person.organizations), selectinload(Person.types), selectinload(Person.names),
             selectinload(Person.organization_links).selectinload(PersonOrganization.relation_type),
             selectinload(Person.organization_links).selectinload(PersonOrganization.organization),
             selectinload(Person.relations).selectinload(PersonRelation.relation_type), selectinload(Person.relations).selectinload(PersonRelation.other),
@@ -812,8 +817,45 @@ def _apply_person(person: Person, body: dict[str, Any]) -> None:
     elif "organizations" in body:
         person.organization_links = _links_to(person, owned_list(body, "organizations", Organization))
     person.types = owned_list(body, "type_ids", PersonType)
+    if "names" in body:
+        _apply_person_names(person, body["names"])
     if "relations" in body:
         person.relations = _person_relations(person, body["relations"])
+
+
+def localized(key: str, value: Any, field: str, one_per_locale: bool) -> list[tuple[str, str]]:
+    """
+    [{"locale", field}, ...] as (locale, text) pairs, each once: a language
+    of LOCALES and a text not empty; one_per_locale refuses two in one language.
+    """
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise ApiError(400, f"{key}: expected a list of {{locale, {field}}}")
+    out: dict[tuple[str, str], None] = {}
+    for item in value:
+        locale, words = item.get("locale"), item.get(field)
+        if locale not in LOCALES:
+            raise ApiError(400, f"{key}: unknown language {locale!r}")
+        if not isinstance(words, str) or not words.strip():
+            raise ApiError(400, f"{key}: a {field} is needed in {LOCALES[locale]}")
+        out[locale, " ".join(words.split())] = None
+    pairs = list(out)
+    if one_per_locale and len({locale for locale, _ in pairs}) != len(pairs):
+        raise ApiError(400, f"{key}: one {field} per language")
+    return pairs
+
+
+def _apply_person_names(person: Person, value: Any) -> None:
+    """ A person's names in other languages than English, replacing those they had (a row kept per language, renamed in place). """
+    pairs = localized("names", value, "name", one_per_locale=True)
+    if any(locale == DEFAULT_LOCALE for locale, _ in pairs):
+        raise ApiError(400, f"names: the {LOCALES[DEFAULT_LOCALE]} name is the person's own name parts")
+    kept = {n.locale: n for n in person.names}
+    rows = []
+    for locale, name in pairs:
+        row = kept.get(locale) or PersonName(locale=locale, name=name)
+        row.name = name
+        rows.append(row)
+    person.names = rows
 
 
 def _organization_links(person: Person, value: Any) -> list[PersonOrganization]:

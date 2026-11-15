@@ -113,6 +113,12 @@
 #     it, and only then are the three columns dropped. The new code no longer
 #     writes them, and they are NOT NULL, so run this right after deploying
 #     that version (its create_all makes the places table).
+#   - names in languages: library_works.title_locale (the language of the
+#     main title) and library_entries.locale (the language the user read the
+#     book in): adding columns, run before the deploy. The new tables of
+#     other titles and of people's names in other languages are made by
+#     create_all; scripts/import_world_cloud.sh --books then fills them, and
+#     the languages, from books_read.yaml.
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -154,6 +160,8 @@ COLUMNS = [
     ("people", "middle_name", "VARCHAR(200) NOT NULL DEFAULT ''"),
     ("people", "honorific", "VARCHAR(50) NOT NULL DEFAULT ''"),
     ("people", "is_self", "BOOLEAN NOT NULL DEFAULT 0"),
+    ("library_works", "title_locale", "VARCHAR(10) NOT NULL DEFAULT 'en'"),
+    ("library_entries", "locale", "VARCHAR(10) NOT NULL DEFAULT ''"),
 ]
 
 url = os.environ.get("DATABASE_URL", "sqlite:///db.gi/myworld.sqlite")
@@ -509,8 +517,8 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash', 'role'))
 	   OR (table_name = 'works' AND column_name IN ('id', 'imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
 	   OR (table_name IN ('museums', 'concerts') AND column_name = 'id')
-	   OR (table_name = 'library_works' AND column_name IN ('id', 'goodreads_id', 'simania_id'))
-	   OR (table_name = 'library_entries' AND column_name = 'image_id')
+	   OR (table_name = 'library_works' AND column_name IN ('id', 'goodreads_id', 'simania_id', 'title_locale'))
+	   OR (table_name = 'library_entries' AND column_name IN ('image_id', 'locale'))
 	   OR (table_name = 'people' AND column_name = 'company')
 	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
 	   OR (table_name = 'organizations' AND column_name IN ('type_id', 'functions'))
@@ -821,6 +829,11 @@ has "people.middle_name:.*" || need people.middle_name "ALTER TABLE people ADD C
 has "people.honorific:.*" || need people.honorific "ALTER TABLE people ADD COLUMN honorific VARCHAR(50) NOT NULL DEFAULT ''"
 # people.is_self, the account owner's own person (adding a column: run before the deploy)
 has "people.is_self:.*" || need people.is_self "ALTER TABLE people ADD COLUMN is_self BOOLEAN NOT NULL DEFAULT false"
+# the language of a work's main title and the one the user read it in (adding columns: run before the deploy)
+if has "library_works.id:.*"; then
+	has "library_works.title_locale:.*" || need library_works.title_locale "ALTER TABLE library_works ADD COLUMN title_locale VARCHAR(10) NOT NULL DEFAULT 'en'"
+	has "library_entries.locale:.*" || need library_entries.locale "ALTER TABLE library_entries ADD COLUMN locale VARCHAR(10) NOT NULL DEFAULT ''"
+fi
 # concert venues become places (right after deploying the version that has them)
 if has "concert_visits.venue:.*"; then
 	need "concert venues -> places, concert_visits.place_id" "CREATE TABLE IF NOT EXISTS places (

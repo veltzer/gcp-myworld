@@ -85,6 +85,7 @@ from myworld import names as naming
 from myworld.addresses import parse_address
 from myworld.cities import city_key, country_name, parse_location
 from myworld.models import (
+    DEFAULT_LOCALE,
     AudioCourse,
     City,
     Concert,
@@ -96,6 +97,7 @@ from myworld.models import (
     Organization,
     OrganizationType,
     Person,
+    PersonName,
     PersonOrganization,
     PersonOrganizationType,
     PersonRelation,
@@ -106,6 +108,7 @@ from myworld.models import (
     User,
     UserWork,
     Work,
+    WorkTitle,
     YouTubeVideo,
     audio_course_lecturers,
     concert_companions,
@@ -509,6 +512,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
         audio_course_lecturers.c.audio_course_id.in_(select(AudioCourse.id).where(AudioCourse.owner_id == owner.id)),
     ))
     session.execute(delete(PersonRelation).where(PersonRelation.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
+    session.execute(delete(PersonName).where(PersonName.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
     session.execute(delete(person_type_links).where(person_type_links.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
     session.execute(delete(person_organizations).where(person_organizations.c.person_id.in_(select(Person.id).where(Person.owner_id == owner.id))))
     session.execute(delete(organization_relation_types).where(
@@ -789,6 +793,48 @@ def _language(code: str) -> str:
     return code.capitalize()
 
 
+# books_read.yaml's languages as the app's (LOCALES); "unknown" is none
+YAML_LOCALES = {
+    "english": "en", "hebrew": "he", "arabic": "ar", "yiddish": "yi", "french": "fr", "german": "de", "spanish": "es",
+    "italian": "it", "portuguese": "pt", "russian": "ru", "czech": "cs", "greek": "el", "unknown": "",
+}
+
+
+def _locale(language: str) -> str:
+    """ The app's language code for a language of books_read.yaml ("hebrew" is "he"). """
+    if language not in YAML_LOCALES:
+        raise WorldImportError(f"books_read.yaml: unknown language {language!r}")
+    return YAML_LOCALES[language]
+
+
+def _named_parts(item: dict[str, Any], title: str) -> list[str]:
+    """
+    What notes once said of a book's other titles and its authors' other
+    names, which are their own fields now: an import before them wrote these
+    into the notes, and _strip_parts takes them out again.
+    """
+    parts = [f"{_language(name['language'])} title: {name['name']}" for name in item["names"] if name["name"] != title]
+    for alternatives in item["authors"]:
+        shown = _english_first(alternatives)
+        parts += [f"Author in {_language(other['language'])}: {other['name']}" for other in alternatives if other is not shown]
+    return parts
+
+
+def _strip_parts(notes: str, parts: list[str]) -> str:
+    """ notes ("A. B. C", as _book_notes joins them) without the sentences that are exactly one of parts. """
+    for part in parts:
+        part = part.rstrip(".")
+        if notes == part:
+            notes = ""
+        elif notes.startswith(f"{part}. "):
+            notes = notes[len(part) + 2:]
+        elif f". {part}. " in notes:
+            notes = notes.replace(f". {part}. ", ". ", 1)
+        elif notes.endswith(f". {part}"):
+            notes = notes[:-len(part) - 2]
+    return notes
+
+
 def _reading_day(reading: dict[str, Any]) -> datetime.date | None:
     """ The day a reading ended, where the reader was (its timezone). """
     if reading.get("undated"):
@@ -797,7 +843,7 @@ def _reading_day(reading: dict[str, Any]) -> datetime.date | None:
     return stamp.astimezone(zoneinfo.ZoneInfo(reading.get("timezone") or "UTC")).date()
 
 
-def _book_notes(item: dict[str, Any], title: str, main: dict[str, Any] | None) -> str:
+def _book_notes(item: dict[str, Any], main: dict[str, Any] | None) -> str:
     """ What a library entry has no field for, in a few sentences. """
     parts = []
     if main is not None and main.get("review"):
@@ -819,14 +865,7 @@ def _book_notes(item: dict[str, Any], title: str, main: dict[str, Any] | None) -
         parts.append(f"Owned in {' and '.join(owned)}")
     if item["language"] not in ("english", "unknown"):
         parts.append(f"Written in {_language(item['language'])}")
-    for name in item["names"]:
-        if name["name"] != title:
-            parts.append(f"{_language(name['language'])} title: {name['name']}")
-    for alternatives in item["authors"]:
-        shown = _english_first(alternatives)
-        for other in alternatives:
-            if other is not shown:
-                parts.append(f"Author in {_language(other['language'])}: {other['name']}")
+    # the other titles and the authors' other names are fields of their own (titles, people's names)
     if item.get("publisher"):
         parts.append(f"Publisher: {item['publisher']}")
     if item.get("remark"):
@@ -865,18 +904,23 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
     Add owner's books from source, with their covers: a library entry for
     each book owner does not have yet (the work, which is shared, is reused
     when there is one), so it can run again. An entry owner has already only
-    gets its cover, when it has none and source has one now, and its
-    authors, when it has none. Each author is owner's person of that name,
-    or a new person, and is a Book Author (a person type). Does not commit.
+    gets its cover, when it has none and source has one now, its authors,
+    when it has none, and the language it was read in, when it has none.
+    Each author is owner's person of that name, or a new person, and is a
+    Book Author (a person type). A book's titles in other languages are
+    added to its work, and an author's names in them to the person, where
+    they are missing; an entry's notes lose what an import before them said
+    of these there. Does not commit.
     """
     items = _book_items(source)
     image_dir = source / "static" / "images"
     stored = {image.filename: image for image in session.scalars(select(Image).where(Image.owner_id == owner.id))}
     added = skipped = images = uncovered = covered = credited = people_added = typed = 0
+    titled = named = localized = tidied = 0
     person_types, _ = _starting_types(session, owner, PersonType, {"Book Author": PERSON_TYPES["Book Author"]})
     book_author = person_types["Book Author"]
     by_name: dict[str, list[Person]] = {}
-    for person in session.scalars(select(Person).where(Person.owner_id == owner.id).options(selectinload(Person.types))):
+    for person in session.scalars(select(Person).where(Person.owner_id == owner.id).options(selectinload(Person.types), selectinload(Person.names))):
         by_name.setdefault(naming.key(person.name), []).append(person)
 
     def author(name: str) -> Person:
@@ -916,8 +960,40 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
             images += 1
         return cover
 
+    def other_names(item: dict[str, Any], authors: list[Person]) -> None:
+        """ Each author's names in other languages than the one they go by, where the person has none in that language. """
+        nonlocal named
+        for alternatives, person in zip(item["authors"], authors, strict=True):
+            shown = _english_first(alternatives)
+            for other in alternatives:
+                locale = _locale(other["language"])
+                if other is shown or not locale or locale == DEFAULT_LOCALE or any(n.locale == locale for n in person.names):
+                    continue
+                person.names.append(PersonName(locale=locale, name=other["name"]))
+                named += 1
+
+    def other_titles(item: dict[str, Any], work: Work, main: dict[str, Any]) -> None:
+        """ The book's titles in other languages than its main one, added to its work where it has none such. """
+        nonlocal titled
+        have = {(work.title_locale, work.title), *((t.locale, t.title) for t in work.titles)}
+        for name in item["names"]:
+            locale = _locale(name["language"])
+            if name is main or not locale or (locale, name["name"]) in have:
+                continue
+            work.titles.append(WorkTitle(locale=locale, title=name["name"]))
+            have.add((locale, name["name"]))
+            titled += 1
+
+    def read_in(item: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+        """ The reading an entry is of (the latest dated, else the last listed), and the language it was in. """
+        readings = item["readings"]
+        dated = sorted((r for r in readings if not r.get("undated")), key=lambda r: str(r["date"]))
+        main = dated[-1] if dated else readings[-1] if readings else None
+        return main, _locale(main["language"]) if main else ""
+
     for item in items:
-        title = _english_first(item["names"])["name"]
+        main_name = _english_first(item["names"])
+        title = main_name["name"]
         creator = ", ".join(_english_first(alternatives)["name"] for alternatives in item["authors"])
         goodreads_id = next((n["goodreads_id"] for n in item["names"] if n.get("goodreads_id")), "")
         simania_id = next((n["simania_id"] for n in item["names"] if n.get("simania_id")), "")
@@ -934,7 +1010,7 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
                 Work.kind == "book", Work.title == title, Work.creator == creator, Work.year.is_(None),
             )).one_or_none()
         if work is None:
-            work = Work(kind="book", title=title, creator=creator, year=None)
+            work = Work(kind="book", title=title, creator=creator, year=None, title_locale=_locale(main_name["language"]) or DEFAULT_LOCALE)
             session.add(work)
         # the author and the catalog ids are only filled in, never overwritten
         work.creator = work.creator or creator
@@ -942,9 +1018,19 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
         work.simania_id = work.simania_id or str(simania_id)
         work.external_id = work.external_id or str(item.get("isbn", ""))
         session.flush()
+        other_titles(item, work, main_name)
         entry = session.get(UserWork, (owner.id, work.id))
         if entry is not None:
             skipped += 1
+            # the language it was read in, for an entry imported before there was one
+            if not entry.locale:
+                entry.locale = read_in(item)[1]
+                localized += bool(entry.locale)
+            # what notes said of the other titles and names, now fields of their own
+            stripped = _strip_parts(entry.notes, _named_parts(item, title))
+            if stripped != entry.notes:
+                entry.notes = stripped
+                tidied += 1
             # a cover added to veltzer.github.io since: given to an entry that has none
             if entry.image_id is None:
                 cover = book_cover(goodreads_id, simania_id)
@@ -955,14 +1041,16 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
             if not entry.authors and names:
                 entry.authors = [author(name) for name in names]
                 credited += 1
+            # the authors' names in other languages, of the people linked by their English name
+            linked = {naming.key(person.name): person for person in entry.authors}
+            if all(naming.key(name) in linked for name in names):
+                other_names(item, [linked[naming.key(name)] for name in names])
             continue
         cover = book_cover(goodreads_id, simania_id)
         readings = item["readings"]
-        # the latest dated reading, or else the last one listed
-        dated = sorted((r for r in readings if not r.get("undated")), key=lambda r: str(r["date"]))
-        main = dated[-1] if dated else readings[-1] if readings else None
+        main, locale = read_in(item)
         rating = main.get("rating") if main else None
-        notes = _book_notes(item, title, main)
+        notes = _book_notes(item, main)
         if rating is None and item.get("text_rating") is not None:
             rating = item["text_rating"]
             notes = ". ".join(part for part in (item.get("text_review", ""), notes) if part)
@@ -974,8 +1062,10 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
             finished_on=_reading_day(main) if main else None,
             notes=notes,
             image_id=cover.id if cover else None,
-            authors=[author(name) for name in names],
+            locale=locale,
+            authors=(authors := [author(name) for name in names]),
         ))
+        other_names(item, authors)
         added += 1
         uncovered += cover is None
     session.flush()
@@ -983,6 +1073,8 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
         "books": added, "books there already": skipped, "covers": images,
         "covers given to books there already": covered, "books with no cover": uncovered,
         "authors added": people_added, "people made book authors": typed, "authors given to books there already": credited,
+        "titles in other languages": titled, "author names in other languages": named,
+        "languages given to books there already": localized, "notes tidied": tidied,
     }
 
 

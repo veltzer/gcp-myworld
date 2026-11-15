@@ -55,6 +55,25 @@ STATUSES: dict[str, str] = {
     "abandoned": "Abandoned",
 }
 
+# the languages a name, a title or a reading can be in: code -> name. A
+# person's own name parts are their English name ("en"); a book is shown in
+# the language it was read in, with its authors' names in it
+LOCALES: dict[str, str] = {
+    "en": "English",
+    "he": "Hebrew",
+    "ar": "Arabic",
+    "yi": "Yiddish",
+    "fr": "French",
+    "de": "German",
+    "es": "Spanish",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "ru": "Russian",
+    "cs": "Czech",
+    "el": "Greek",
+}
+DEFAULT_LOCALE = "en"
+
 RATING_MIN = 1
 RATING_MAX = 10
 
@@ -130,8 +149,38 @@ class Work(Base):
     # books: Goodreads, and Simania (a Hebrew catalog) for a book read in Hebrew
     goodreads_id: Mapped[str] = mapped_column(String(20), nullable=False, default="")
     simania_id: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    # the language the title is in; the work's other titles are in titles
+    title_locale: Mapped[str] = mapped_column(String(10), nullable=False, default=DEFAULT_LOCALE, server_default=DEFAULT_LOCALE)
 
     users: Mapped[list[UserWork]] = relationship(back_populates="work")  # pylint: disable=used-before-assignment
+    titles: Mapped[list[WorkTitle]] = relationship(
+        back_populates="work", cascade="all, delete-orphan", order_by=lambda: WorkTitle.id,  # pylint: disable=used-before-assignment
+    )
+
+    def title_in(self, locale: str) -> str:
+        """ The title in locale: the main one when it is in it, else the first other title in it, else the main one. """
+        if locale and locale != self.title_locale:
+            for other in self.titles:
+                if other.locale == locale:
+                    return other.title
+        return self.title
+
+
+class WorkTitle(Base):
+    """
+    Another title of a work, in a language: "אינטליגנציה מלאכותית" (he) of
+    "Artificial Intelligence". A work may have several in one language. The
+    work is shared, so its titles are only ever added to, never taken away.
+    """
+    __tablename__ = "library_work_titles"
+    __table_args__ = (UniqueConstraint("work_id", "locale", "title", name="uq_work_title"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    work_id: Mapped[int] = mapped_column(ForeignKey("library_works.id", ondelete="CASCADE"), nullable=False, index=True)
+    locale: Mapped[str] = mapped_column(String(10), nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+
+    work: Mapped[Work] = relationship(back_populates="titles")
 
 
 class DisabledCheck(Base):
@@ -162,6 +211,9 @@ class UserWork(Base):
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     # the cover: an image of the user's own, as the works are shared
     image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
+    # the language the user read it in ("" not known): the book is shown in it,
+    # its title and its authors' names
+    locale: Mapped[str] = mapped_column(String(10), nullable=False, default="", server_default="")
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
     user: Mapped[User] = relationship(back_populates="works")
@@ -325,11 +377,22 @@ class Person(Base):
     related: Mapped[list[PersonRelation]] = relationship(
         foreign_keys=lambda: PersonRelation.other_id, back_populates="other", cascade="all, delete-orphan", order_by=lambda: PersonRelation.id,
     )
+    # their name in other languages than English, one per language
+    names: Mapped[list[PersonName]] = relationship(
+        back_populates="person", cascade="all, delete-orphan", order_by=lambda: PersonName.locale,
+    )
 
     @property
     def name(self) -> str:
-        """ The whole name, as shown; the description for someone with no name. """
+        """ The whole name, as shown (the English one); the description for someone with no name. """
         return " ".join(part for part in (self.honorific, self.first_name, self.middle_name, self.surname) if part) or self.description
+
+    def name_in(self, locale: str) -> str:
+        """ The whole name in locale, when they have one in it; else their English name. """
+        for other in self.names:
+            if other.locale == locale:
+                return other.name
+        return self.name
     museums: Mapped[list[Museum]] = relationship(
         secondary=museum_companions, back_populates="people",
     )
@@ -340,6 +403,23 @@ class Person(Base):
     wrote: Mapped[list[UserWork]] = relationship(
         secondary=library_entry_authors, back_populates="authors",
     )
+
+
+class PersonName(Base):
+    """
+    A person's whole name in a language other than English: "חיים שפירא"
+    (he) of Haim Shapira. One per language; the person's own name parts are
+    their English name, the one every view shows but a book in that language.
+    """
+    __tablename__ = "person_names"
+    __table_args__ = (UniqueConstraint("person_id", "locale", name="uq_person_name_locale"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    person_id: Mapped[int] = mapped_column(ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+    locale: Mapped[str] = mapped_column(String(10), nullable=False)
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+
+    person: Mapped[Person] = relationship(back_populates="names")
 
 
 class OrganizationType(Base):

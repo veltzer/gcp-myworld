@@ -1754,6 +1754,11 @@ button.text.danger:hover {
 	font-size: 0.85rem;
 }
 
+/* a title the book has already: shared with other accounts, so it cannot be taken away here */
+.chip.kept {
+	padding-right: 0.65rem;
+}
+
 .chip-remove {
 	padding: 0 0.35rem;
 	border: none;

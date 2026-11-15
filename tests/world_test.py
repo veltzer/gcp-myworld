@@ -24,8 +24,11 @@ from myworld.models import (
     Organization,
     OrganizationType,
     Person,
+    PersonName,
     PersonType,
     User,
+    UserWork,
+    WorkTitle,
     YouTubeVideo,
     concert_companions,
     library_entry_authors,
@@ -648,7 +651,7 @@ def test_youtube_import_adds_once(imported: webtest.TestApp, engine: Engine, tmp
 
 
 def test_books(imported: webtest.TestApp) -> None:
-    books = {b["title"]: b for b in imported.get("/api/library-entries?kind=book").json}
+    books = {b["main_title"]: b for b in imported.get("/api/library-entries?kind=book").json}
     hobbit, may, chess = books["The Hobbit"], books["Thirty Fifth in May"], books["Chess"]
     # the dated reading gives the rating, the review and the day (in Jerusalem, a day after UTC)
     assert (hobbit["creator"], hobbit["status"], hobbit["rating"], hobbit["finished_on"]) == ("J.R.R. Tolkien", "done", 7, "2004-08-13")
@@ -657,18 +660,23 @@ def test_books(imported: webtest.TestApp) -> None:
     assert imported.get(hobbit["image"]).body == b"\xff\xd8hobbit"
     # text_books.yaml rates a book read with no rating of its own
     assert (may["rating"], may["finished_on"], may["simania_id"]) == (8, None, "7005")
-    assert may["notes"] == (
-        "nice. Read in Hebrew (date unknown). Written in German. Hebrew title: שלושים וחמישה במאי. "
-        "Author in Hebrew: אריך קסטנר. was named: 35 May"
-    )
+    assert may["notes"] == "nice. Read in Hebrew (date unknown). Written in German. was named: 35 May"
+    # read in Hebrew: shown by its Hebrew title, its author by his Hebrew name; the English title is the main one
+    assert (may["locale"], may["title"], may["main_title"], may["title_locale"]) == ("he", "שלושים וחמישה במאי", "Thirty Fifth in May", "en")
+    assert may["titles"] == [{"locale": "he", "title": "שלושים וחמישה במאי"}]
+    assert [a["name"] for a in may["authors"]] == ["אריך קסטנר"]
+    assert (hobbit["locale"], hobbit["title"], hobbit["titles"]) == ("en", "The Hobbit", [])
+    # every other view names the author in English, with the other names alongside
+    [kestner] = [p for p in imported.get("/api/people").json if p["name"] == "Erich Kestner"]
+    assert kestner["names"] == [{"locale": "he", "name": "אריך קסטנר"}]
     # owned but not read, with no cover
-    assert (chess["status"], chess["creator"], chess["image"]) == ("wishlist", "", None)
+    assert (chess["status"], chess["creator"], chess["image"], chess["locale"]) == ("wishlist", "", None, "")
     assert chess["notes"] == "Owned in Hebrew. Written in Hebrew"
 
 
 def test_books_import_adds_once(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
     source = write_source(tmp_path / "again")
-    [hobbit] = [b for b in imported.get("/api/library-entries?kind=book").json if b["title"] == "The Hobbit"]
+    [hobbit] = [b for b in imported.get("/api/library-entries?kind=book").json if b["main_title"] == "The Hobbit"]
     imported.delete(f"/api/library-entries/{hobbit['work_id']}", status=204)
     with Session(engine) as session:
         counts = import_world.import_books(session, owner(session), source)
@@ -677,6 +685,7 @@ def test_books_import_adds_once(imported: webtest.TestApp, engine: Engine, tmp_p
     assert counts == {
         "books": 1, "books there already": 2, "covers": 1, "covers given to books there already": 0, "books with no cover": 0,
         "authors added": 0, "people made book authors": 0, "authors given to books there already": 0,
+        "titles in other languages": 0, "author names in other languages": 0, "languages given to books there already": 0, "notes tidied": 0,
     }
     assert len(imported.get("/api/library-entries?kind=book").json) == 3
 
@@ -691,14 +700,15 @@ def test_books_import_adds_a_new_cover(imported: webtest.TestApp, engine: Engine
     assert counts == {
         "books": 0, "books there already": 3, "covers": 1, "covers given to books there already": 1, "books with no cover": 0,
         "authors added": 0, "people made book authors": 0, "authors given to books there already": 0,
+        "titles in other languages": 0, "author names in other languages": 0, "languages given to books there already": 0, "notes tidied": 0,
     }
-    books = {b["title"]: b for b in imported.get("/api/library-entries?kind=book").json}
+    books = {b["main_title"]: b for b in imported.get("/api/library-entries?kind=book").json}
     assert imported.get(books["Chess"]["image"]).body == b"\xff\xd8chess"
     assert imported.get(books["The Hobbit"]["image"]).body == b"\xff\xd8hobbit"
 
 
 def test_book_authors_are_people(imported: webtest.TestApp) -> None:
-    books = {b["title"]: b for b in imported.get("/api/library-entries?kind=book").json}
+    books = {b["main_title"]: b for b in imported.get("/api/library-entries?kind=book").json}
     people = {p["name"]: p for p in imported.get("/api/people").json}
     # each author is a person, a Book Author, linked from the book
     tolkien = people["J.R.R. Tolkien"]
@@ -749,13 +759,69 @@ def test_books_import_adds_a_new_author(imported: webtest.TestApp, engine: Engin
     assert counts == {
         "books": 0, "books there already": 3, "covers": 0, "covers given to books there already": 0, "books with no cover": 0,
         "authors added": 1, "people made book authors": 1, "authors given to books there already": 3,
+        "titles in other languages": 0, "author names in other languages": 0, "languages given to books there already": 0, "notes tidied": 0,
     }
-    books = {b["title"]: b for b in imported.get("/api/library-entries?kind=book").json}
+    books = {b["main_title"]: b for b in imported.get("/api/library-entries?kind=book").json}
     assert len(books) == 3
     assert (books["Chess"]["creator"], [a["name"] for a in books["Chess"]["authors"]]) == ("Garry Kasparov", ["Garry Kasparov"])
     assert [a["name"] for a in books["The Hobbit"]["authors"]] == ["J.R.R. Tolkien"]
     kasparov = next(p for p in imported.get("/api/people").json if p["name"] == "Garry Kasparov")
     assert [t["name"] for t in kasparov["types"]] == ["Book Author"]
+
+
+def test_books_import_fills_languages(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    source = write_source(tmp_path / "again")
+    # books imported before names had languages: no language read in, no
+    # other titles or names, and those said in the notes instead
+    old_notes = "nice. Read in Hebrew (date unknown). Written in German. Hebrew title: שלושים וחמישה במאי. Author in Hebrew: אריך קסטנר. was named: 35 May"
+    with Session(engine) as session:
+        session.execute(delete(WorkTitle))
+        session.execute(delete(PersonName))
+        session.execute(update(UserWork).values(locale=""))
+        may = session.scalars(select(UserWork).where(UserWork.notes.startswith("nice."))).one()
+        may.notes = old_notes + ". and an edit of mine"
+        session.commit()
+        counts = import_world.import_books(session, owner(session), source)
+        session.commit()
+    assert {k: v for k, v in counts.items() if v} == {
+        "books there already": 3, "titles in other languages": 1, "author names in other languages": 1,
+        "languages given to books there already": 2, "notes tidied": 1,
+    }
+    books = {b["main_title"]: b for b in imported.get("/api/library-entries?kind=book").json}
+    may = books["Thirty Fifth in May"]
+    assert (may["locale"], may["title"], [a["name"] for a in may["authors"]]) == ("he", "שלושים וחמישה במאי", ["אריך קסטנר"])
+    # only what the import once wrote goes: the user's own words stay
+    assert may["notes"] == "nice. Read in Hebrew (date unknown). Written in German. was named: 35 May. and an edit of mine"
+    assert books["The Hobbit"]["locale"] == "en"
+    # and again: nothing more to do
+    with Session(engine) as session:
+        again = import_world.import_books(session, owner(session), source)
+    assert {k: v for k, v in again.items() if v} == {"books there already": 3}
+
+
+def test_names_in_languages(imported: webtest.TestApp) -> None:
+    # a person's names in other languages, one per language, replaced when sent
+    bob = imported.post_json("/api/people", {"first_name": "Haim", "surname": "Shapira", "names": [{"locale": "he", "name": " חיים  שפירא "}]}, status=201).json
+    assert (bob["name"], bob["names"]) == ("Haim Shapira", [{"locale": "he", "name": "חיים שפירא"}])
+    body = {"first_name": "Haim", "surname": "Shapira"}
+    renamed = imported.put_json(f"/api/people/{bob['id']}", dict(body, names=[{"locale": "he", "name": "חיים שפירה"}, {"locale": "ru", "name": "Хаим Шапира"}])).json
+    assert renamed["names"] == [{"locale": "he", "name": "חיים שפירה"}, {"locale": "ru", "name": "Хаим Шапира"}]
+    assert imported.put_json(f"/api/people/{bob['id']}", body).json["names"] == renamed["names"]
+    for wrong in ([{"locale": "he", "name": "א"}, {"locale": "he", "name": "ב"}], [{"locale": "xx", "name": "x"}], [{"locale": "en", "name": "x"}], [{"locale": "he", "name": " "}], "he"):
+        imported.put_json(f"/api/people/{bob['id']}", dict(body, names=wrong), status=400)
+    # a book in a language: its title and its authors' names in it
+    book = imported.post_json("/api/library-entries", {"kind": "book", "title": "Thinking About Thinking", "title_locale": "en", "locale": "he",
+                                                       "titles": [{"locale": "he", "title": "לחשוב על חשיבה"}, {"locale": "he", "title": "חשיבה"}],
+                                                       "authors": [bob["id"]]}).json
+    assert (book["title"], book["main_title"], [a["name"] for a in book["authors"]]) == ("לחשוב על חשיבה", "Thinking About Thinking", ["חיים שפירה"])
+    assert [t["title"] for t in book["titles"]] == ["לחשוב על חשיבה", "חשיבה"]
+    # titles are only added (the work is shared), never twice
+    again = imported.put_json(f"/api/library-entries/{book['work_id']}", {"locale": "en", "titles": [{"locale": "he", "title": "חשיבה"}, {"locale": "fr", "title": "Penser"}]}).json
+    assert (again["title"], [a["name"] for a in again["authors"]]) == ("Thinking About Thinking", ["Haim Shapira"])
+    assert [t["title"] for t in again["titles"]] == ["לחשוב על חשיבה", "חשיבה", "Penser"]
+    imported.put_json(f"/api/library-entries/{book['work_id']}", {"locale": "xx"}, status=400)
+    imported.post_json("/api/library-entries", {"kind": "book", "title": "X", "title_locale": "xx"}, status=400)
+    assert imported.get("/api/config").json["locales"]["he"] == "Hebrew"
 
 
 def test_books_unknown_field(engine: Engine, tmp_path: Path, app: webtest.TestApp) -> None:
@@ -785,7 +851,7 @@ def test_people(imported: webtest.TestApp) -> None:
     assert [c["name"] for c in alice["organizations"]] == ["Startup"]
     assert [c["name"] for c in bob["organizations"]] == ["Acme", "Startup"]
     # only the person and their organizations: their concerts and museums are not listed next to them
-    assert set(alice) == {"id", "name", "is_self", "honorific", "first_name", "middle_name", "surname", "relations", "related", "types", "organizations", "organization_links", "description"}
+    assert set(alice) == {"id", "name", "is_self", "honorific", "first_name", "middle_name", "surname", "relations", "related", "types", "organizations", "organization_links", "description", "names"}
 
 
 def test_organizations(imported: webtest.TestApp) -> None:

@@ -394,7 +394,9 @@ function editable(node, item) {
 // is the image, the catalog links (IMDb, Goodreads, ...) sit under the title.
 function libraryCard(entry) {
 	const { creator } = state.config.kinds[state.kind];
-	const { card, body, list } = cardShell({ ...entry, name: entry.title }, [entry.creator, entry.year].filter(Boolean).join(", "), "cover");
+	// the title and the authors' names in the language it was read in (the server picks them)
+	const by = entry.authors.length ? entry.authors.map((a) => a.name).join(", ") : entry.creator;
+	const { card, body, list } = cardShell({ ...entry, name: entry.title }, [by, entry.year].filter(Boolean).join(", "), "cover");
 	// an entry is known by its work: "book-12", opened by the link #book/12
 	card.id = `${state.kind}-${entry.work_id}`;
 	// the dialog edits the entry as it is
@@ -410,6 +412,10 @@ function libraryCard(entry) {
 		detail(list, creator, entry.creator);
 	}
 	detail(list, "Year", entry.year === null ? "" : String(entry.year));
+	detail(list, "Read in", entry.locale ? localeName(entry.locale) : "");
+	// its titles but the one shown, each with its language
+	const others = [{ locale: entry.title_locale, title: entry.main_title }, ...entry.titles].filter((t) => t.title !== entry.title);
+	detail(list, "Other titles", others.map((t) => `${t.title} (${localeName(t.locale)})`).join("; "));
 	detail(list, "Status", state.config.statuses[entry.status] || entry.status);
 	if (entry.rating !== null) {
 		detail(list, "Rating", `${entry.rating}/${state.config.rating_max}`);
@@ -958,6 +964,7 @@ async function libraryPage() {
 		}
 		if (state.editingView === "book") {
 			body.authors = chosen(form, "authors");
+			body.titles = localizedValues("titles");
 		}
 		try {
 			body.image_id = await uploadPhoto(form);
@@ -974,6 +981,7 @@ async function libraryPage() {
 	};
 
 	setupMovieSearch();
+	setupLocalized();
 	setupWorlds();
 	setupViewChecks();
 	setupDatePicks();
@@ -1217,6 +1225,7 @@ function appendLinks(parent, view, rows) {
 	appendLimited(parent, rows.length, (index, into) => {
 		const row = rows[index];
 		const a = el("a", "person-link", row.name);
+		a.dir = "auto";
 		a.href = `/library#${view}/${row.id}`;
 		a.onclick = (event) => {
 			event.preventDefault();
@@ -1479,9 +1488,14 @@ function cardShell(item, subtitle, kind = "photo") {
 		card.appendChild(el("div", "world-image no-image"));
 	}
 	const body = el("div", "world-body");
-	body.appendChild(el("h2", "world-title", item.name));
+	// a Hebrew title or name reads right to left, inside a page that reads left to right
+	const heading = el("h2", "world-title", item.name);
+	heading.dir = "auto";
+	body.appendChild(heading);
 	if (subtitle) {
-		body.appendChild(el("p", "world-subtitle", subtitle));
+		const line = el("p", "world-subtitle", subtitle);
+		line.dir = "auto";
+		body.appendChild(line);
 	}
 	const list = el("ul", "world-details");
 	body.appendChild(list);
@@ -1775,6 +1789,8 @@ function connectionsButton(person) {
 function personCard(item) {
 	const { card, list } = cardShell(item, item.description);
 	card.appendChild(connectionsButton(item));
+	// shown in English everywhere; a book read in another language names them in it
+	detail(list, "Other names", item.names.map((n) => `${n.name} (${localeName(n.locale)})`).join("; "));
 	linksDetail(list, "Profession", "person-types", item.types);
 	// each with how they are linked: "Worked at Schema", "Mother of Dana"
 	linksDetail(list, "Organizations", "organizations", item.organization_links.map((link) => ({ id: link.organization.id, name: link.name })));
@@ -1959,7 +1975,7 @@ function buildHaystack(item) {
 		if (typeof value === "string") {
 			values.push(value);
 		} else if (Array.isArray(value)) {
-			values.push(...value.map((v) => (typeof v === "string" ? v : v.name)));
+			values.push(...value.map((v) => (typeof v === "string" ? v : (v.name ?? v.title ?? ""))));
 		} else if (value && typeof value === "object" && typeof value.name === "string") {
 			values.push(value.name);
 		}
@@ -2907,6 +2923,114 @@ function syncAlone(form) {
 // ("Mother of" Dana, "Worked at" Schema), shown as removable chips; a row
 // picked in the picker is added with the kind chosen beside it.
 // field names the row in each link ("person", "organization").
+// ─── names and titles in languages ──────────────────────────────────────────
+
+// The dialogs' lists of what is said in several languages: a person's names in
+// other languages than English (one per language) and a book's other titles
+// (any number in one language). A title the book has already is shared with
+// the other accounts that have it, so it is shown but cannot be taken away.
+const LOCALIZED = {
+	names: { box: "person-names", locale: "person-name-locale", text: "person-name-text", add: "person-name-add", field: "name", onePerLocale: true },
+	titles: { box: "book-titles", locale: "book-title-locale", text: "book-title-text", add: "book-title-add", field: "title", onePerLocale: false },
+};
+const editingLocalized = { names: [], titles: [] };
+
+function localeName(code) {
+	return state.config.locales[code] || code;
+}
+
+function optionOf(value, text) {
+	const option = document.createElement("option");
+	option.value = value;
+	option.textContent = text;
+	return option;
+}
+
+// every select marked data-locales: the languages, but data-skip's, after data-blank's empty choice
+function fillLocales() {
+	for (const select of document.querySelectorAll("select[data-locales]")) {
+		const options = Object.entries(state.config.locales).filter(([code]) => code !== select.dataset.skip).map(([code, name]) => optionOf(code, name));
+		if (select.dataset.blank) {
+			options.unshift(optionOf("", select.dataset.blank));
+		}
+		select.replaceChildren(...options);
+	}
+}
+
+function renderLocalized(key) {
+	const { box: boxId } = LOCALIZED[key];
+	const box = $(boxId);
+	box.replaceChildren();
+	if (editingLocalized[key].length === 0) {
+		box.appendChild(el("span", "empty", "None yet"));
+	}
+	editingLocalized[key].forEach((item, index) => {
+		const chip = el("span", item.kept ? "chip kept" : "chip");
+		const words = el("span", null, item.text);
+		words.dir = "auto";
+		chip.append(`${localeName(item.locale)}: `, words);
+		if (!item.kept) {
+			const remove = el("button", "chip-remove", "\u00d7");
+			remove.type = "button";
+			remove.setAttribute("aria-label", `Remove ${item.text}`);
+			remove.onclick = () => {
+				editingLocalized[key].splice(index, 1);
+				renderLocalized(key);
+			};
+			chip.appendChild(remove);
+		}
+		box.appendChild(chip);
+	});
+}
+
+// what is typed in the editor's box, added to its list (a person's name in a language replacing the one they had in it)
+function addLocalized(key) {
+	const { locale: localeId, text: textId, onePerLocale } = LOCALIZED[key];
+	const locale = $(localeId).value;
+	const text = $(textId).value.trim().split(/\s+/).join(" ");
+	if (!locale || !text) {
+		return;
+	}
+	const list = editingLocalized[key];
+	if (onePerLocale) {
+		editingLocalized[key] = list.filter((item) => item.locale !== locale);
+	} else if (list.some((item) => item.locale === locale && item.text === text)) {
+		$(textId).value = "";
+		return;
+	}
+	editingLocalized[key].push({ locale, text, kept: false });
+	$(textId).value = "";
+	renderLocalized(key);
+}
+
+function prepareLocalized(key, items, kept) {
+	const { field, text } = LOCALIZED[key];
+	editingLocalized[key] = items.map((item) => ({ locale: item.locale, text: item[field], kept }));
+	$(text).value = "";
+	renderLocalized(key);
+}
+
+// the list to send, with anything still typed in the box (saving does not lose it)
+function localizedValues(key) {
+	addLocalized(key);
+	const { field } = LOCALIZED[key];
+	return editingLocalized[key].map((item) => ({ locale: item.locale, [field]: item.text }));
+}
+
+// Add, and Enter in the box, add what is typed; Enter never saves the form
+function setupLocalized() {
+	fillLocales();
+	for (const [key, { add, text }] of Object.entries(LOCALIZED)) {
+		$(add).onclick = () => addLocalized(key);
+		$(text).addEventListener("keydown", (event) => {
+			if (event.key === "Enter") {
+				event.preventDefault();
+				addLocalized(key);
+			}
+		});
+	}
+}
+
 const editingLinks = { relations: [], organization_links: [] };
 
 function renderLinks(key, boxId, field) {
@@ -3176,6 +3300,7 @@ const WORLD_BODIES = {
 		first_name: form.elements.first_name.value,
 		middle_name: form.elements.middle_name.value,
 		surname: form.elements.surname.value,
+		names: localizedValues("names"),
 		type_ids: chosen(form, "types"),
 		relations: editingLinks.relations.map((r) => ({ type_id: r.type_id, person_id: r.person.id })),
 		organization_links: editingLinks.organization_links.map((l) => ({ type_id: l.type_id, organization_id: l.organization.id })),
@@ -3294,6 +3419,13 @@ async function prepareWorkForm(form, entry) {
 	for (const name of ["title", "creator", "year", "status", "rating", "started_on", "finished_on", "notes"]) {
 		form.elements[name].value = values[name] ?? "";
 	}
+	// the main title, in its language (both fixed once the book is added: the work is shared),
+	// the other titles, and the language it was read in
+	form.elements.title.value = entry ? entry.main_title : "";
+	form.elements.title_locale.value = entry?.title_locale || "en";
+	form.elements.title_locale.disabled = Boolean(entry);
+	form.elements.locale.value = entry?.locale || "";
+	prepareLocalized("titles", entry?.titles || [], true);
 	form.elements.photo.value = "";
 	// a book's authors are the user's people, any number of them; the picker
 	// stays in its place for the other kinds, disabled
@@ -3374,6 +3506,7 @@ async function openDialog(item) {
 			setPickerValue(select, chosen ? [chosen.id] : []);
 		}
 		if (form.id === "person-form") {
+			prepareLocalized("names", item?.names || [], false);
 			await preparePersonLinks(item);
 		}
 		syncAlone(form);

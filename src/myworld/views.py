@@ -15,7 +15,9 @@ from sqlalchemy.orm import selectinload
 from myworld import auth, movies, world
 from myworld.api import ApiError, json_body, opt_date, opt_int, text
 from myworld.models import (
+    DEFAULT_LOCALE,
     KINDS,
+    LOCALES,
     RATING_MAX,
     RATING_MIN,
     STATUSES,
@@ -23,6 +25,7 @@ from myworld.models import (
     PersonType,
     UserWork,
     Work,
+    WorkTitle,
 )
 
 bp = flask.Blueprint("views", __name__)
@@ -63,18 +66,25 @@ def health() -> flask.Response:
 # ─── api ─────────────────────────────────────────────────────────────────────
 
 def _entry_json(entry: UserWork) -> dict[str, Any]:
+    work = entry.work
     return {
         "work_id": entry.work_id,
-        "kind": entry.work.kind,
-        "title": entry.work.title,
+        "kind": work.kind,
+        # the language the user read it in, and the title in it (the main title when it has none in it)
+        "locale": entry.locale,
+        "title": work.title_in(entry.locale),
+        # the main title and its language, and the other titles, each in a language
+        "main_title": work.title,
+        "title_locale": work.title_locale,
+        "titles": [{"locale": t.locale, "title": t.title} for t in work.titles],
         "creator": entry.work.creator,
         "year": entry.work.year,
         "imdb_id": entry.work.imdb_id,
         "tmdb_id": entry.work.tmdb_id,
         "rotten_tomatoes_id": entry.work.rotten_tomatoes_id,
         "goodreads_id": entry.work.goodreads_id,
-        # who wrote it, as the user's people (the People view links to them)
-        "authors": [{"id": p.id, "name": p.name} for p in entry.authors],
+        # who wrote it, as the user's people (the People view links to them), named in the language it was read in
+        "authors": [{"id": p.id, "name": p.name_in(entry.locale)} for p in entry.authors],
         "simania_id": entry.work.simania_id,
         "image": world.image_url(entry.image_id),
         "status": entry.status,
@@ -101,6 +111,13 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any]) -> None:
     entry.started_on = opt_date(body, "started_on")
     entry.finished_on = opt_date(body, "finished_on")
     entry.notes = text(body, "notes")
+    if "locale" in body:
+        locale = text(body, "locale")
+        if locale and locale not in LOCALES:
+            raise ApiError(400, f"locale: unknown language {locale!r}")
+        entry.locale = locale
+    if "titles" in body:
+        _add_titles(entry.work, body["titles"])
     # a cover is only ever replaced by a new upload, never blanked by omission
     image_id = world.owned_image(body)
     if image_id is not None:
@@ -113,6 +130,15 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any]) -> None:
         for author in entry.authors if book_author else []:
             if book_author not in author.types:
                 author.types.append(book_author)
+
+
+def _add_titles(work: Work, value: Any) -> None:
+    """ The titles sent, each in a language, added to the work's where it has none such; the work is shared, so none is taken away. """
+    have = {(work.title_locale, work.title), *((t.locale, t.title) for t in work.titles)}
+    for locale, title in world.localized("titles", value, "title", one_per_locale=False):
+        if (locale, title) not in have:
+            work.titles.append(WorkTitle(locale=locale, title=title))
+            have.add((locale, title))
 
 
 def _apply_work_ids(work: Work, body: dict[str, Any]) -> None:
@@ -150,6 +176,7 @@ def api_config() -> flask.Response:
         "tmdb": movies.configured(),
         "kinds": {k: {"name": name, "plural": plural, "creator": creator} for k, (name, plural, creator) in KINDS.items()},
         "statuses": STATUSES,
+        "locales": LOCALES,
         "rating_min": RATING_MIN,
         "rating_max": RATING_MAX,
         "user": None if user is None else {
@@ -173,7 +200,9 @@ def api_library_list() -> flask.Response:
     kind = flask.request.args.get("kind")
     if kind is not None:
         query = query.where(Work.kind == _kind(kind))
-    entries = flask.g.db.execute(query.options(selectinload(UserWork.authors)).order_by(UserWork.updated_at.desc())).scalars().all()
+    entries = flask.g.db.execute(query.options(
+        selectinload(UserWork.authors).selectinload(Person.names), selectinload(UserWork.work).selectinload(Work.titles),
+    ).order_by(UserWork.updated_at.desc())).scalars().all()
     return flask.jsonify([_entry_json(e) for e in entries])
 
 
@@ -190,14 +219,17 @@ def api_library_add() -> tuple[flask.Response, int]:
         select(Work).where(Work.kind == kind, Work.title == title, Work.creator == creator, Work.year == year)
     ).scalar_one_or_none()
     if work is None:
-        work = Work(kind=kind, title=title, creator=creator, year=year)
+        title_locale = text(body, "title_locale") or DEFAULT_LOCALE
+        if title_locale not in LOCALES:
+            raise ApiError(400, f"title_locale: unknown language {title_locale!r}")
+        work = Work(kind=kind, title=title, creator=creator, year=year, title_locale=title_locale)
         db.add(work)
     _apply_work_ids(work, body)
     db.flush()
     entry = db.get(UserWork, (flask.g.user.id, work.id))
     created = entry is None
     if entry is None:
-        entry = UserWork(user_id=flask.g.user.id, work_id=work.id)
+        entry = UserWork(user_id=flask.g.user.id, work_id=work.id, work=work)
         db.add(entry)
     _apply_entry_fields(entry, body)
     db.commit()

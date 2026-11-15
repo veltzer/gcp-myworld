@@ -165,11 +165,21 @@
 					<label>Rotten Tomatoes id <span class="id-field"><input name="rotten_tomatoes_id" readonly placeholder="from the search"><a id="rt-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
 				</div>
 				<div class="row">
-					<label class="wide">Title <input name="title" required></label>
+					<label class="wide">Title <input name="title" required dir="auto"></label>
+					<label>Title language <select name="title_locale" data-locales title="The language the title is in; set when the book is added"></select></label>
 					<label class="wide"><span id="creator-label">Creator</span> <input name="creator"></label>
 					<label>Year <input name="year" type="number" min="0" max="3000"></label>
 				</div>
 				<div class="row">
+					<label class="wide">Other titles <span class="chips" id="book-titles"></span></label>
+				</div>
+				<div class="row">
+					<label>Language <select id="book-title-locale" data-locales aria-label="Language of the other title"></select></label>
+					<label class="wide">Other title <input id="book-title-text" dir="auto" placeholder="A title in another language, or another in the same one: Enter adds it"></label>
+					<button type="button" class="text" id="book-title-add">Add title</button>
+				</div>
+				<div class="row">
+					<label>Read in <select name="locale" data-locales data-blank="Not said" title="The language you read it in: the book is shown in it, its title and its authors' names"></select></label>
 					<label class="wide">Authors <select id="book-authors" multiple data-chips="people" data-field="authors" data-placeholder="Type a person (a book's authors, any number)"><option value=""></option></select></label>
 				</div>
 				<div class="row">
@@ -339,6 +349,14 @@
 					<label>First name <input name="first_name" pattern="\S*" title="One word, without spaces"></label>
 					<label>Middle name <input name="middle_name" title="Any names between the first name and the surname"></label>
 					<label>Surname <input name="surname" pattern="\S*" title="One word, without spaces: hyphenate a surname of two words (Di-Meola)"></label>
+				</div>
+				<div class="row">
+					<label class="wide">Names in other languages <span class="chips" id="person-names"></span></label>
+				</div>
+				<div class="row">
+					<label>Language <select id="person-name-locale" data-locales data-skip="en" aria-label="Language of the name"></select></label>
+					<label class="wide">Name <input id="person-name-text" dir="auto" placeholder="The whole name in that language, e.g. חיים שפירא: Enter adds it"></label>
+					<button type="button" class="text" id="person-name-add">Add name</button>
 				</div>
 				<div class="row">
 					<label class="wide">Professions <select multiple data-chips="person-types" data-field="types" data-placeholder="Type a profession"><option value=""></option></select></label>
