@@ -81,11 +81,9 @@ DEVICE = re.compile(
     r"\b(smartphones?|phones?|computers?|laptops?|tablets?|media players?|mp3 players?|televisions?|tv|devices?|operating system|hardware|console)\b",
     re.IGNORECASE,
 )
-# what an article about a profession says it is ("a person who writes", "an occupation")
-OCCUPATION = re.compile(
-    r"\b(occupations?|professions?|professionals?|jobs?|persons? who|people who|someone who|one who|individuals? who|practitioners?|workers?|artists?|performers?|teachers?|writers?)\b",
-    re.IGNORECASE,
-)
+# the short description of an article about a role a person has: "Person who writes computer software",
+# "Officer in charge of technical operations", "An occupation"
+ROLE = re.compile(r"^(an? )?(person|people|someone|one|individual|professional|practitioner|worker|officer)\b|\b(officer|occupation|profession|job)$", re.IGNORECASE)
 # the words a group named after its leader ends with: "Mads Vinding Trio"
 ENSEMBLE = re.compile(r"\s+(trio|quartet|quintet|sextet|band|orchestra|ensemble|group)$", re.IGNORECASE)
 WIDTH = 800
@@ -259,17 +257,23 @@ def device_picture(device: Device, overrides: dict[str, tuple[str, str]]) -> tup
 
 
 def profession_picture(kind: PersonType, overrides: dict[str, tuple[str, str]]) -> tuple[dict[str, Any], str] | None:
-    """ (article, file) for a profession: --title's article, else the first about an occupation its name, its last word or search finds, with a free photo. """
+    """
+    (article, file) for a profession: --title's article, else the article its
+    name or its last word is ("Author" for "Book Author"), else the first
+    about a role a person has that Wikipedia's search finds, with a free photo.
+    """
     pointed = named(overrides, "profession", kind.name)
     if pointed is not None:
         chosen = picture(pointed, False)
         return (pointed, chosen) if chosen and free(pointed, chosen) else None
-    last = kind.name.split()[-1] if kind.name.split() else kind.name
-    for title in dict.fromkeys([kind.name, kind.name.capitalize(), last.capitalize(), *search(f"{kind.name} occupation")]):
+    words = kind.name.split()
+    candidates = [(title, False) for title in dict.fromkeys([kind.name, words[-1].capitalize()] if words else [kind.name])]
+    candidates += [(title, True) for title in search(kind.name)]
+    for title, searched in candidates:
         found = summary(title)
         if found is None or found.get("type") != "standard":
             continue
-        if not OCCUPATION.search(found.get("description", "") + " " + found.get("extract", "")[:300]):
+        if searched and not ROLE.search(found.get("description", "").strip()):
             continue
         chosen = picture(found, False)
         if chosen and free(found, chosen):
