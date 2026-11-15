@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 
 """
-Give every city a photo and every country its flag, 800 pixels wide, with
-the credit its license asks for (the file's page on Wikimedia Commons, its
-license and its author). The picture is the one Wikidata keeps for the
+Give every city, group and device a photo and every country its flag, 800
+pixels wide, with the credit its license asks for (the file's page on
+Wikimedia Commons, its license and its author). The picture is the one Wikidata keeps for the
 city's or country's English Wikipedia article: a city's image (P18), else
 the article's lead image when it is a photo (not a map drawing); a
 country's flag (P41).
@@ -12,6 +12,7 @@ country's flag (P41).
   scripts/fetch_pictures.py --dry-run  only print what it would take
   scripts/fetch_pictures.py --all      replace the pictures there are too
   scripts/fetch_pictures.py --only groups
+  scripts/fetch_pictures.py --only devices
   scripts/fetch_pictures.py --title "group:The Blues Messengers=he:שליחי הבלוז"
 
 A group's picture is its own article's (Wikidata's image of it, else its
@@ -20,6 +21,12 @@ of its leader (the member a "... Trio" is named after), then of another
 member, credited with whose photo it is. --title points a group or a
 person at an article by name, in any language ("he:" for Hebrew), where
 their English name finds none.
+
+A device's picture ("Samsung S10", "Sansa Clip 2") is that of the first
+article about a device that its name is, or that Wikipedia's search finds
+for it ("Samsung Galaxy S10"); --title "device:Webos TV=en:LG Smart TV"
+points it at another. --file "device:Sansa Clip 2=Sansa clip plus 8gb black.jpg"
+takes a Commons file itself, for a device (or anything) no article shows.
 
 A city's article is looked up as "City, Region" (US cities: "Austin,
 Texas"), then "City, Country", then "City", and taken only when its text
@@ -51,7 +58,7 @@ os.chdir(ROOT)
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from myworld.models import City, Country, Group, Image, make_engine
+from myworld.models import City, Country, Device, Group, Image, make_engine
 
 USER_AGENT = "myworld-pictures/1.0 (+https://github.com/veltzer/gcp-myworld)"
 SUMMARY = "https://{lang}.wikipedia.org/api/rest_v1/page/summary/"
@@ -61,6 +68,11 @@ API = "https://{lang}.wikipedia.org/w/api.php"
 MUSIC = re.compile(
     r"\b(band|musician|jazz|singer|guitarist|drummer|saxophonist|bassist|double-bassist|pianist|trumpeter|composer|rock|ensemble|percussionist|music)\b"
     r"|להקת|זמר|מתופף|נגן|מוזיק",
+    re.IGNORECASE,
+)
+# what an article about a device says it is ("a smartphone", "a desktop computer")
+DEVICE = re.compile(
+    r"\b(smartphones?|phones?|computers?|laptops?|tablets?|media players?|mp3 players?|televisions?|tv|devices?|operating system|hardware|console)\b",
     re.IGNORECASE,
 )
 # the words a group named after its leader ends with: "Mads Vinding Trio"
@@ -211,6 +223,30 @@ def group_picture(group: Group, overrides: dict[str, tuple[str, str]]) -> tuple[
     return None
 
 
+def search(query: str, lang: str = "en", limit: int = 5) -> list[str]:
+    """ The titles Wikipedia's search finds for query, best first. """
+    params = urllib.parse.urlencode({"action": "query", "list": "search", "srsearch": query, "srlimit": limit, "format": "json"})
+    return [hit["title"] for hit in json.loads(get(f"{API.format(lang=lang)}?{params}"))["query"]["search"]]
+
+
+def device_picture(device: Device, overrides: dict[str, tuple[str, str]]) -> tuple[dict[str, Any], str] | None:
+    """ (article, file) for a device: --title's article, else the first about a device its name is or search finds, with a free photo. """
+    pointed = named(overrides, "device", device.name)
+    if pointed is not None:
+        chosen = picture(pointed, False)
+        return (pointed, chosen) if chosen and free(pointed, chosen) else None
+    for title in dict.fromkeys([device.name, *search(device.name)]):
+        found = summary(title)
+        if found is None or found.get("type") != "standard":
+            continue
+        if not DEVICE.search(found.get("description", "") + " " + found.get("extract", "")[:300]):
+            continue
+        chosen = picture(found, False)
+        if chosen and free(found, chosen):
+            return found, chosen
+    return None
+
+
 def city_titles(city: City) -> list[str]:
     country = city.country.name if city.country else ""
     titles = [f"{city.name}, {city.region}"] if city.region else []
@@ -221,10 +257,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[1] if __doc__ else None)
     parser.add_argument("--dry-run", action="store_true", help="only print what it would take")
     parser.add_argument("--all", action="store_true", help="replace the pictures there are too")
-    parser.add_argument("--only", choices=["countries", "cities", "groups"], help="only these")
+    parser.add_argument("--only", choices=["countries", "cities", "groups", "devices"], help="only these")
     parser.add_argument("--title", action="append", default=[], metavar="KIND:NAME=LANG:TITLE",
-                        help='the article for a group or a person, e.g. "group:The Witches=he:המכשפות"')
+                        help='the article for a group, a person or a device, e.g. "group:The Witches=he:המכשפות"')
+    parser.add_argument("--file", action="append", default=[], metavar="KIND:NAME=FILE",
+                        help='the Commons file to take, e.g. "device:Sansa Clip 2=Sansa clip plus 8gb black.jpg"')
     args = parser.parse_args()
+    files: dict[str, str] = {}
+    for item in args.file:
+        who, _, chosen_file = item.partition("=")
+        if not (who and chosen_file):
+            parser.error(f"--file {item!r}: expected KIND:NAME=FILE")
+        files[who] = chosen_file.removeprefix("File:")
     overrides: dict[str, tuple[str, str]] = {}
     for item in args.title:
         who, _, where = item.partition("=")
@@ -236,19 +280,25 @@ def main() -> int:
     print(engine.url.render_as_string(hide_password=True))
     missed = 0
     with Session(engine) as session:
-        rows: list[Country | City | Group] = [
+        rows: list[Country | City | Group | Device] = [
             *(session.scalars(select(Country).order_by(Country.id)) if args.only in (None, "countries") else []),
             *(session.scalars(select(City).order_by(City.id).options(selectinload(City.country))) if args.only in (None, "cities") else []),
             *(session.scalars(select(Group).order_by(Group.id).options(selectinload(Group.members))) if args.only in (None, "groups") else []),
+            *(session.scalars(select(Device).order_by(Device.id)) if args.only in (None, "devices") else []),
         ]
         for row in rows:
             if row.image_id is not None and not args.all:
                 continue
             what = f"{type(row).__name__.lower()} {row.id}, {row.name}"
             whose = ""
-            if isinstance(row, Group):
+            if f"{type(row).__name__.lower()}:{row.name}" in files:
+                chosen = files[f"{type(row).__name__.lower()}:{row.name}"]
+                found = {"title": f"File:{chosen}", "lang": "en"}
+            elif isinstance(row, Group):
                 picked = group_picture(row, overrides)
                 found, chosen, whose = picked if picked else (None, None, "")
+            elif isinstance(row, Device):
+                found, chosen = device_picture(row, overrides) or (None, None)
             else:
                 found = article(city_titles(row), row.country.name if row.country else "", row.region) if isinstance(row, City) else article([row.name], "")
                 chosen = picture(found, isinstance(row, Country)) if found else None

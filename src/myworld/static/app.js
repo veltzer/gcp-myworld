@@ -1792,12 +1792,14 @@ const TYPE_COUNTS = {
 // A row of an enumeration (types, relation types, devices), with how many rows are of it;
 // a person relation type also with how it reads the other way ("Mother of" / "Child of")
 function typeCard(item) {
-	const { card, list } = cardShell(item, item.description);
+	const { card, body, list } = cardShell(item, item.description);
 	if ("inverse" in item) {
 		detail(list, "Other way", item.inverse || item.name);
 	}
 	// always shown, 0 too
 	detail(list, TYPE_COUNTS[state.view], String(item.count));
+	// a device has a photo of itself
+	photoCredit(body, item);
 	return card;
 }
 
@@ -3221,6 +3223,7 @@ const WORLD_BODIES = {
 	devices: async (form) => ({
 		name: form.elements.name.value,
 		description: form.elements.description.value,
+		...(await pictureFields(form)),
 	}),
 };
 

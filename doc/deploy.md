@@ -399,6 +399,10 @@ a person is written with `type_ids`, a list.
   also has `inverse`); `POST`,
   `PUT /api/<organization-types|person-types|relation-types|person-relation-types>/<id>` and `DELETE` (refused
   while rows are of it) edit the enumeration.
+- `GET /api/devices` is kept the same way, and a device also has a photo
+  (`image` with its credit, as a city's;
+  `scripts/fetch_pictures.py --only devices` takes the device's own from
+  Wikipedia, never a fair-use file).
 - A person's `relations` are their own relations to other people and
   `related` the other people's relations to them, each read from the
   person's side: `type_id`, `type` ("Mother of", or the inverse "Child

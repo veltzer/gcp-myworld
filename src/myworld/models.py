@@ -663,11 +663,12 @@ class Museum(_Dated, _Addressed, _Located, Base):
     people: Mapped[list[Person]] = relationship(secondary=museum_companions, back_populates="museums")
 
 
-class Device(Base):
+class Device(_Pictured, Base):
     """
     What something was played on: "Samsung S10", "Sansa Clip 2", "Desktop".
     An enumeration the user keeps themselves (the Devices page); an audio
-    course or a YouTube video points to one.
+    course or a YouTube video points to one. Its photo is the device's own
+    (scripts/fetch_pictures.py --only devices takes Wikipedia's).
     """
     __tablename__ = "devices"
     __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_device_name"),)

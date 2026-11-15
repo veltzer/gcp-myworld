@@ -876,6 +876,15 @@ def _enumeration_checks(dataset: str, model: _Enumeration, used: Callable[[Sessi
     check(f"{prefix}-duplicates", f"No {one} is listed twice", noun, dataset)(check_twice)
 
 
+@check("device-photos", "Every device has a photo", "devices", "devices")
+def check_device_photos(session: Session) -> Result:
+    """ Every device, of every account, has a photo (scripts/fetch_pictures.py --only devices takes Wikipedia's). """
+    devices = list(session.scalars(select(Device).order_by(Device.owner_id, Device.name, Device.id)))
+    return Result(checked=len(devices), problems=[
+        Problem(f"{d.name} (device {d.id}, account {d.owner_id})", "has no photo", f"devices/{d.id}", d.owner_id) for d in devices if d.image_id is None
+    ])
+
+
 def _ids(session: Session, *columns: Any) -> set[int]:
     """ The non-null values of the given id columns, together. """
     found: set[int] = set()

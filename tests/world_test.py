@@ -545,6 +545,15 @@ def test_devices(imported: webtest.TestApp) -> None:
     imported.delete(f"/api/devices/{s7['id']}", status=204)
     sansa = imported.post_json("/api/devices", {"name": "Sansa Clip 2", "description": "MP3 player"}, status=201).json
     imported.post_json("/api/devices", {"name": "Sansa Clip 2"}, status=409)
+    # a device has a photo, with its credit; an edit that uploads none keeps it
+    assert sansa["image"] is None
+    upload = imported.post("/api/images", upload_files=[("file", "clip.jpg", JPEG)]).json
+    photo = {"image_id": upload["id"], "image_source": "https://commons.wikimedia.org/wiki/File:Clip.jpg", "image_license": "CC BY-SA 3.0", "image_author": "Hinrik"}
+    pictured = imported.put_json(f"/api/devices/{sansa['id']}", dict(sansa, **photo)).json
+    assert pictured["image"] and pictured["image_license"] == "CC BY-SA 3.0" and pictured["image_author"] == "Hinrik"
+    kept = imported.put_json(f"/api/devices/{sansa['id']}", dict(pictured, image_id=None, description="An MP3 player")).json
+    assert kept["image"] == pictured["image"] and kept["description"] == "An MP3 player"
+    assert imported.get(pictured["image"]).content_type == "image/jpeg"
     edited = imported.put_json(f"/api/audio-courses/{music['id']}", dict(body, device_id=sansa["id"])).json
     assert edited["device"]["name"] == "Sansa Clip 2"
     # no device, and a device of no one's

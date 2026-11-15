@@ -608,6 +608,7 @@ def test_enumerations(engine: Engine) -> None:
         assert found("person-type-descriptions") == [("Unused", "has no description")]
         assert [name for name, _ in found("person-type-duplicates")] == ["Friend", "friend "]
         assert found("device-used") == [("Phone", "is used by nothing")]
+        assert found("device-photos") == [("Phone", "has no photo")]
         assert found("organization-type-used") == []
         [unused] = checks.CHECKS["person-type-descriptions"].run(session).problems
         assert unused.link.startswith("person-types/")
