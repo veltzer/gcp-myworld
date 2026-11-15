@@ -1798,7 +1798,7 @@ function typeCard(item) {
 	}
 	// always shown, 0 too
 	detail(list, TYPE_COUNTS[state.view], String(item.count));
-	// a device has a photo of itself
+	// a device has a photo of itself, a profession one of someone at that work
 	photoCredit(body, item);
 	return card;
 }
@@ -3206,6 +3206,7 @@ const WORLD_BODIES = {
 	"person-types": async (form) => ({
 		name: form.elements.name.value,
 		description: form.elements.description.value,
+		...(await pictureFields(form)),
 	}),
 	"relation-types": async (form) => ({
 		name: form.elements.name.value,

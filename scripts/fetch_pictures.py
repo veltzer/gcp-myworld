@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-Give every city, group and device a photo and every country its flag, 800
+Give every city, group, device and profession a photo and every country its flag, 800
 pixels wide, with the credit its license asks for (the file's page on
 Wikimedia Commons, its license and its author). The picture is the one Wikidata keeps for the
 city's or country's English Wikipedia article: a city's image (P18), else
@@ -13,6 +13,7 @@ country's flag (P41).
   scripts/fetch_pictures.py --all      replace the pictures there are too
   scripts/fetch_pictures.py --only groups
   scripts/fetch_pictures.py --only devices
+  scripts/fetch_pictures.py --only professions
   scripts/fetch_pictures.py --title "group:The Blues Messengers=he:שליחי הבלוז"
 
 A group's picture is its own article's (Wikidata's image of it, else its
@@ -27,6 +28,11 @@ article about a device that its name is, or that Wikipedia's search finds
 for it ("Samsung Galaxy S10"); --title "device:Webos TV=en:LG Smart TV"
 points it at another. --file "device:Sansa Clip 2=Sansa clip plus 8gb black.jpg"
 takes a Commons file itself, for a device (or anything) no article shows.
+
+A profession's picture ("Performer", "Book Author") is that of the article
+about the occupation its name is, else its last word is ("Author"), else
+Wikipedia's search finds; --title "profession:Lecturer=en:Lecture" and
+--file "profession:Lecturer=..." point it elsewhere.
 
 A city's article is looked up as "City, Region" (US cities: "Austin,
 Texas"), then "City, Country", then "City", and taken only when its text
@@ -58,7 +64,7 @@ os.chdir(ROOT)
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from myworld.models import City, Country, Device, Group, Image, make_engine
+from myworld.models import City, Country, Device, Group, Image, PersonType, make_engine
 
 USER_AGENT = "myworld-pictures/1.0 (+https://github.com/veltzer/gcp-myworld)"
 SUMMARY = "https://{lang}.wikipedia.org/api/rest_v1/page/summary/"
@@ -73,6 +79,11 @@ MUSIC = re.compile(
 # what an article about a device says it is ("a smartphone", "a desktop computer")
 DEVICE = re.compile(
     r"\b(smartphones?|phones?|computers?|laptops?|tablets?|media players?|mp3 players?|televisions?|tv|devices?|operating system|hardware|console)\b",
+    re.IGNORECASE,
+)
+# what an article about a profession says it is ("a person who writes", "an occupation")
+OCCUPATION = re.compile(
+    r"\b(occupations?|professions?|professionals?|jobs?|persons? who|people who|someone who|one who|individuals? who|practitioners?|workers?|artists?|performers?|teachers?|writers?)\b",
     re.IGNORECASE,
 )
 # the words a group named after its leader ends with: "Mads Vinding Trio"
@@ -247,6 +258,30 @@ def device_picture(device: Device, overrides: dict[str, tuple[str, str]]) -> tup
     return None
 
 
+def profession_picture(kind: PersonType, overrides: dict[str, tuple[str, str]]) -> tuple[dict[str, Any], str] | None:
+    """ (article, file) for a profession: --title's article, else the first about an occupation its name, its last word or search finds, with a free photo. """
+    pointed = named(overrides, "profession", kind.name)
+    if pointed is not None:
+        chosen = picture(pointed, False)
+        return (pointed, chosen) if chosen and free(pointed, chosen) else None
+    last = kind.name.split()[-1] if kind.name.split() else kind.name
+    for title in dict.fromkeys([kind.name, kind.name.capitalize(), last.capitalize(), *search(f"{kind.name} occupation")]):
+        found = summary(title)
+        if found is None or found.get("type") != "standard":
+            continue
+        if not OCCUPATION.search(found.get("description", "") + " " + found.get("extract", "")[:300]):
+            continue
+        chosen = picture(found, False)
+        if chosen and free(found, chosen):
+            return found, chosen
+    return None
+
+
+def kind_of(row: Country | City | Group | Device | PersonType) -> str:
+    """ What --title and --file call a row's kind: "city", "device", "profession". """
+    return "profession" if isinstance(row, PersonType) else type(row).__name__.lower()
+
+
 def city_titles(city: City) -> list[str]:
     country = city.country.name if city.country else ""
     titles = [f"{city.name}, {city.region}"] if city.region else []
@@ -257,9 +292,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[1] if __doc__ else None)
     parser.add_argument("--dry-run", action="store_true", help="only print what it would take")
     parser.add_argument("--all", action="store_true", help="replace the pictures there are too")
-    parser.add_argument("--only", choices=["countries", "cities", "groups", "devices"], help="only these")
+    parser.add_argument("--only", choices=["countries", "cities", "groups", "devices", "professions"], help="only these")
     parser.add_argument("--title", action="append", default=[], metavar="KIND:NAME=LANG:TITLE",
-                        help='the article for a group, a person or a device, e.g. "group:The Witches=he:המכשפות"')
+                        help='the article for a group, a person, a device or a profession, e.g. "group:The Witches=he:המכשפות"')
     parser.add_argument("--file", action="append", default=[], metavar="KIND:NAME=FILE",
                         help='the Commons file to take, e.g. "device:Sansa Clip 2=Sansa clip plus 8gb black.jpg"')
     args = parser.parse_args()
@@ -280,25 +315,28 @@ def main() -> int:
     print(engine.url.render_as_string(hide_password=True))
     missed = 0
     with Session(engine) as session:
-        rows: list[Country | City | Group | Device] = [
+        rows: list[Country | City | Group | Device | PersonType] = [
             *(session.scalars(select(Country).order_by(Country.id)) if args.only in (None, "countries") else []),
             *(session.scalars(select(City).order_by(City.id).options(selectinload(City.country))) if args.only in (None, "cities") else []),
             *(session.scalars(select(Group).order_by(Group.id).options(selectinload(Group.members))) if args.only in (None, "groups") else []),
             *(session.scalars(select(Device).order_by(Device.id)) if args.only in (None, "devices") else []),
+            *(session.scalars(select(PersonType).order_by(PersonType.id)) if args.only in (None, "professions") else []),
         ]
         for row in rows:
             if row.image_id is not None and not args.all:
                 continue
-            what = f"{type(row).__name__.lower()} {row.id}, {row.name}"
+            what = f"{kind_of(row)} {row.id}, {row.name}"
             whose = ""
-            if f"{type(row).__name__.lower()}:{row.name}" in files:
-                chosen = files[f"{type(row).__name__.lower()}:{row.name}"]
+            if f"{kind_of(row)}:{row.name}" in files:
+                chosen = files[f"{kind_of(row)}:{row.name}"]
                 found = {"title": f"File:{chosen}", "lang": "en"}
             elif isinstance(row, Group):
                 picked = group_picture(row, overrides)
                 found, chosen, whose = picked if picked else (None, None, "")
             elif isinstance(row, Device):
                 found, chosen = device_picture(row, overrides) or (None, None)
+            elif isinstance(row, PersonType):
+                found, chosen = profession_picture(row, overrides) or (None, None)
             else:
                 found = article(city_titles(row), row.country.name if row.country else "", row.region) if isinstance(row, City) else article([row.name], "")
                 chosen = picture(found, isinstance(row, Country)) if found else None
@@ -319,7 +357,7 @@ def main() -> int:
                 print(f"MISS  {what}: {info['thumb']} is not a JPEG or PNG")
                 continue
             sha256 = hashlib.sha256(data).hexdigest()
-            filename = f"{type(row).__name__.lower()}-{row.id}-{sha256[:16]}.{EXTENSIONS[content_type]}"
+            filename = f"{kind_of(row)}-{row.id}-{sha256[:16]}.{EXTENSIONS[content_type]}"
             image = session.scalars(select(Image).where(Image.owner_id == row.owner_id, Image.filename == filename)).first()
             if image is None:
                 image = Image(owner_id=row.owner_id, filename=filename, content_type=content_type, sha256=sha256, data=data)

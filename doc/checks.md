@@ -180,6 +180,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
   description, so its tooltip and page say what it means.
 - `person-type-duplicates`: no account has two professions of the same
   name (ignoring case and spaces at the ends).
+- `person-type-photos`: every profession, of every account, has a photo
+  (`scripts/fetch_pictures.py --only professions` takes Wikipedia's).
 
 ### Org relation types (`relation-types`)
 
@@ -207,6 +209,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
   description, so its tooltip and page say what it means.
 - `device-duplicates`: no account has two devices of the same name
   (ignoring case and spaces at the ends).
+- `device-photos`: every device, of every account, has a photo
+  (`scripts/fetch_pictures.py --only devices` takes Wikipedia's).
 
 ## Adding one
 

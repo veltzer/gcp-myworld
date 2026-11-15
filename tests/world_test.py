@@ -824,6 +824,14 @@ def test_professions_and_relations(imported: webtest.TestApp) -> None:
     kinds = {k["name"]: k["id"] for k in imported.get("/api/person-relation-types").json}
     organizations = {o["name"]: o["id"] for o in imported.get("/api/organizations").json}
     programmer = imported.post_json("/api/person-types", {"name": "Programmer"}, status=201).json
+    # a profession has a photo, with its credit; an edit that uploads none keeps it
+    assert programmer["image"] is None
+    upload = imported.post("/api/images", upload_files=[("file", "coder.jpg", JPEG)]).json
+    photo = {"image_id": upload["id"], "image_source": "https://commons.wikimedia.org/wiki/File:Coder.jpg", "image_license": "CC BY 2.0", "image_author": "Someone"}
+    pictured = imported.put_json(f"/api/person-types/{programmer['id']}", dict(programmer, **photo)).json
+    assert pictured["image"] and pictured["image_license"] == "CC BY 2.0"
+    kept = imported.put_json(f"/api/person-types/{programmer['id']}", dict(pictured, image_id=None, description="Writes code")).json
+    assert kept["image"] == pictured["image"] and kept["description"] == "Writes code"
     alice = people["Alice Friend"]
     edited = imported.put_json(f"/api/people/{alice['id']}", {
         "first_name": "Alice", "surname": "Friend",

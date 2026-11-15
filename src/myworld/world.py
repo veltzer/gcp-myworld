@@ -127,7 +127,7 @@ def city_ref(city: City | None) -> dict[str, Any] | None:
     return None if city is None else {"id": city.id, "name": city.name, "region": city.region, "country": country_ref(city.country)}
 
 
-def _picture_json(row: City | Country | Group | Device) -> dict[str, Any]:
+def _picture_json(row: City | Country | Group | Device | PersonType) -> dict[str, Any]:
     return {"image": image_url(row.image_id), "image_source": row.image_source, "image_license": row.image_license, "image_author": row.image_author}
 
 
@@ -568,6 +568,7 @@ def drop_unused_images() -> None:
         select(Country.image_id).where(Country.image_id.is_not(None)),
         select(Group.image_id).where(Group.image_id.is_not(None)),
         select(Device.image_id).where(Device.image_id.is_not(None)),
+        select(PersonType.image_id).where(PersonType.image_id.is_not(None)),
     )
     for image in db.execute(select(Image).where(Image.owner_id == flask.g.user.id, Image.id.not_in(used))).scalars():
         db.delete(image)
@@ -640,7 +641,7 @@ def _apply_country(country: Country, body: dict[str, Any]) -> None:
     _apply_picture(country, body)
 
 
-def _apply_picture(row: City | Country | Group | Device, body: dict[str, Any]) -> None:
+def _apply_picture(row: City | Country | Group | Device | PersonType, body: dict[str, Any]) -> None:
     # a photo is only ever replaced by a new upload, never blanked by omission
     image_id = owned_image(body)
     if image_id is not None:
@@ -1285,7 +1286,7 @@ def type_json(kind: TypeModel, count: int) -> dict[str, Any]:
     out = {"id": kind.id, "name": kind.name, "description": kind.description, "count": count}
     if isinstance(kind, PersonRelationType):
         out["inverse"] = kind.inverse
-    if isinstance(kind, Device):
+    if isinstance(kind, (Device, PersonType)):
         out.update(_picture_json(kind))
     return out
 
@@ -1316,7 +1317,7 @@ def _apply_type(model: type[TypeModel], kind: TypeModel, body: dict[str, Any]) -
     kind.description = text(body, "description")
     if isinstance(kind, PersonRelationType):
         kind.inverse = text(body, "inverse")
-    if isinstance(kind, Device):
+    if isinstance(kind, (Device, PersonType)):
         _apply_picture(kind, body)
 
 

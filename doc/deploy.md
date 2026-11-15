@@ -403,6 +403,8 @@ a person is written with `type_ids`, a list.
   (`image` with its credit, as a city's;
   `scripts/fetch_pictures.py --only devices` takes the device's own from
   Wikipedia, never a fair-use file).
+- `GET /api/person-types` (professions) has the same photo fields: one of
+  someone at that work (`scripts/fetch_pictures.py --only professions`).
 - A person's `relations` are their own relations to other people and
   `related` the other people's relations to them, each read from the
   person's side: `type_id`, `type` ("Mother of", or the inverse "Child

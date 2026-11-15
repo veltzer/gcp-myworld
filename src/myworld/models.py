@@ -256,8 +256,20 @@ class Image(Base):
     data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
 
 
-class PersonType(Base):
-    """ What a person is to the user: family, co-worker, ... (the sidebar's Types, Person). """
+class _Pictured:
+    """ A photo (or a flag) and the credit its license asks for. """
+    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
+    image_source: Mapped[str] = mapped_column(String(1000), nullable=False, default="", server_default="")
+    image_license: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="")
+    image_author: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
+
+
+class PersonType(_Pictured, Base):
+    """
+    A profession: "Programmer", "Book Author", "Performer" (the sidebar's
+    Types, Professions). Its photo shows someone at that work
+    (scripts/fetch_pictures.py --only professions takes Wikipedia's).
+    """
     __tablename__ = "person_types"
     __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_person_type_name"),)
 
@@ -464,14 +476,6 @@ class _Addressed:
         """ The address in one line: "Ibn Gabirol 30, Sarona, Tel Aviv 6473424, Israel". """
         city = getattr(self, "city", None)
         return compose(self.street, self.neighbourhood, city.name if city else "", self.postcode, city.country.name if city and city.country else "")
-
-
-class _Pictured:
-    """ A photo (or a flag) and the credit its license asks for. """
-    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
-    image_source: Mapped[str] = mapped_column(String(1000), nullable=False, default="", server_default="")
-    image_license: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="")
-    image_author: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
 
 
 class Country(_Pictured, _Located, Base):

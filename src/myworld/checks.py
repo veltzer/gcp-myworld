@@ -885,6 +885,15 @@ def check_device_photos(session: Session) -> Result:
     ])
 
 
+@check("person-type-photos", "Every profession has a photo", "professions", "person-types")
+def check_profession_photos(session: Session) -> Result:
+    """ Every profession, of every account, has a photo (scripts/fetch_pictures.py --only professions takes Wikipedia's). """
+    kinds = list(session.scalars(select(PersonType).order_by(PersonType.owner_id, PersonType.name, PersonType.id)))
+    return Result(checked=len(kinds), problems=[
+        Problem(f"{k.name} (profession {k.id}, account {k.owner_id})", "has no photo", f"person-types/{k.id}", k.owner_id) for k in kinds if k.image_id is None
+    ])
+
+
 def _ids(session: Session, *columns: Any) -> set[int]:
     """ The non-null values of the given id columns, together. """
     found: set[int] = set()
