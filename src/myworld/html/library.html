@@ -25,6 +25,8 @@
 				<!-- the account menu: how you signed in and as whom -->
 				<div class="account">
 					<button id="account-button" class="account-button" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="account-menu" title="Your account">
+						<!-- how this session signed in: Google, GitHub or email -->
+						<img id="who-method" class="login-icon" src="/static/email.svg" alt="">
 						<img id="avatar" class="avatar" src="/static/favicon.svg" alt="">
 						<span id="who"></span>
 					</button>
@@ -35,7 +37,14 @@
 						<p id="account-note" class="account-note"></p>
 					</div>
 				</div>
-				<button id="logout" type="button">Sign out</button>
+				<button id="settings-button" type="button" class="with-icon" aria-haspopup="dialog" aria-controls="settings-dialog" title="Settings">
+					<img class="login-icon" src="/static/settings.svg" alt="">
+					<span class="button-label">Settings</span>
+				</button>
+				<button id="logout" type="button" class="with-icon" title="Sign out">
+					<img class="login-icon" src="/static/signout.svg" alt="">
+					<span class="button-label">Sign out</span>
+				</button>
 			</div>
 		</header>
 		<div id="layout" class="layout">
@@ -625,6 +634,22 @@
 					<button type="button" class="text danger delete" hidden>Delete</button>
 					<button type="button" class="text cancel">Cancel</button>
 					<button type="submit">Add</button>
+				</div>
+			</form>
+		</dialog>
+		<!-- the Settings button opens this; Save sends the name, Cancel and Escape leave it as it was -->
+		<dialog id="settings-dialog" class="dialog settings" aria-labelledby="settings-title">
+			<form id="settings-form">
+				<h2 id="settings-title">Settings</h2>
+				<label for="settings-name">Your name</label>
+				<input id="settings-name" name="name" type="text" maxlength="60" required autocomplete="name">
+				<p class="settings-hint">
+					Shown in the top right corner, whichever way you sign in. Up to 60 characters.
+				</p>
+				<p id="settings-error" class="warning" hidden></p>
+				<div class="dialog-actions">
+					<button type="button" class="text" id="settings-cancel">Cancel</button>
+					<button type="submit">Save</button>
 				</div>
 			</form>
 		</dialog>

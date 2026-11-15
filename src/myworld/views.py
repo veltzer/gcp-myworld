@@ -40,7 +40,13 @@ HTML_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "html")
 def index() -> werkzeug.Response:
     if auth.current_user() is not None:
         return flask.redirect(flask.url_for("views.library"))
-    return flask.send_from_directory(HTML_DIR, "index.html")
+    # a shared link's card needs absolute URLs: this site as the visitor reached it
+    # (behind Cloud Run's proxy the scheme is in X-Forwarded-Proto)
+    scheme = flask.request.headers.get("X-Forwarded-Proto", flask.request.scheme).split(",")[0].strip()
+    origin = f"{scheme}://{flask.request.host}"
+    with open(os.path.join(HTML_DIR, "index.html"), encoding="utf-8") as f:
+        page = f.read().replace("__ORIGIN__", origin)
+    return flask.Response(page, mimetype="text/html")
 
 
 @bp.route("/library", methods=["GET"])
@@ -204,6 +210,24 @@ def _account_json(login: Login) -> dict[str, Any]:
     }
 
 
+# the longest name a person may choose (also the Settings dialog's maxlength)
+NAME_MAX_LENGTH = 60
+
+
+@bp.route("/api/account/name", methods=["PUT"])
+@auth.login_required
+def api_account_name() -> flask.Response:
+    """ The signed-in person chooses what they are called, whichever way they sign in. """
+    name = " ".join(text(json_body(), "name").split())
+    if not name or len(name) > NAME_MAX_LENGTH or not name.isprintable():
+        raise ApiError(400, f"A name is 1 to {NAME_MAX_LENGTH} printable characters.")
+    login = auth.current_login()
+    assert login is not None
+    login.user.name = name
+    flask.g.db.commit()
+    return flask.jsonify(_account_json(login))
+
+
 @bp.route("/api/config", methods=["GET"])
 def api_config() -> flask.Response:
     """ Everything the browser side needs to render: who is signed in and the vocabularies. """
@@ -220,6 +244,7 @@ def api_config() -> flask.Response:
         "locales": LOCALES,
         "rating_min": RATING_MIN,
         "rating_max": RATING_MAX,
+        "name_max_length": NAME_MAX_LENGTH,
         "user": None if login is None else _account_json(login),
     })
 

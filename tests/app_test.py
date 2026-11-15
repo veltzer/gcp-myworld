@@ -402,3 +402,29 @@ def test_unproven_emails_join_nothing(app: webtest.TestApp, monkeypatch: pytest.
     app.post("/auth/logout")
     sign_in(app)
     assert app.get("/api/config").json["user"]["id"] == alice
+
+
+def test_choose_a_name(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    sign_in(app)
+    user = app.put_json("/api/account/name", {"name": "  The   Reader "}).json
+    assert user["name"] == "The Reader"
+    assert app.get("/api/config").json["user"]["name"] == "The Reader"
+    # nothing, too long, or unprintable is refused and changes nothing
+    for bad in ("   ", "x" * 61, "tab\x07bell"):
+        assert app.put_json("/api/account/name", {"name": bad}, status=400).json["error"]
+    assert app.get("/api/config").json["user"]["name"] == "The Reader"
+    # signing in again, any way, keeps the chosen name
+    app.post("/auth/logout")
+    github_as(monkeypatch, app, {"sub": "github:9", "email": "alice@example.com", "name": "alice-gh", "picture": "", "verified": True})
+    assert app.get("/api/config").json["user"]["name"] == "The Reader"
+
+
+def test_choosing_a_name_needs_a_session(app: webtest.TestApp) -> None:
+    app.put_json("/api/account/name", {"name": "Nobody"}, status=401)
+
+
+def test_shared_link_card(app: webtest.TestApp) -> None:
+    page = app.get("/", headers={"X-Forwarded-Proto": "https"}).text
+    assert '<meta property="og:image" content="https://localhost/static/social-card.png">' in page
+    assert "__ORIGIN__" not in page
+    assert app.get("/static/social-card.png").content_type == "image/png"

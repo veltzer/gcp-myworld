@@ -981,6 +981,50 @@ function setupAccountMenu(user) {
 	});
 }
 
+// The top bar's name, and the icon of how this session signed in beside it
+function showWho(user) {
+	$("who").textContent = user.name || user.email;
+	const method = methodOf(user.method);
+	const icon = $("who-method");
+	icon.src = `/static/${method.icon}.svg`;
+	icon.alt = method.name;
+	icon.title = `Signed in with ${method.name}`;
+}
+
+// The Settings button opens the settings dialog with the name ready to edit;
+// Cancel, Escape and the backdrop close it unsaved, Save sends the name
+function setupSettings(user) {
+	const dialog = $("settings-dialog");
+	const name = $("settings-name");
+	const error = $("settings-error");
+	name.maxLength = state.config.name_max_length;
+	let saved = user.name;
+	$("settings-button").onclick = () => {
+		name.value = saved;
+		error.hidden = true;
+		dialog.showModal();
+		name.select();
+	};
+	$("settings-cancel").onclick = () => dialog.close();
+	dialog.onclick = (event) => {
+		if (event.target === dialog) {
+			dialog.close();
+		}
+	};
+	$("settings-form").onsubmit = async (event) => {
+		event.preventDefault();
+		try {
+			const account = await api("/api/account/name", { method: "PUT", body: { name: name.value } });
+			saved = account.name;
+			showWho(account);
+			dialog.close();
+		} catch (e) {
+			error.textContent = e.message;
+			error.hidden = false;
+		}
+	};
+}
+
 async function libraryPage() {
 	state.config = await api("/api/config");
 	if (!state.config.user) {
@@ -988,11 +1032,12 @@ async function libraryPage() {
 		return;
 	}
 	const { user, rating_min, rating_max } = state.config;
-	$("who").textContent = user.name || user.email;
+	showWho(user);
 	if (user.picture) {
 		$("avatar").src = user.picture;
 	}
 	setupAccountMenu(user);
+	setupSettings(user);
 	setupSidebar();
 	$("logout").onclick = async () => {
 		await fetch("/auth/logout", { method: "POST" });

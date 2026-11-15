@@ -191,6 +191,57 @@ body {
 		min-width: 0;
 		overflow-x: auto;
 	}
+
+	/* the top bar's Settings and Sign out keep only their icons */
+	.button-label {
+		display: none;
+	}
+}
+
+button.with-icon {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+}
+
+/* the top bar's Settings and Sign out: quiet, like the account button beside them */
+.topbar button.with-icon {
+	padding: 0.3rem 0.6rem;
+	color: var(--ink);
+	background: transparent;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+}
+
+.topbar button.with-icon:hover {
+	background: #f3f4f6;
+}
+
+button.with-icon .login-icon,
+.account-button .login-icon {
+	margin-top: 0;
+}
+
+/* the settings dialog: one field, its hint under it */
+.settings {
+	width: min(28rem, calc(100vw - 2rem));
+}
+
+.settings label {
+	display: block;
+	margin-bottom: 0.3rem;
+	font-weight: 600;
+}
+
+.settings input {
+	width: 100%;
+	font: inherit;
+}
+
+.settings-hint {
+	margin: 0.5rem 0 0;
+	font-size: 0.85rem;
+	color: var(--muted);
 }
 
 .content {
@@ -2259,7 +2310,13 @@ body.sidebar-folded .sidebar {
 }
 
 @media (max-width: 480px) {
+	/* the sign-in icon and the photo say who it is; the name is in the account panel's Settings */
 	#who {
-		max-width: 5rem;
+		display: none;
+	}
+
+	.topbar,
+	.whoami {
+		gap: 0.4rem;
 	}
 }
