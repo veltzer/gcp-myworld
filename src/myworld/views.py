@@ -126,6 +126,8 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any]) -> None:
     # each is a Book Author, when the user keeps that profession
     if "authors" in body:
         entry.authors = world.owned_list(body, "authors", Person)
+        # the shared work's author text, only filled in (another account may have it too)
+        entry.work.creator = entry.work.creator or ", ".join(p.name for p in entry.authors)
         book_author = flask.g.db.scalars(select(PersonType).where(PersonType.owner_id == flask.g.user.id, PersonType.name == "Book Author")).first()
         for author in entry.authors if book_author else []:
             if book_author not in author.types:
@@ -212,7 +214,8 @@ def api_library_add() -> tuple[flask.Response, int]:
     body = json_body()
     kind = _kind(text(body, "kind", required=True))
     title = text(body, "title", required=True)
-    creator = text(body, "creator")
+    # a book's author text is its authors' names, as the import writes it ("Kernighan, Ritchie"), when none is sent
+    creator = text(body, "creator") or ", ".join(p.name for p in world.owned_list(body, "authors", Person))
     year = opt_int(body, "year", 0, 3000)
     db = flask.g.db
     work = db.execute(

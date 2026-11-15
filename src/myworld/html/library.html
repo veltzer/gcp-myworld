@@ -167,7 +167,8 @@
 				<div class="row">
 					<label class="wide">Title <input name="title" required dir="auto"></label>
 					<label>Title language <select name="title_locale" data-locales title="The language the title is in; set when the book is added"></select></label>
-					<label class="wide"><span id="creator-label">Creator</span> <input name="creator"></label>
+					<!-- a book's author text is made from its authors (below); a film's director comes from the film search -->
+					<input type="hidden" name="creator">
 					<label>Year <input name="year" type="number" min="0" max="3000"></label>
 				</div>
 				<div class="row">

@@ -815,6 +815,12 @@ def test_names_in_languages(imported: webtest.TestApp) -> None:
                                                        "authors": [bob["id"]]}).json
     assert (book["title"], book["main_title"], [a["name"] for a in book["authors"]]) == ("לחשוב על חשיבה", "Thinking About Thinking", ["חיים שפירה"])
     assert [t["title"] for t in book["titles"]] == ["לחשוב על חשיבה", "חשיבה"]
+    # with no author text sent, the book's is its authors' English names
+    assert book["creator"] == "Haim Shapira"
+    plain = imported.post_json("/api/library-entries", {"kind": "book", "title": "Untitled thoughts"}).json
+    assert plain["creator"] == ""
+    filled = imported.put_json(f"/api/library-entries/{plain['work_id']}", {"authors": [bob["id"]]}).json
+    assert filled["creator"] == "Haim Shapira"
     # titles are only added (the work is shared), never twice
     again = imported.put_json(f"/api/library-entries/{book['work_id']}", {"locale": "en", "titles": [{"locale": "he", "title": "חשיבה"}, {"locale": "fr", "title": "Penser"}]}).json
     assert (again["title"], [a["name"] for a in again["authors"]]) == ("Thinking About Thinking", ["Haim Shapira"])

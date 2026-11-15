@@ -240,7 +240,8 @@ function catalogLinks(entry) {
 
 // ─── film search ────────────────────────────────────────────────────────────
 
-const MOVIE_FIELDS = ["title", "creator", "year"];
+// the creator is a hidden field: the film search fills it with the director
+const MOVIE_FIELDS = ["title", "year"];
 
 // After a pick, the title, director, year and ids are what the catalog says; the
 // user reads them rather than edits them, until they ask to enter the film by hand.
@@ -876,9 +877,8 @@ async function selectKind(kind, hash = kind) {
 	$("world-search").value = "";
 	await fillTypeFilter(kind);
 	updateTools();
-	const { plural, creator } = state.config.kinds[kind];
+	const { plural } = state.config.kinds[kind];
 	document.title = `${plural} - My World`;
-	$("creator-label").textContent = creator;
 	renderKinds();
 	showError("");
 	await loadEntries();
