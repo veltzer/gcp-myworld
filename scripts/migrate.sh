@@ -935,5 +935,5 @@ else
 	# one transaction: a failing statement stops psql and leaves the database as it was
 	printf '%s\n' "BEGIN;" "${statements[@]}" "COMMIT;" | gcloud_sql_psql.sh -q -v ON_ERROR_STOP=1 > /dev/null
 	echo "${gcp_sql_instance}/${gcp_db_name}: migrated ${changed[*]}"
-	echo "deploy with gcloud_run_deploy.sh"
+	echo "deploy with gcloud_deploy.sh"
 fi

@@ -7,7 +7,7 @@ gcloud configuration, region and resource names are in `.gcp.conf`.
 ## Regular deploy
 
 ```bash
-gcloud_run_deploy.sh
+gcloud_deploy.sh
 ```
 
 The script (from `utils-bash`, like every `gcloud_*.sh` below) wraps
@@ -43,7 +43,7 @@ converges the service to what that file says.
       unregistered URI (`redirect_uri_mismatch`).
    1. Paste the client ID into `gcp_oauth_client_id` in `.gcp.conf`. Client
       IDs are public, so it is fine to commit it.
-1. Deploy: `gcloud_run_deploy.sh`. The app refuses to start on Cloud Run
+1. Deploy: `gcloud_deploy.sh`. The app refuses to start on Cloud Run
    without `GOOGLE_CLIENT_ID`, so do the OAuth step first.
 
 ## Custom domain

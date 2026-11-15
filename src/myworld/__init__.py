@@ -30,7 +30,7 @@ BUILD_INFO = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.pat
 
 
 def load_build_info() -> dict[str, str]:
-    """ Load the deploy stamp written by gcloud_run_deploy.sh; absent in dev. """
+    """ Load the deploy stamp written by gcloud_deploy.sh; absent in dev. """
     try:
         with open(BUILD_INFO, encoding="UTF8") as fp:
             return json.load(fp)
