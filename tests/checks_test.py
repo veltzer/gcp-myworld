@@ -87,7 +87,7 @@ def test_every_check_describes_itself() -> None:
         assert chosen.dataset in checks.DATASETS
     # every dataset has checks to run from its page
     assert {c.dataset for c in checks.CHECKS.values()} == set(checks.DATASETS)
-    assert {name for name, c in checks.CHECKS.items() if c.dataset == "book"} == {"book-covers", "book-links", "book-authors", "book-languages", "book-ratings", "book-duplicates"}
+    assert {name for name, c in checks.CHECKS.items() if c.dataset == "book"} == {"book-covers", "book-links", "book-authors", "book-years", "book-languages", "book-ratings", "book-duplicates"}
 
 
 def test_a_name_is_registered_once() -> None:
@@ -306,11 +306,11 @@ def test_books(engine: Engine) -> None:
         # the authors are each account's own people
         ann, bobs_ann = Person(owner_id=alice.id, first_name="Ann"), Person(owner_id=bob.id, first_name="Ann")
         works = {
-            "Good": Work(kind="book", title="Good", creator="Ann", goodreads_id="1"),
-            "Hebrew": Work(kind="book", title="Hebrew", creator="Ben", simania_id="2"),
+            "Good": Work(kind="book", title="Good", creator="Ann", goodreads_id="1", year=1999),
+            "Hebrew": Work(kind="book", title="Hebrew", creator="Ben", simania_id="2", year=2001),
             "Bare": Work(kind="book", title="Bare", creator=""),
-            "Twice": Work(kind="book", title="Twice", creator="Cy", goodreads_id="3"),
-            "twice ": Work(kind="book", title="twice ", creator="cy", goodreads_id="4"),
+            "Twice": Work(kind="book", title="Twice", creator="Cy", goodreads_id="3", year=1990),
+            "twice ": Work(kind="book", title="twice ", creator="cy", goodreads_id="4", year=1990),
             # a film is not a book: none of the book checks look at it
             "Film": Work(kind="film", title="Film", creator=""),
         }
@@ -337,6 +337,7 @@ def test_books(engine: Engine) -> None:
         assert found("book-covers") == [("Bare", "has no cover")]
         assert found("book-links") == [("Bare", "has neither a Goodreads nor a Simania id")]
         assert found("book-authors") == [("Bare", "has no author")]
+        assert found("book-years") == [("Bare", "has no year it came out")]
         # a book only wanted was not read in any language
         assert found("book-languages") == [("Bare", "does not say the language it was read in")]
         assert found("book-ratings") == [("Bare", "is read but has no rating")]

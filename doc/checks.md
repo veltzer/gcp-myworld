@@ -58,6 +58,7 @@ By dataset: the key is the page's name in the app (`#book`) and what
   links to its page.
 - `book-authors`: every book has an author: one of the account's people,
   linked to it.
+- `book-years`: every book has the year it came out.
 - `book-languages`: every book read (not only wanted) says the language it
   was read in; it is shown in it, its title and its authors' names.
 - `book-ratings`: every book read (Done) has a rating.
