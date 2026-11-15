@@ -78,14 +78,12 @@ function loadGoogleSignIn(clientId) {
 			ux_mode: "redirect",
 			login_uri: `${window.location.origin}/auth/login`,
 		});
-		// Google's own round icon button: a click on it is the Google sign-in
+		// Google's own button, unseen over the Google tile: a click on the tile is a click on it
 		google.accounts.id.renderButton($("signin-button"), {
-			type: "icon",
+			type: "standard",
 			size: "large",
-			theme: "outline",
-			shape: "circle",
+			width: 200,
 		});
-		$("signin-loading").hidden = true;
 	};
 	script.onerror = () => {
 		googleOff("Could not load Google sign-in: check your connection and reload");
@@ -94,14 +92,13 @@ function loadGoogleSignIn(clientId) {
 	document.head.appendChild(script);
 }
 
-// Google's icon, greyed out in its place, when it cannot be used
+// the Google tile, greyed out, when it cannot be used
 function googleOff(why) {
-	$("signin-loading").hidden = true;
-	$("signin-off").hidden = false;
-	$("signin-off").title = why;
+	$("signin").classList.add("off");
+	$("signin").title = why;
 }
 
-// the email icon opens the email form under the icons, and closes it again
+// the email tile opens the email form under the tiles, and closes it again
 function setupEmailMethod() {
 	const button = $("email-method");
 	button.onclick = () => {
@@ -115,7 +112,7 @@ function setupEmailMethod() {
 }
 
 function setupProviders(configured) {
-	for (const link of document.querySelectorAll(".provider[data-provider]")) {
+	for (const link of document.querySelectorAll(".method[data-provider]")) {
 		if (configured[link.dataset.provider]) {
 			continue;
 		}
