@@ -43,6 +43,18 @@ converges the service to what that file says.
       unregistered URI (`redirect_uri_mismatch`).
    1. Paste the client ID into `gcp_oauth_client_id` in `.gcp.conf`. Client
       IDs are public, so it is fine to commit it.
+1. Set up the verification mail of email sign-up. It is sent by Identity
+   Platform (see How sign-in works), set up like this once, with the
+   owner's credentials (`T=$(gcloud auth print-access-token)`, header
+   `x-goog-user-project: <gcp_project>`):
+   1. `gcloud services enable identitytoolkit.googleapis.com`
+   1. `POST https://identitytoolkit.googleapis.com/v2/projects/<gcp_project>/identityPlatform:initializeAuth`
+   1. `PATCH .../v2/projects/<gcp_project>/config?updateMask=signIn.email,authorizedDomains`
+      with `signIn.email.enabled: true` and `gcp_domain` added to
+      `authorizedDomains` (the Continue link must point at an authorized
+      domain).
+   1. The app's service account has `roles/identitytoolkit.admin`
+      (`gcp_service_account_roles`, granted by `gcloud_project_setup.sh`).
 1. Deploy: `gcloud_deploy.sh`. The app refuses to start on Cloud Run
    without `GOOGLE_CLIENT_ID`, so do the OAuth step first.
 
@@ -90,22 +102,65 @@ a `CNAME` to `ghs.googlehosted.com`) or a Cloudflare redirect rule.
 ## How sign-in works
 
 The landing page (static HTML plus `static/app.js`, with the animated
-scene in `static/scene.svg`) offers four ways in. Whichever one is used,
-the server ends up creating or updating a row in `users` keyed by a
-provider-qualified subject and storing only our own user id in the signed
-Flask session cookie. Accounts are never matched by email: the same email
-signed in through Google and through the password form is two accounts.
+scene in `static/scene.svg`) offers three ways in, each an icon (Google,
+GitHub, email; the email form opens from its icon), and a fourth in
+development. Only a proven email gets an account: one Google
+(`email_verified`) or GitHub (the verified primary address) vouches for, or
+one whose mailed link was followed. A provider that does not vouch for an
+email sends the person back to the sign-in page with why, and nothing is
+stored. An address merely typed into a form can be used for nothing.
+
+Each way of signing in is a row of `logins`, keyed by a provider-qualified
+subject (`google:<sub>`, `github:<id>`, `email:<address>`,
+`dev:<address>`), never by email. A login leads to its user, the person
+who owns the data, one row of `users`, one per email (`users.email` is
+unique); the signed Flask session cookie holds only the login's id. A new
+login joins the user of its email, so the same person signing in with
+Google, GitHub and a password is one account with one library, and the
+account panel lists every way.
+
+Every account has a role, `user` or `admin`. An admin sees the Users page:
+every account, how it signs in and its role, which the admin can change;
+the last admin always stays one. See `accounts.md`.
 
 - Google: the Google Identity Services button in redirect mode. On success
   Google POSTs a signed ID token to `/auth/login` along with a CSRF token
   that is also set as a cookie. The server checks the two CSRF copies
   match, verifies the token against `GOOGLE_CLIENT_ID` with `google-auth`,
   and matches the user by the Google `sub` claim. No Firebase is involved.
-- Email and password: `POST /auth/email/register` and
-  `POST /auth/email/login` take `{"email", "password"}` as JSON and answer
-  with `{"next": "/library"}` or `{"error": "..."}`. Passwords are stored
-  as werkzeug hashes in `users.password_hash`; the subject is
-  `email:<address>`. Always available, nothing to configure.
+- Email and password, in three steps, all JSON from `app.js`:
+  1. `POST /auth/email/register {"email"}` mails the address a link and
+     answers `{"message"}`, the same whether or not the address has an
+     account. It stores only the address, a hash of the link's secret
+     token and when it was sent (`email_verifications`); a new link voids
+     the old, at most one a minute per address. Nothing can sign in yet.
+  1. The link opens Google's verification page, whose Continue leads to
+     `/verify?token=...`. That page (it sends no referrer and removes the
+     token from the address bar) asks `POST /auth/email/verify {"token"}`
+     which address it is for (a link works once, for a day).
+  1. Its reader chooses the password there: `POST /auth/email/password
+     {"token", "password"}` makes the login `email:<address>` (werkzeug
+     hash in `logins.password_hash`), which joins the account of the
+     address, and signs in.
+
+  Only whoever reads the mailbox ever chooses the password: had sign-up
+  taken one, anyone could register someone's address with a password of
+  their own and get in once its owner clicked the link. The same three
+  steps for an address that has a login replace a forgotten password.
+  `POST /auth/email/login {"email", "password"}` signs in after that, and
+  answers every failure with the one message, so the form does not reveal
+  which addresses have accounts.
+
+  The mail is sent by Identity Platform, used for nothing else
+  (`src/myworld/verification.py`, as in the sibling apps): the
+  app makes a throwaway Identity Platform user for the address and has
+  Google mail it a `VERIFY_EMAIL` link, whose Continue button leads back
+  with the token; the throwaway user is deleted once the password is
+  chosen. It runs on the app's own credentials, no API key. Google does not
+  let the project change the mail's text, sender or the page its link
+  opens, so those are Google's defaults, from
+  `noreply@<gcp_project>.firebaseapp.com`. Off Cloud Run nothing is
+  mailed: the link is written to the server's log.
 - GitHub: the plain OAuth 2.0 authorization code flow.
   `GET /auth/oauth/github` redirects to GitHub with a random `state`
   kept in the session; `/auth/oauth/github/callback` checks the state,
@@ -125,10 +180,18 @@ signed in through Google and through the password form is two accounts.
   page also shows a form that signs in as any email, subject
   `dev:<address>`.
 
-The `users.password_hash` column, the wider `google_sub` column and the
-film id columns on `library_works` (then `works`) were added after the first deploy, so a
-database that predates them needs `scripts/migrate.sh` once before
-deploying this version (`--local` does the same for the sqlite file). It
+Columns and tables added after the first deploy (the film id columns on
+`library_works`, then `works`; `logins`; the end of `users.verified` and
+`logins.verified` and the unique `users.email`; `email_verifications`) mean
+a database that predates them needs `scripts/migrate.sh` once before
+deploying this version (`--local` does the same for the sqlite file). The
+step for proven emails deletes the logins that were never proven and the
+accounts left without a proven login, but only when none of them owns rows
+(accounts are referenced with ON DELETE CASCADE, so deleting one deletes
+its data): otherwise it changes nothing, exits non-zero and lists each such
+account with its row counts, to decide by hand. It also stops, changing
+nothing, when two accounts share an email. Run it right before deploying:
+the old version writes `users.verified`, which is then gone. It
 runs the ALTER TABLE statements through `gcloud_sql_psql.sh` (the Cloud
 SQL Auth Proxy with the password from Secret Manager, so there is nothing
 to type), applies only what is missing and is safe to re-run; see the note
@@ -287,8 +350,8 @@ scripts/import_world_cloud.sh --email you@example.com
 ```
 
 `--source` points at the directory holding `data/yaml/`, `data/logos/`
-and `static/images/` (default `../veltzer.github.io`); `--subject` picks
-the account when one email has several (Google and GitHub, say). The new
+and `static/images/` (default `../veltzer.github.io`); `--subject` insists that
+the account (one per email) has that login. The new
 tables are created by `create_all`; the one `scripts/migrate.sh` step is
 dropping the old free-text `people.company` column and renaming the
 first `companies` tables to `organizations`, then making
@@ -379,8 +442,8 @@ a person is written with `type_ids`, a list.
   ids, `type_id` an organization type id, and an organization's relation
   types are written as `relation_ids`, a list.
 - `GET /api/users` (admins only, 403 otherwise): every account, with
-  email, name, provider (google, github, email, dev), role and when it
-  was made. `PUT /api/users/<id>` with `{"role": "user" | "admin"}`
+  email, name, how it signs in (google, github, email, dev), role and
+  when it was made. `PUT /api/users/<id>` with `{"role": "user" | "admin"}`
   changes one, refusing to demote the last admin (409). See
   `accounts.md`.
 - `GET /api/checks` (admins only): the database checks, and
@@ -455,9 +518,13 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
 
 ## Data model
 
-- `users`: one row per account (`google_sub` is the stable key: the Google
-  `sub` claim, or a provider-qualified subject for the other sign-in
-  methods; `password_hash` is set only for email accounts).
+- `users`: one row per person, one per email (`email` is unique and proven:
+  see How sign-in works), with the `role` and the data they own.
+- `logins`: one row per way a person signs in, keyed by the
+  provider-qualified `subject`; `password_hash` is set only for email
+  logins.
+- `email_verifications`: the addresses waiting for their mailed link:
+  address, a hash of the link's token, when it was sent.
 - `library_works`: books, for now (films, series, albums and games were
   taken out until their data is imported, which will shape them); one
   shared row per work, identified by kind, title, creator and year, plus
@@ -507,9 +574,11 @@ MYWORLD_DEV_LOGIN=1 python src/main.py
 Runs the Flask dev server on port 8080 against a sqlite file in `db.gi/`.
 With `MYWORLD_DEV_LOGIN=1` the landing page also offers a development
 login by email, so no OAuth client is needed locally; the route is disabled
-on Cloud Run regardless of the variable. To test the real Google button
-locally, export `GOOGLE_CLIENT_ID` and make sure `http://localhost:8080` is
-among the client's authorized origins.
+on Cloud Run regardless of the variable. Email sign-up works locally too:
+off Cloud Run nothing is mailed, and the link is written to the server's
+log instead. To test the real Google button locally, export
+`GOOGLE_CLIENT_ID` and make sure `http://localhost:8080` is among the
+client's authorized origins.
 
 To develop against the real Cloud SQL instance, run the Cloud SQL Auth
 Proxy and point `DATABASE_URL` at it:

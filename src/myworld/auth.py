@@ -1,6 +1,8 @@
 """
 Sign-in: Google first, plus email and password and OAuth with other
-providers.
+providers. Only a proven email gets an account: one the provider vouches
+for, or for email sign-in one whose mailed link was followed. An address
+merely typed into a form proves nothing and can be used for nothing.
 
 Google uses Google Identity Services: the browser side is the standard GIS
 button (see html/index.html): on success Google POSTs a signed ID token to
@@ -9,8 +11,15 @@ server checks the two CSRF copies match, verifies the ID token signature
 and audience with google-auth, and then keeps only our own user id in the
 Flask session cookie.
 
-Email accounts live entirely in our users table (werkzeug password
-hashes). Other providers (GitHub so far) go through the plain OAuth 2.0
+Email sign-up asks for the address only and mails it a link (see
+verification.py); the link leads to a page where its reader chooses the
+password, which makes the email login. So only whoever reads the mailbox
+ever sets a password for the address: had sign-up taken one, anyone could
+register someone's address with a password of their own and get in once
+its owner clicked the link. Asking again for an address that has a login
+mails a link the same way, which is how a forgotten password is replaced.
+
+Other providers (GitHub so far) go through the plain OAuth 2.0
 authorization code flow: /auth/oauth/<provider> redirects to the
 provider, the callback exchanges the code for an access token and asks the
 provider who the user is. A provider is offered only when its client id
@@ -18,15 +27,18 @@ and secret are set in the environment.
 
 Each way of signing in is a login (models.Login), found by its
 provider-qualified subject, never by email, since emails can change and be
-reassigned. A login leads to its user, the person, who owns the data and
-is the same whichever way they signed in: a login joins the user of its
-email once the provider vouches for that email (see sign_in). The Flask
-session holds only the login's id.
+reassigned. A login leads to its user, the person, who is the same
+whichever way they signed in: a login joins the user of its email,
+which is proven (see sign_in). The Flask session holds
+only the login's id.
 """
 
 import dataclasses
+import datetime
 import functools
+import hashlib
 import hmac
+import logging
 import os
 import secrets
 import urllib.parse
@@ -42,12 +54,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from myworld.models import ROLE_ADMIN, Login, User, utcnow
+from myworld.models import ROLE_ADMIN, EmailVerification, Login, User, utcnow
+from myworld.verification import Mailer, VerificationError
 
 bp = flask.Blueprint("auth", __name__, url_prefix="/auth")
 
-PASSWORD_MIN_LENGTH = 8
+logger = logging.getLogger(__name__)
+
 HTTP_TIMEOUT = 10
+PASSWORD_MIN_LENGTH = 8
+# how long a mailed link works, and how soon another may be mailed to the same address
+LINK_LIFETIME = datetime.timedelta(days=1)
+RESEND_INTERVAL = datetime.timedelta(minutes=1)
+# what the sign-in page says when the provider does not vouch for the email
+UNVERIFIED = "{provider} did not confirm an email address for you: verify one with {provider} and sign in again"
 
 
 def client_id() -> str:
@@ -71,35 +91,39 @@ def verify_google_token(token: str) -> dict[str, Any]:
     return id_token.verify_oauth2_token(token, google_requests.Request(), audience)
 
 
+class UnverifiedEmailError(Exception):
+    """ The provider does not vouch for the person's email, so they get no account. """
+
+
 def sign_in(session: Session, claims: dict[str, Any], password_hash: str | None = None) -> Login:
     """
     Find or make the login of claims["sub"] (provider-qualified), refresh
-    what the provider reports (email, name, picture, and in "verified"
-    whether it vouches for the email), and give it its user when it has
-    none: the verified user of its email when the email is verified, made
-    on first sight, else a user of its own that no other login joins. A
-    login keeps the user it joined. Commits; returns the login.
+    what the provider reports (email, name, picture), and give it its user
+    when it has none: the user of its email, made on first sight. A login
+    keeps the user it joined. Only a proven email (claims["verified"]) is
+    accepted: else UnverifiedEmailError, and nothing is stored. Commits;
+    returns the login.
     """
+    email = str(claims.get("email", "")).strip().lower()
+    if not claims.get("verified") or not email:
+        raise UnverifiedEmailError(claims["sub"])
     login = session.scalars(select(Login).where(Login.subject == claims["sub"])).one_or_none()
     now = utcnow()
-    email = str(claims.get("email", "")).strip().lower()
-    verified = bool(claims.get("verified")) and bool(email)
     if login is None:
         login = Login(subject=claims["sub"], created_at=now)
         session.add(login)
     login.email = email
     login.name = claims.get("name", "") or ""
     login.picture = claims.get("picture", "") or ""
-    login.verified = verified
     if password_hash is not None:
         login.password_hash = password_hash
     login.last_login = now
     if login.user is None:
         # a new login is not flushed before it has its user
         with session.no_autoflush:
-            user = session.scalars(select(User).where(User.verified, User.email == email).order_by(User.id)).first() if verified else None
+            user = session.scalars(select(User).where(User.email == email)).one_or_none()
         if user is None:
-            user = User(email=email, verified=verified, name=login.name or email.split("@")[0], picture=login.picture, created_at=now)
+            user = User(email=email, name=login.name or email.split("@")[0], picture=login.picture, created_at=now)
             session.add(user)
         login.user = user
     user = login.user
@@ -154,14 +178,6 @@ def admin_required(view: Callable[..., Any]) -> Callable[..., Any]:
     return wrapped
 
 
-@bp.errorhandler(werkzeug.exceptions.HTTPException)
-def handle_http_error(error: werkzeug.exceptions.HTTPException) -> werkzeug.Response | tuple[flask.Response, int]:
-    """ The email form talks JSON (fetch from app.js); the other routes are browser navigations. """
-    if flask.request.path.startswith("/auth/email/"):
-        return flask.jsonify({"error": error.description}), error.code or 500
-    return error.get_response()
-
-
 # ─── google ──────────────────────────────────────────────────────────────────
 
 @bp.route("/login", methods=["POST"])
@@ -174,64 +190,150 @@ def login() -> werkzeug.Response:
         claims = verify_google_token(flask.request.form.get("credential", ""))
     except ValueError:
         flask.abort(401, "Invalid Google sign-in token")
-    login = sign_in(flask.g.db, {
-        "sub": f"google:{claims['sub']}", "email": claims.get("email", ""), "name": claims.get("name", ""),
-        "picture": claims.get("picture", ""), "verified": bool(claims.get("email_verified")),
-    })
+    try:
+        login = sign_in(flask.g.db, {
+            "sub": f"google:{claims['sub']}", "email": claims.get("email", ""), "name": claims.get("name", ""),
+            "picture": claims.get("picture", ""), "verified": bool(claims.get("email_verified")),
+        })
+    except UnverifiedEmailError:
+        return flask.redirect(flask.url_for("views.index", error=UNVERIFIED.format(provider="Google")))
     start_session(login)
     return flask.redirect(flask.url_for("views.library"))
 
 
 # ─── email and password ──────────────────────────────────────────────────────
 
-def _email_credentials() -> tuple[str, str]:
-    """ The (email, password) pair from the JSON body, validated for shape only. """
+@bp.errorhandler(werkzeug.exceptions.HTTPException)
+def handle_http_error(error: werkzeug.exceptions.HTTPException) -> werkzeug.Response | tuple[flask.Response, int]:
+    """ The email forms talk JSON (fetch from app.js); the other routes are browser navigations. """
+    if flask.request.path.startswith("/auth/email/"):
+        return flask.jsonify({"error": error.description}), error.code or 500
+    return error.get_response()
+
+
+def mailer() -> Mailer:
+    """ What mails the verification links (verification.IdentityPlatform on Cloud Run). """
+    sender: Mailer = flask.current_app.config["MAILER"]
+    return sender
+
+
+def _body() -> dict[str, Any]:
     body = flask.request.get_json(silent=True)
     if not isinstance(body, dict):
         flask.abort(400, "expected a JSON object")
+    return body
+
+
+def _email(body: dict[str, Any]) -> str:
+    """ The address in the body, validated for shape only. """
     email = body.get("email")
-    password = body.get("password")
-    if not isinstance(email, str) or not isinstance(password, str):
-        flask.abort(400, "email and password are required")
+    if not isinstance(email, str):
+        flask.abort(400, "an email address is required")
     email = email.strip().lower()
-    if "@" not in email or email.startswith("@") or email.endswith("@") or " " in email:
+    if "@" not in email or email.startswith("@") or email.endswith("@") or " " in email or len(email) > 320:
         flask.abort(400, "that does not look like an email address")
-    return email, password
+    return email
 
 
-def _email_login(email: str) -> Login | None:
-    login: Login | None = flask.g.db.scalars(select(Login).where(Login.subject == f"email:{email}")).one_or_none()
-    return login
+def _age(moment: datetime.datetime) -> datetime.timedelta:
+    """ How long ago moment was; the database hands back UTC without its zone. """
+    return utcnow() - (moment if moment.tzinfo else moment.replace(tzinfo=datetime.UTC))
 
 
-def _signed_in(login: Login) -> flask.Response:
-    start_session(login)
-    return flask.jsonify({"next": flask.url_for("views.library")})
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _pending(token: object) -> EmailVerification:
+    """ The verification a link's token belongs to, while the link still works; else 400. """
+    if not isinstance(token, str) or not token:
+        flask.abort(400, "this link is not complete: open the one in the mail")
+    pending: EmailVerification | None = flask.g.db.scalars(
+        select(EmailVerification).where(EmailVerification.token_hash == _token_hash(token))
+    ).one_or_none()
+    if pending is None or _age(pending.sent_at) > LINK_LIFETIME:
+        flask.abort(400, "this link was used or has expired: ask for a new one")
+    return pending
+
+
+def _verify_url(token: str) -> str:
+    # Cloud Run terminates TLS in front of the app, so build the https URL by hand there.
+    scheme = "https" if "K_SERVICE" in os.environ else None
+    return flask.url_for("views.verify", token=token, _external=True, _scheme=scheme)
 
 
 @bp.route("/email/register", methods=["POST"])
 def email_register() -> flask.Response:
-    email, password = _email_credentials()
-    if len(password) < PASSWORD_MIN_LENGTH:
+    """
+    Mail the address a link to choose a password with. The answer is the
+    same whether or not the address has an account, so the form does not
+    reveal who signs in here.
+    """
+    email = _email(_body())
+    sent = f"We mailed a link to {email}. Open it to choose your password; until then the address cannot sign in."
+    pending = flask.g.db.get(EmailVerification, email)
+    now = utcnow()
+    if pending is not None and _age(pending.sent_at) < RESEND_INTERVAL:
+        return flask.jsonify({"message": sent})
+    token = secrets.token_urlsafe(32)
+    try:
+        mailer().send(email, _verify_url(token))
+    except (VerificationError, requests.RequestException, ValueError) as error:
+        logger.warning("verification mail to %s failed: %s", email, error)
+        flask.abort(503, "the mail could not be sent: try again in a minute")
+    if pending is None:
+        pending = EmailVerification(email=email)
+        flask.g.db.add(pending)
+    # a new link voids the one mailed before
+    pending.token_hash = _token_hash(token)
+    pending.sent_at = now
+    flask.g.db.commit()
+    return flask.jsonify({"message": sent})
+
+
+@bp.route("/email/verify", methods=["POST"])
+def email_verify() -> flask.Response:
+    """ Which address a link is for, so its page can say so before asking for the password. """
+    return flask.jsonify({"email": _pending(_body().get("token")).email})
+
+
+@bp.route("/email/password", methods=["POST"])
+def email_password() -> flask.Response:
+    """
+    The link's reader chooses the password: the address is proven, so this
+    makes (or gives a new password to) its email login, which joins the
+    account of the address, and signs in.
+    """
+    body = _body()
+    pending = _pending(body.get("token"))
+    password = body.get("password")
+    if not isinstance(password, str) or len(password) < PASSWORD_MIN_LENGTH:
         flask.abort(400, f"use at least {PASSWORD_MIN_LENGTH} characters for the password")
-    if _email_login(email) is not None:
-        flask.abort(409, "there is already an account with this email, sign in instead")
-    # an address typed in proves nothing: the login is unverified, with a user of its own
-    login = sign_in(flask.g.db, {"sub": f"email:{email}", "email": email, "name": email.split("@")[0], "verified": False},
+    email = pending.email
+    flask.g.db.delete(pending)
+    login = sign_in(flask.g.db, {"sub": f"email:{email}", "email": email, "name": email.split("@")[0], "verified": True},
                     password_hash=generate_password_hash(password))
-    return _signed_in(login)
+    try:
+        mailer().forget(email)
+    except (VerificationError, requests.RequestException, ValueError) as error:
+        logger.warning("could not clean up after verifying %s: %s", email, error)
+    start_session(login)
+    return flask.jsonify({"next": flask.url_for("views.library")})
 
 
 @bp.route("/email/login", methods=["POST"])
 def email_login() -> flask.Response:
-    email, password = _email_credentials()
-    login = _email_login(email)
-    # one message for both failures, so the form does not reveal which emails have accounts
-    if login is None or login.password_hash is None or not check_password_hash(login.password_hash, password):
-        flask.abort(401, "wrong email or password")
+    body = _body()
+    email = _email(body)
+    password = body.get("password")
+    login: Login | None = flask.g.db.scalars(select(Login).where(Login.subject == f"email:{email}")).one_or_none()
+    # one message for every failure, so the form does not reveal which emails have accounts
+    if login is None or login.password_hash is None or not isinstance(password, str) or not check_password_hash(login.password_hash, password):
+        flask.abort(401, "wrong email or password (a new address signs in only after you open the link we mailed it)")
     login.last_login = login.user.last_login = utcnow()
     flask.g.db.commit()
-    return _signed_in(login)
+    start_session(login)
+    return flask.jsonify({"next": flask.url_for("views.library")})
 
 
 # ─── other providers (oauth 2.0 authorization code) ─────────────────────────
@@ -361,7 +463,11 @@ def oauth_callback(provider: str) -> werkzeug.Response:
         claims = fetch_claims(oauth, token)
     except (OAuthError, requests.RequestException, ValueError, KeyError):
         return flask.redirect(flask.url_for("views.index", error=f"{oauth.name} sign-in failed, try again"))
-    start_session(sign_in(flask.g.db, claims))
+    try:
+        login = sign_in(flask.g.db, claims)
+    except UnverifiedEmailError:
+        return flask.redirect(flask.url_for("views.index", error=UNVERIFIED.format(provider=oauth.name)))
+    start_session(login)
     return flask.redirect(flask.url_for("views.library"))
 
 

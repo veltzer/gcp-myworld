@@ -123,23 +123,25 @@ function setupProviders(configured) {
 	}
 }
 
-function setupEmailForm(minLength) {
+// Signing in takes the email and the password; "Get a link by mail" takes
+// only the email, and the server mails it a link to choose the password with
+function setupEmailForm() {
 	const form = $("email-form");
 	const password = form.elements.password;
 	const submit = $("email-submit");
 	let mode = "login";
 
 	const applyMode = () => {
-		const signup = mode === "register";
-		submit.textContent = signup ? "Create account" : "Sign in";
-		$("email-switch-text").textContent = signup ? "Already have an account?" : "New here?";
-		$("email-mode").textContent = signup ? "Sign in" : "Create an account";
-		password.autocomplete = signup ? "new-password" : "current-password";
-		password.minLength = signup ? minLength : 0;
+		const link = mode === "link";
+		submit.textContent = link ? "Mail me a link" : "Sign in";
+		$("password-row").hidden = link;
+		$("email-hint").hidden = !link;
+		$("email-switch-text").textContent = link ? "Already chose a password?" : "New here, or forgot your password?";
+		$("email-mode").textContent = link ? "Sign in" : "Get a link by mail";
 		showError("");
 	};
 	$("email-mode").onclick = () => {
-		mode = mode === "login" ? "register" : "login";
+		mode = mode === "login" ? "link" : "login";
 		applyMode();
 	};
 	$("toggle-password").onclick = () => {
@@ -150,25 +152,28 @@ function setupEmailForm(minLength) {
 	form.onsubmit = async (event) => {
 		event.preventDefault();
 		showError("");
+		$("email-sent").hidden = true;
 		const email = form.elements.email.value.trim();
 		if (!email || !email.includes("@")) {
 			showError("Enter your email address.");
 			form.elements.email.focus();
 			return;
 		}
-		if (mode === "register" && password.value.length < minLength) {
-			showError(`Use at least ${minLength} characters for the password.`);
-			password.focus();
-			return;
-		}
 		submit.disabled = true;
 		try {
-			const result = await api(`/auth/email/${mode}`, { method: "POST", body: { email, password: password.value } });
-			window.location.href = result.next;
+			if (mode === "link") {
+				const result = await api("/auth/email/register", { method: "POST", body: { email } });
+				$("email-sent").textContent = result.message;
+				$("email-sent").hidden = false;
+			} else {
+				const result = await api("/auth/email/login", { method: "POST", body: { email, password: password.value } });
+				window.location.href = result.next;
+				return;
+			}
 		} catch (e) {
 			showError(e.message);
-			submit.disabled = false;
 		}
+		submit.disabled = false;
 	};
 	applyMode();
 }
@@ -191,7 +196,7 @@ async function indexPage() {
 	}
 	setupProviders(config.providers);
 	setupEmailMethod();
-	setupEmailForm(config.password_min_length);
+	setupEmailForm();
 	$("dev-login").hidden = !config.dev_login;
 }
 
@@ -946,18 +951,13 @@ function setupAccountMenu(user) {
 		if (login.email) {
 			text.appendChild(el("div", "account-login-meta", `reports ${login.email}`));
 		}
-		if (login.method === "email" && !login.verified) {
-			text.appendChild(el("div", "account-login-meta", "email not verified"));
-		} else if (login.last) {
+		if (login.last) {
 			text.appendChild(el("div", "account-login-meta", `last used ${login.last}`));
 		}
 		li.append(methodIcon(login.method), text);
 		return li;
 	}));
-	// a password account's email is not proven: nothing joins it
-	$("account-note").textContent = user.verified
-		? "Signing in with Google or GitHub under this same verified email always reaches this same account."
-		: "This account's email is not verified, so it stays an account of its own: signing in with Google or GitHub under this email reaches another one.";
+	$("account-note").textContent = "Signing in with Google, GitHub or a password under this same verified email always reaches this same account.";
 	const button = $("account-button");
 	const menu = $("account-menu");
 	const show = (open) => {
@@ -3676,11 +3676,57 @@ function setupAddDialog() {
 	};
 }
 
+// ─── the mailed link's page ─────────────────────────────────────────────────
+
+// The link carries a token that proves its reader has the mailbox: they choose the password here
+async function verifyPage() {
+	const config = await api("/api/config");
+	const token = new URLSearchParams(window.location.search).get("token") || "";
+	// the token is not to stay in the address bar, the history or a bookmark
+	window.history.replaceState(null, "", "/verify");
+	const form = $("password-form");
+	const password = form.elements.password;
+	password.minLength = config.password_min_length;
+	try {
+		const pending = await api("/auth/email/verify", { method: "POST", body: { token } });
+		$("verify-email").textContent = pending.email;
+		form.elements.email.value = pending.email;
+		form.hidden = false;
+		password.focus();
+	} catch (e) {
+		showError(e.message);
+		$("verify-again").hidden = false;
+		return;
+	}
+	$("toggle-password").onclick = () => {
+		const hidden = password.type === "password";
+		password.type = hidden ? "text" : "password";
+		$("toggle-password").textContent = hidden ? "Hide" : "Show";
+	};
+	form.onsubmit = async (event) => {
+		event.preventDefault();
+		showError("");
+		if (password.value.length < config.password_min_length) {
+			showError(`Use at least ${config.password_min_length} characters for the password.`);
+			password.focus();
+			return;
+		}
+		$("password-submit").disabled = true;
+		try {
+			const result = await api("/auth/email/password", { method: "POST", body: { token, password: password.value } });
+			window.location.href = result.next;
+		} catch (e) {
+			showError(e.message);
+			$("password-submit").disabled = false;
+		}
+	};
+}
+
 // ─── entry point ────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", () => {
 	showBuild();
 	const page = document.body.dataset.page;
-	const run = page === "library" ? libraryPage : indexPage;
+	const run = { index: indexPage, verify: verifyPage, library: libraryPage }[page];
 	run().catch((e) => showError(e.message));
 });

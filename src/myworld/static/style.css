@@ -527,6 +527,27 @@ button:disabled {
 	cursor: wait;
 }
 
+.hint {
+	margin: 0;
+	font-size: 0.85rem;
+	color: var(--muted);
+}
+
+.notice {
+	margin: 0;
+	padding: 0.6rem 0.8rem;
+	border-radius: 10px;
+	background: #eff6ff;
+	color: #1e40af;
+	font-size: 0.9rem;
+}
+
+.hint[hidden],
+.notice[hidden],
+.field[hidden] {
+	display: none;
+}
+
 .switch {
 	margin: 0;
 	font-size: 0.85rem;

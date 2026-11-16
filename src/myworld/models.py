@@ -93,22 +93,19 @@ ROLES = (ROLE_USER, ROLE_ADMIN)
 
 class User(Base):
     """
-    A person with an account, who owns the data. They sign in through any
-    number of logins (Login): with Google, with GitHub, with a password. A
-    login joins the user of its email once that email is proven to be the
-    person's (Google's email_verified, GitHub's verified primary address),
-    so the same person signing in either way reaches the same data. An
-    address typed into the password form proves nothing: a password login
-    gets a user of its own, unverified, that no other login ever joins;
-    otherwise anyone could register someone's address and walk into their
-    account.
+    A person with an account, one per email, who owns the data. They sign
+    in through any number of logins (Login): with Google, with GitHub, with
+    a password. Only a proven email gets an account: one Google or GitHub
+    vouches for (email_verified, the verified primary address), or one whose
+    mailed verification link was followed (EmailVerification). So a login
+    joins the user of its email and the same person signing in any way
+    reaches the same data; an address merely typed into a form gets nothing.
     """
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    email: Mapped[str] = mapped_column(String(320), nullable=False)
-    # whether the email is proven to be this person's: only a verified user is joined by logins of its email
-    verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    # proven to be this person's by the provider of the login that made the account
+    email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     picture: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     # what the account may do on the site, one of ROLES: an admin can also see
@@ -135,7 +132,7 @@ class Login(Base):
 
         google:<sub>      Sign in with Google (the ID token's "sub")
         github:<id>       GitHub (the numeric user id)
-        email:<address>   email and password, registered here
+        email:<address>   email and password, made once the mailed link was followed
         dev:<address>     the local development login (never on Cloud Run)
 
     A login joins a user once and stays: should the provider's address change
@@ -150,9 +147,7 @@ class Login(Base):
     email: Mapped[str] = mapped_column(String(320), nullable=False, default="")
     name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     picture: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    # whether the provider vouches for the email (never for a password login)
-    verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
-    # only for a password login; werkzeug hash
+    # only for an email login; werkzeug hash
     password_hash: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     last_login: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
@@ -168,6 +163,22 @@ class Login(Base):
     def provider_id(self) -> str:
         """ Who the provider says it is: the Google sub, the GitHub user id, the email address. """
         return self.subject.partition(":")[2]
+
+
+class EmailVerification(Base):
+    """
+    An email address someone asked to sign up (or to set a new password)
+    with, waiting for its mailed link to be followed. The link carries a
+    secret token that only the mail holds; here is its SHA-256, so the
+    table alone lets no one in. Whoever brings the token back reads that
+    mailbox: only then do they choose a password and get an email login
+    (see auth). Until then the address can be used for nothing.
+    """
+    __tablename__ = "email_verifications"
+
+    email: Mapped[str] = mapped_column(String(320), primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    sent_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
 
 class Work(Base):

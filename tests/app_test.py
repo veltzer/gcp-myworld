@@ -4,10 +4,14 @@ End to end tests of the myworld app through webtest.
 
 import pytest
 import webtest
+from sqlalchemy import select
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
 
 from myworld import auth, create_app
-from tests.conftest import sign_in
+from myworld.models import EmailVerification, Login
+from myworld.verification import VerificationError
+from tests.conftest import FakeMailer, sign_in
 
 
 def test_index_anonymous(app: webtest.TestApp) -> None:
@@ -88,7 +92,7 @@ def test_login_then_index_redirects(app: webtest.TestApp) -> None:
     config = app.get("/api/config").json
     assert config["user"]["email"] == "alice@example.com"
     # the account panel: how this session signed in, and every way this person signs in
-    assert (config["user"]["method"], config["user"]["verified"]) == ("google", True)
+    assert config["user"]["method"] == "google"
     [login] = config["user"]["logins"]
     assert (login["method"], login["provider_id"], login["current"], login["email"]) == ("google", "1234567890", True, "")
     app.post("/auth/logout")
@@ -207,43 +211,89 @@ def test_shared_work_ids_are_only_filled(app: webtest.TestApp) -> None:
     assert (entry["goodreads_id"], entry["simania_id"]) == ("95558", "1234")
 
 
-# ─── email and password ──────────────────────────────────────────────────────
+# ─── email and password, only for a mailed address ───────────────────────────
 
-def test_email_register_and_login(app: webtest.TestApp) -> None:
+def mailed_token(mailer: FakeMailer, email: str) -> str:
+    """ The token of the last link mailed to email. """
+    link = [link for to, link in mailer.sent if to == email][-1]
+    assert link.startswith("http://localhost/verify?token=")
+    return link.split("token=")[1]
+
+
+def register(app: webtest.TestApp, mailer: FakeMailer, email: str, password: str = "correct horse") -> webtest.TestResponse:
+    """ Ask for a link, follow it, choose the password: signed in. """
+    app.post_json("/auth/email/register", {"email": email})
+    token = mailed_token(mailer, email.strip().lower())
+    return app.post_json("/auth/email/password", {"token": token, "password": password})
+
+
+def test_email_sign_up_needs_the_mailed_link(app: webtest.TestApp, mailer: FakeMailer, engine: Engine) -> None:
+    """ Asking for an address gives no account and no way in: only the link's reader chooses the password. """
     assert app.get("/api/config").json["password_min_length"] == auth.PASSWORD_MIN_LENGTH
-    response = app.post_json("/auth/email/register", {"email": "  Carol@Example.com ", "password": "correct horse"})
-    assert response.status_int == 200
+    response = app.post_json("/auth/email/register", {"email": "  Carol@Example.com "})
+    assert "mailed a link to carol@example.com" in response.json["message"]
+    assert [to for to, _ in mailer.sent] == ["carol@example.com"]
+    # nothing to sign in to yet, nor a user
+    assert app.get("/api/config").json["user"] is None
+    app.post_json("/auth/email/login", {"email": "carol@example.com", "password": "correct horse"}, status=401)
+    with Session(engine) as session:
+        assert session.scalars(select(Login)).all() == []
+    # the link's page says for which address, then the password is chosen
+    token = mailed_token(mailer, "carol@example.com")
+    assert app.get("/verify").status_int == 200
+    assert app.post_json("/auth/email/verify", {"token": token}).json == {"email": "carol@example.com"}
+    response = app.post_json("/auth/email/password", {"token": token, "password": "correct horse"})
     assert response.json["next"].endswith("/library")
     user = app.get("/api/config").json["user"]
-    assert user["email"] == "carol@example.com"
-    assert user["name"] == "carol"
-
+    assert (user["email"], user["name"], user["method"]) == ("carol@example.com", "carol", "email")
+    assert mailer.forgotten == ["carol@example.com"]
+    # the link worked once
+    app.post_json("/auth/email/password", {"token": token, "password": "another one"}, status=400)
     app.post("/auth/logout")
-    assert app.get("/api/config").json["user"] is None
     app.post_json("/auth/email/login", {"email": "carol@example.com", "password": "correct horse"}, status=200)
     assert app.get("/api/config").json["user"]["email"] == "carol@example.com"
-    assert app.get("/library").status_int == 200
 
 
-def test_email_register_rejects_bad_input(app: webtest.TestApp) -> None:
-    for body, status in [
-        ({"email": "carol@example.com", "password": "short"}, 400),
-        ({"email": "not an email", "password": "correct horse"}, 400),
-        ({"email": "carol@example.com"}, 400),
-        ({"email": ["carol@example.com"], "password": "correct horse"}, 400),
-    ]:
-        response = app.post_json("/auth/email/register", body, status=status)
-        assert "error" in response.json
+def test_email_bad_input(app: webtest.TestApp, mailer: FakeMailer) -> None:
+    for body in ({"email": "not an email"}, {}, {"email": ["carol@example.com"]}):
+        assert "error" in app.post_json("/auth/email/register", body, status=400).json
     app.post("/auth/email/register", "not json", status=400)
-    app.post_json("/auth/email/register", {"email": "carol@example.com", "password": "correct horse"}, status=200)
-    app.post("/auth/logout")
-    response = app.post_json("/auth/email/register", {"email": "carol@example.com", "password": "another one"}, status=409)
-    assert "already" in response.json["error"]
+    assert not mailer.sent
+    for token in ("", "forged", None):
+        assert "link" in app.post_json("/auth/email/verify", {"token": token}, status=400).json["error"]
+    app.post_json("/auth/email/register", {"email": "carol@example.com"})
+    token = mailed_token(mailer, "carol@example.com")
+    assert "8 characters" in app.post_json("/auth/email/password", {"token": token, "password": "short"}, status=400).json["error"]
     assert app.get("/api/config").json["user"] is None
 
 
-def test_email_login_rejects_wrong_credentials(app: webtest.TestApp) -> None:
-    app.post_json("/auth/email/register", {"email": "carol@example.com", "password": "correct horse"})
+def test_a_new_link_voids_the_old_and_waits_a_minute(app: webtest.TestApp, mailer: FakeMailer, engine: Engine) -> None:
+    app.post_json("/auth/email/register", {"email": "carol@example.com"})
+    first = mailed_token(mailer, "carol@example.com")
+    # asking again at once mails nothing more
+    app.post_json("/auth/email/register", {"email": "carol@example.com"})
+    assert len(mailer.sent) == 1
+    with Session(engine) as session:
+        pending = session.get(EmailVerification, "carol@example.com")
+        assert pending is not None
+        pending.sent_at -= auth.RESEND_INTERVAL
+        session.commit()
+    app.post_json("/auth/email/register", {"email": "carol@example.com"})
+    second = mailed_token(mailer, "carol@example.com")
+    assert second != first
+    app.post_json("/auth/email/verify", {"token": first}, status=400)
+    app.post_json("/auth/email/verify", {"token": second}, status=200)
+    # and a link works for a day
+    with Session(engine) as session:
+        pending = session.get(EmailVerification, "carol@example.com")
+        assert pending is not None
+        pending.sent_at -= auth.LINK_LIFETIME
+        session.commit()
+    assert "expired" in app.post_json("/auth/email/verify", {"token": second}, status=400).json["error"]
+
+
+def test_email_login_rejects_wrong_credentials(app: webtest.TestApp, mailer: FakeMailer) -> None:
+    register(app, mailer, "carol@example.com")
     app.post("/auth/logout")
     unknown = app.post_json("/auth/email/login", {"email": "nobody@example.com", "password": "correct horse"}, status=401)
     wrong = app.post_json("/auth/email/login", {"email": "carol@example.com", "password": "wrong horse"}, status=401)
@@ -252,16 +302,59 @@ def test_email_login_rejects_wrong_credentials(app: webtest.TestApp) -> None:
     assert app.get("/api/config").json["user"] is None
 
 
-def test_email_account_is_separate_from_google_account(app: webtest.TestApp) -> None:
-    # the Google user in FAKE_CLAIMS has the same email; the accounts must not merge
+def test_mailed_address_joins_its_account(app: webtest.TestApp, mailer: FakeMailer) -> None:
+    """ The address is proven, so the password joins the Google account of it: one person, one account. """
+    sign_in(app)
+    google_id = app.get("/api/config").json["user"]["id"]
+    app.post("/auth/logout")
+    register(app, mailer, "alice@example.com")
+    user = app.get("/api/config").json["user"]
+    assert (user["id"], user["method"]) == (google_id, "email")
+    assert [login["method"] for login in user["logins"]] == ["email", "google"]
+
+
+def test_forgotten_password_is_replaced_by_mail(app: webtest.TestApp, mailer: FakeMailer, engine: Engine) -> None:
+    """ Asking for a link for an address with a login answers the same, and the link sets a new password. """
+    register(app, mailer, "carol@example.com", "old password")
+    app.post("/auth/logout")
+    with Session(engine) as session:
+        # past the minute between mails
+        for pending in session.scalars(select(EmailVerification)):
+            pending.sent_at -= auth.RESEND_INTERVAL
+        session.commit()
+    register(app, mailer, "carol@example.com", "new password")
+    app.post("/auth/logout")
+    app.post_json("/auth/email/login", {"email": "carol@example.com", "password": "old password"}, status=401)
+    app.post_json("/auth/email/login", {"email": "carol@example.com", "password": "new password"}, status=200)
+
+
+def test_mail_failure_is_said(app: webtest.TestApp, mailer: FakeMailer, monkeypatch: pytest.MonkeyPatch, engine: Engine) -> None:
+    def fail(email: str, continue_url: str) -> None:
+        raise VerificationError("down")
+    monkeypatch.setattr(mailer, "send", fail)
+    assert "could not be sent" in app.post_json("/auth/email/register", {"email": "carol@example.com"}, status=503).json["error"]
+    with Session(engine) as session:
+        assert session.get(EmailVerification, "carol@example.com") is None
+
+
+def test_google_unverified_email_is_refused(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    """ Google not vouching for the email: back to the sign-in page with why, and no account is made. """
+    monkeypatch.setattr(auth, "verify_google_token", lambda token: {"sub": token, "email": "eve@example.com", "email_verified": False})
+    app.set_cookie("g_csrf_token", "csrf")
+    response = app.post("/auth/login", {"credential": "666", "g_csrf_token": "csrf"})
+    assert response.status_int == 302
+    assert response.location is not None
+    assert "error=Google+did+not+confirm" in response.location
+    assert app.get("/api/config").json["user"] is None
+
+
+def test_mailed_address_reaches_the_data_of_its_account(app: webtest.TestApp, mailer: FakeMailer) -> None:
+    """ The Google account's library is the library of the same address's email login. """
     sign_in(app)
     app.post_json("/api/library-entries", {"kind": "book", "title": "Dune"})
     app.post("/auth/logout")
-    app.post_json("/auth/email/register", {"email": "alice@example.com", "password": "correct horse"})
-    assert app.get("/api/library-entries").json == []
-    # a Google account cannot be entered through the password form
-    app.post("/auth/logout")
-    app.post_json("/auth/email/login", {"email": "alice@example.com", "password": "anything at all"}, status=401)
+    register(app, mailer, "alice@example.com")
+    assert [entry["title"] for entry in app.get("/api/library-entries").json] == ["Dune"]
 
 
 # ─── other providers ─────────────────────────────────────────────────────────
@@ -320,8 +413,8 @@ def test_oauth_callback(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -
     assert response.location.endswith("/library")
     assert exchanged == [("github", "abc")]
     user = app.get("/api/config").json["user"]
-    assert {k: user[k] for k in ("id", "email", "name", "role", "method", "verified")} == {
-        "id": 1, "email": "dave@example.com", "name": "Dave", "role": "user", "method": "github", "verified": True,
+    assert {k: user[k] for k in ("id", "email", "name", "role", "method")} == {
+        "id": 1, "email": "dave@example.com", "name": "Dave", "role": "user", "method": "github",
     }
     assert [(login["method"], login["provider_id"]) for login in user["logins"]] == [("github", "42")]
 
@@ -380,28 +473,33 @@ def test_logins_of_one_verified_email_are_one_account(app: webtest.TestApp, monk
     assert [login["method"] for login in app.get("/api/config").json["user"]["logins"]] == ["google", "github"]
 
 
-def test_unproven_emails_join_nothing(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
+def github_as_location(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch, claims: dict[str, str | bool]) -> str:
+    """ Go through GitHub's sign-in, GitHub saying claims; where it lands. """
+    configure_github(monkeypatch)
+    monkeypatch.setattr(auth, "exchange_code", lambda provider, code, redirect_uri: "token")
+    monkeypatch.setattr(auth, "fetch_claims", lambda provider, token: claims)
+    start = app.get("/auth/oauth/github")
+    assert start.location is not None
+    state = start.location.split("state=")[1].split("&")[0]
+    response = app.get(f"/auth/oauth/github/callback?code=c&state={state}", status=302)
+    assert response.location is not None
+    return response.location
+
+
+def test_unverified_email_is_refused(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch, engine: Engine) -> None:
+    """ An email the provider does not vouch for gets no account, nor into the account of that email. """
     sign_in(app)
-    alice = app.get("/api/config").json["user"]["id"]
     app.post("/auth/logout")
-    # GitHub with no verified address: an account of its own
-    github_as(monkeypatch, app, {"sub": "github:8", "email": "", "name": "anon", "picture": "", "verified": False})
-    stranger = app.get("/api/config").json["user"]
-    assert stranger["id"] != alice and stranger["verified"] is False
-    app.post("/auth/logout")
-    # a password account under Alice's address is not Alice's
-    app.post_json("/auth/email/register", {"email": "alice@example.com", "password": "long enough"})
-    squatter = app.get("/api/config").json["user"]
-    assert squatter["id"] not in (alice, stranger["id"]) and squatter["verified"] is False
-    assert squatter["logins"][0]["verified"] is False
-    # signing in with the password again reaches that same account
-    app.post("/auth/logout")
-    app.post_json("/auth/email/login", {"email": "alice@example.com", "password": "long enough"})
-    assert app.get("/api/config").json["user"]["id"] == squatter["id"]
-    # and Google still reaches Alice's
-    app.post("/auth/logout")
-    sign_in(app)
-    assert app.get("/api/config").json["user"]["id"] == alice
+    unverified: list[dict[str, str | bool]] = [
+        {"sub": "github:8", "email": "alice@example.com", "name": "x", "picture": "", "verified": False},
+        {"sub": "github:9", "email": "", "name": "y", "picture": "", "verified": True},
+    ]
+    for claims in unverified:
+        location = github_as_location(app, monkeypatch, claims)
+        assert "error=GitHub+did+not+confirm" in location
+        assert app.get("/api/config").json["user"] is None
+    with Session(engine) as session:
+        assert session.scalars(select(Login.subject)).all() == ["google:1234567890"]
 
 
 def test_choose_a_name(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> None:

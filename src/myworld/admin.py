@@ -28,7 +28,6 @@ def user_json(user: User) -> dict[str, Any]:
         "name": user.name,
         # every way they sign in: google, github, email, dev
         "methods": [login.method for login in user.logins],
-        "verified": user.verified,
         "role": user.role,
         "created_at": user.created_at.isoformat(timespec="seconds"),
     }

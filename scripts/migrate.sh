@@ -132,6 +132,20 @@
 #     deploying the version that signs in through logins: it gives a login to
 #     an account the old version made meanwhile, joins again, and drops
 #     users.google_sub and users.password_hash.
+#   - only a proven email gets an account (models.User, models.EmailVerification):
+#     email_verifications (the mailed links; create_all makes the table, made
+#     here too) and logins.password_hash (kept, for the email login made once
+#     its link was followed); users.verified and logins.verified go, and
+#     users.email becomes unique. A login that was never proven (a password
+#     login, or any with verified false) goes, and so does an account that is
+#     unverified itself or would be left with no login. Accounts reference
+#     users with ON DELETE CASCADE, so this NEVER deletes an account that
+#     owns rows in any table pointing at users (other than logins): it stops,
+#     changing nothing, with exit status 1 and lists each such account (id,
+#     email, rows per table) for you to decide, and so it does when emails
+#     are still shared by two accounts after that. Needs the logins step
+#     above done (it says so when not). Run before the deploy: the old version
+#     writes users.verified, which then no longer exists, so deploy right away.
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -575,6 +589,67 @@ if "google_sub" in user_columns:
     db.execute("DROP TABLE users")
     db.execute("ALTER TABLE users_new RENAME TO users")
     added.append("logins (users.google_sub and password_hash in them now)")
+# only a proven email gets an account: email_verifications and logins.password_hash
+# made if missing; the logins that were never proven (a password login, or any with
+# verified false) and the accounts that are unverified themselves or are left with no
+# login go, unless one owns rows in a table pointing at users (those are deleted with
+# it by ON DELETE CASCADE): then nothing is changed and this stops, naming them. Then
+# users.verified and logins.verified are dropped and users.email made unique.
+tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+login_columns = {row[1] for row in db.execute("PRAGMA table_info(logins)")}
+user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
+if login_columns:
+    if "password_hash" not in login_columns:
+        db.execute("ALTER TABLE logins ADD COLUMN password_hash VARCHAR(300)")
+        added.append("logins.password_hash")
+    if "email_verifications" not in tables:
+        db.execute("""CREATE TABLE email_verifications (
+            email VARCHAR(320) NOT NULL PRIMARY KEY,
+            token_hash VARCHAR(64) NOT NULL UNIQUE,
+            sent_at DATETIME NOT NULL)""")
+        added.append("email_verifications")
+    if "verified" in login_columns and "verified" in user_columns:
+        doomed_logins = [row[0] for row in db.execute("SELECT id FROM logins WHERE subject LIKE 'email:%' OR NOT verified")]
+        marks = ",".join("?" * len(doomed_logins))
+        doomed_users = [row[0] for row in db.execute(f"""SELECT id FROM users
+            WHERE NOT verified OR NOT EXISTS (SELECT 1 FROM logins WHERE logins.user_id = users.id AND logins.id NOT IN ({marks}))
+            ORDER BY id""", doomed_logins)]
+        # every table with a foreign key to users, other than logins
+        references = [(table, fk[3]) for table in sorted(tables) if table != "logins"
+                      for fk in db.execute(f'PRAGMA foreign_key_list("{table}")') if fk[2] == "users"]
+        owned: dict[int, list[str]] = {}
+        for user_id in doomed_users:
+            for table, column in references:
+                rows = db.execute(f'SELECT count(*) FROM "{table}" WHERE "{column}" = ?', (user_id,)).fetchone()[0]
+                if rows:
+                    owned.setdefault(user_id, []).append(f"{rows} in {table}")
+        if owned:
+            print("not migrated: these accounts have no proven email and own rows that deleting them would delete too.", file=sys.stderr)
+            print("Nothing was changed. Decide for each: give it a proven way to sign in, move its rows, or delete it by hand.", file=sys.stderr)
+            for user_id, tables_owned in owned.items():
+                email = db.execute("SELECT email FROM users WHERE id = ?", (user_id,)).fetchone()[0]
+                print(f"  user {user_id} ({email}): {', '.join(tables_owned)}", file=sys.stderr)
+            sys.exit(1)
+        db.executemany("DELETE FROM logins WHERE user_id = ?", [(user_id,) for user_id in doomed_users])
+        db.executemany("DELETE FROM logins WHERE id = ?", [(login_id,) for login_id in doomed_logins])
+        db.executemany("DELETE FROM users WHERE id = ?", [(user_id,) for user_id in doomed_users])
+        db.execute("ALTER TABLE users DROP COLUMN verified")
+        db.execute("ALTER TABLE logins DROP COLUMN verified")
+        added.append(f"{len(doomed_logins)} unproven logins and {len(doomed_users)} accounts without a proven email dropped, users.verified and logins.verified")
+    elif "verified" in login_columns or "verified" in user_columns:
+        raise SystemExit("users.verified and logins.verified are expected together: one of them is missing, look at the database")
+    email_unique = any(
+        [row[2] for row in db.execute(f"PRAGMA index_info({index[1]})")] == ["email"]
+        for index in db.execute("PRAGMA index_list(users)") if index[2]
+    )
+    if not email_unique:
+        shared = db.execute("SELECT lower(email), group_concat(id) FROM users GROUP BY lower(email) HAVING count(*) > 1").fetchall()
+        if shared:
+            for email, ids in shared:
+                print(f"{email} is the email of accounts {ids}", file=sys.stderr)
+            raise SystemExit("not migrated, nothing changed: emails shared by several accounts, so users.email cannot be unique; merge or delete them by hand")
+        db.execute("CREATE UNIQUE INDEX users_email_key ON users (email)")
+        added.append("users.email unique")
 if not db.execute("SELECT 1 FROM users WHERE role = 'admin'").fetchone():
     oldest = db.execute("SELECT min(id) FROM users").fetchone()[0]
     if oldest is not None:
@@ -597,7 +672,8 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	SELECT table_name || '.' || column_name || ':' || COALESCE(character_maximum_length::text, '')
 	FROM information_schema.columns
 	WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash', 'role', 'verified', 'last_login'))
-	   OR (table_name = 'logins' AND column_name = 'subject')
+	   OR (table_name = 'logins' AND column_name IN ('subject', 'verified', 'password_hash'))
+	   OR (table_name = 'email_verifications' AND column_name = 'email')
 	   OR (table_name = 'works' AND column_name IN ('id', 'imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
 	   OR (table_name IN ('museums', 'concerts') AND column_name = 'id')
 	   OR (table_name = 'library_works' AND column_name IN ('id', 'goodreads_id', 'simania_id', 'title_locale', 'isbn', 'openlibrary_id', 'external_id'))
@@ -622,6 +698,12 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 has() {
 	grep -qx "${1}" <<<"${present}"
 }
+# whether users.email is unique already (create_all makes it so; a migrated table needs it added)
+email_unique="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
+	SELECT count(*) FROM pg_constraint c
+	JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+	WHERE c.conrelid = to_regclass('users') AND c.contype = 'u' AND array_length(c.conkey, 1) = 1 AND a.attname = 'email'
+")"
 
 # Collect the statements for what is missing, then run them in one session.
 changed=()
@@ -1116,6 +1198,86 @@ if has "users.google_sub:.*"; then
 		need "users.google_sub, users.password_hash (in logins now)" "${fill_logins};
 			ALTER TABLE users DROP COLUMN google_sub, DROP COLUMN password_hash"
 	fi
+fi
+
+# only a proven email gets an account (see the header). The logins that were never proven
+# and the accounts that are unverified themselves or are left with no login go, unless one
+# owns rows in a table with a foreign key to users (those go with it, ON DELETE CASCADE):
+# then the statement raises, the one transaction rolls back and psql exits with the list.
+read -r -d '' drop_unproven <<'SQL' || true
+DO $$
+DECLARE
+	doomed_logins integer[];
+	doomed_users integer[];
+	reference record;
+	counted record;
+	found text[] := '{}';
+	report text;
+BEGIN
+	SELECT COALESCE(array_agg(id), '{}') INTO doomed_logins FROM logins WHERE subject LIKE 'email:%' OR NOT verified;
+	SELECT COALESCE(array_agg(u.id), '{}') INTO doomed_users FROM users u
+		WHERE NOT u.verified
+		   OR NOT EXISTS (SELECT 1 FROM logins l WHERE l.user_id = u.id AND l.id <> ALL (doomed_logins));
+	FOR reference IN
+		SELECT c.conrelid::regclass::text AS tbl, a.attname::text AS col
+		FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+		WHERE c.contype = 'f' AND c.confrelid = 'users'::regclass AND c.conrelid <> 'logins'::regclass
+		ORDER BY 1, 2
+	LOOP
+		FOR counted IN EXECUTE format('SELECT t.%1$I AS id, count(*) AS n FROM %2$s t WHERE t.%1$I = ANY ($1) GROUP BY 1', reference.col, reference.tbl) USING doomed_users
+		LOOP
+			found := found || format('%s|%s|%s', counted.id, reference.tbl, counted.n);
+		END LOOP;
+	END LOOP;
+	IF cardinality(found) > 0 THEN
+		SELECT string_agg(format('  user %s (%s): %s', p.uid, (SELECT u.email FROM users u WHERE u.id = p.uid), p.what), E'\n' ORDER BY p.uid) INTO report FROM (
+			SELECT parts[1]::integer AS uid, string_agg(parts[3] || ' in ' || parts[2], ', ' ORDER BY parts[2]) AS what
+			FROM (SELECT string_to_array(f, '|') AS parts FROM unnest(found) f) split
+			GROUP BY parts[1]
+		) p;
+		RAISE EXCEPTION E'not migrated, nothing changed: these accounts have no proven email and own rows that deleting them would delete too. Decide for each: give it a proven way to sign in, move its rows, or delete it by hand.\n%', report;
+	END IF;
+	DELETE FROM logins WHERE user_id = ANY (doomed_users) OR id = ANY (doomed_logins);
+	DELETE FROM users WHERE id = ANY (doomed_users);
+END
+$$;
+ALTER TABLE users DROP COLUMN verified;
+ALTER TABLE logins DROP COLUMN verified
+SQL
+read -r -d '' check_emails <<'SQL' || true
+DO $$
+DECLARE
+	shared text;
+BEGIN
+	SELECT string_agg(format('%s: accounts %s', e, ids), E'\n  ') INTO shared FROM (
+		SELECT lower(email) AS e, string_agg(id::text, ', ' ORDER BY id) AS ids FROM users GROUP BY lower(email) HAVING count(*) > 1
+	) d;
+	IF shared IS NOT NULL THEN
+		RAISE EXCEPTION E'not migrated, nothing changed: emails shared by several accounts, so users.email cannot be unique; merge or delete them by hand:\n  %', shared;
+	END IF;
+END
+$$
+SQL
+if has "logins.subject:.*" && ! has "users.google_sub:.*"; then
+	has "logins.password_hash:.*" || need logins.password_hash "ALTER TABLE logins ADD COLUMN password_hash VARCHAR(300)"
+	has "email_verifications.email:.*" || need email_verifications "CREATE TABLE email_verifications (
+			email VARCHAR(320) NOT NULL,
+			token_hash VARCHAR(64) NOT NULL,
+			sent_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+			CONSTRAINT email_verifications_pkey PRIMARY KEY (email),
+			CONSTRAINT email_verifications_token_hash_key UNIQUE (token_hash))"
+	if has "users.verified:.*" && has "logins.verified:.*"; then
+		need "unproven logins and the accounts without a proven email dropped, users.verified and logins.verified" "${drop_unproven}"
+	elif has "users.verified:.*" || has "logins.verified:.*"; then
+		echo "users.verified and logins.verified are expected together: one of them is missing, look at the database" >&2
+		exit 1
+	fi
+	if [[ "${email_unique}" == "0" ]]; then
+		need "users.email unique" "${check_emails};
+			ALTER TABLE users ADD CONSTRAINT users_email_key UNIQUE (email)"
+	fi
+elif has "users.google_sub:.*"; then
+	echo "the logins step above is not done yet: run this again for the proven-email step" >&2
 fi
 
 if (( ${#changed[@]} == 0 )); then

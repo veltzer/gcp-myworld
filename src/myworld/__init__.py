@@ -18,7 +18,7 @@ from flask.json.provider import DefaultJSONProvider
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from myworld import admin, auth, views, world
+from myworld import admin, auth, verification, views, world
 from myworld.api import ApiError, handle_api_error
 from myworld.models import make_engine
 
@@ -48,7 +48,14 @@ def secret_key() -> str:
     return secrets.token_hex(32)
 
 
-def create_app(engine: Engine | None = None) -> flask.Flask:
+def mailer() -> verification.Mailer:
+    """ Identity Platform mails the verification links on Cloud Run; locally they go to the log. """
+    if "K_SERVICE" in os.environ:
+        return verification.IdentityPlatform.from_environment()
+    return verification.LogMailer()
+
+
+def create_app(engine: Engine | None = None, mail: verification.Mailer | None = None) -> flask.Flask:
     app = flask.Flask(__name__)
     app.config["SECRET_KEY"] = secret_key()
     if "K_SERVICE" in os.environ and not auth.client_id():
@@ -61,6 +68,7 @@ def create_app(engine: Engine | None = None) -> flask.Flask:
     app.config["SESSION_COOKIE_SECURE"] = "K_SERVICE" in os.environ
     app.config["build_info"] = load_build_info()
     app.config["engine"] = engine or make_engine()
+    app.config["MAILER"] = mail or mailer()
     app.config["GZIP_MIN_BYTES"] = GZIP_MIN_BYTES
     # The hostname the service is meant to be reached on (gcp_domain in .gcp.conf); empty in dev.
     app.config["CANONICAL_HOST"] = os.environ.get("CANONICAL_HOST", "")

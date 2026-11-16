@@ -56,6 +56,12 @@ def library() -> werkzeug.Response:
     return flask.send_from_directory(HTML_DIR, "library.html")
 
 
+@bp.route("/verify", methods=["GET"])
+def verify() -> werkzeug.Response:
+    """ Where the mailed link leads: choose the password of an email login (the token is read by app.js). """
+    return flask.send_from_directory(HTML_DIR, "verify.html")
+
+
 @bp.route("/app/version", methods=["GET"])
 def version() -> flask.Response:
     info = dict(flask.current_app.config["build_info"])
@@ -184,11 +190,10 @@ def _login_json(login: Login, current: Login, email: str) -> dict[str, Any]:
         "method": login.method,
         "provider_id": login.provider_id,
         # what the provider reports, only when it is news: not the account's
-        # email again, nor a password login's id (which is its email)
+        # email again, nor an email or dev login's id (which is its email)
         "email": "" if login.email in (login.provider_id, email) else login.email,
         "last": login.last_login.date().isoformat() if login.last_login else "",
         "current": login.id == current.id,
-        "verified": login.verified,
     }
 
 
@@ -201,9 +206,7 @@ def _account_json(login: Login) -> dict[str, Any]:
         "name": user.name,
         "picture": user.picture,
         "role": user.role,
-        # the account panel: whether the email is proven theirs, since when, how this
-        # session signed in, and every way they sign in
-        "verified": user.verified,
+        # the account panel: since when, how this session signed in, and every way they sign in
         "since": user.created_at.date().isoformat(),
         "method": login.method,
         "logins": [_login_json(other, login, user.email) for other in sorted(user.logins, key=lambda o: (o.id != login.id, o.id))],

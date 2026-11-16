@@ -44,8 +44,8 @@ to run again. Unknown fields in the YAML stop the import rather than being
 dropped, so nothing is lost on the way in.
 
 The user must have signed in at least once; pass the email they signed in
-with (and --subject when that email has several accounts, e.g. Google and
-GitHub).
+with (there is one account per email; --subject insists that it has that
+login, e.g. google:1087...).
 
   scripts/import_world.py --email me@example.com [--source ../veltzer.github.io]
 
@@ -460,9 +460,7 @@ def find_owner(session: Session, email: str, subject: str | None) -> User:
         users = [u for u in users if any(login.subject in wanted for login in u.logins)]
     if not users:
         raise WorldImportError(f"no account for {email}{f' with subject {subject}' if subject else ''}: sign in once first")
-    if len(users) > 1:
-        subjects = "; ".join(f"account {u.id}: " + ", ".join(login.subject for login in u.logins) for u in users)
-        raise WorldImportError(f"{email} has several accounts, pick one with --subject (one of its logins): {subjects}")
+    # one account per email (users.email is unique)
     return users[0]
 
 
@@ -1293,7 +1291,7 @@ class Places:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[1] if __doc__ else None)
     parser.add_argument("--email", required=True, help="email of the account that will own the data")
-    parser.add_argument("--subject", help="one of the account's logins (logins.subject, e.g. google:1087...) when the email has several accounts")
+    parser.add_argument("--subject", help="insist that the account has this login (logins.subject, e.g. google:1087...)")
     parser.add_argument("--source", type=Path, default=Path(__file__).resolve().parent.parent.parent / "veltzer.github.io")
     parser.add_argument("--dry-run", action="store_true", help="do it all and print what was done, then roll it back")
     parser.add_argument(

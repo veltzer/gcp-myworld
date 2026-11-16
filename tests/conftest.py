@@ -29,6 +29,25 @@ def fake_claims(token: str) -> dict[str, Any]:
     return dict(FAKE_CLAIMS, sub=token, email=FAKE_CLAIMS["email"] if token == FAKE_CLAIMS["sub"] else f"{token}@example.com")
 
 
+class FakeMailer:
+    """ Keeps the links instead of mailing them: (email, link) in the order sent. """
+
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, str]] = []
+        self.forgotten: list[str] = []
+
+    def send(self, email: str, continue_url: str) -> None:
+        self.sent.append((email, continue_url))
+
+    def forget(self, email: str) -> None:
+        self.forgotten.append(email)
+
+
+@pytest.fixture(name="mailer")
+def fixture_mailer() -> FakeMailer:
+    return FakeMailer()
+
+
 @pytest.fixture(name="engine")
 def fixture_engine() -> Iterator[Engine]:
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
@@ -38,13 +57,13 @@ def fixture_engine() -> Iterator[Engine]:
 
 
 @pytest.fixture(name="app")
-def fixture_app(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> webtest.TestApp:
+def fixture_app(engine: Engine, mailer: FakeMailer, monkeypatch: pytest.MonkeyPatch) -> webtest.TestApp:
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-client-id.apps.googleusercontent.com")
     monkeypatch.setenv("SECRET_KEY", "test-secret")
     monkeypatch.delenv("K_SERVICE", raising=False)
     monkeypatch.delenv("CANONICAL_HOST", raising=False)
     monkeypatch.setattr(auth, "verify_google_token", fake_claims)
-    return webtest.TestApp(create_app(engine))
+    return webtest.TestApp(create_app(engine, mailer))
 
 
 def sign_in(app: webtest.TestApp, sub: str = "1234567890") -> None:
