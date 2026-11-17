@@ -14,6 +14,7 @@ country's flag (P41).
   scripts/fetch_pictures.py --only groups
   scripts/fetch_pictures.py --only devices
   scripts/fetch_pictures.py --only professions
+  scripts/fetch_pictures.py --only people
   scripts/fetch_pictures.py --title "group:The Blues Messengers=he:שליחי הבלוז"
 
 A group's picture is its own article's (Wikidata's image of it, else its
@@ -33,6 +34,14 @@ A profession's picture ("Performer", "Book Author") is that of the article
 about the occupation its name is, else its last word is ("Author"), else
 Wikipedia's search finds; --title "profession:Lecturer=en:Lecture" and
 --file "profession:Lecturer=..." point it elsewhere.
+
+A person's photo is taken only for someone with a profession (a performer,
+a book author, a lecturer: people one may find in an encyclopedia; a friend
+or a relative has none and is never looked up), from the article whose title
+is their name, in English and then in Hebrew by their Hebrew name, and only
+when that article is about a human being and says they do that kind of work,
+so a namesake is not taken for them. It becomes their first photo, the
+default one; --title "person:Shalom Hanoch=he:שלום חנוך" points one elsewhere.
 
 A city's article is looked up as "City, Region" (US cities: "Austin,
 Texas"), then "City, Country", then "City", and taken only when its text
@@ -64,7 +73,17 @@ os.chdir(ROOT)
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from myworld.models import City, Country, Device, Group, Image, PersonType, make_engine
+from myworld.models import (
+    City,
+    Country,
+    Device,
+    Group,
+    Image,
+    Person,
+    PersonPhoto,
+    PersonType,
+    make_engine,
+)
 
 USER_AGENT = "myworld-pictures/1.0 (+https://github.com/veltzer/gcp-myworld)"
 SUMMARY = "https://{lang}.wikipedia.org/api/rest_v1/page/summary/"
@@ -74,6 +93,13 @@ API = "https://{lang}.wikipedia.org/w/api.php"
 MUSIC = re.compile(
     r"\b(band|musician|jazz|singer|guitarist|drummer|saxophonist|bassist|double-bassist|pianist|trumpeter|composer|rock|ensemble|percussionist|music)\b"
     r"|להקת|זמר|מתופף|נגן|מוזיק",
+    re.IGNORECASE,
+)
+# what an article about someone who performs, writes or lectures says they are
+PUBLIC = re.compile(
+    MUSIC.pattern + r"|\b(actor|actress|comedian|dancer|conductor|performer|entertainer|writer|author|novelist|poet|playwright|journalist|essayist"
+    r"|scientist|physicist|mathematician|philosopher|biologist|psychologist|economist|historian|professor|lecturer|scholar|academic|musicologist"
+    r"|programmer|engineer|chess|cartoonist|critic|educator)\b|סופר|משורר|שחקן|פרופסור|מדען|עיתונאי|פסנתרן|גיטריסט|יוצר|קומיקאי|רקדן|מלחין|מרצה|חוקר",
     re.IGNORECASE,
 )
 # what an article about a device says it is ("a smartphone", "a desktop computer")
@@ -281,7 +307,42 @@ def profession_picture(kind: PersonType, overrides: dict[str, tuple[str, str]]) 
     return None
 
 
-def kind_of(row: Country | City | Group | Device | PersonType) -> str:
+def is_human(item: str) -> bool:
+    """ Whether a Wikidata item is a human being (instance of Q5), not a band, a character or a list of namesakes. """
+    entity = json.loads(get(f"{WIKIDATA}{item}.json"))["entities"][item]
+    kinds = [claim.get("mainsnak", {}).get("datavalue", {}).get("value", {}) for claim in entity.get("claims", {}).get("P31", [])]
+    return any(isinstance(kind, dict) and kind.get("id") == "Q5" for kind in kinds)
+
+
+def person_picture(person: Person, overrides: dict[str, tuple[str, str]]) -> tuple[dict[str, Any], str] | None:
+    """
+    (article, file) for a person with a profession: --title's article, else
+    the article their name is the title of (English, then Hebrew by their
+    Hebrew name) when it is about a human who performs, writes or lectures,
+    with a free photo.
+    """
+    pointed = named(overrides, "person", person.name)
+    if pointed is not None:
+        chosen = picture(pointed, False)
+        return (pointed, chosen) if chosen and free(pointed, chosen) else None
+    english = " ".join(part for part in (person.first_name, person.middle_name, person.surname) if part)
+    titles = [("en", english), *(("he", other.name) for other in person.names if other.locale == "he")]
+    for lang, title in titles:
+        if len(title.split()) < 2:
+            # one word names too many people
+            continue
+        found = summary(title, lang)
+        if found is None or found.get("type") != "standard" or not found.get("wikibase_item"):
+            continue
+        if not PUBLIC.search(found.get("description", "") + " " + found.get("extract", "")[:400]) or not is_human(found["wikibase_item"]):
+            continue
+        chosen = picture(found, False)
+        if chosen and free(found, chosen):
+            return found, chosen
+    return None
+
+
+def kind_of(row: Country | City | Group | Device | PersonType | Person) -> str:
     """ What --title and --file call a row's kind: "city", "device", "profession". """
     return "profession" if isinstance(row, PersonType) else type(row).__name__.lower()
 
@@ -296,7 +357,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[1] if __doc__ else None)
     parser.add_argument("--dry-run", action="store_true", help="only print what it would take")
     parser.add_argument("--all", action="store_true", help="replace the pictures there are too")
-    parser.add_argument("--only", choices=["countries", "cities", "groups", "devices", "professions"], help="only these")
+    parser.add_argument("--only", choices=["countries", "cities", "groups", "devices", "professions", "people"], help="only these")
     parser.add_argument("--title", action="append", default=[], metavar="KIND:NAME=LANG:TITLE",
                         help='the article for a group, a person, a device or a profession, e.g. "group:The Witches=he:המכשפות"')
     parser.add_argument("--file", action="append", default=[], metavar="KIND:NAME=FILE",
@@ -319,15 +380,17 @@ def main() -> int:
     print(engine.url.render_as_string(hide_password=True))
     missed = 0
     with Session(engine) as session:
-        rows: list[Country | City | Group | Device | PersonType] = [
+        rows: list[Country | City | Group | Device | PersonType | Person] = [
             *(session.scalars(select(Country).order_by(Country.id)) if args.only in (None, "countries") else []),
             *(session.scalars(select(City).order_by(City.id).options(selectinload(City.country))) if args.only in (None, "cities") else []),
             *(session.scalars(select(Group).order_by(Group.id).options(selectinload(Group.members))) if args.only in (None, "groups") else []),
             *(session.scalars(select(Device).order_by(Device.id)) if args.only in (None, "devices") else []),
             *(session.scalars(select(PersonType).order_by(PersonType.id)) if args.only in (None, "professions") else []),
+            # only those with a profession: a friend or a relative is not looked up
+            *(session.scalars(select(Person).where(Person.types.any()).order_by(Person.id).options(selectinload(Person.names))) if args.only in (None, "people") else []),
         ]
         for row in rows:
-            if row.image_id is not None and not args.all:
+            if (bool(row.photos) if isinstance(row, Person) else row.image_id is not None) and not args.all:
                 continue
             what = f"{kind_of(row)} {row.id}, {row.name}"
             whose = ""
@@ -341,6 +404,8 @@ def main() -> int:
                 found, chosen = device_picture(row, overrides) or (None, None)
             elif isinstance(row, PersonType):
                 found, chosen = profession_picture(row, overrides) or (None, None)
+            elif isinstance(row, Person):
+                found, chosen = person_picture(row, overrides) or (None, None)
             else:
                 found = article(city_titles(row), row.country.name if row.country else "", row.region) if isinstance(row, City) else article([row.name], "")
                 chosen = picture(found, isinstance(row, Country)) if found else None
@@ -367,6 +432,15 @@ def main() -> int:
                 image = Image(owner_id=row.owner_id, filename=filename, content_type=content_type, sha256=sha256, data=data)
                 session.add(image)
                 session.flush()
+            if isinstance(row, Person):
+                # their first photo, the default one: those they had follow it
+                rest = [photo for photo in row.photos if photo.image_id != image.id]
+                first = PersonPhoto(image_id=image.id, image_source=info["page"], image_license=info["license"], image_author=info["author"][:300])
+                row.photos = [first, *rest]
+                for position, photo in enumerate(row.photos):
+                    photo.position = position
+                session.commit()
+                continue
             row.image_id = image.id
             # a member's photo says whose it is, so the card does not pass it off as the group's
             author = f"{whose} (photo by {info['author'] or 'unknown'})" if whose else info["author"]
