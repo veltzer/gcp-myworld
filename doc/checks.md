@@ -170,6 +170,9 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `people-english-names`: every person has an English name: the name
   parts, written in Latin letters. Someone whose name is not known has
   none, and then has a description to be known by.
+- `people-hebrew-names`: every person who wrote a book that has a Hebrew
+  title has a name in Hebrew among their names, the one the book is shown
+  with in Hebrew.
 - `people-name-languages`: every name in another language is written in the
   script of that language; `scripts/fix_languages.py` repairs those too.
 

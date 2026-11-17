@@ -353,6 +353,26 @@ def check_person_english_names(session: Session) -> Result:
     return Result(checked=len(people), problems=problems)
 
 
+@check("people-hebrew-names", "Every author of a book in Hebrew has a Hebrew name", "authors of books in Hebrew", "people")
+def check_person_hebrew_names(session: Session) -> Result:
+    """
+    Every person, of every account, who wrote a book that has a title in
+    Hebrew (its main title or one in another language) has a name in Hebrew
+    among their names: the one the book is shown with in Hebrew.
+    """
+    authors: dict[int, tuple[Person, str]] = {}
+    for book in _entries(session, "book"):
+        if "he" in {book.work.title_locale, *(t.locale for t in book.work.titles)}:
+            for person in book.authors:
+                authors.setdefault(person.id, (person, book.work.title))
+    problems = [
+        Problem(f"{person.name} (person {person.id}, account {person.owner_id})", f"wrote {title}, which has a Hebrew title, but has no Hebrew name", f"people/{person.id}", person.owner_id)
+        for person, title in sorted(authors.values(), key=lambda found: (found[0].owner_id, found[0].id))
+        if not any(name.locale == "he" for name in person.names)
+    ]
+    return Result(checked=len(authors), problems=problems)
+
+
 @check("people-name-languages", "Every name in a language is in that language", "names", "people")
 def check_person_name_languages(session: Session) -> Result:
     """

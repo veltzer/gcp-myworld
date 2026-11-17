@@ -1747,6 +1747,22 @@ def test_each_reading_has_its_own_status_rating_and_review(imported: webtest.Tes
     assert imported.put_json(url, {"reads": [{}]}).json["reads"] == [{"date": None, "locale": "", "status": "done", "rating": None, "review": "", "started_on": None}]
 
 
+def test_authors_of_hebrew_books_have_hebrew_names(imported: webtest.TestApp, engine: Engine) -> None:
+    def problems() -> list[tuple[str, str]]:
+        with Session(engine) as session:
+            return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS["people-hebrew-names"].run(session).problems]
+
+    before = problems()
+    amos = imported.post_json("/api/people", {"first_name": "Amos", "surname": "Oz"}, status=201).json
+    ann = imported.post_json("/api/people", {"first_name": "Ann", "surname": "Lee"}, status=201).json
+    # a book with a Hebrew title, and one without: only the first asks its author for a Hebrew name
+    imported.post_json("/api/library-entries", {"kind": "book", "title": "My Michael", "titles": [{"locale": "he", "title": "מיכאל שלי"}], "authors": [amos["id"]]})
+    imported.post_json("/api/library-entries", {"kind": "book", "title": "Plain", "authors": [ann["id"]]})
+    assert problems() == [*before, ("Amos Oz", "wrote My Michael, which has a Hebrew title, but has no Hebrew name")]
+    imported.put_json(f"/api/people/{amos['id']}", {"first_name": "Amos", "surname": "Oz", "names": [{"locale": "he", "name": "עמוס עוז"}]})
+    assert problems() == before
+
+
 def test_every_person_has_an_english_name(imported: webtest.TestApp, engine: Engine) -> None:
     def problems() -> list[tuple[str, str]]:
         with Session(engine) as session:
