@@ -1552,3 +1552,27 @@ def test_fix_languages(imported: webtest.TestApp, engine: Engine) -> None:
     assert problems("book-title-languages") == problems("people-name-languages") == []
     fixed = {e["work_id"]: e for e in imported.get("/api/library-entries?kind=book").json}
     assert (fixed[book["work_id"]]["title_locale"], fixed[other["work_id"]]["titles"]) == ("he", [{"locale": "he", "title": "משחקים"}])
+
+
+def test_book_title_checks(imported: webtest.TestApp, engine: Engine) -> None:
+    """ A book has a title, and one with a Hebrew title has an English one too. """
+    def problems(name: str) -> list[tuple[str, str]]:
+        with Session(engine) as session:
+            result = checks.CHECKS[name].run(session)
+            return [(p.subject.split(" (")[0], p.message) for p in result.problems]
+
+    before = len(problems("book-english-titles"))
+    imported.post_json("/api/library-entries", {"kind": "book", "title": "Emma"})
+    imported.post_json("/api/library-entries", {"kind": "book", "title": "Games", "titles": [{"locale": "he", "title": "משחקים"}]})
+    hebrew = imported.post_json("/api/library-entries", {"kind": "book", "title": "בעלת הארמון"}).json
+    assert problems("book-titles") == []
+    # a Hebrew title alone is listed, whether or not it is the main one; a book with no Hebrew title is not looked at
+    assert problems("book-english-titles")[before:] == [("בעלת הארמון", "has a Hebrew title but no English one")]
+    imported.put_json(f"/api/library-entries/{hebrew['work_id']}", {"titles": [{"locale": "en", "title": "Lady of the Castle"}]})
+    assert len(problems("book-english-titles")) == before
+    with Session(engine) as session:
+        work = session.get(Work, hebrew["work_id"])
+        assert work is not None
+        work.title = " "
+        session.commit()
+    assert problems("book-titles") == [(" ", "has no title")]

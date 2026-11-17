@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from myworld import languages, names
 from myworld.cities import city_key, country_name
 from myworld.models import (
+    DEFAULT_LOCALE,
     KINDS,
     YOUTUBE_ID_LENGTH,
     AudioCourse,
@@ -611,6 +612,29 @@ def check_book_languages(session: Session) -> Result:
     """ Every book in a library, of every account, that was read (not one only wanted) says the language it was read in: it is shown in it. """
     books = [b for b in _entries(session, "book") if b.status != "wishlist"]
     return Result(checked=len(books), problems=[_entry_problem(b, "does not say the language it was read in") for b in books if not b.locale])
+
+
+@check("book-titles", "Every book has a title", "books", "book")
+def check_book_titles(session: Session) -> Result:
+    """ Every book in a library, of every account, has at least one title: its main title is not empty. """
+    books = _entries(session, "book")
+    return Result(checked=len(books), problems=[_entry_problem(b, "has no title") for b in books if not b.work.title.strip()])
+
+
+@check("book-english-titles", "Every book with a Hebrew title has an English one", "books with a Hebrew title", "book")
+def check_book_english_titles(session: Session) -> Result:
+    """
+    Every book in a library, of every account, that has a title in Hebrew
+    (its main title or one in another language) has a title in English as
+    well: the published one, or a translation of the Hebrew where the book
+    never came out in English.
+    """
+    hebrew = []
+    for book in _entries(session, "book"):
+        locales = {book.work.title_locale, *(t.locale for t in book.work.titles)}
+        if "he" in locales:
+            hebrew.append((book, DEFAULT_LOCALE in locales))
+    return Result(checked=len(hebrew), problems=[_entry_problem(b, "has a Hebrew title but no English one") for b, english in hebrew if not english])
 
 
 @check("book-title-languages", "Every title is in the language it says", "titles", "book")

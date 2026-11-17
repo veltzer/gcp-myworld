@@ -61,6 +61,11 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `book-years`: every book has the year it came out.
 - `book-languages`: every book read (not only wanted) says the language it
   was read in; it is shown in it, its title and its authors' names.
+- `book-titles`: every book has at least one title (its main title is not
+  empty).
+- `book-english-titles`: every book that has a title in Hebrew has one in
+  English as well: the published one, or a translation of the Hebrew where
+  the book never came out in English.
 - `book-title-languages`: every title of a book, the main one and those in
   other languages, is written in the script of the language it says (a
   title in Hebrew letters is not English). The forms and the API refuse a
