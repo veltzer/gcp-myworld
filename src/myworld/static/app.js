@@ -2963,6 +2963,20 @@ function pickerNote(row) {
 	return [row.is_self && "you", (row.types || []).map((t) => t.name).join("/"), named && row.description?.slice(0, 60)].filter(Boolean).join(" · ");
 }
 
+// A person (or any row of a view) named in a dialog is a link to them. It opens
+// in a new tab: the dialog stays open, with whatever was typed in it.
+const DIALOG_LINK_TITLE = "Open in a new tab: this dialog stays as it is";
+
+function dialogLink(view, row) {
+	const a = el("a", "person-link", row.name);
+	a.dir = "auto";
+	a.href = `/library#${view}/${row.id}`;
+	a.target = "_blank";
+	a.rel = "noopener";
+	a.title = DIALOG_LINK_TITLE;
+	return a;
+}
+
 // lists this long or shorter open on focus; longer ones only once something is typed
 const PICKER_OPEN_ON_FOCUS = 15;
 
@@ -2971,7 +2985,12 @@ const PICKER_OPEN_ON_FOCUS = 15;
 // multiple select gives removable chips.
 function makePicker(select, onChange) {
 	const multiple = select.multiple;
-	return new TomSelect(select, {
+	// a chosen row of a view (a person, a group, a profession) is a link to it, see dialogLink
+	const view = select.dataset.chips;
+	const item = (data, esc) => view
+		? `<div><a class="person-link" href="/library#${esc(view)}/${esc(data.value)}" target="_blank" rel="noopener" title="${esc(DIALOG_LINK_TITLE)}">${esc(data.text)}</a></div>`
+		: `<div>${esc(data.text)}</div>`;
+	const picker = new TomSelect(select, {
 		maxItems: multiple ? null : 1,
 		placeholder: select.dataset.placeholder,
 		maxOptions: 8,
@@ -2984,11 +3003,19 @@ function makePicker(select, onChange) {
 		plugins: multiple ? ["remove_button"] : ["clear_button"],
 		render: {
 			option: (data, esc) => `<div class="picker-option"><span>${esc(data.text)}</span>${data.sub ? `<small>${esc(data.sub)}</small>` : ""}</div>`,
-			item: (data, esc) => `<div>${esc(data.text)}</div>`,
+			item,
 			no_results: (data, esc) => `<div class="no-results">No one matches “${esc(data.input)}”</div>`,
 		},
 		onChange: () => onChange?.(),
 	});
+	// the picker takes a click on a chip for itself (it selects the chip) and cancels it: a click
+	// on the chip's link is kept from it, here on the way down, so the link opens
+	picker.wrapper.addEventListener("click", (event) => {
+		if (event.target.closest("a.person-link")) {
+			event.stopPropagation();
+		}
+	}, true);
+	return picker;
 }
 
 // What a picker offers: rows of a view, by name (or label), each with its note
@@ -3179,7 +3206,11 @@ function renderLinks(key, boxId, field) {
 		box.appendChild(el("span", "empty", "None yet"));
 	}
 	editingLinks[key].forEach((link, index) => {
-		const chip = el("span", "chip", `${link.type} ${link[field].name}`);
+		// "Friend of" and who, a link to them (a person, or an organization)
+		const chip = el("span", "chip");
+		const words = el("span");
+		words.append(`${link.type} `, dialogLink(field === "person" ? "people" : "organizations", link[field]));
+		chip.appendChild(words);
 		const remove = el("button", "chip-remove", "\u00d7");
 		remove.type = "button";
 		remove.setAttribute("aria-label", `Remove ${link.type} ${link[field].name}`);
