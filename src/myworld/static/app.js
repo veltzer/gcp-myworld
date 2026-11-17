@@ -347,7 +347,7 @@ async function pickMovie(movie) {
 			extras.push(film.genres.join(", "));
 		}
 		hint.textContent = `Filled in from The Movie Database${extras.length ? ` (${extras.join(" · ")})` : ""}.`;
-		form.elements.status.focus();
+		form.elements.notes.focus();
 	} catch (e) {
 		hint.textContent = e.message;
 	}
@@ -1061,9 +1061,9 @@ async function libraryPage() {
 	};
 
 	const form = $("add-form");
-	fillStatuses(form.elements.status, "done");
-	form.elements.rating.min = rating_min;
-	form.elements.rating.max = rating_max;
+	fillStatuses($("book-read-status"), "done");
+	$("book-read-rating").min = rating_min;
+	$("book-read-rating").max = rating_max;
 	form.onsubmit = async (event) => {
 		event.preventDefault();
 		dialogError("");
@@ -1086,7 +1086,11 @@ async function libraryPage() {
 			body.title_locale = titles[0].locale;
 			body.titles = titles.slice(1);
 		}
+		// where the user is with it, their rating and review: those of each reading
 		body.reads = readsValues();
+		if (body.reads === null) {
+			return;
+		}
 		try {
 			// all its covers: the first is the one its card shows
 			body.covers = (await pictures(form)).map((cover) => cover.id);
@@ -3366,14 +3370,51 @@ function localizedValues(key) {
 	return editingLocalized[key].map((item) => ({ locale: item.locale, [field]: item.text }));
 }
 
-// ─── the reads of a library entry: each a day and a language ────────────────
+// ─── the readings of a library entry ────────────────────────────────────────
+// Each has its own status, rating, review, the days it was started and finished
+// and its language: a book read twice has two, each with what was thought then.
 
-// the reads in the dialog, as the server sends them: {date, locale}, either empty when not known
+// the readings in the dialog, as the server sends them: {date, locale, status, rating, review, started_on}
 let editingReads = [];
+// the reading the row is editing (its place in the list), null when the row adds one
+let editingRead = null;
 
-// "2006-12-01 in Hebrew", with what is not known left out or said
+// "2006-12-01 in Hebrew, 8/10", with what is not known left out or said; a reading not
+// finished says where it is ("Want to")
 function readText(read) {
-	return [read.date || "date unknown", read.locale ? `in ${localeName(read.locale)}` : ""].filter(Boolean).join(" ");
+	const done = !read.status || read.status === "done";
+	const when = [read.date || (done ? "date unknown" : ""), read.locale ? `in ${localeName(read.locale)}` : ""].filter(Boolean).join(" ");
+	const parts = [when];
+	if (!done) {
+		parts.push(state.config.statuses[read.status] || read.status);
+	}
+	if (read.rating !== null && read.rating !== undefined) {
+		parts.push(`${read.rating}/${state.config.rating_max}`);
+	}
+	return parts.filter(Boolean).join(", ");
+}
+
+// the row's boxes show this reading (a new one: Done, the rest empty)
+function fillReadRow(read) {
+	$("book-read-status").value = read?.status || "done";
+	$("book-read-rating").value = read?.rating ?? "";
+	$("book-read-locale").value = read?.locale || "";
+	$("book-read-started").value = read?.started_on || "";
+	$("book-read-date").value = read?.date || "";
+	$("book-read-review").value = read?.review || "";
+	$("book-read-add").textContent = read ? "Update" : "Add";
+}
+
+// the row comes in to add a reading (index null) or to edit the one at index; asked again for the same, it goes away
+function openReadRow(index) {
+	const row = $("book-read-row");
+	if (!row.hidden && editingRead === index) {
+		row.hidden = true;
+		return;
+	}
+	editingRead = index;
+	fillReadRow(index === null ? null : editingReads[index]);
+	toggleAdder(row, true);
 }
 
 function renderReads() {
@@ -3384,47 +3425,84 @@ function renderReads() {
 	}
 	editingReads.forEach((read, index) => {
 		const chip = el("span", "chip", readText(read));
+		chip.title = read.review || "";
+		const edit = el("button", "modify chip-remove", "\u270e");
+		edit.type = "button";
+		edit.title = `Edit the reading ${readText(read)}`;
+		edit.setAttribute("aria-label", edit.title);
+		edit.onclick = () => openReadRow(index);
+		chip.appendChild(edit);
 		chip.appendChild(removeButton(`Remove the reading ${readText(read)}`, () => {
 			editingReads.splice(index, 1);
+			editingRead = null;
+			$("book-read-row").hidden = true;
 			renderReads();
 		}));
 		box.appendChild(chip);
 	});
-	box.appendChild(adderButton($("book-read-row"), "Add a reading"));
+	const add = el("button", "modify", "+");
+	add.type = "button";
+	add.title = "Add a reading";
+	add.setAttribute("aria-label", add.title);
+	add.onclick = () => openReadRow(null);
+	box.appendChild(add);
 }
 
-// the day and the language chosen, added to the list as a read; with neither chosen, a read
-// of which nothing is known is added only when asked for (the button), not by saving
-function addRead(asked) {
-	const date = $("book-read-date").value;
-	const locale = $("book-read-locale").value;
-	if (!asked && !date && !locale) {
-		return;
+// what the row says becomes a reading of the list: a new one, or the one it was editing.
+// False when the rating is not one (the browser says so), and nothing changes.
+function addRead() {
+	const rating = $("book-read-rating");
+	if (!rating.reportValidity()) {
+		return false;
 	}
-	editingReads.push({ date: date || null, locale });
-	$("book-read-date").value = "";
-	$("book-read-locale").value = "";
+	const read = {
+		date: $("book-read-date").value || null,
+		locale: $("book-read-locale").value,
+		status: $("book-read-status").value,
+		rating: rating.value === "" ? null : Number(rating.value),
+		started_on: $("book-read-started").value || null,
+		review: $("book-read-review").value.trim(),
+	};
+	if (editingRead === null) {
+		editingReads.push(read);
+	} else {
+		editingReads[editingRead] = read;
+	}
+	editingRead = null;
 	$("book-read-row").hidden = true;
 	renderReads();
+	return true;
 }
 
-function prepareReads(reads) {
+// a new book starts with the row in, to say its first reading; one edited with its readings listed
+function prepareReads(reads, isNew) {
 	editingReads = reads.map((read) => ({ ...read }));
-	$("book-read-date").value = "";
-	$("book-read-locale").value = "";
+	editingRead = null;
+	fillReadRow(null);
+	$("book-read-row").hidden = !isNew;
 	renderReads();
 }
 
-// the reads to send, with a day or a language still chosen in the row (saving does not lose it)
+// the readings to send, with what the row says while it is in (saving does not lose it);
+// null when the row's rating is not one
 function readsValues() {
-	addRead(false);
-	return editingReads.map((read) => ({ date: read.date, locale: read.locale }));
+	if (!$("book-read-row").hidden && !addRead()) {
+		return null;
+	}
+	return editingReads.map((read) => ({ ...read }));
 }
 
 // Add, and Enter in the box, add what is typed; Enter never saves the form
 function setupLocalized() {
 	fillLocales();
-	$("book-read-add").onclick = () => addRead(true);
+	$("book-read-add").onclick = () => addRead();
+	// the year a book came out stays as it is until its pencil is pressed
+	$("book-year-edit").onclick = () => {
+		const year = $("add-form").elements.year;
+		year.readOnly = false;
+		$("book-year-edit").disabled = true;
+		year.focus();
+	};
 	// the English name among a person's names follows the name parts as they are typed
 	for (const part of ["honorific", "first_name", "middle_name", "surname"]) {
 		$("person-form").elements[part].addEventListener("input", () => renderLocalized("names"));
@@ -3827,12 +3905,15 @@ async function prepareWorkForm(form, entry) {
 	$("movie-results").hidden = true;
 	$("movie-hint").hidden = true;
 	$("movie-query").value = "";
-	const values = entry || { creator: "", year: "", status: "done", rating: "", started_on: "", review: "", notes: "" };
-	for (const name of ["creator", "year", "status", "rating", "started_on", "review", "notes"]) {
+	const values = entry || { creator: "", year: "", notes: "" };
+	for (const name of ["creator", "year", "notes"]) {
 		form.elements[name].value = values[name] ?? "";
 	}
 	// its reads, and every title it has, each in its language; a new book starts with the row to type its title in
-	prepareReads(entry?.reads || []);
+	prepareReads(entry?.reads || [], !entry);
+	// the year released is there to see; its pencil lets it be changed (a book with none yet just takes one)
+	form.elements.year.readOnly = Boolean(entry) && entry.year !== null;
+	$("book-year-edit").disabled = !form.elements.year.readOnly;
 	prepareLocalized("titles", entry ? [{ locale: entry.title_locale, title: entry.main_title }, ...entry.titles] : [], false);
 	$("book-title-row").hidden = Boolean(entry);
 	// a book's authors are the user's people, any number of them; the picker

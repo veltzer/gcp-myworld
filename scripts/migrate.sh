@@ -172,10 +172,16 @@
 #     every account there is, as for a new one. Adding a column that points
 #     at locales, so after the locales step; run before the deploy.
 #   - library_entries.review, what the user thought of a book, beside its
-#     notes: adding a column, run before the deploy; scripts/split_reviews.py
-#     then moves the review that leads an imported book's notes into it. The
-#     tables of a book's further covers (library_covers) and a city's further
-#     photos (city_photos) are new, made by create_all.
+#     notes (the review that led an imported book's notes was moved into it).
+#     The tables of a book's further covers (library_covers) and a city's
+#     further photos (city_photos) are new, made by create_all.
+#   - a reading has its own status, rating, review and day started
+#     (library_reads.status, rating, review, started_on): those of an entry
+#     (library_entries) go to the reading it went by (the latest that has a
+#     day, else the last added), an entry with no reading gets one to hold
+#     them, its other readings are Done, and the four columns of
+#     library_entries are dropped. The new code needs the new columns and
+#     the old one the old: deploy and run this right after.
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -424,7 +430,6 @@ for table, column, kind in [
     ("library_works", "goodreads_id", "VARCHAR(20) NOT NULL DEFAULT ''"),
     ("library_works", "simania_id", "VARCHAR(20) NOT NULL DEFAULT ''"),
     ("library_entries", "image_id", "INTEGER REFERENCES images (id) ON DELETE SET NULL"),
-    ("library_entries", "review", "TEXT NOT NULL DEFAULT ''"),
 ]:
     existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
     if existing and column not in existing:
@@ -789,6 +794,50 @@ if "finished_on" in entry_columns:
     for index in indexes:
         db.execute(index)
     added.append(f"library_reads ({made} reads made from library_entries.finished_on and locale, which are dropped)")
+# a reading has its own status, rating, review and day started (see the header): those of
+# each entry go to the reading it went by, and library_entries is made again without them
+entry_columns = [row[1] for row in db.execute("PRAGMA table_info(library_entries)")]
+read_columns = [row[1] for row in db.execute("PRAGMA table_info(library_reads)")]
+if "status" in entry_columns and read_columns:
+    for column, kind in [
+        ("status", "VARCHAR(20) NOT NULL DEFAULT 'done'"),
+        ("rating", "INTEGER CHECK (rating IS NULL OR (rating >= 1 AND rating <= 10))"),
+        ("started_on", "DATE"),
+        ("review", "TEXT NOT NULL DEFAULT ''"),
+    ]:
+        if column not in read_columns:
+            db.execute(f"ALTER TABLE library_reads ADD COLUMN {column} {kind}")
+    made = db.execute("""INSERT INTO library_reads (user_id, work_id)
+        SELECT e.user_id, e.work_id FROM library_entries e
+        WHERE NOT EXISTS (SELECT 1 FROM library_reads r WHERE r.user_id = e.user_id AND r.work_id = e.work_id)
+        ORDER BY e.user_id, e.work_id""").rowcount
+    # a database from before entries had a review: none
+    review = "e.review" if "review" in entry_columns else "''"
+    for column, value in (("status", "e.status"), ("rating", "e.rating"), ("started_on", "e.started_on"), ("review", review)):
+        db.execute(f"""UPDATE library_reads SET {column} = (
+                SELECT {value} FROM library_entries e WHERE e.user_id = library_reads.user_id AND e.work_id = library_reads.work_id)
+            WHERE id = (SELECT r.id FROM library_reads r WHERE r.user_id = library_reads.user_id AND r.work_id = library_reads.work_id
+                ORDER BY r.read_on IS NULL, r.read_on DESC, r.id DESC LIMIT 1)""")
+    definition = db.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'library_entries'").fetchone()[0]
+    changed = definition
+    for gone in (r",\s*status VARCHAR\(20\)[^,)]*",
+                 r",\s*rating INTEGER[^,)]*",
+                 r",\s*started_on DATE[^,)]*",
+                 r",\s*review TEXT[^,)]*",
+                 r",\s*CONSTRAINT ck_rating_range CHECK \(rating IS NULL OR \(rating >= \d+ AND rating <= \d+\)\)"):
+        changed = re.sub(gone, "", changed, count=1)
+    changed, count = re.subn(r'^CREATE TABLE "?library_entries"?', "CREATE TABLE library_entries_new", changed, count=1)
+    if count != 1 or re.search(r"\b(status|rating|started_on|review)\b", changed):
+        raise SystemExit(f"{path}: library_entries is not defined as expected, look at it: {definition}")
+    kept = ", ".join(column for column in entry_columns if column not in ("status", "rating", "started_on", "review"))
+    indexes = [row[0] for row in db.execute("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'library_entries' AND sql IS NOT NULL")]
+    db.execute(changed)
+    db.execute(f"INSERT INTO library_entries_new ({kept}) SELECT {kept} FROM library_entries")
+    db.execute("DROP TABLE library_entries")
+    db.execute("ALTER TABLE library_entries_new RENAME TO library_entries")
+    for index in indexes:
+        db.execute(index)
+    added.append(f"library_reads.status, rating, started_on and review (from library_entries, where they are dropped; {made} readings made for entries with none)")
 # the language an account prefers: English, for every account there is
 user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
 if user_columns and "locale" not in user_columns and db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'locales'").fetchone():
@@ -821,7 +870,8 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'works' AND column_name IN ('id', 'imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
 	   OR (table_name IN ('museums', 'concerts') AND column_name = 'id')
 	   OR (table_name = 'library_works' AND column_name IN ('id', 'goodreads_id', 'simania_id', 'title_locale', 'isbn', 'openlibrary_id', 'external_id'))
-	   OR (table_name = 'library_entries' AND column_name IN ('image_id', 'locale', 'finished_on'))
+	   OR (table_name = 'library_entries' AND column_name IN ('image_id', 'locale', 'finished_on', 'review', 'status'))
+	   OR (table_name = 'library_reads' AND column_name IN ('id', 'status'))
 	   OR (table_name = 'people' AND column_name = 'company')
 	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
 	   OR (table_name = 'organizations' AND column_name IN ('type_id', 'functions'))
@@ -1518,8 +1568,33 @@ fi
 # step above (in the same transaction), which makes the table it points at.
 has "users.locale:.*" || need users.locale "ALTER TABLE users ADD COLUMN locale VARCHAR(10) NOT NULL DEFAULT 'en' CONSTRAINT users_locale_fkey REFERENCES locales (code)"
 
-# what the user thought of a book, beside its notes (scripts/split_reviews.py fills it from them)
-has "library_entries.review:.*" || need library_entries.review "ALTER TABLE library_entries ADD COLUMN review TEXT NOT NULL DEFAULT ''"
+# what the user thought of a book, beside its notes; not once it went to the readings (below)
+has "library_entries.review:.*" || has "library_reads.status:.*" || need library_entries.review "ALTER TABLE library_entries ADD COLUMN review TEXT NOT NULL DEFAULT ''"
+
+# a reading has its own status, rating, review and day started (see the header): those of
+# each entry go to the reading it went by, and then the four columns go. After the reads
+# step and the review above, in the same transaction. Deploy first, run this right after.
+read -r -d '' entries_into_reads <<'SQL' || true
+ALTER TABLE library_reads
+	ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'done',
+	ADD COLUMN rating INTEGER,
+	ADD COLUMN started_on DATE,
+	ADD COLUMN review TEXT NOT NULL DEFAULT '',
+	ADD CONSTRAINT ck_read_rating_range CHECK (rating IS NULL OR (rating >= 1 AND rating <= 10));
+INSERT INTO library_reads (user_id, work_id)
+	SELECT e.user_id, e.work_id FROM library_entries e
+	WHERE NOT EXISTS (SELECT 1 FROM library_reads r WHERE r.user_id = e.user_id AND r.work_id = e.work_id)
+	ORDER BY e.user_id, e.work_id;
+UPDATE library_reads r SET status = e.status, rating = e.rating, started_on = e.started_on, review = e.review
+	FROM library_entries e
+	WHERE r.user_id = e.user_id AND r.work_id = e.work_id
+	  AND r.id = (SELECT r2.id FROM library_reads r2 WHERE r2.user_id = e.user_id AND r2.work_id = e.work_id
+		ORDER BY r2.read_on IS NULL, r2.read_on DESC, r2.id DESC LIMIT 1);
+ALTER TABLE library_entries DROP COLUMN status, DROP COLUMN rating, DROP COLUMN started_on, DROP COLUMN review
+SQL
+if has "library_entries.status:.*" && ! has "library_reads.status:.*"; then
+	need "library_reads.status, rating, started_on and review (from library_entries, where they are dropped)" "${entries_into_reads}"
+fi
 
 if (( ${#changed[@]} == 0 )); then
 	echo "${gcp_sql_instance}/${gcp_db_name}: up to date, nothing to migrate"

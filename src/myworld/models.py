@@ -16,6 +16,7 @@ They are loaded by scripts/import_world.py.
 
 import datetime
 import os
+from collections.abc import Callable
 from typing import Any, cast
 
 from sqlalchemy import (
@@ -295,17 +296,11 @@ class DisabledCheck(Base):
 
 class UserWork(Base):
     __tablename__ = "library_entries"
-    __table_args__ = (
-        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_rating_range"),
-    )
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     work_id: Mapped[int] = mapped_column(ForeignKey("library_works.id", ondelete="CASCADE"), primary_key=True)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="done")
-    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    started_on: Mapped[datetime.date | None] = mapped_column(nullable=True)
-    # what the user thought of it, in their own words; notes is anything else worth keeping (where they have it, ...)
-    review: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    # anything worth keeping about it (where they have it, ...); where the user is with it, their
+    # rating and what they thought of it belong to each reading (reads)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     # the cover: an image of the user's own, as the works are shared. An entry
     # may have several: this is the first, the one its card shows, and the
@@ -319,7 +314,7 @@ class UserWork(Base):
     authors: Mapped[list[Person]] = relationship(
         secondary=lambda: library_entry_authors, back_populates="wrote", order_by=lambda: Person.id,
     )
-    # the times the user read it, each with its day and its language, in the order they were added
+    # the times the user read it (or means to), each with its status, rating, review, days and language, in the order they were added
     reads: Mapped[list[Read]] = relationship(
         back_populates="entry", cascade="all, delete-orphan", order_by=lambda: Read.id, lazy="selectin",
     )
@@ -341,7 +336,14 @@ class UserWork(Base):
 
     @property
     def last_read(self) -> Read | None:
-        """ The read the entry goes by: the latest that has a day, else the last one added; none when it was never read. """
+        """
+        The reading the entry goes by: the last one still open (no day, and not
+        done: wanted, in progress), else the latest that has a day, else the
+        last one added; none when it has no reading.
+        """
+        still_open = [read for read in self.reads if read.read_on is None and read.status in ("wishlist", "in_progress")]
+        if still_open:
+            return still_open[-1]
         dated = [read for read in self.reads if read.read_on is not None]
         if dated:
             return max(dated, key=lambda read: read.read_on or datetime.date.min)
@@ -359,15 +361,50 @@ class UserWork(Base):
         read = self.last_read
         return read.read_on if read else None
 
+    @property
+    def started_on(self) -> datetime.date | None:
+        """ The day the user started it, last. """
+        read = self.last_read
+        return read.started_on if read else None
+
+    @property
+    def status(self) -> str:
+        """ Where the user is with it: the status of the reading it goes by; never read, it is wanted. """
+        read = self.last_read
+        return read.status if read else "wishlist"
+
+    def _latest(self, said: Callable[[Read], bool]) -> Read | None:
+        """ The reading it goes by when it says something, else the latest one that does. """
+        read = self.last_read
+        if read is not None and said(read):
+            return read
+        saying = [read for read in self.reads if said(read)]
+        return max(saying, key=lambda read: (read.read_on or datetime.date.min, read.id or 0)) if saying else None
+
+    @property
+    def rating(self) -> int | None:
+        """ The user's rating of it: that of the reading it goes by, else of the latest reading rated. """
+        read = self._latest(lambda read: read.rating is not None)
+        return read.rating if read else None
+
+    @property
+    def review(self) -> str:
+        """ What the user thought of it: the review of the reading it goes by, else of the latest reading reviewed. """
+        read = self._latest(lambda read: bool(read.review.strip()))
+        return read.review if read else ""
+
 
 class Read(Base):
     """
-    One time a user read a book of their library (an entry): the day it was
-    finished and the language it was read in, either of them empty when not
-    known. An entry read twice has two.
+    One time a user read a book of their library (an entry), or means to:
+    where they are with it (status), the day it was started and the day it was
+    finished, the language it was read in, their rating and what they thought
+    of it, each empty when not known. An entry read twice has two, each with
+    its own.
     """
     __tablename__ = "library_reads"
     __table_args__ = (
+        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_read_rating_range"),
         ForeignKeyConstraint(
             ["user_id", "work_id"], ["library_entries.user_id", "library_entries.work_id"],
             ondelete="CASCADE", name="fk_library_reads_entry",
@@ -380,6 +417,10 @@ class Read(Base):
     work_id: Mapped[int] = mapped_column(Integer, nullable=False)
     read_on: Mapped[datetime.date | None] = mapped_column(nullable=True)
     locale: Mapped[str | None] = mapped_column(ForeignKey("locales.code"), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="done", server_default="done")
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    started_on: Mapped[datetime.date | None] = mapped_column(nullable=True)
+    review: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
 
     entry: Mapped[UserWork] = relationship(back_populates="reads")
 

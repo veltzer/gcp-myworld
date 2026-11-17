@@ -1956,6 +1956,11 @@ button.modify.chip-remove {
 	background: transparent;
 }
 
+button.modify:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
 /* a row to add something with, and the rows of a picture to add: in only after the + */
 .adder[hidden] {
 	display: none;

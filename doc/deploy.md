@@ -418,9 +418,10 @@ first `companies` tables to `organizations`, then making
   book the account has already gets its authors when it has none linked,
   and is found by its Goodreads or Simania id, so an author added to the
   yaml since fills in its author rather than adding the book again. A book read is Done, one only owned is Want
-  to. Its rating, review and finish date are those of its latest dated
-  reading; the other readings, the languages read and owned, the names in
-  other languages, the publisher and the remark go into its notes.
+  to. Each reading of the yaml is a reading of the book, with its own
+  rating, review, day and language (a book rated only in `text_books.yaml`
+  has that rating and review on its latest reading); the languages read
+  and owned, the publisher and the remark go into its notes.
 - JSON longer than 4 KB is sent gzipped to a client that takes it.
 - `GET /api/people`: `first_name`, `surname`, `name` (the two together),
   `types` (ids and names), description and `organizations` (ids and names);
@@ -563,13 +564,23 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   are added to the work's in the languages it has none in, never taken away
   or changed, as the work is shared; a different title in a language it has
   one in is refused.
-- Reads: an entry's `reads` are the times the user read it, each
-  `{date, locale}`: the day it was finished and the language it was read
-  in, either empty when not known (rows of `library_reads`). `reads` sent
-  replace them all. `finished_on` and `locale` are those of the read the
-  entry goes by, the latest that has a day, else the last one added (both
-  empty for an entry never read); sent without `reads`, they change that
-  read, which is made when the entry has none. A person's `names` are their names in other languages
+- Readings: an entry's `reads` are the times the user read it or means
+  to, each `{date, locale, status, rating, review, started_on}`: the day
+  it was finished, the language it was read in, where the user is with it
+  (no status is Done), their rating and review then and the day it was
+  started, each empty when not known (rows of `library_reads`). A book
+  read twice has two, each with its own. `reads` sent replace them all.
+  The entry's `status`, `rating`, `review`, `started_on`, `finished_on`
+  and `locale` are read from its readings: those of the reading it goes
+  by (the last one still open, wanted or in progress with no day; else
+  the latest that has a day; else the last one added), its rating and
+  review being those of the latest reading that has one when that one has
+  none; an entry with no reading is wanted. Sent without `reads`, each of
+  them changes the reading the entry goes by, which is made when the
+  entry has none; a new entry always has one. In the dialog the Readings
+  box lists them, each with a red pencil that brings it into the row to
+  edit, a red − and one red + to add another. The year released is
+  shown locked; its red pencil lets it be changed. A person's `names` are their names in other languages
   than English, `{locale, name}`, one per language, replaced when sent;
   `name` is the English one, which every view but a book shows.
 - `DELETE /api/library-entries/<work_id>`: remove from the library.
@@ -590,8 +601,9 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   (`imdb_id`, `tmdb_id`, `rotten_tomatoes_id`, kept for the film search
   and for the one film row from before). New kinds are added to `KINDS`
   in `src/myworld/models.py`.
-- `library_entries`: what a user thinks about a work: status, rating,
-  dates, notes, and its cover (`image_id`). All per-user queries go through this table, so users never
+- `library_entries`: a work in a user's library: its notes and its cover
+  (`image_id`); where the user is with it, their rating, review and dates
+  are in its readings (`library_reads`). All per-user queries go through this table, so users never
   see each other's entries even though the work rows are shared. Its
   authors are the user's people, in `library_entry_authors` (by the
   entry's `user_id` and `work_id`, and `person_id`).

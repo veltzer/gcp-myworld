@@ -12,7 +12,6 @@ import flask
 import import_world
 import link_authors
 import pytest
-import split_reviews
 import webtest
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Engine
@@ -798,7 +797,7 @@ def test_books_import_fills_languages(imported: webtest.TestApp, engine: Engine,
         session.execute(delete(WorkTitle))
         session.execute(delete(PersonName))
         session.execute(delete(Read))
-        may = session.scalars(select(UserWork).where(UserWork.review == "nice")).one()
+        may = session.scalars(select(UserWork).join(Work).where(Work.title == "Thirty Fifth in May")).one()
         may.notes = old_notes + ". and an edit of mine"
         session.commit()
         counts = import_world.import_books(session, owner(session), source)
@@ -1601,30 +1600,35 @@ def test_book_title_checks(imported: webtest.TestApp, engine: Engine) -> None:
     assert problems("book-titles") == [(" ", "has no title")]
 
 
+def reading(**said: object) -> dict[str, object]:
+    """ A reading as the API gives it: what is said, and the rest as it is when not. """
+    return {"date": None, "locale": "", "status": "done", "rating": None, "review": "", "started_on": None, **said}
+
+
 def test_reads(imported: webtest.TestApp) -> None:
-    """ A book has a list of reads, each with its day and its language. """
+    """ A book has a list of readings, each with its day and its language. """
     book = imported.post_json("/api/library-entries", {"kind": "book", "title": "Read Twice", "reads": [
         {"date": "2001-05-01", "locale": "he"}, {"date": "", "locale": "en"}, {"date": "1999-01-01", "locale": ""},
     ]}).json
-    assert book["reads"] == [{"date": "2001-05-01", "locale": "he"}, {"date": None, "locale": "en"}, {"date": "1999-01-01", "locale": ""}]
-    # the entry goes by its latest dated read
+    assert book["reads"] == [reading(date="2001-05-01", locale="he"), reading(locale="en"), reading(date="1999-01-01")]
+    # the entry goes by its latest dated reading
     assert (book["locale"], book["finished_on"]) == ("he", "2001-05-01")
     url = f"/api/library-entries/{book['work_id']}"
-    # reads not sent stay; finished_on and locale alone change the read it goes by
-    kept = imported.put_json(url, {"rating": 7}).json
+    # readings not sent stay; finished_on and locale alone change the reading it goes by
+    kept = imported.put_json(url, {"notes": "kept"}).json
     assert kept["reads"] == book["reads"]
     changed = imported.put_json(url, {"locale": "en", "finished_on": "2002-02-02"}).json
-    assert changed["reads"][0] == {"date": "2002-02-02", "locale": "en"} and len(changed["reads"]) == 3
-    # reads sent replace them all, and none is a book not read
-    assert imported.put_json(url, {"reads": [{"locale": "he"}]}).json["reads"] == [{"date": None, "locale": "he"}]
+    assert changed["reads"][0] == reading(date="2002-02-02", locale="en") and len(changed["reads"]) == 3
+    # readings sent replace them all, and none is a book with no reading: wanted
+    assert imported.put_json(url, {"reads": [{"locale": "he"}]}).json["reads"] == [reading(locale="he")]
     none = imported.put_json(url, {"reads": []}).json
-    assert (none["reads"], none["locale"], none["finished_on"]) == ([], "", None)
-    # a read of the old fields is made when there is none, and not for nothing
-    assert imported.put_json(url, {"locale": "", "finished_on": ""}).json["reads"] == []
-    assert imported.put_json(url, {"locale": "he"}).json["reads"] == [{"date": None, "locale": "he"}]
+    assert (none["reads"], none["locale"], none["finished_on"], none["status"], none["rating"], none["review"]) == ([], "", None, "wishlist", None, "")
+    # a reading of the old fields is made when there is none
+    assert imported.put_json(url, {"notes": "still none"}).json["reads"] == []
+    assert imported.put_json(url, {"locale": "he"}).json["reads"] == [reading(locale="he")]
     for wrong in ({"reads": "he"}, {"reads": [{"locale": "xx"}]}, {"reads": [{"date": "yesterday"}]}, {"locale": "xx"}):
         imported.put_json(url, wrong, status=400)
-    # the reads go with the entry
+    # the readings go with the entry
     imported.delete(url)
     assert all(e["work_id"] != book["work_id"] for e in imported.get("/api/library-entries?kind=book").json)
 
@@ -1715,25 +1719,32 @@ def test_titles_of_a_book_are_edited(imported: webtest.TestApp) -> None:
         imported.put_json(url, wrong, status=status)
 
 
-def test_split_reviews(imported: webtest.TestApp, engine: Engine) -> None:
-    """ The review that leads a book's notes moves into its own field; the facts stay the notes. """
-    assert split_reviews.split_notes("very good. Read in English (2021-04-23). Owned in Hebrew") == ("very good", "Read in English (2021-04-23). Owned in Hebrew")
-    assert split_reviews.split_notes("cool. well written. Owned in Hebrew") == ("cool. well written", "Owned in Hebrew")
-    assert split_reviews.split_notes("Owned in English. reading in progress") == ("", "Owned in English. reading in progress")
-    # the user's own words, with nothing the import wrote: left as they are
-    assert split_reviews.split_notes("on the top shelf") == ("", "on the top shelf")
-    book = imported.post_json("/api/library-entries", {"kind": "book", "title": "Old Notes", "notes": "not memorable. Owned in Hebrew. Written in Hebrew"}).json
-    assert (book["review"], book["notes"]) == ("", "not memorable. Owned in Hebrew. Written in Hebrew")
-    with Session(engine) as session:
-        assert split_reviews.split(session) == 1
-        session.commit()
-        assert split_reviews.split(session) == 0
-    [after] = [b for b in imported.get("/api/library-entries?kind=book").json if b["work_id"] == book["work_id"]]
-    assert (after["review"], after["notes"]) == ("not memorable", "Owned in Hebrew. Written in Hebrew")
-    # the review is a field of its own: edited when sent, left alone when not
+def test_each_reading_has_its_own_status_rating_and_review(imported: webtest.TestApp) -> None:
+    """ Where the user is with a book, their rating and their review belong to each reading of it. """
+    # a new book has a reading, as that is where its status is
+    book = imported.post_json("/api/library-entries", {"kind": "book", "title": "Read Twice", "status": "wishlist"}).json
+    assert book["reads"] == [{"date": None, "locale": "", "status": "wishlist", "rating": None, "review": "", "started_on": None}]
+    assert (book["status"], book["rating"], book["review"]) == ("wishlist", None, "")
     url = f"/api/library-entries/{book['work_id']}"
-    assert imported.put_json(url, {"review": "better the second time"}).json["review"] == "better the second time"
-    assert imported.put_json(url, {"rating": 5}).json["review"] == "better the second time"
+    # two readings, each with what was thought then
+    first = {"date": "2001-05-01", "locale": "he", "status": "done", "rating": 6, "review": "slow", "started_on": "2001-04-01"}
+    second = {"date": "2020-02-02", "locale": "en", "status": "done", "rating": 9, "review": "better the second time", "started_on": None}
+    book = imported.put_json(url, {"reads": [first, second]}).json
+    assert book["reads"] == [first, second]
+    # the book goes by its latest reading
+    assert (book["status"], book["rating"], book["review"], book["finished_on"]) == ("done", 9, "better the second time", "2020-02-02")
+    # one being read now is the one it goes by; its rating is still that of the latest reading rated
+    again = {"date": None, "locale": "en", "status": "in_progress", "rating": None, "review": "", "started_on": "2026-01-01"}
+    book = imported.put_json(url, {"reads": [first, second, again]}).json
+    assert (book["status"], book["rating"], book["review"], book["started_on"]) == ("in_progress", 9, "better the second time", "2026-01-01")
+    # sent without the readings, they are those of the reading it goes by, each only when sent
+    book = imported.put_json(url, {"rating": 5}).json
+    assert [(r["status"], r["rating"], r["review"]) for r in book["reads"]] == [("done", 6, "slow"), ("done", 9, "better the second time"), ("in_progress", 5, "")]
+    assert imported.put_json(url, {"notes": "on the top shelf"}).json["reads"] == book["reads"]
+    # a status not known, a rating out of range
+    imported.put_json(url, {"reads": [{"status": "lost"}]}, status=400)
+    imported.put_json(url, {"reads": [{"rating": 11}]}, status=400)
+    assert imported.put_json(url, {"reads": [{}]}).json["reads"] == [{"date": None, "locale": "", "status": "done", "rating": None, "review": "", "started_on": None}]
 
 
 def test_every_person_has_an_english_name(imported: webtest.TestApp, engine: Engine) -> None:

@@ -4,6 +4,7 @@ signed-in user, and the images they point at: list, add, edit and delete. Every 
 owner_id, so a user only ever sees, and only ever links to, their own rows.
 """
 
+import collections
 import datetime
 import hashlib
 import re
@@ -46,7 +47,6 @@ from myworld.models import (
     Place,
     RelationType,
     UserWork,
-    Work,
     YouTubeVideo,
     concert_performers,
     organization_relation_types,
@@ -1267,14 +1267,11 @@ def api_stats() -> flask.Response:
         return db.scalar(select(func.count()).select_from(model).where(model.owner_id == me)) or 0
 
     library = []
-    rows = db.execute(
-        select(Work.kind, UserWork.status, func.count())
-        .join(Work, Work.id == UserWork.work_id)
-        .where(UserWork.user_id == me)
-        .group_by(Work.kind, UserWork.status)
-    ).all()
+    # where the user is with each: the status of the reading it goes by
+    entries = db.scalars(select(UserWork).where(UserWork.user_id == me)).all()
     for kind, (_, plural, _) in KINDS.items():
-        by_status = {STATUSES[status]: n for k, status, n in rows if k == kind}
+        counts = collections.Counter(entry.status for entry in entries if entry.work.kind == kind)
+        by_status = {label: counts[status] for status, label in STATUSES.items() if counts[status]}
         library.append({"kind": kind, "label": plural, "total": sum(by_status.values()), "by_status": by_status})
     concerts = db.execute(select(Concert).where(Concert.owner_id == me)).scalars().all()
     museums = db.execute(select(Museum).where(Museum.owner_id == me)).scalars().all()

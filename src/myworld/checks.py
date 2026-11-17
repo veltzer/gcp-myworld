@@ -43,6 +43,7 @@ from myworld.models import (
     PersonRelationType,
     PersonType,
     Place,
+    Read,
     RelationType,
     UserWork,
     Work,
@@ -628,25 +629,30 @@ def check_book_years(session: Session) -> Result:
     return Result(checked=len(books), problems=[_entry_problem(b, "has no year it came out") for b in books if b.work.year is None])
 
 
-@check("book-reads", "Every book read has a read", "books read", "book")
+@check("book-reads", "Every book has a reading", "books", "book")
 def check_book_reads(session: Session) -> Result:
-    """ Every book in a library, of every account, that was read (Done) has at least one read: the time it was read, with its day and its language. """
-    done = [b for b in _entries(session, "book") if b.status == "done"]
-    return Result(checked=len(done), problems=[_entry_problem(b, "is read but has no read") for b in done if not b.reads])
+    """ Every book in a library, of every account, has at least one reading: where its status, rating and review are, with its day and its language. """
+    books = _entries(session, "book")
+    return Result(checked=len(books), problems=[_entry_problem(b, "has no reading") for b in books if not b.reads])
 
 
-@check("book-languages", "Every read of a book says the language it was read in", "reads", "book")
+def _readings_finished(session: Session) -> list[tuple[UserWork, Read]]:
+    """ The readings of books that were finished (Done), each with its book. """
+    return [(b, read) for b in _entries(session, "book") for read in b.reads if read.status == "done"]
+
+
+@check("book-languages", "Every finished reading of a book says the language it was read in", "readings", "book")
 def check_book_languages(session: Session) -> Result:
-    """ Every read of a book, of every account, says the language it was read in. """
-    reads = [(b, read) for b in _entries(session, "book") for read in b.reads]
-    return Result(checked=len(reads), problems=[_entry_problem(b, "has a read that does not say the language it was read in") for b, read in reads if not read.locale])
+    """ Every finished (Done) reading of a book, of every account, says the language it was read in. """
+    reads = _readings_finished(session)
+    return Result(checked=len(reads), problems=[_entry_problem(b, "has a reading that does not say the language it was read in") for b, read in reads if not read.locale])
 
 
-@check("book-read-dates", "Every read of a book has its date", "reads", "book")
+@check("book-read-dates", "Every finished reading of a book has its date", "readings", "book")
 def check_book_read_dates(session: Session) -> Result:
-    """ Every read of a book, of every account, has the day it was finished. """
-    reads = [(b, read) for b in _entries(session, "book") for read in b.reads]
-    return Result(checked=len(reads), problems=[_entry_problem(b, "has a read with no date") for b, read in reads if read.read_on is None])
+    """ Every finished (Done) reading of a book, of every account, has the day it was finished. """
+    reads = _readings_finished(session)
+    return Result(checked=len(reads), problems=[_entry_problem(b, "has a reading with no date") for b, read in reads if read.read_on is None])
 
 
 @check("book-titles", "Every book has a title", "books", "book")

@@ -113,7 +113,7 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
         "started_on": entry.started_on.isoformat() if entry.started_on else None,
         "finished_on": entry.finished_on.isoformat() if entry.finished_on else None,
         # every time it was read: the day and the language, either empty when not known
-        "reads": [{"date": read.read_on.isoformat() if read.read_on else None, "locale": read.locale or ""} for read in entry.reads],
+        "reads": [_read_json(read) for read in entry.reads],
         # what the user thought of it, and anything else they keep about it
         "review": entry.review,
         "notes": entry.notes,
@@ -136,32 +136,71 @@ def _read_locale(key: str, value: Any) -> str | None:
     return str(value)
 
 
-def _apply_reads(entry: UserWork, body: dict[str, Any]) -> None:
+def _read_json(read: Read) -> dict[str, Any]:
+    return {
+        "date": read.read_on.isoformat() if read.read_on else None,
+        "locale": read.locale or "",
+        "status": read.status,
+        "rating": read.rating,
+        "review": read.review,
+        "started_on": read.started_on.isoformat() if read.started_on else None,
+    }
+
+
+def _status(body: dict[str, Any]) -> str:
+    status = text(body, "status") or "done"
+    if status not in STATUSES:
+        raise ApiError(400, f"status: unknown status {status!r}")
+    return status
+
+
+# what a reading says besides its day and its language, as an entry edited without its reads sends it
+READ_FIELDS = ("finished_on", "locale", "status", "rating", "review", "started_on")
+
+
+def _apply_reads(entry: UserWork, body: dict[str, Any], new: bool = False) -> None:
     """
-    The times the entry was read. `reads`, a list of {date, locale} (either
-    may be empty), replaces them all. Without it, `finished_on` and `locale`
-    (each only when sent) are the day and the language of the read the entry
-    goes by, which is made when the entry has none and dropped again when it
-    would say nothing.
+    The readings of the entry. `reads`, a list of {date, locale, status,
+    rating, review, started_on} (any may be empty; no status is done),
+    replaces them all. Without it, `finished_on`, `locale`, `status`,
+    `rating`, `review` and `started_on` (each only when sent) are those of the
+    reading the entry goes by, which is made when the entry has none: a new
+    entry always has one, as that is where its status is.
     """
     if "reads" in body:
         value = body["reads"]
         if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
-            raise ApiError(400, "reads: expected a list of {date, locale}")
-        entry.reads = [Read(read_on=opt_date(item, "date"), locale=_read_locale("reads", item.get("locale"))) for item in value]
+            raise ApiError(400, "reads: expected a list of {date, locale, status, rating, review, started_on}")
+        entry.reads = [
+            Read(
+                read_on=opt_date(item, "date"),
+                locale=_read_locale("reads", item.get("locale")),
+                status=_status(item),
+                rating=opt_int(item, "rating", RATING_MIN, RATING_MAX),
+                review=text(item, "review"),
+                started_on=opt_date(item, "started_on"),
+            )
+            for item in value
+        ]
         return
-    if "finished_on" not in body and "locale" not in body:
+    if not new and not any(key in body for key in READ_FIELDS):
         return
     read = entry.last_read
     if read is None:
-        read = Read()
+        read = Read(status="done", review="")
         entry.reads.append(read)
     if "finished_on" in body:
         read.read_on = opt_date(body, "finished_on")
     if "locale" in body:
         read.locale = _read_locale("locale", body["locale"])
-    if read.read_on is None and read.locale is None and read.id is None:
-        entry.reads.remove(read)
+    if "status" in body:
+        read.status = _status(body)
+    if "rating" in body:
+        read.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
+    if "review" in body:
+        read.review = text(body, "review")
+    if "started_on" in body:
+        read.started_on = opt_date(body, "started_on")
 
 
 def _set_year(work: Work, year: int) -> None:
@@ -175,21 +214,14 @@ def _set_year(work: Work, year: int) -> None:
 
 
 def _apply_entry_fields(entry: UserWork, body: dict[str, Any], new: bool = False) -> None:
-    status = text(body, "status") or "done"
-    if status not in STATUSES:
-        raise ApiError(400, f"status: unknown status {status!r}")
-    entry.status = status
-    entry.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
-    entry.started_on = opt_date(body, "started_on")
-    entry.notes = text(body, "notes")
-    # the review is set only when sent: what does not know of it leaves it alone
-    if "review" in body:
-        entry.review = text(body, "review")
+    # where the user is with it, their rating and review are those of its readings (_apply_reads)
+    if "notes" in body or new:
+        entry.notes = text(body, "notes")
     # the year it came out, on the shared work: filled in or put right when sent, never emptied
     year = opt_int(body, "year", -3000, 3000)
     if year is not None and year != entry.work.year:
         _set_year(entry.work, year)
-    _apply_reads(entry, body)
+    _apply_reads(entry, body, new)
     # an entry edited with its title sent says all the titles of its work; with only titles sent they are added
     if "title" in body and not new:
         _set_titles(entry.work, body)

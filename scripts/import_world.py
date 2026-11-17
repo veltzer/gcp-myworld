@@ -845,7 +845,7 @@ def _reading_day(reading: dict[str, Any]) -> datetime.date | None:
     return stamp.astimezone(zoneinfo.ZoneInfo(reading.get("timezone") or "UTC")).date()
 
 
-def _book_notes(item: dict[str, Any], main: dict[str, Any] | None) -> str:
+def _book_notes(item: dict[str, Any]) -> str:
     """ What a library entry has no field for, in a few sentences (what the user thought of it is its review). """
     parts = []
     readings = item["readings"]
@@ -853,12 +853,7 @@ def _book_notes(item: dict[str, Any], main: dict[str, Any] | None) -> str:
         described = []
         for reading in readings:
             day = _reading_day(reading)
-            detail = [day.isoformat() if day else "date unknown"]
-            if reading is not main and reading.get("rating") is not None:
-                detail.append(f"rated {reading['rating']}")
-            if reading is not main and reading.get("review"):
-                detail.append(str(reading["review"]))
-            described.append(f"{_language(reading['language'])} ({', '.join(detail)})")
+            described.append(f"{_language(reading['language'])} ({day.isoformat() if day else 'date unknown'})")
         parts.append(f"Read in {'; '.join(described)}")
     owned = sorted({_language(o["language"]) for o in item.get("ownings", [])})
     if owned:
@@ -992,8 +987,22 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
         return main, _locale(main["language"]) if main else ""
 
     def reads_of(item: dict[str, Any]) -> list[Read]:
-        """ Every reading of the book, as a read of the entry: its day and its language, where known. """
-        return [Read(read_on=_reading_day(reading), locale=_locale(reading["language"]) or None) for reading in item["readings"]]
+        """
+        Every reading of the book, as a read of the entry: its day, its language,
+        its rating and its review, where known. A book rated only in the text
+        list has that rating and review on the reading it goes by; one never
+        read has a reading that says it is wanted.
+        """
+        main = read_in(item)[0]
+        reads = []
+        for reading in item["readings"]:
+            rating = reading.get("rating")
+            review = str(reading["review"]).rstrip(".") if reading.get("review") else ""
+            if reading is main and rating is None and item.get("text_rating") is not None:
+                rating = item["text_rating"]
+                review = ". ".join(part for part in (item.get("text_review", ""), review) if part)
+            reads.append(Read(read_on=_reading_day(reading), locale=_locale(reading["language"]) or None, status="done", rating=rating, review=review))
+        return reads or [Read(status="wishlist", review="")]
 
     locales = languages.known(session)
     for item in items:
@@ -1052,20 +1061,10 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
                 other_names(item, [linked[naming.key(name)] for name in names])
             continue
         cover = book_cover(goodreads_id, simania_id)
-        readings = item["readings"]
-        main = read_in(item)[0]
-        rating = main.get("rating") if main else None
-        review = str(main["review"]).rstrip(".") if main and main.get("review") else ""
-        if rating is None and item.get("text_rating") is not None:
-            rating = item["text_rating"]
-            review = ". ".join(part for part in (item.get("text_review", ""), review) if part)
         session.add(UserWork(
             user_id=owner.id,
             work_id=work.id,
-            status="done" if readings else "wishlist",
-            rating=rating,
-            review=review,
-            notes=_book_notes(item, main),
+            notes=_book_notes(item),
             image_id=cover.id if cover else None,
             reads=reads_of(item),
             authors=(authors := [author(name) for name in names]),
