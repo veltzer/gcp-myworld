@@ -850,16 +850,27 @@ button.danger {
 }
 
 /* values shown, not typed (what a catalog lookup gave, a year released until its pencil):
-   greyed, and neither clicked into nor selected */
+   greyed; their text can be selected and copied */
 .dialog-form input[readonly] {
 	background: #eef0f3;
 	border-color: transparent;
 	color: var(--muted);
-	cursor: default;
-	pointer-events: none;
-	user-select: none;
+	cursor: text;
 	-moz-appearance: textfield;
 	appearance: textfield;
+}
+
+/* no box of a dialog is highlighted when it is clicked into or reached: the caret says where typing goes */
+.dialog-form input:focus,
+.dialog-form select:focus,
+.dialog-form textarea:focus {
+	outline: none;
+	box-shadow: none;
+}
+
+.dialog-form .ts-wrapper.focus .ts-control {
+	border-color: var(--line);
+	box-shadow: none;
 }
 
 .id-link {
