@@ -13,6 +13,7 @@ import import_world
 import link_authors
 import owned_from_notes
 import pytest
+import tidy_book_notes
 import webtest
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Engine
@@ -1776,6 +1777,71 @@ def test_a_book_is_owned_in_languages(imported: webtest.TestApp, engine: Engine)
         assert owned_from_notes.derive(session) == 0
     [after] = [b for b in imported.get("/api/library-entries?kind=book").json if b["work_id"] == book["work_id"]]
     assert (after["owned"], after["notes"]) == (["en", "he"], "on the top shelf")
+
+
+def test_notes_lose_what_the_book_says_elsewhere(imported: webtest.TestApp, engine: Engine) -> None:
+    """ The readings the notes list become readings, a name that is a title goes, and the rest of the notes stay. """
+    book = imported.post_json("/api/library-entries", {
+        "kind": "book", "title": "Said Twice", "reads": [{"date": "2021-04-23", "locale": "en", "rating": 9, "review": "great"}],
+        "notes": "Read in English (2021-04-23); Hebrew (2006-08-19, rated 8, very good). Written in French. was named: said twice. Publisher: x",
+    }).json
+    other = imported.post_json("/api/library-entries", {
+        "kind": "book", "title": "Kept", "locale": "he", "notes": "Read in Hebrew (date unknown). was named: Kept Once. on the top shelf",
+    }).json
+    with Session(engine) as session:
+        changed, gained, left = tidy_book_notes.tidy(session)
+        session.commit()
+        assert (gained, left) == (1, 0) and changed >= 2
+        assert tidy_book_notes.tidy(session) == (0, 0, 0)
+    books = {b["work_id"]: b for b in imported.get("/api/library-entries?kind=book").json}
+    after = books[book["work_id"]]
+    assert after["notes"] == "Written in French. Publisher: x"
+    assert after["reads"] == [reading(date="2021-04-23", locale="en", rating=9, review="great"), reading(date="2006-08-19", locale="he", rating=8, review="very good")]
+    # it still goes by the reading it went by
+    assert (after["rating"], after["review"], after["locale"]) == (9, "great", "en")
+    assert (books[other["work_id"]]["notes"], books[other["work_id"]]["reads"]) == ("was named: Kept Once. on the top shelf", [reading(locale="he")])
+
+
+def test_languages_are_a_page(imported: webtest.TestApp, engine: Engine) -> None:
+    """ The locales table is listed, and kept by an admin: a language is added, renamed, and deleted only when nothing is said in it. """
+    listed = imported.get("/api/locales").json
+    assert [(row["code"], row["name"], row["script"]) for row in listed][:2] == [("en", "English", "Latin"), ("he", "Hebrew", "Hebrew")]
+    assert all(row["count"] >= 0 for row in listed) and len({row["id"] for row in listed}) == len(listed)
+    assert imported.get("/api/stats").json["locales"] == len(listed)
+    with Session(engine) as session:
+        me = owner(session)
+        role, me.role = me.role, "user"
+        session.commit()
+    # everyone sees them, only an admin changes them
+    imported.post_json("/api/locales", {"code": "nl", "name": "Dutch", "script": "Latin"}, status=403)
+    with Session(engine) as session:
+        owner(session).role = "admin"
+        session.commit()
+    dutch = imported.post_json("/api/locales", {"code": "NL", "name": "Dutch", "script": "latin"}, status=201).json
+    assert (dutch["code"], dutch["name"], dutch["script"], dutch["count"]) == ("nl", "Dutch", "Latin", 0)
+    assert imported.get("/api/config").json["locales"]["nl"] == "Dutch"
+    url = f"/api/locales/{dutch['id']}"
+    for wrong, status in (
+        ({"code": "nl", "name": "Other", "script": "Latin"}, 409), ({"code": "x", "name": "X", "script": "Latin"}, 400),
+        ({"code": "xx", "name": "English", "script": "Latin"}, 409), ({"code": "xx", "name": "X", "script": "Runes of Mine"}, 400),
+        ({"code": "xx", "name": "", "script": "Latin"}, 400),
+    ):
+        imported.post_json("/api/locales", wrong, status=status)
+    # renamed; its code stays
+    assert imported.put_json(url, {"code": "nl", "name": "Nederlands", "script": "Latin"}).json["name"] == "Nederlands"
+    imported.put_json(url, {"code": "du", "name": "Dutch", "script": "Latin"}, status=400)
+    # used, it stays; unused, it goes; English always stays
+    book = imported.post_json("/api/library-entries", {"kind": "book", "title": "Kept", "owned": ["nl"]}).json
+    assert next(row for row in imported.get("/api/locales").json if row["code"] == "nl")["count"] == 1
+    imported.delete(url, status=409)
+    imported.put_json(f"/api/library-entries/{book['work_id']}", {"owned": []})
+    imported.delete(url, status=204)
+    imported.delete(f"/api/locales/{listed[0]['id']}", status=409)
+    imported.delete("/api/locales/999", status=404)
+    with Session(engine) as session:
+        owner(session).role = role
+        session.commit()
+        assert checks.CHECKS["locale-scripts"].run(session).problems == []
 
 
 def test_authors_of_hebrew_books_have_hebrew_names(imported: webtest.TestApp, engine: Engine) -> None:

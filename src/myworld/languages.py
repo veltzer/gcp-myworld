@@ -7,6 +7,8 @@ French, or Hebrew from Yiddish, so that much is still the person's to say.
 """
 
 import collections
+import functools
+import sys
 import unicodedata
 
 from sqlalchemy import select
@@ -36,3 +38,12 @@ def locale_of(locales: dict[str, Locale], text: str) -> str:
     """ The first language of the text's script: Hebrew for Hebrew letters; "" when no language here is written in it. """
     script = script_of(text)
     return next((code for code, locale in locales.items() if locale.script == script), "")
+
+
+@functools.cache
+def scripts() -> frozenset[str]:
+    """ The scripts letters are written in, as Unicode names them ("Latin", "Hebrew", "Cyrillic"): what a language's script can be. """
+    return frozenset(
+        unicodedata.name(char, "").partition(" ")[0].title()
+        for char in map(chr, range(sys.maxunicode + 1)) if char.isalpha()
+    ) - {""}

@@ -23,6 +23,7 @@ from myworld.models import (
     KINDS,
     RATING_MAX,
     RATING_MIN,
+    ROLE_ADMIN,
     STATUSES,
     YOUTUBE_ID_LENGTH,
     AudioCourse,
@@ -34,9 +35,11 @@ from myworld.models import (
     Device,
     Group,
     Image,
+    Locale,
     Museum,
     Organization,
     OrganizationType,
+    Owning,
     Person,
     PersonName,
     PersonOrganization,
@@ -45,8 +48,12 @@ from myworld.models import (
     PersonRelationType,
     PersonType,
     Place,
+    Read,
     RelationType,
+    User,
     UserWork,
+    Work,
+    WorkTitle,
     YouTubeVideo,
     concert_performers,
     organization_relation_types,
@@ -1318,6 +1325,7 @@ def api_stats() -> flask.Response:
         "person_relation_types": count(PersonRelationType),
         "person_organization_types": count(PersonOrganizationType),
         "devices": count(Device),
+        "locales": db.scalar(select(func.count()).select_from(Locale)) or 0,
         "images": count(Image),
         "people_by_type": _by_type(people_by_type),
         "organizations_by_type": _by_type(organizations_by_type),
@@ -1330,6 +1338,103 @@ def api_stats() -> flask.Response:
 
 
 # ─── the enumerations: organization, person and relation types ────────────
+
+# ─── languages (the locales table) ───────────────────────────────────────────
+# The same for every account, as the works are: everyone sees them, an admin
+# keeps them. A language is known by its code, which what is said in it points
+# at, so the code never changes; the app's rows have a number, its place in the list.
+
+# everything that says a language: the columns that point at locales.code
+LOCALE_USES = (
+    Work.title_locale, WorkTitle.locale, Read.locale, Owning.locale, PersonName.locale, User.locale,
+)
+
+
+def _locale_uses(code: str) -> int:
+    return sum(flask.g.db.scalar(select(func.count()).where(column == code)) or 0 for column in LOCALE_USES)
+
+
+def locale_json(locale: Locale) -> dict[str, Any]:
+    return {
+        "id": locale.position, "code": locale.code, "name": locale.name, "script": locale.script,
+        "description": f"{locale.code}, written in {locale.script} letters", "count": _locale_uses(locale.code),
+    }
+
+
+def _locale(row_id: int) -> Locale:
+    locale = flask.g.db.scalars(select(Locale).where(Locale.position == row_id)).first()
+    if locale is None:
+        raise ApiError(404, "no such language")
+    return locale
+
+
+def _admin_only() -> None:
+    if flask.g.user.role != ROLE_ADMIN:
+        raise ApiError(403, "the languages are the same for every account: only an admin changes them")
+
+
+def _apply_locale(locale: Locale, body: dict[str, Any]) -> None:
+    name = text(body, "name", required=True)
+    if flask.g.db.execute(select(Locale.code).where(Locale.name == name, Locale.code != locale.code)).first() is not None:
+        raise ApiError(409, f"{name} is already one of the languages")
+    script = text(body, "script", required=True).title()
+    if script not in languages.scripts():
+        raise ApiError(400, f"script: {script} is not a script letters are written in (Latin, Hebrew, Cyrillic, Arabic, Greek, ...)")
+    locale.name, locale.script = name, script
+
+
+@bp.route("/api/locales", methods=["GET"])
+@auth.login_required
+def api_locales() -> flask.Response:
+    """ The languages, in the order the forms list them, each with how much is said in it. """
+    return flask.jsonify([locale_json(locale) for locale in languages.known(flask.g.db).values()])
+
+
+@bp.route("/api/locales", methods=["POST"])
+@auth.login_required
+def api_locales_add() -> tuple[flask.Response, int]:
+    _admin_only()
+    body = json_body()
+    code = text(body, "code", required=True).lower()
+    if not re.fullmatch(r"[a-z]{2,3}(-[a-z0-9]{2,6})?", code):
+        raise ApiError(400, "code: a language code is two or three letters (he, en, yi), as ISO 639 names it")
+    if flask.g.db.get(Locale, code) is not None:
+        raise ApiError(409, f"{code} is already one of the languages")
+    locale = Locale(code=code, position=(flask.g.db.scalar(select(func.max(Locale.position))) or 0) + 1)
+    _apply_locale(locale, body)
+    flask.g.db.add(locale)
+    flask.g.db.commit()
+    return flask.jsonify(locale_json(locale)), 201
+
+
+@bp.route("/api/locales/<int:row_id>", methods=["PUT"])
+@auth.login_required
+def api_locales_update(row_id: int) -> flask.Response:
+    _admin_only()
+    locale = _locale(row_id)
+    body = json_body()
+    if text(body, "code").lower() not in ("", locale.code):
+        raise ApiError(400, "code: the code of a language does not change: everything said in it points at it")
+    _apply_locale(locale, body)
+    flask.g.db.commit()
+    return flask.jsonify(locale_json(locale))
+
+
+@bp.route("/api/locales/<int:row_id>", methods=["DELETE"])
+@auth.login_required
+def api_locales_delete(row_id: int) -> flask.Response:
+    """ Only a language nothing is said in, and never the one everything starts in. """
+    _admin_only()
+    locale = _locale(row_id)
+    if locale.code == DEFAULT_LOCALE:
+        raise ApiError(409, f"{locale.name} is the language everything starts in: it stays")
+    used = _locale_uses(locale.code)
+    if used:
+        raise ApiError(409, f"{used} title{'s, names or readings are' if used > 1 else ', name or reading is'} in {locale.name}: change them first")
+    flask.g.db.delete(locale)
+    flask.g.db.commit()
+    return flask.Response(status=204)
+
 
 type TypeModel = OrganizationType | PersonType | RelationType | PersonRelationType | PersonOrganizationType | Device
 

@@ -237,6 +237,12 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `device-photos`: every device, of every account, has a photo
   (`scripts/fetch_pictures.py --only devices` takes Wikipedia's).
 
+### Languages (`locales`)
+
+- `locale-scripts`: every language of the locales table names the script it
+  is written in as Unicode names it (Latin, Hebrew, Cyrillic): a title or a
+  name is told to be in a language by its letters.
+
 ## Adding one
 
 A check is one function in `src/myworld/checks.py`, from a database

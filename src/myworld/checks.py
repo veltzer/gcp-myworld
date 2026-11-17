@@ -118,6 +118,7 @@ DATASETS: dict[str, str] = {
     "person-relation-types": "Person relation types",
     "person-organization-types": "Person-org relation types",
     "devices": "Devices",
+    "locales": "Languages",
 }
 
 CHECKS: dict[str, Check] = {}
@@ -1019,6 +1020,20 @@ def check_device_photos(session: Session) -> Result:
     devices = list(session.scalars(select(Device).order_by(Device.owner_id, Device.name, Device.id)))
     return Result(checked=len(devices), problems=[
         Problem(f"{d.name} (device {d.id}, account {d.owner_id})", "has no photo", f"devices/{d.id}", d.owner_id) for d in devices if d.image_id is None
+    ])
+
+
+@check("locale-scripts", "Every language is written in a script there is", "languages", "locales")
+def check_locale_scripts(session: Session) -> Result:
+    """
+    Every language (the locales table) names the script it is written in as
+    Unicode names it ("Latin", "Hebrew", "Cyrillic"): a title or a name is
+    told to be in a language by its letters, so a script misspelt fits nothing.
+    """
+    locales = languages.known(session).values()
+    return Result(checked=len(locales), problems=[
+        Problem(f"{locale.name} ({locale.code})", f"is written in {locale.script or 'no script'}, which is not a script letters are in", f"locales/{locale.position}")
+        for locale in locales if locale.script not in languages.scripts()
     ])
 
 

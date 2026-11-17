@@ -591,6 +591,18 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   than English, `{locale, name}`, one per language, replaced when sent;
   `name` is the English one, which every view but a book shows.
 - `DELETE /api/library-entries/<work_id>`: remove from the library.
+- `GET /api/locales`: the languages (the locales table, the sidebar's
+  Languages page), the same for every account, each with its `code`,
+  `name`, `script` and how much is said in it (`count`). An admin adds one
+  (`POST`, with a `code` of two or three letters), renames it or changes
+  its script (`PUT /api/locales/<id>`; the code stays, as everything said
+  in the language points at it) and deletes one nothing is said in
+  (`DELETE`; never English).
+- `scripts/tidy_book_notes.py` takes out of the notes of imported books
+  what the book says elsewhere: the readings they list ("Read in English
+  (date unknown); Hebrew (2006-08-19, rated 8, very good)") become
+  readings of the book where it has none such, and a name it "was named"
+  that is one of its titles goes; the rest of the notes stay.
 
 ## Data model
 

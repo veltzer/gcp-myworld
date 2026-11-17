@@ -466,7 +466,7 @@ function libraryCard(entry) {
 const NAV_GROUPS = [
 	["Datasets", ["concerts", "museums", "audio-courses", "youtube", "places", "cities", "countries"]],
 	["People", ["people", "groups", "organizations"]],
-	["Types", ["organization-types", "person-types", "relation-types", "person-relation-types", "person-organization-types", "devices"]],
+	["Types", ["organization-types", "person-types", "relation-types", "person-relation-types", "person-organization-types", "devices", "locales"]],
 ];
 
 function sideLink(label, key, open) {
@@ -524,7 +524,7 @@ async function loadCounts() {
 		concerts: "concerts", museums: "museum_visits", "audio-courses": "audio_courses", youtube: "youtube_videos",
 		places: "places", cities: "cities", countries: "countries", people: "people", groups: "groups", organizations: "organizations", "organization-types": "organization_types",
 		"person-types": "person_types", "relation-types": "relation_types", "person-relation-types": "person_relation_types",
-		"person-organization-types": "person_organization_types", devices: "devices",
+		"person-organization-types": "person_organization_types", devices: "devices", locales: "locales",
 	};
 	for (const [view, key] of Object.entries(keys)) {
 		setCount(view, stats[key]);
@@ -773,6 +773,13 @@ const SORTS = {
 	devices: [
 		["name", "Name", (t) => t.name, "asc"],
 		["count", "Used by", (t) => t.count, "desc"],
+	],
+	locales: [
+		["order", "Order", (l) => l.id, "asc"],
+		["name", "Name", (l) => l.name, "asc"],
+		["code", "Code", (l) => l.code, "asc"],
+		["script", "Script", (l) => l.script, "asc"],
+		["count", "Used by", (l) => l.count, "desc"],
 	],
 };
 const SORT_KEY = "myworld.sort";
@@ -1246,6 +1253,8 @@ const WORLDS = {
 	"person-relation-types": ["Person relation types", "/api/person-relation-types", "person relation type", "Person relations"],
 	"person-organization-types": ["Person-org relation types", "/api/person-organization-types", "person-org relation type", "Person-org relations"],
 	devices: ["Devices", "/api/devices", "device", "Devices"],
+	// the locales table: the languages a title, a name, a reading or a copy owned can be in
+	locales: ["Languages", "/api/locales", "language", "Languages"],
 };
 
 // views whose rows have a type -> the view of their enumeration
@@ -1852,6 +1861,7 @@ const CARDS = {
 	"person-relation-types": typeCard,
 	"person-organization-types": typeCard,
 	devices: typeCard,
+	locales: localeCard,
 };
 
 // Material "link"
@@ -1939,6 +1949,16 @@ const TYPE_COUNTS = {
 	"person-organization-types": "Links",
 	devices: "Audio courses",
 };
+
+// A language of the locales table: its code, the script it is written in, and how much is said in it
+function localeCard(item) {
+	const { card, list } = cardShell(item, "");
+	detail(list, "Code", item.code);
+	detail(list, "Script", item.script);
+	// always shown, 0 too
+	detail(list, "Used by", String(item.count));
+	return card;
+}
 
 // A row of an enumeration (types, relation types, devices), with how many rows are of it;
 // a person relation type also with how it reads the other way ("Mother of" / "Child of")
@@ -2864,6 +2884,11 @@ async function refreshWorld() {
 	}
 	const view = state.view;
 	worldCache[view] = await api(WORLDS[view][1]);
+	if (view === "locales") {
+		// the languages the forms offer are these: a change shows in them at once
+		state.config = await api("/api/config");
+		fillLocales();
+	}
 	if (state.view !== view) {
 		return;
 	}
@@ -2962,7 +2987,7 @@ function setupWorlds() {
 // ─── the add dialog ─────────────────────────────────────────────────────────
 
 // One dialog, opened by the + button, showing the form of whatever is on screen.
-const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "youtube-video-form", "place-form", "city-form", "country-form", "person-form", "group-form", "organization-form", "organization-type-form", "profession-form", "relation-type-form", "person-relation-type-form", "person-org-relation-type-form", "device-form"];
+const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "youtube-video-form", "place-form", "city-form", "country-form", "person-form", "group-form", "organization-form", "organization-type-form", "profession-form", "relation-type-form", "person-relation-type-form", "person-org-relation-type-form", "device-form", "language-form"];
 const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 
 function dialogError(message) {
@@ -3911,6 +3936,11 @@ const WORLD_BODIES = {
 		description: form.elements.description.value,
 		...(await pictureFields(form)),
 	}),
+	locales: async (form) => ({
+		code: form.elements.code.value,
+		name: form.elements.name.value,
+		script: form.elements.script.value,
+	}),
 };
 
 function setupWorldForm(view) {
@@ -4055,6 +4085,11 @@ async function openDialog(item) {
 		}
 		if (item) {
 			fillWorldForm(form, item);
+		}
+		if (view === "locales") {
+			// what is said in a language points at its code: chosen once, then it stays
+			form.elements.code.readOnly = Boolean(item);
+			form.elements.code.tabIndex = item ? -1 : 0;
 		}
 		syncDatePicks(form);
 		if (form.elements.device_id) {
