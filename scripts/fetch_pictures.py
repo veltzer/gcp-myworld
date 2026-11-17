@@ -15,6 +15,7 @@ country's flag (P41).
   scripts/fetch_pictures.py --only devices
   scripts/fetch_pictures.py --only professions
   scripts/fetch_pictures.py --only people
+  scripts/fetch_pictures.py --only places
   scripts/fetch_pictures.py --title "group:The Blues Messengers=he:שליחי הבלוז"
 
 A group's picture is its own article's (Wikidata's image of it, else its
@@ -34,6 +35,12 @@ A profession's picture ("Performer", "Book Author") is that of the article
 about the occupation its name is, else its last word is ("Author"), else
 Wikipedia's search finds; --title "profession:Lecturer=en:Lecture" and
 --file "profession:Lecturer=..." point it elsewhere.
+
+A place's photo ("Tmuna Theater", in Tel Aviv) is that of the first article
+about somewhere (a hall, a club, a park) that names its city and shares a
+word of its name, among the one its name is and those Wikipedia's search
+finds for it with its city; --title "place:Heichal HaTarbut=en:Charles
+Bronfman Auditorium" points it at another.
 
 A person's photo is taken only for someone with a profession (a performer,
 a book author, a lecturer: people one may find in an encyclopedia; a friend
@@ -82,6 +89,7 @@ from myworld.models import (
     Person,
     PersonPhoto,
     PersonType,
+    Place,
     make_engine,
 )
 
@@ -105,6 +113,12 @@ PUBLIC = re.compile(
 # what an article about a device says it is ("a smartphone", "a desktop computer")
 DEVICE = re.compile(
     r"\b(smartphones?|phones?|computers?|laptops?|tablets?|media players?|mp3 players?|televisions?|tv|devices?|operating system|hardware|console)\b",
+    re.IGNORECASE,
+)
+# what an article about somewhere things happen says it is ("a concert hall", "a jazz club")
+VENUE = re.compile(
+    r"\b(venue|hall|auditorium|theatre|theater|amphitheatre|amphitheater|club|pub|bar|cafe|café|restaurant|hotel|stadium|arena|park|square|museum|cinema"
+    r"|cinematheque|centre|center|school|conservatory|university|campus|festival|fortress|port|promenade|boardwalk|studios?|kibbutz|building|complex)\b",
     re.IGNORECASE,
 )
 # the short description of an article about a role a person has: "Person who writes computer software",
@@ -258,6 +272,36 @@ def group_picture(group: Group, overrides: dict[str, tuple[str, str]]) -> tuple[
     return None
 
 
+def place_picture(place: Place, overrides: dict[str, tuple[str, str]]) -> tuple[dict[str, Any], str] | None:
+    """
+    (article, file) for a place: --title's article, else the first article
+    about somewhere (a hall, a club, a park) that names the place's city,
+    among the one its name is ("Tmuna Theater"; "Hangar 11" of "Hangar 11,
+    Tel-Aviv port") and those Wikipedia's search finds for it with its
+    city, with a free photo. A place with no city is not guessed at.
+    """
+    pointed = named(overrides, "place", place.name)
+    if pointed is not None:
+        chosen = picture(pointed, False)
+        return (pointed, chosen) if chosen and free(pointed, chosen) else None
+    if place.city is None:
+        return None
+    head = place.name.split(",")[0].strip()
+    for title in dict.fromkeys([place.name, head, *search(f"{head} {place.city.name}", limit=3)]):
+        found = summary(title)
+        if found is None or found.get("type") != "standard":
+            continue
+        text = found.get("description", "") + " " + found.get("extract", "")
+        # the article is about this place: it shares a word of its name, is somewhere, and in its city
+        words = [word for word in re.findall(r"\w{4,}", head.lower()) if word not in place.city.name.lower()]
+        if not VENUE.search(text[:400]) or place.city.name not in text or not any(word in found["title"].lower() for word in words):
+            continue
+        chosen = picture(found, False)
+        if chosen and free(found, chosen):
+            return found, chosen
+    return None
+
+
 def search(query: str, lang: str = "en", limit: int = 5) -> list[str]:
     """ The titles Wikipedia's search finds for query, best first. """
     params = urllib.parse.urlencode({"action": "query", "list": "search", "srsearch": query, "srlimit": limit, "format": "json"})
@@ -342,7 +386,7 @@ def person_picture(person: Person, overrides: dict[str, tuple[str, str]]) -> tup
     return None
 
 
-def kind_of(row: Country | City | Group | Device | PersonType | Person) -> str:
+def kind_of(row: Country | City | Group | Device | PersonType | Person | Place) -> str:
     """ What --title and --file call a row's kind: "city", "device", "profession". """
     return "profession" if isinstance(row, PersonType) else type(row).__name__.lower()
 
@@ -357,7 +401,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[1] if __doc__ else None)
     parser.add_argument("--dry-run", action="store_true", help="only print what it would take")
     parser.add_argument("--all", action="store_true", help="replace the pictures there are too")
-    parser.add_argument("--only", choices=["countries", "cities", "groups", "devices", "professions", "people"], help="only these")
+    parser.add_argument("--only", choices=["countries", "cities", "groups", "devices", "professions", "people", "places"], help="only these")
     parser.add_argument("--title", action="append", default=[], metavar="KIND:NAME=LANG:TITLE",
                         help='the article for a group, a person, a device or a profession, e.g. "group:The Witches=he:המכשפות"')
     parser.add_argument("--file", action="append", default=[], metavar="KIND:NAME=FILE",
@@ -380,7 +424,7 @@ def main() -> int:
     print(engine.url.render_as_string(hide_password=True))
     missed = 0
     with Session(engine) as session:
-        rows: list[Country | City | Group | Device | PersonType | Person] = [
+        rows: list[Country | City | Group | Device | PersonType | Person | Place] = [
             *(session.scalars(select(Country).order_by(Country.id)) if args.only in (None, "countries") else []),
             *(session.scalars(select(City).order_by(City.id).options(selectinload(City.country))) if args.only in (None, "cities") else []),
             *(session.scalars(select(Group).order_by(Group.id).options(selectinload(Group.members))) if args.only in (None, "groups") else []),
@@ -388,6 +432,7 @@ def main() -> int:
             *(session.scalars(select(PersonType).order_by(PersonType.id)) if args.only in (None, "professions") else []),
             # only those with a profession: a friend or a relative is not looked up
             *(session.scalars(select(Person).where(Person.types.any()).order_by(Person.id).options(selectinload(Person.names))) if args.only in (None, "people") else []),
+            *(session.scalars(select(Place).order_by(Place.id).options(selectinload(Place.city))) if args.only in (None, "places") else []),
         ]
         for row in rows:
             if (bool(row.photos) if isinstance(row, Person) else row.image_id is not None) and not args.all:
@@ -406,6 +451,8 @@ def main() -> int:
                 found, chosen = profession_picture(row, overrides) or (None, None)
             elif isinstance(row, Person):
                 found, chosen = person_picture(row, overrides) or (None, None)
+            elif isinstance(row, Place):
+                found, chosen = place_picture(row, overrides) or (None, None)
             else:
                 found = article(city_titles(row), row.country.name if row.country else "", row.region) if isinstance(row, City) else article([row.name], "")
                 chosen = picture(found, isinstance(row, Country)) if found else None

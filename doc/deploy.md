@@ -268,8 +268,16 @@ another work of the same title and creator already has that year: 409; a
 year is never emptied). A book's `original_locale` is the language it was
 first written in (Dune: English, whatever it was read in), on the shared
 work too: sent, it is set (an unknown language: 400); empty or not sent,
-it stays. The dialog shows it locked beside the year released, with a red
-pencil of its own.
+it stays.
+
+What a dialog shows of something that exists is there to read: every box
+that holds a value (a text or a number, a choice, a picker of one row, a
+date, a tick box) is locked, shown in gray, its text still selectable to copy,
+and the red pencil beside it lets it be changed. A box with nothing in it
+yet, and every box of something being added, just takes what is typed;
+its pencil is there, disabled. Lists of chips are not locked: nothing in
+them changes without their own +, pencil or −. A language's code is never
+changed once set: no pencil frees it. The Settings dialog does the same.
 
 A concert links two lists of people: who was on stage (performers) and
 who the user went with. The import makes every performer a person,
@@ -448,8 +456,10 @@ a person is written with `type_ids`, a list.
   one-line addresses).
 - `GET /api/places`: by name, with `city` (id, name, region and its
   `country`, id and name; written as `city_id`), the address parts, `latitude`,
-  `longitude`, website, remark and `concerts` (ids and names, newest
-  first). A name is a place once in each city (409 for a second). Deleting
+  `longitude`, website, remark, its photo (`image`, written as `image_id`,
+  with its credit `image_source`, `image_license`, `image_author`;
+  `scripts/fetch_pictures.py --only places` takes Wikipedia's) and
+  `concerts` (ids and names, newest first). A name is a place once in each city (409 for a second). Deleting
   a place keeps its concerts, with no place.
 - `GET /api/cities`: by name, with region, `country` (id and name; written
   as `country_id`), `latitude`, `longitude`, remark and what is in it:
@@ -583,8 +593,7 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   them changes the reading the entry goes by, which is made when the
   entry has none; a new entry always has one. In the dialog the Readings
   box lists them, each with a red pencil that brings it into the row to
-  edit, a red − and one red + to add another. The year released is
-  shown locked; its red pencil lets it be changed. An entry's `owned`
+  edit, a red − and one red + to add another. An entry's `owned`
   is the list of languages (locale codes) the user owns it in (rows of
   `library_ownings`): sent, it is all of them; not sent, they stay.
   `scripts/owned_from_notes.py` moves what the notes of imported books

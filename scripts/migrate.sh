@@ -98,7 +98,7 @@
 #     (image_source, image_license, image_author): adding columns, run before
 #     the deploy; scripts/fetch_pictures.py then fills them from Wikipedia.
 #     groups.image_id and its credit the same way, later; devices.image_id
-#     and person_types.image_id (professions) too.
+#     and person_types.image_id (professions) too, and places.image_id.
 #   - addresses in parts: street, neighbourhood and postcode on places,
 #     museum_visits and organizations (adding columns: run before the
 #     deploy); scripts/split_addresses.py splits the one-line address into
@@ -541,7 +541,7 @@ if organization_columns and "headquarters_id" not in organization_columns:
     db.execute("ALTER TABLE organizations ADD COLUMN headquarters_id INTEGER REFERENCES cities (id) ON DELETE SET NULL")
     db.execute("CREATE INDEX IF NOT EXISTS ix_organizations_headquarters_id ON organizations (headquarters_id)")
     added.append("organizations.headquarters_id")
-for table in ("cities", "countries", "groups", "devices", "person_types"):
+for table in ("cities", "countries", "groups", "devices", "person_types", "places"):
     existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
     for column, kind in (("image_id", "INTEGER REFERENCES images (id) ON DELETE SET NULL"), ("image_source", "VARCHAR(1000) NOT NULL DEFAULT ''"),
                          ("image_license", "VARCHAR(100) NOT NULL DEFAULT ''"), ("image_author", "VARCHAR(300) NOT NULL DEFAULT ''")):
@@ -918,7 +918,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'concert_visits' AND column_name = 'venue')
 	   OR (table_name = 'person_organizations' AND column_name IN ('person_id', 'relation_type_id'))
 	   OR (table_name IN ('places', 'museum_visits', 'organizations') AND column_name IN ('city', 'city_id'))
-	   OR (table_name IN ('cities', 'countries', 'groups', 'devices', 'person_types') AND column_name IN ('id', 'image_id'))
+	   OR (table_name IN ('cities', 'countries', 'groups', 'devices', 'person_types', 'places') AND column_name IN ('id', 'image_id'))
 	   OR (table_name IN ('places', 'museum_visits', 'organizations') AND column_name = 'street')
 	   OR (table_name = 'organizations' AND column_name = 'headquarters_id')
 	   OR (table_name = 'person_types' AND column_name = 'id')
@@ -926,6 +926,12 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'audio_courses' AND column_name IN ('device', 'device_id', 'link'))
 	   OR (table_name = 'youtube_videos' AND column_name IN ('youtube_id', 'channel', 'category', 'duration', 'uploaded', 'views', 'unavailable'))
 ")"
+# a database that answers always has some of these: an empty answer is a connection that failed,
+# not an old schema, and nothing may be migrated on its word
+if [[ -z "${present}" ]]; then
+	echo "${0}: could not read the schema of ${gcp_sql_instance}/${gcp_db_name}: nothing migrated, run it again" >&2
+	exit 1
+fi
 
 has() {
 	grep -qx "${1}" <<<"${present}"
@@ -1327,8 +1333,8 @@ if has "organizations.street:.*" && ! has "organizations.headquarters_id:.*"; th
 	need organizations.headquarters_id "ALTER TABLE organizations ADD COLUMN headquarters_id INTEGER REFERENCES cities (id) ON DELETE SET NULL;
 		CREATE INDEX IF NOT EXISTS ix_organizations_headquarters_id ON organizations (headquarters_id)"
 fi
-# a photo for every city, country, group, device and profession (adding columns: run before the deploy)
-for table in cities countries groups devices person_types; do
+# a photo for every city, country, group, device, profession and place (adding columns: run before the deploy)
+for table in cities countries groups devices person_types places; do
 	if has "${table}.id:.*" && ! has "${table}.image_id:.*"; then
 		need "${table}.image_id" "ALTER TABLE ${table} ADD COLUMN image_id INTEGER REFERENCES images (id) ON DELETE SET NULL;
 			ALTER TABLE ${table} ADD COLUMN image_source VARCHAR(1000) NOT NULL DEFAULT '';
@@ -1512,12 +1518,13 @@ elif has "users.google_sub:.*"; then
 fi
 
 # the locales table and every locale column pointing at it (see the header): how many of the
-# tables with a locale column there are, of the foreign keys to locales of the three that
-# keep theirs (library_entries.locale goes into the reads, below), and whether a work
+# tables with a locale column there are, of the three that keep theirs how many point at locales
+# (a table may point at it twice: library_works.original_locale does too)
+# (library_entries.locale goes into the reads, below), and whether a work
 # has one title per language. Every statement is safe to run again.
 locale_state="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	SELECT (SELECT count(*) FROM information_schema.tables WHERE table_name IN ('library_works', 'library_work_titles', 'library_entries', 'person_names'))
-		|| ':' || (SELECT count(*) FROM pg_constraint WHERE contype = 'f' AND confrelid = to_regclass('locales')
+		|| ':' || (SELECT count(DISTINCT conrelid) FROM pg_constraint WHERE contype = 'f' AND confrelid = to_regclass('locales')
 			AND conrelid IN (to_regclass('library_works'), to_regclass('library_work_titles'), to_regclass('person_names')))
 		|| ':' || (SELECT count(*) FROM pg_constraint WHERE conname = 'uq_work_title_locale')
 ")"

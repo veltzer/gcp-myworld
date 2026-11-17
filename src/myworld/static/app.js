@@ -1017,12 +1017,14 @@ function setupSettings(user) {
 	const locale = $("settings-locale");
 	let saved = user.name;
 	let savedLocale = user.locale;
+	setupLocks(dialog);
 	$("settings-button").onclick = () => {
 		name.value = saved;
 		locale.value = savedLocale;
 		error.hidden = true;
+		// both are there to read; the pencil of each lets it be changed
+		lockFields($("settings-form"), true);
 		dialog.showModal();
-		name.select();
 	};
 	$("settings-cancel").onclick = () => dialog.close();
 	dialog.onclick = (event) => {
@@ -3741,20 +3743,6 @@ function setupLocalized() {
 	$("book-read-add").onclick = () => addRead();
 	$("book-owned-add").onclick = () => addOwned();
 	setupAdderClose();
-	// the year a book came out stays as it is until its pencil is pressed
-	$("book-year-edit").onclick = () => {
-		const year = $("add-form").elements.year;
-		year.readOnly = false;
-		year.tabIndex = 0;
-		$("book-year-edit").disabled = true;
-		year.focus();
-	};
-	// and so does the language it was first written in
-	$("book-original-edit").onclick = () => {
-		$("book-original").disabled = false;
-		$("book-original-edit").disabled = true;
-		$("book-original").focus();
-	};
 	$("person-name-add").onclick = () => addName();
 	// the language of a name being added follows its letters as they are typed
 	$("person-name-first").addEventListener("input", () => {
@@ -4038,6 +4026,7 @@ const WORLD_BODIES = {
 			longitude: value("longitude"),
 			website: value("website"),
 			remark: value("remark"),
+			...(await pictureFields(form)),
 		};
 	},
 	people: async (form) => ({
@@ -4174,15 +4163,8 @@ async function prepareWorkForm(form, entry) {
 	// its reads, and every title it has, each in its language; a new book starts with the row to type its title in
 	prepareReads(entry?.reads || [], !entry);
 	prepareOwned(entry?.owned || []);
-	// the year released is there to see; its pencil lets it be changed (a book with none yet just takes one)
-	form.elements.year.readOnly = Boolean(entry) && entry.year !== null;
-	// locked, it is not typed into or stopped at by Tab; its text can still be selected and copied
-	form.elements.year.tabIndex = form.elements.year.readOnly ? -1 : 0;
-	$("book-year-edit").disabled = !form.elements.year.readOnly;
-	// the same for the language it was first written in
+	// the language it was first written in; it and the year released are locked like every box (lockFields)
 	$("book-original").value = entry?.original_locale || "";
-	$("book-original").disabled = Boolean(entry?.original_locale);
-	$("book-original-edit").disabled = !$("book-original").disabled;
 	prepareLocalized("titles", entry ? [{ locale: entry.title_locale, title: entry.main_title }, ...entry.titles] : [], false);
 	$("book-title-row").hidden = Boolean(entry);
 	// a book's authors are the user's people, any number of them; the picker
@@ -4209,6 +4191,85 @@ async function fillTypes(select, typesView, label = (t) => t.name) {
 		option.textContent = label(t);
 		return option;
 	}));
+}
+
+// ─── read only until its pencil is pressed ──────────────────────────────────
+
+// What a dialog shows of something that exists is there to read: every box that
+// holds a value is locked, and the red pencil beside it lets it be changed. A
+// box with nothing in it yet, and every box of something being added, just
+// takes what is typed. Lists of chips are not locked: nothing in them changes
+// without their own +, pencil or −.
+
+// Every box of the dialog gets its pencil, once: a text or number box, a
+// choice, a picker of one row, a date, a tick box.
+function setupLocks(dialog) {
+	for (const label of dialog.querySelectorAll("label")) {
+		if (label.closest(".adder, #movie-search, #movie-ids") || label.querySelector(".chips, [data-chips]")) {
+			continue;
+		}
+		// its box is inside it, or (Settings) named by it
+		const control = label.htmlFor ? $(label.htmlFor) : label.querySelector(".date-pick") || label.querySelector("input:not([type=hidden]):not([type=file]), select");
+		if (!control) {
+			continue;
+		}
+		const what = label.textContent.trim().split("\n")[0].trim();
+		const pencil = el("button", "modify lock-edit", "\u270E");
+		pencil.type = "button";
+		pencil.title = `Edit ${what}`;
+		pencil.setAttribute("aria-label", pencil.title);
+		let box = control;
+		if (label.classList.contains("check")) {
+			box = label;
+		} else if (!control.matches(".date-pick")) {
+			box = el("span", "lockable");
+			control.replaceWith(box);
+			box.appendChild(control);
+		}
+		box.classList.add("lock-box");
+		box.appendChild(pencil);
+		pencil.onclick = () => {
+			setLocked(box, false);
+			const first = box.querySelector("input:not([type=hidden]), select");
+			(first.tomselect || first).focus();
+		};
+	}
+}
+
+// the boxes of a lock box that hold its value (not the box a picker types in)
+function lockControls(box) {
+	return [...box.querySelectorAll("input:not([type=hidden]), select")].filter((control) => !control.closest(".ts-wrapper"));
+}
+
+// Locked, a box is not typed into, changed or stopped at by Tab; the text of
+// one that holds text can still be selected and copied.
+function setLocked(box, locked) {
+	box.classList.toggle("locked", locked);
+	for (const control of lockControls(box)) {
+		if (control.tomselect) {
+			control.tomselect.wrapper.toggleAttribute("inert", locked);
+		} else if (control.tagName === "INPUT" && control.type !== "checkbox") {
+			control.readOnly = locked;
+			control.tabIndex = locked ? -1 : 0;
+		} else {
+			control.toggleAttribute("inert", locked);
+		}
+	}
+	box.querySelector(".lock-edit").disabled = !locked;
+}
+
+// The boxes of a form as it opens: those of something that exists are locked
+// where they hold a value (a tick box always says something). A box marked
+// data-fixed is never changed once set (a language's code): no pencil frees it.
+function lockFields(form, existing) {
+	for (const box of form.querySelectorAll(".lock-box")) {
+		const [control] = lockControls(box);
+		const filled = control.type === "checkbox" || (control.tomselect ? control.tomselect.items.length > 0 : control.value !== "");
+		setLocked(box, existing && filled);
+		if ("fixed" in control.dataset) {
+			box.querySelector(".lock-edit").disabled = true;
+		}
+	}
 }
 
 // The + button (item null) or a click on an item: the dialog with the form of the view on screen.
@@ -4255,11 +4316,6 @@ async function openDialog(item) {
 		if (item) {
 			fillWorldForm(form, item);
 		}
-		if (view === "locales") {
-			// what is said in a language points at its code: chosen once, then it stays
-			form.elements.code.readOnly = Boolean(item);
-			form.elements.code.tabIndex = item ? -1 : 0;
-		}
 		syncDatePicks(form);
 		if (form.elements.device_id) {
 			form.elements.device_id.value = item?.device ? item.device.id : "";
@@ -4278,6 +4334,7 @@ async function openDialog(item) {
 		await prepareWorkForm(form, item);
 	}
 	preparePictures(form, item);
+	lockFields(form, Boolean(item));
 	// another view was opened while the lists loaded: its dialog is not this one
 	if (state.view !== view) {
 		return;
@@ -4319,6 +4376,8 @@ function setupAddDialog() {
 	for (const button of dialog.querySelectorAll("button.delete")) {
 		button.onclick = () => deleteEditing(button).catch((e) => dialogError(e.message));
 	}
+	// before the pickers are made: a picker is built beside its select, inside the box that locks it
+	setupLocks(dialog);
 	for (const select of dialog.querySelectorAll("[data-chips]")) {
 		makePicker(select, () => syncAlone(select.closest("form")));
 	}

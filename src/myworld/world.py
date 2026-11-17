@@ -151,7 +151,7 @@ def city_ref(city: City | None) -> dict[str, Any] | None:
     return None if city is None else {"id": city.id, "name": city.name, "region": city.region, "country": country_ref(city.country)}
 
 
-def _picture_json(row: City | Country | Group | Device | PersonType) -> dict[str, Any]:
+def _picture_json(row: City | Country | Group | Device | PersonType | Place) -> dict[str, Any]:
     return {"image": image_url(row.image_id), "image_source": row.image_source, "image_license": row.image_license, "image_author": row.image_author}
 
 
@@ -214,6 +214,7 @@ def place_json(place: Place) -> dict[str, Any]:
         "longitude": place.longitude,
         "website": place.website,
         "remark": place.remark,
+        **_picture_json(place),
         "concerts": [{"id": c["id"], "name": c["name"]} for c in concerts],
     }
 
@@ -635,6 +636,7 @@ def drop_unused_images() -> None:
         select(CityPhoto.image_id),
         select(Country.image_id).where(Country.image_id.is_not(None)),
         select(Group.image_id).where(Group.image_id.is_not(None)),
+        select(Place.image_id).where(Place.image_id.is_not(None)),
         select(Device.image_id).where(Device.image_id.is_not(None)),
         select(PersonType.image_id).where(PersonType.image_id.is_not(None)),
         select(PersonPhoto.image_id),
@@ -708,7 +710,7 @@ def _apply_country(country: Country, body: dict[str, Any]) -> None:
     _apply_picture(country, body)
 
 
-def _apply_picture(row: City | Country | Group | Device | PersonType, body: dict[str, Any]) -> None:
+def _apply_picture(row: City | Country | Group | Device | PersonType | Place, body: dict[str, Any]) -> None:
     apply_image(row, body)
     row.image_source = text(body, "image_source")
     row.image_license = text(body, "image_license")
@@ -772,6 +774,7 @@ def _apply_place(place: Place, body: dict[str, Any]) -> None:
     place.latitude, place.longitude = coordinates(body)
     place.website = text(body, "website")
     place.remark = text(body, "remark")
+    _apply_picture(place, body)
 
 
 def _apply_group(group: Group, body: dict[str, Any]) -> None:

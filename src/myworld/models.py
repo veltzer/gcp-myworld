@@ -959,11 +959,12 @@ class _Dated:
     date_timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="")
 
 
-class Place(_Addressed, Base):
+class Place(_Pictured, _Addressed, Base):
     """
     Where something happened: a hall, a club, a park ("Tmuna Theater", in
     the city Tel Aviv). A concert points to the place it was at. The same
-    name may be a place in two cities, but only once in each.
+    name may be a place in two cities, but only once in each. It may have
+    a photo, with its credit.
     """
     __tablename__ = "places"
     __table_args__ = (UniqueConstraint("owner_id", "name", "city_id", name="uq_place_name"),)

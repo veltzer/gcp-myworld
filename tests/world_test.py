@@ -383,6 +383,11 @@ def test_places(imported: webtest.TestApp) -> None:
     haifa = imported.post_json("/api/cities", {"name": "Haifa", "country_id": israel["id"]}, status=201).json
     barby = imported.post_json("/api/places", {"name": "Barby", "city_id": tel_aviv["id"], "latitude": 32.05, "longitude": 34.76}, status=201).json
     assert (barby["latitude"], barby["concerts"], barby["city"]["name"], barby["city"]["country"]["name"]) == (32.05, [], "Tel Aviv", "Israel")
+    # a place has a photo, with its credit
+    upload = imported.post("/api/images", upload_files=[("file", "barby.jpg", JPEG)]).json
+    assert barby["image"] is None
+    pictured = imported.put_json(f"/api/places/{barby['id']}", {"name": "Barby", "city_id": tel_aviv["id"], "image_id": upload["id"], "image_license": "CC0"}).json
+    assert (pictured["image"], pictured["image_license"]) == (f"/api/images/{upload['id']}", "CC0")
     # one name once in a city; in another city it is another place
     imported.post_json("/api/places", {"name": "Barby", "city_id": tel_aviv["id"]}, status=409)
     imported.post_json("/api/places", {"name": "Barby", "city_id": haifa["id"]}, status=201)
