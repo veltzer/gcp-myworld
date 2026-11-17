@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from myworld import addresses, checks, cities, languages, names
 from myworld.models import (
+    SEED_LOCALES,
     AudioCourse,
     Concert,
     Image,
@@ -814,20 +815,27 @@ def test_names_in_languages(imported: webtest.TestApp) -> None:
         imported.put_json(f"/api/people/{bob['id']}", dict(body, names=wrong), status=400)
     # a book in a language: its title and its authors' names in it
     book = imported.post_json("/api/library-entries", {"kind": "book", "title": "Thinking About Thinking", "title_locale": "en", "locale": "he",
-                                                       "titles": [{"locale": "he", "title": "לחשוב על חשיבה"}, {"locale": "he", "title": "חשיבה"}],
+                                                       "titles": [{"locale": "he", "title": "לחשוב על חשיבה"}],
                                                        "authors": [bob["id"]]}).json
     assert (book["title"], book["main_title"], [a["name"] for a in book["authors"]]) == ("לחשוב על חשיבה", "Thinking About Thinking", ["חיים שפירה"])
-    assert [t["title"] for t in book["titles"]] == ["לחשוב על חשיבה", "חשיבה"]
+    assert [t["title"] for t in book["titles"]] == ["לחשוב על חשיבה"]
+    # one title per language: two in one are refused, sent together or one after the other, and so is one in the main title's
+    for titles in ([{"locale": "fr", "title": "Penser"}, {"locale": "fr", "title": "Pensées"}], [{"locale": "he", "title": "חשיבה"}], [{"locale": "en", "title": "Thinking"}]):
+        response = imported.put_json(f"/api/library-entries/{book['work_id']}", {"titles": titles}, status=400)
+        assert "per language" in response.json["error"]
     # with no author text sent, the book's is its authors' English names
     assert book["creator"] == "Haim Shapira"
     plain = imported.post_json("/api/library-entries", {"kind": "book", "title": "Untitled thoughts"}).json
     assert plain["creator"] == ""
     filled = imported.put_json(f"/api/library-entries/{plain['work_id']}", {"authors": [bob["id"]]}).json
     assert filled["creator"] == "Haim Shapira"
-    # titles are only added (the work is shared), never twice
-    again = imported.put_json(f"/api/library-entries/{book['work_id']}", {"locale": "en", "titles": [{"locale": "he", "title": "חשיבה"}, {"locale": "fr", "title": "Penser"}]}).json
+    # titles are only added (the work is shared), never twice: the ones it has may be sent again
+    sent = [{"locale": "en", "title": "Thinking About Thinking"}, {"locale": "he", "title": "לחשוב על חשיבה"}, {"locale": "fr", "title": "Penser"}]
+    again = imported.put_json(f"/api/library-entries/{book['work_id']}", {"locale": "en", "titles": sent}).json
     assert (again["title"], [a["name"] for a in again["authors"]]) == ("Thinking About Thinking", ["Haim Shapira"])
-    assert [t["title"] for t in again["titles"]] == ["לחשוב על חשיבה", "חשיבה", "Penser"]
+    assert [(t["locale"], t["title"]) for t in again["titles"]] == [("he", "לחשוב על חשיבה"), ("fr", "Penser")]
+    # read in no language said: none kept
+    assert imported.put_json(f"/api/library-entries/{book['work_id']}", {"locale": ""}).json["locale"] == ""
     imported.put_json(f"/api/library-entries/{book['work_id']}", {"locale": "xx"}, status=400)
     imported.post_json("/api/library-entries", {"kind": "book", "title": "X", "title_locale": "xx"}, status=400)
     assert imported.get("/api/config").json["locales"]["he"] == "Hebrew"
@@ -1492,13 +1500,19 @@ def test_stats_are_per_user(imported: webtest.TestApp) -> None:
     assert stats["concerts_by_year"] == []
 
 
-def test_a_title_is_in_the_language_of_its_letters(imported: webtest.TestApp) -> None:
+def test_a_title_is_in_the_language_of_its_letters(imported: webtest.TestApp, engine: Engine) -> None:
     assert languages.script_of("שיחות על תורת המשחקים: אסטרטגיות") == "Hebrew"
     assert languages.script_of("C++ בעברית למתחילים") == "Hebrew"
     assert languages.script_of("1984") == ""
-    assert (languages.locale_of("בעלת הארמון"), languages.locale_of("Война и мир"), languages.locale_of("Emma"), languages.locale_of("源氏物語")) == ("he", "ru", "en", "")
-    assert languages.fits("yi", "בעלת הארמון") and languages.fits("fr", "Émile") and languages.fits("he", "1984")
-    assert not languages.fits("en", "בעלת הארמון") and not languages.fits("he", "Emma")
+    with Session(engine) as session:
+        locales = languages.known(session)
+    # the table starts with the languages of the code, in their order
+    assert [(code, locale.name, locale.script) for code, locale in locales.items()] == SEED_LOCALES
+    assert [languages.locale_of(locales, text) for text in ("בעלת הארמון", "Война и мир", "Emma", "源氏物語")] == ["he", "ru", "en", ""]
+    assert languages.fits(locales["yi"], "בעלת הארמון") and languages.fits(locales["fr"], "Émile") and languages.fits(locales["he"], "1984")
+    assert not languages.fits(locales["en"], "בעלת הארמון") and not languages.fits(locales["he"], "Emma")
+    config = imported.get("/api/config").json
+    assert list(config["locales"].items())[:2] == [("en", "English"), ("he", "Hebrew")]
     assert imported.get("/api/config").json["locale_scripts"]["he"] == "Hebrew"
     # a Hebrew title that says English is refused, and with no language said it is Hebrew
     response = imported.post_json("/api/library-entries", {"kind": "book", "title": "בעלת הארמון", "title_locale": "en"}, status=400)
@@ -1517,17 +1531,18 @@ def test_fix_languages(imported: webtest.TestApp, engine: Engine) -> None:
         with Session(engine) as session:
             return [p.message for p in checks.CHECKS[name].run(session).problems]
 
-    book = imported.post_json("/api/library-entries", {"kind": "book", "title": "Games", "titles": [{"locale": "he", "title": "משחקים"}]}).json
+    book = imported.post_json("/api/library-entries", {"kind": "book", "title": "Games"}).json
+    other = imported.post_json("/api/library-entries", {"kind": "book", "title": "Decisions", "titles": [{"locale": "he", "title": "משחקים"}]}).json
     person = imported.get("/api/people").json[0]
     with Session(engine) as session:
-        work = session.get(Work, book["work_id"])
-        assert work is not None
-        work.title, work.titles[0].locale = "שיחות על תורת המשחקים", "en"
+        work, second = session.get(Work, book["work_id"]), session.get(Work, other["work_id"])
+        assert work is not None and second is not None
+        work.title, second.titles[0].locale = "שיחות על תורת המשחקים", "fr"
         session.add(PersonName(person_id=person["id"], locale="ru", name="חיים שפירא"))
         session.commit()
-    assert problems("book-title-languages") == [
+    assert sorted(problems("book-title-languages")) == [
+        "the title 'משחקים' says French but is written in Hebrew letters",
         "the title 'שיחות על תורת המשחקים' says English but is written in Hebrew letters",
-        "the title 'משחקים' says English but is written in Hebrew letters",
     ]
     assert problems("people-name-languages") == ["the name 'חיים שפירא' says Russian but is written in Hebrew letters"]
     with Session(engine) as session:
@@ -1535,5 +1550,5 @@ def test_fix_languages(imported: webtest.TestApp, engine: Engine) -> None:
         session.commit()
         assert fix_languages.fix(session) == (0, 0)
     assert problems("book-title-languages") == problems("people-name-languages") == []
-    fixed = next(e for e in imported.get("/api/library-entries?kind=book").json if e["work_id"] == book["work_id"])
-    assert (fixed["title_locale"], fixed["titles"]) == ("he", [{"locale": "he", "title": "משחקים"}])
+    fixed = {e["work_id"]: e for e in imported.get("/api/library-entries?kind=book").json}
+    assert (fixed[book["work_id"]]["title_locale"], fixed[other["work_id"]]["titles"]) == ("he", [{"locale": "he", "title": "משחקים"}])

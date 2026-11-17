@@ -20,7 +20,6 @@ from myworld.api import ApiError, coordinates, json_body, opt_int, text
 from myworld.models import (
     DEFAULT_LOCALE,
     KINDS,
-    LOCALES,
     RATING_MAX,
     RATING_MIN,
     STATUSES,
@@ -826,20 +825,21 @@ def _apply_person(person: Person, body: dict[str, Any]) -> None:
 def localized(key: str, value: Any, field: str, one_per_locale: bool) -> list[tuple[str, str]]:
     """
     [{"locale", field}, ...] as (locale, text) pairs, each once: a language
-    of LOCALES and a text not empty, written in that language's script;
-    one_per_locale refuses two in one language.
+    of the locales table and a text not empty, written in that language's
+    script; one_per_locale refuses two in one language.
     """
+    locales = languages.known(flask.g.db)
     if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
         raise ApiError(400, f"{key}: expected a list of {{locale, {field}}}")
     out: dict[tuple[str, str], None] = {}
     for item in value:
         locale, words = item.get("locale"), item.get(field)
-        if locale not in LOCALES:
+        if locale not in locales:
             raise ApiError(400, f"{key}: unknown language {locale!r}")
         if not isinstance(words, str) or not words.strip():
-            raise ApiError(400, f"{key}: a {field} is needed in {LOCALES[locale]}")
-        if not languages.fits(locale, words):
-            raise ApiError(400, f"{key}: {words.strip()!r} is not written in {LOCALES[locale]}: choose the language it is in")
+            raise ApiError(400, f"{key}: a {field} is needed in {locales[locale].name}")
+        if not languages.fits(locales[locale], words):
+            raise ApiError(400, f"{key}: {words.strip()!r} is not written in {locales[locale].name}: choose the language it is in")
         out[locale, " ".join(words.split())] = None
     pairs = list(out)
     if one_per_locale and len({locale for locale, _ in pairs}) != len(pairs):
@@ -851,7 +851,7 @@ def _apply_person_names(person: Person, value: Any) -> None:
     """ A person's names in other languages than English, replacing those they had (a row kept per language, renamed in place). """
     pairs = localized("names", value, "name", one_per_locale=True)
     if any(locale == DEFAULT_LOCALE for locale, _ in pairs):
-        raise ApiError(400, f"names: the {LOCALES[DEFAULT_LOCALE]} name is the person's own name parts")
+        raise ApiError(400, "names: the English name is the person's own name parts")
     kept = {n.locale: n for n in person.names}
     rows = []
     for locale, name in pairs:

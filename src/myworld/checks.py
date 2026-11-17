@@ -24,7 +24,6 @@ from myworld import languages, names
 from myworld.cities import city_key, country_name
 from myworld.models import (
     KINDS,
-    LOCALES,
     YOUTUBE_ID_LENGTH,
     AudioCourse,
     City,
@@ -339,12 +338,13 @@ def check_person_name_languages(session: Session) -> Result:
     Russian. scripts/fix_languages.py sets the language its letters say.
     """
     people = session.scalars(select(Person).order_by(Person.owner_id, Person.first_name, Person.surname, Person.id)).all()
+    locales = languages.known(session)
     problems, checked = [], 0
     for person in people:
         for other in person.names:
             checked += 1
-            if not languages.fits(other.locale, other.name):
-                message = f"the name {other.name!r} says {LOCALES.get(other.locale, other.locale)} but is written in {languages.script_of(other.name)} letters"
+            if not languages.fits(locales[other.locale], other.name):
+                message = f"the name {other.name!r} says {locales[other.locale].name} but is written in {languages.script_of(other.name)} letters"
                 problems.append(Problem(f"{person.name} (person {person.id}, account {person.owner_id})", message, f"people/{person.id}", person.owner_id))
     return Result(checked=checked, problems=problems)
 
@@ -621,13 +621,14 @@ def check_book_title_languages(session: Session) -> Result:
     says: a title in Hebrew letters is not English. scripts/fix_languages.py
     sets the language its letters say.
     """
+    locales = languages.known(session)
     problems, checked = [], 0
     for book in _entries(session, "book"):
         work = book.work
         for locale, title in [(work.title_locale, work.title), *((t.locale, t.title) for t in work.titles)]:
             checked += 1
-            if not languages.fits(locale, title):
-                problems.append(_entry_problem(book, f"the title {title!r} says {LOCALES.get(locale, locale)} but is written in {languages.script_of(title)} letters"))
+            if not languages.fits(locales[locale], title):
+                problems.append(_entry_problem(book, f"the title {title!r} says {locales[locale].name} but is written in {languages.script_of(title)} letters"))
     return Result(checked=checked, problems=problems)
 
 

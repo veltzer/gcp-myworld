@@ -146,6 +146,18 @@
 #     are still shared by two accounts after that. Needs the logins step
 #     above done (it says so when not). Run before the deploy: the old version
 #     writes users.verified, which then no longer exists, so deploy right away.
+#   - the locales table (models.Locale: the languages, each with its script)
+#     and every locale column pointing at it with a foreign key:
+#     library_works.title_locale, library_work_titles.locale,
+#     library_entries.locale and person_names.locale. An entry's language not
+#     known was '' and is now NULL (the column lets it be), and a work has one
+#     title per language: uq_work_title (work, language, title) becomes
+#     uq_work_title_locale (work, language). No row is deleted or rewritten
+#     but those '' to NULL: when a language is not in the table, or a work
+#     has two titles in one language (its main title's counts), this stops,
+#     changing nothing, and lists them. Run before the deploy and deploy right
+#     away: the old version writes '' for a language not known, which the
+#     foreign key refuses.
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -162,6 +174,7 @@ cd "$(dirname "${0}")/.."
 if [[ "${1:-}" == "--local" ]]; then
 	python - <<'PY'
 import os
+import re
 import sqlite3
 import sys
 
@@ -650,6 +663,72 @@ if login_columns:
             raise SystemExit("not migrated, nothing changed: emails shared by several accounts, so users.email cannot be unique; merge or delete them by hand")
         db.execute("CREATE UNIQUE INDEX users_email_key ON users (email)")
         added.append("users.email unique")
+# the locales table and every locale column pointing at it (see the header). sqlite
+# cannot add a foreign key to a column, so each table is made again from its own
+# definition with the column's changed, its rows copied over as they are.
+LOCALES = [
+    ("en", "English", "Latin"), ("he", "Hebrew", "Hebrew"), ("ar", "Arabic", "Arabic"), ("yi", "Yiddish", "Hebrew"),
+    ("fr", "French", "Latin"), ("de", "German", "Latin"), ("es", "Spanish", "Latin"), ("it", "Italian", "Latin"),
+    ("pt", "Portuguese", "Latin"), ("ru", "Russian", "Cyrillic"), ("cs", "Czech", "Latin"), ("el", "Greek", "Greek"),
+]
+# (table, column, the column's new definition, text of the table's definition to replace)
+LOCALE_COLUMNS = [
+    ("library_works", "title_locale", "VARCHAR(10) DEFAULT 'en' NOT NULL REFERENCES locales (code)", []),
+    ("library_work_titles", "locale", "VARCHAR(10) NOT NULL REFERENCES locales (code)",
+     [("CONSTRAINT uq_work_title UNIQUE (work_id, locale, title)", "CONSTRAINT uq_work_title_locale UNIQUE (work_id, locale)")]),
+    ("library_entries", "locale", "VARCHAR(10) REFERENCES locales (code)", []),
+    ("person_names", "locale", "VARCHAR(10) NOT NULL REFERENCES locales (code)", []),
+]
+definitions = {row[0]: row[1] for row in db.execute("SELECT name, sql FROM sqlite_master WHERE type = 'table'")}
+pending = [
+    (table, column, kind, replace) for table, column, kind, replace in LOCALE_COLUMNS
+    if table in definitions and not re.search(rf"\b{column} VARCHAR\(10\)[^,)]*REFERENCES locales|FOREIGN KEY ?\({column}\) REFERENCES locales", definitions[table])
+]
+if pending:
+    if "locales" not in definitions:
+        db.execute("""CREATE TABLE locales (
+            code VARCHAR(10) NOT NULL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL UNIQUE,
+            script VARCHAR(50) NOT NULL,
+            position INTEGER NOT NULL)""")
+    db.executemany("INSERT OR IGNORE INTO locales (code, name, script, position) VALUES (?, ?, ?, ?)",
+                   [(code, name, script, position) for position, (code, name, script) in enumerate(LOCALES)])
+    wrong = []
+    for table, column, _, _ in pending:
+        allowed = "''" if table == "library_entries" else "NULL"
+        for value, rows in db.execute(f"SELECT {column}, count(*) FROM {table} WHERE {column} NOT IN (SELECT code FROM locales) AND {column} IS NOT {allowed} GROUP BY 1"):
+            wrong.append(f"{table}.{column}: {rows} rows say {value!r}, which is not a language of the locales table")
+    if any(table == "library_work_titles" for table, _, _, _ in pending) and "library_works" in definitions:
+        for work_id, locale, titles in db.execute("""SELECT work_id, locale, group_concat(title, ' / ') FROM (
+                SELECT work_id, locale, title FROM library_work_titles
+                UNION ALL SELECT id, title_locale, title FROM library_works WHERE id IN (SELECT work_id FROM library_work_titles))
+                GROUP BY work_id, locale HAVING count(*) > 1"""):
+            wrong.append(f"work {work_id} has several titles in {locale}: {titles}")
+    if wrong:
+        print("not migrated, nothing changed: fix these by hand first (a work has one title per language).", file=sys.stderr)
+        for line in wrong:
+            print(f"  {line}", file=sys.stderr)
+        sys.exit(1)
+    for table, column, kind, replace in pending:
+        changed, count = re.subn(rf"\b{column} VARCHAR\(10\)[^,)]*", f"{column} {kind}", definitions[table], count=1)
+        for old, new in replace:
+            count += old in changed
+            changed = changed.replace(old, new)
+        if count != 1 + len(replace):
+            raise SystemExit(f"{path}: {table} is not defined as expected, look at it: {definitions[table]}")
+        changed, count = re.subn(rf'^CREATE TABLE "?{table}"?', f"CREATE TABLE {table}_new", changed, count=1)
+        if count != 1:
+            raise SystemExit(f"{path}: {table} is not defined as expected, look at it: {definitions[table]}")
+        indexes = [row[0] for row in db.execute("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL", (table,))]
+        db.execute(changed)
+        db.execute(f"INSERT INTO {table}_new SELECT * FROM {table}")
+        db.execute(f"DROP TABLE {table}")
+        db.execute(f"ALTER TABLE {table}_new RENAME TO {table}")
+        for index in indexes:
+            db.execute(index)
+    if any(table == "library_entries" for table, _, _, _ in pending):
+        db.execute("UPDATE library_entries SET locale = NULL WHERE locale = ''")
+    added.append("locales, and " + ", ".join(f"{table}.{column}" for table, column, _, _ in pending) + " pointing at it")
 if not db.execute("SELECT 1 FROM users WHERE role = 'admin'").fetchone():
     oldest = db.execute("SELECT min(id) FROM users").fetchone()[0]
     if oldest is not None:
@@ -1278,6 +1357,67 @@ if has "logins.subject:.*" && ! has "users.google_sub:.*"; then
 	fi
 elif has "users.google_sub:.*"; then
 	echo "the logins step above is not done yet: run this again for the proven-email step" >&2
+fi
+
+# the locales table and every locale column pointing at it (see the header): how many of the
+# tables with a locale column there are, of the foreign keys to locales, and whether a work
+# has one title per language. Every statement is safe to run again.
+locale_state="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
+	SELECT (SELECT count(*) FROM information_schema.tables WHERE table_name IN ('library_works', 'library_work_titles', 'library_entries', 'person_names'))
+		|| ':' || (SELECT count(*) FROM pg_constraint WHERE contype = 'f' AND confrelid = to_regclass('locales'))
+		|| ':' || (SELECT count(*) FROM pg_constraint WHERE conname = 'uq_work_title_locale')
+")"
+read -r -d '' point_at_locales <<'SQL' || true
+CREATE TABLE IF NOT EXISTS locales (
+	code VARCHAR(10) NOT NULL,
+	name VARCHAR(100) NOT NULL,
+	script VARCHAR(50) NOT NULL,
+	position INTEGER NOT NULL,
+	CONSTRAINT locales_pkey PRIMARY KEY (code),
+	CONSTRAINT locales_name_key UNIQUE (name));
+INSERT INTO locales (code, name, script, position) VALUES
+	('en', 'English', 'Latin', 0), ('he', 'Hebrew', 'Hebrew', 1), ('ar', 'Arabic', 'Arabic', 2), ('yi', 'Yiddish', 'Hebrew', 3),
+	('fr', 'French', 'Latin', 4), ('de', 'German', 'Latin', 5), ('es', 'Spanish', 'Latin', 6), ('it', 'Italian', 'Latin', 7),
+	('pt', 'Portuguese', 'Latin', 8), ('ru', 'Russian', 'Cyrillic', 9), ('cs', 'Czech', 'Latin', 10), ('el', 'Greek', 'Greek', 11)
+	ON CONFLICT (code) DO NOTHING;
+DO $$
+DECLARE
+	wrong text;
+BEGIN
+	SELECT string_agg(line, E'\n  ') INTO wrong FROM (
+		SELECT 'library_works.title_locale: ' || count(*) || ' rows say ' || quote_literal(title_locale) AS line
+			FROM library_works WHERE title_locale NOT IN (SELECT code FROM locales) GROUP BY title_locale
+		UNION ALL SELECT 'library_work_titles.locale: ' || count(*) || ' rows say ' || quote_literal(locale)
+			FROM library_work_titles WHERE locale NOT IN (SELECT code FROM locales) GROUP BY locale
+		UNION ALL SELECT 'library_entries.locale: ' || count(*) || ' rows say ' || quote_literal(locale)
+			FROM library_entries WHERE locale <> '' AND locale NOT IN (SELECT code FROM locales) GROUP BY locale
+		UNION ALL SELECT 'person_names.locale: ' || count(*) || ' rows say ' || quote_literal(locale)
+			FROM person_names WHERE locale NOT IN (SELECT code FROM locales) GROUP BY locale
+		UNION ALL SELECT 'work ' || work_id || ' has several titles in ' || locale || ': ' || string_agg(title, ' / ')
+			FROM (SELECT work_id, locale, title FROM library_work_titles
+				UNION ALL SELECT id, title_locale, title FROM library_works WHERE id IN (SELECT work_id FROM library_work_titles)) titles
+			GROUP BY work_id, locale HAVING count(*) > 1
+	) problems;
+	IF wrong IS NOT NULL THEN
+		RAISE EXCEPTION E'not migrated, nothing changed: fix these by hand first (a language of the locales table, one title per language):\n  %', wrong;
+	END IF;
+END
+$$;
+ALTER TABLE library_entries ALTER COLUMN locale DROP NOT NULL, ALTER COLUMN locale DROP DEFAULT;
+UPDATE library_entries SET locale = NULL WHERE locale = '';
+ALTER TABLE library_works DROP CONSTRAINT IF EXISTS library_works_title_locale_fkey,
+	ADD CONSTRAINT library_works_title_locale_fkey FOREIGN KEY (title_locale) REFERENCES locales (code);
+ALTER TABLE library_work_titles DROP CONSTRAINT IF EXISTS library_work_titles_locale_fkey,
+	ADD CONSTRAINT library_work_titles_locale_fkey FOREIGN KEY (locale) REFERENCES locales (code);
+ALTER TABLE library_entries DROP CONSTRAINT IF EXISTS library_entries_locale_fkey,
+	ADD CONSTRAINT library_entries_locale_fkey FOREIGN KEY (locale) REFERENCES locales (code);
+ALTER TABLE person_names DROP CONSTRAINT IF EXISTS person_names_locale_fkey,
+	ADD CONSTRAINT person_names_locale_fkey FOREIGN KEY (locale) REFERENCES locales (code);
+ALTER TABLE library_work_titles DROP CONSTRAINT IF EXISTS uq_work_title, DROP CONSTRAINT IF EXISTS uq_work_title_locale,
+	ADD CONSTRAINT uq_work_title_locale UNIQUE (work_id, locale)
+SQL
+if [[ "${locale_state}" == 4:* && "${locale_state}" != "4:4:1" ]]; then
+	need "locales, and the four locale columns pointing at it; one title per language" "${point_at_locales}"
 fi
 
 if (( ${#changed[@]} == 0 )); then

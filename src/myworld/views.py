@@ -17,7 +17,6 @@ from myworld.api import ApiError, json_body, opt_date, opt_int, text
 from myworld.models import (
     DEFAULT_LOCALE,
     KINDS,
-    LOCALES,
     RATING_MAX,
     RATING_MIN,
     STATUSES,
@@ -84,7 +83,7 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
         "work_id": entry.work_id,
         "kind": work.kind,
         # the language the user read it in, and the title in it (the main title when it has none in it)
-        "locale": entry.locale,
+        "locale": entry.locale or "",
         "title": work.title_in(entry.locale),
         # the main title and its language, and the other titles, each in a language
         "main_title": work.title,
@@ -132,9 +131,9 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any]) -> None:
         entry.work.year = year
     if "locale" in body:
         locale = text(body, "locale")
-        if locale and locale not in LOCALES:
+        if locale and locale not in languages.known(flask.g.db):
             raise ApiError(400, f"locale: unknown language {locale!r}")
-        entry.locale = locale
+        entry.locale = locale or None
     if "titles" in body:
         _add_titles(entry.work, body["titles"])
     # a cover is only ever replaced by a new upload, never blanked by omission
@@ -154,12 +153,19 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any]) -> None:
 
 
 def _add_titles(work: Work, value: Any) -> None:
-    """ The titles sent, each in a language, added to the work's where it has none such; the work is shared, so none is taken away. """
-    have = {(work.title_locale, work.title), *((t.locale, t.title) for t in work.titles)}
-    for locale, title in world.localized("titles", value, "title", one_per_locale=False):
-        if (locale, title) not in have:
+    """
+    The titles sent, one per language, added to the work's in the languages
+    it has none in. The work is shared, so none is taken away or changed: a
+    different title in a language it has one in is refused.
+    """
+    have = {work.title_locale: work.title, **{t.locale: t.title for t in work.titles}}
+    for locale, title in world.localized("titles", value, "title", one_per_locale=True):
+        if locale not in have:
             work.titles.append(WorkTitle(locale=locale, title=title))
-            have.add((locale, title))
+            have[locale] = title
+        elif have[locale] != title:
+            name = languages.known(flask.g.db)[locale].name
+            raise ApiError(400, f"titles: the book already has a title in {name} ({have[locale]}): one title per language")
 
 
 def _apply_work_ids(work: Work, body: dict[str, Any]) -> None:
@@ -235,6 +241,7 @@ def api_account_name() -> flask.Response:
 def api_config() -> flask.Response:
     """ Everything the browser side needs to render: who is signed in and the vocabularies. """
     login = auth.current_login()
+    locales = languages.known(flask.g.db)
     return flask.jsonify({
         "google_client_id": auth.client_id(),
         "dev_login": auth.dev_login_enabled(),
@@ -244,9 +251,9 @@ def api_config() -> flask.Response:
         "tmdb": movies.configured(),
         "kinds": {k: {"name": name, "plural": plural, "creator": creator} for k, (name, plural, creator) in KINDS.items()},
         "statuses": STATUSES,
-        "locales": LOCALES,
-        # the script of each language: the forms pick the language of what is typed by it
-        "locale_scripts": languages.SCRIPTS,
+        # the languages (the locales table), and the script of each: the forms pick the language of what is typed by it
+        "locales": {code: locale.name for code, locale in locales.items()},
+        "locale_scripts": {code: locale.script for code, locale in locales.items()},
         "rating_min": RATING_MIN,
         "rating_max": RATING_MAX,
         "name_max_length": NAME_MAX_LENGTH,
@@ -284,11 +291,12 @@ def api_library_add() -> tuple[flask.Response, int]:
     ).scalar_one_or_none()
     if work is None:
         # the language sent, else the one the title's letters say, else English
-        title_locale = text(body, "title_locale") or languages.locale_of(title) or DEFAULT_LOCALE
-        if title_locale not in LOCALES:
+        locales = languages.known(db)
+        title_locale = text(body, "title_locale") or languages.locale_of(locales, title) or DEFAULT_LOCALE
+        if title_locale not in locales:
             raise ApiError(400, f"title_locale: unknown language {title_locale!r}")
-        if not languages.fits(title_locale, title):
-            raise ApiError(400, f"title_locale: the title is not written in {LOCALES[title_locale]}: choose the language it is in")
+        if not languages.fits(locales[title_locale], title):
+            raise ApiError(400, f"title_locale: the title is not written in {locales[title_locale].name}: choose the language it is in")
         work = Work(kind=kind, title=title, creator=creator, year=year, title_locale=title_locale)
         db.add(work)
     _apply_work_ids(work, body)

@@ -974,15 +974,15 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
                 named += 1
 
     def other_titles(item: dict[str, Any], work: Work, main: dict[str, Any]) -> None:
-        """ The book's titles in other languages than its main one, added to its work where it has none such. """
+        """ The book's titles in other languages than its main one, added to its work in the languages it has none in (one title per language). """
         nonlocal titled
-        have = {(work.title_locale, work.title), *((t.locale, t.title) for t in work.titles)}
+        have = {work.title_locale, *(t.locale for t in work.titles)}
         for name in item["names"]:
             locale = _locale(name["language"])
-            if name is main or not locale or (locale, name["name"]) in have:
+            if name is main or not locale or locale in have:
                 continue
             work.titles.append(WorkTitle(locale=locale, title=name["name"]))
-            have.add((locale, name["name"]))
+            have.add(locale)
             titled += 1
 
     def read_in(item: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
@@ -992,6 +992,7 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
         main = dated[-1] if dated else readings[-1] if readings else None
         return main, _locale(main["language"]) if main else ""
 
+    locales = languages.known(session)
     for item in items:
         main_name = _english_first(item["names"])
         title = main_name["name"]
@@ -1011,7 +1012,7 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
                 Work.kind == "book", Work.title == title, Work.creator == creator, Work.year.is_(None),
             )).one_or_none()
         if work is None:
-            work = Work(kind="book", title=title, creator=creator, year=None, title_locale=_locale(main_name["language"]) or languages.locale_of(title) or DEFAULT_LOCALE)
+            work = Work(kind="book", title=title, creator=creator, year=None, title_locale=_locale(main_name["language"]) or languages.locale_of(locales, title) or DEFAULT_LOCALE)
             session.add(work)
         # the author and the catalog ids are only filled in, never overwritten
         work.creator = work.creator or creator
@@ -1025,7 +1026,7 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
             skipped += 1
             # the language it was read in, for an entry imported before there was one
             if not entry.locale:
-                entry.locale = read_in(item)[1]
+                entry.locale = read_in(item)[1] or None
                 localized += bool(entry.locale)
             # what notes said of the other titles and names, now fields of their own
             stripped = _strip_parts(entry.notes, _named_parts(item, title))
@@ -1063,7 +1064,7 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
             finished_on=_reading_day(main) if main else None,
             notes=notes,
             image_id=cover.id if cover else None,
-            locale=locale,
+            locale=locale or None,
             authors=(authors := [author(name) for name in names]),
         ))
         other_names(item, authors)

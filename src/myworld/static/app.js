@@ -3034,8 +3034,9 @@ function syncAlone(form) {
 // (any number in one language). A title the book has already is shared with
 // the other accounts that have it, so it is shown but cannot be taken away.
 const LOCALIZED = {
-	names: { box: "person-names", locale: "person-name-locale", text: "person-name-text", add: "person-name-add", field: "name", onePerLocale: true },
-	titles: { box: "book-titles", locale: "book-title-locale", text: "book-title-text", add: "book-title-add", field: "title", onePerLocale: false },
+	names: { box: "person-names", locale: "person-name-locale", text: "person-name-text", add: "person-name-add", field: "name" },
+	// a book has one title per language: the main title's language is taken
+	titles: { box: "book-titles", locale: "book-title-locale", text: "book-title-text", add: "book-title-add", field: "title", taken: () => $("add-form").elements.title_locale.value },
 };
 const editingLocalized = { names: [], titles: [] };
 
@@ -3117,7 +3118,7 @@ function renderLocalized(key) {
 
 // what is typed in the editor's box, added to its list (a person's name in a language replacing the one they had in it)
 function addLocalized(key) {
-	const { locale: localeId, text: textId, onePerLocale } = LOCALIZED[key];
+	const { locale: localeId, text: textId, field, taken } = LOCALIZED[key];
 	const text = $(textId).value.trim().split(/\s+/).join(" ");
 	pickLocale($(localeId), text);
 	const locale = $(localeId).value;
@@ -3125,12 +3126,13 @@ function addLocalized(key) {
 		return;
 	}
 	const list = editingLocalized[key];
-	if (onePerLocale) {
-		editingLocalized[key] = list.filter((item) => item.locale !== locale);
-	} else if (list.some((item) => item.locale === locale && item.text === text)) {
-		$(textId).value = "";
+	// one per language: what is kept (a shared work's title) is not replaced, nor the language taken elsewhere in the form
+	if ((taken?.() === locale || list.some((item) => item.kept && item.locale === locale))) {
+		showError(`There is already a ${field} in ${localeName(locale)}: one per language`);
 		return;
 	}
+	// what was typed for this language before is replaced
+	editingLocalized[key] = list.filter((item) => item.locale !== locale);
 	editingLocalized[key].push({ locale, text, kept: false });
 	$(textId).value = "";
 	renderLocalized(key);

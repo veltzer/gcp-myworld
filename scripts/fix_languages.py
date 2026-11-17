@@ -6,8 +6,8 @@ language's (src/myworld/languages.py): a book's title in Hebrew letters
 that says English becomes Hebrew, and so do a work's other titles and a
 person's names in other languages. The text itself is never changed, and
 nothing is deleted: a row that cannot take the language of its letters
-(the work or the person already has that very row, or a person's name in
-Latin letters, which is their English name) is listed and left for the
+(the work or the person already has one in that language, or a person's
+name in Latin letters, which is their English name) is listed and left for the
 book-title-languages and people-name-languages checks. Safe to run any time;
 a second run changes nothing.
 
@@ -38,31 +38,32 @@ from myworld.models import DEFAULT_LOCALE, PersonName, Work, WorkTitle, make_eng
 def fix(session: Session) -> tuple[int, int]:
     """ Set the languages in the session (not committed), printing each; how many changed and how many were left. """
     changed = left = 0
+    locales = languages.known(session)
     for work in session.scalars(select(Work).order_by(Work.id)):
-        if not languages.fits(work.title_locale, work.title):
-            locale = languages.locale_of(work.title)
-            if locale:
+        if not languages.fits(locales[work.title_locale], work.title):
+            locale = languages.locale_of(locales, work.title)
+            if locale and all(t.locale != locale for t in work.titles):
                 changed += 1
                 print(f"{work.kind} {work.id}: {work.title!r}: {work.title_locale} -> {locale}")
                 work.title_locale = locale
             else:
                 left += 1
-                print(f"{work.kind} {work.id}: {work.title!r} is not {work.title_locale}, and in no language known here: left")
+                print(f"{work.kind} {work.id}: {work.title!r} is not {work.title_locale}: left (the work has another title in {locale or 'no language known here'})")
     for title in session.scalars(select(WorkTitle).order_by(WorkTitle.id)):
-        if not languages.fits(title.locale, title.title):
-            locale = languages.locale_of(title.title)
+        if not languages.fits(locales[title.locale], title.title):
+            locale = languages.locale_of(locales, title.title)
             work = title.work
-            have = {(work.title_locale, work.title), *((t.locale, t.title) for t in work.titles)}
-            if locale and (locale, title.title) not in have:
+            have = {work.title_locale, *(t.locale for t in work.titles)}
+            if locale and locale not in have:
                 changed += 1
                 print(f"{work.kind} {work.id}, other title {title.title!r}: {title.locale} -> {locale}")
                 title.locale = locale
             else:
                 left += 1
-                print(f"{work.kind} {work.id}, other title {title.title!r} is not {title.locale}: left (the work has it in {locale or 'no language known here'})")
+                print(f"{work.kind} {work.id}, other title {title.title!r} is not {title.locale}: left (the work has a title in {locale or 'no language known here'})")
     for name in session.scalars(select(PersonName).order_by(PersonName.id)):
-        if not languages.fits(name.locale, name.name):
-            locale = languages.locale_of(name.name)
+        if not languages.fits(locales[name.locale], name.name):
+            locale = languages.locale_of(locales, name.name)
             taken = {n.locale for n in name.person.names}
             if locale and locale != DEFAULT_LOCALE and locale not in taken:
                 changed += 1

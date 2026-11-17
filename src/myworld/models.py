@@ -36,10 +36,13 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    event,
     false,
+    insert,
+    select,
 )
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 
 from myworld.addresses import compose
 
@@ -55,23 +58,26 @@ STATUSES: dict[str, str] = {
     "abandoned": "Abandoned",
 }
 
-# the languages a name, a title or a reading can be in: code -> name. A
-# person's own name parts are their English name ("en"); a book is shown in
-# the language it was read in, with its authors' names in it
-LOCALES: dict[str, str] = {
-    "en": "English",
-    "he": "Hebrew",
-    "ar": "Arabic",
-    "yi": "Yiddish",
-    "fr": "French",
-    "de": "German",
-    "es": "Spanish",
-    "it": "Italian",
-    "pt": "Portuguese",
-    "ru": "Russian",
-    "cs": "Czech",
-    "el": "Greek",
-}
+# the languages a name, a title or a reading can be in, as the locales table
+# starts out (code, name, the script it is written in, named as Unicode names
+# its letters: "HEBREW LETTER ALEF"), in the order the forms offer them. The
+# table is what counts: make_engine adds the ones missing from it. A person's
+# own name parts are their English name ("en"); a book is shown in the
+# language it was read in, with its authors' names in it
+SEED_LOCALES: list[tuple[str, str, str]] = [
+    ("en", "English", "Latin"),
+    ("he", "Hebrew", "Hebrew"),
+    ("ar", "Arabic", "Arabic"),
+    ("yi", "Yiddish", "Hebrew"),
+    ("fr", "French", "Latin"),
+    ("de", "German", "Latin"),
+    ("es", "Spanish", "Latin"),
+    ("it", "Italian", "Latin"),
+    ("pt", "Portuguese", "Latin"),
+    ("ru", "Russian", "Cyrillic"),
+    ("cs", "Czech", "Latin"),
+    ("el", "Greek", "Greek"),
+]
 DEFAULT_LOCALE = "en"
 
 RATING_MIN = 1
@@ -181,6 +187,32 @@ class EmailVerification(Base):
     sent_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
 
+class Locale(Base):
+    """
+    A language a title, a name or a reading can be in: every locale column
+    points here (library_works.title_locale, library_work_titles.locale,
+    library_entries.locale, person_names.locale). The same for every
+    account, as the works are.
+    """
+    __tablename__ = "locales"
+
+    code: Mapped[str] = mapped_column(String(10), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    # the script it is written in ("Hebrew"): a text in other letters is not in this language
+    script: Mapped[str] = mapped_column(String(50), nullable=False)
+    # where the forms list it; the first of a script is the one its letters suggest
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+@event.listens_for(Locale.__table__, "after_create")
+def _fill_locales(target: Table, connection: Connection, **_: Any) -> None:
+    """ A locales table just made starts with the languages of SEED_LOCALES. """
+    connection.execute(insert(target), [
+        {"code": code, "name": name, "script": script, "position": position}
+        for position, (code, name, script) in enumerate(SEED_LOCALES)
+    ])
+
+
 class Work(Base):
     __tablename__ = "library_works"
     __table_args__ = (
@@ -203,16 +235,16 @@ class Work(Base):
     # books: Goodreads, and Simania (a Hebrew catalog) for a book read in Hebrew
     goodreads_id: Mapped[str] = mapped_column(String(20), nullable=False, default="")
     simania_id: Mapped[str] = mapped_column(String(20), nullable=False, default="")
-    # the language the title is in; the work's other titles are in titles
-    title_locale: Mapped[str] = mapped_column(String(10), nullable=False, default=DEFAULT_LOCALE, server_default=DEFAULT_LOCALE)
+    # the language the title is in; the work's titles in other languages are in titles
+    title_locale: Mapped[str] = mapped_column(ForeignKey("locales.code"), nullable=False, default=DEFAULT_LOCALE, server_default=DEFAULT_LOCALE)
 
     users: Mapped[list[UserWork]] = relationship(back_populates="work")  # pylint: disable=used-before-assignment
     titles: Mapped[list[WorkTitle]] = relationship(
         back_populates="work", cascade="all, delete-orphan", order_by=lambda: WorkTitle.id,  # pylint: disable=used-before-assignment
     )
 
-    def title_in(self, locale: str) -> str:
-        """ The title in locale: the main one when it is in it, else the first other title in it, else the main one. """
+    def title_in(self, locale: str | None) -> str:
+        """ The title in locale: the main one when it is in it, else the other title in it, else the main one. """
         if locale and locale != self.title_locale:
             for other in self.titles:
                 if other.locale == locale:
@@ -222,16 +254,17 @@ class Work(Base):
 
 class WorkTitle(Base):
     """
-    Another title of a work, in a language: "אינטליגנציה מלאכותית" (he) of
-    "Artificial Intelligence". A work may have several in one language. The
-    work is shared, so its titles are only ever added to, never taken away.
+    The title of a work in another language than its main title's:
+    "אינטליגנציה מלאכותית" (he) of "Artificial Intelligence". One per
+    language: a work's titles are told apart by their language. The work is
+    shared, so its titles are only ever added to, never taken away.
     """
     __tablename__ = "library_work_titles"
-    __table_args__ = (UniqueConstraint("work_id", "locale", "title", name="uq_work_title"),)
+    __table_args__ = (UniqueConstraint("work_id", "locale", name="uq_work_title_locale"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     work_id: Mapped[int] = mapped_column(ForeignKey("library_works.id", ondelete="CASCADE"), nullable=False, index=True)
-    locale: Mapped[str] = mapped_column(String(10), nullable=False)
+    locale: Mapped[str] = mapped_column(ForeignKey("locales.code"), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
 
     work: Mapped[Work] = relationship(back_populates="titles")
@@ -265,9 +298,9 @@ class UserWork(Base):
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     # the cover: an image of the user's own, as the works are shared
     image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
-    # the language the user read it in ("" not known): the book is shown in it,
-    # its title and its authors' names
-    locale: Mapped[str] = mapped_column(String(10), nullable=False, default="", server_default="")
+    # the language the user read it in (none when not known): the book is shown
+    # in it, its title and its authors' names
+    locale: Mapped[str | None] = mapped_column(ForeignKey("locales.code"), nullable=True)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
     user: Mapped[User] = relationship(back_populates="works")
@@ -441,7 +474,7 @@ class Person(Base):
         """ The whole name, as shown (the English one); the description for someone with no name. """
         return " ".join(part for part in (self.honorific, self.first_name, self.middle_name, self.surname) if part) or self.description
 
-    def name_in(self, locale: str) -> str:
+    def name_in(self, locale: str | None) -> str:
         """ The whole name in locale, when they have one in it; else their English name. """
         for other in self.names:
             if other.locale == locale:
@@ -470,7 +503,7 @@ class PersonName(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     person_id: Mapped[int] = mapped_column(ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
-    locale: Mapped[str] = mapped_column(String(10), nullable=False)
+    locale: Mapped[str] = mapped_column(ForeignKey("locales.code"), nullable=False)
     name: Mapped[str] = mapped_column(String(500), nullable=False)
 
     person: Mapped[Person] = relationship(back_populates="names")
@@ -921,4 +954,17 @@ def make_engine(url: str | None = None) -> Engine:
         os.makedirs(os.path.dirname(url.removeprefix("sqlite:///")) or ".", exist_ok=True)
     engine = create_engine(url, pool_pre_ping=True)
     Base.metadata.create_all(engine)
+    seed_locales(engine)
     return engine
+
+
+def seed_locales(engine: Engine) -> None:
+    """ A locales table that was there already gets the languages of SEED_LOCALES it lacks; the others are left as they are. """
+    with Session(engine) as session:
+        have = set(session.scalars(select(Locale.code)))
+        session.add_all(
+            Locale(code=code, name=name, script=script, position=position)
+            for position, (code, name, script) in enumerate(SEED_LOCALES)
+            if code not in have
+        )
+        session.commit()
