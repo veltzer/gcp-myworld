@@ -1602,6 +1602,16 @@ function mapPopup(group) {
 	return box;
 }
 
+// what the picture of the rows of the view shown is called ("photo", "logo", "flag": its dialog's
+// picture box says), "" for rows that never have one
+function pictureName() {
+	return document.getElementById(`${slug(state.view)}-form`)?.querySelector("[data-pictures]")?.dataset.what || "";
+}
+
+const NO_COVER_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/></svg>';
+// a camera, struck through
+const NO_PHOTO_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3 7.2 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2h-3.2L15 3H9zm3 15c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5z"/><path d="M3 2 22 21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
+
 function cardShell(item, subtitle, kind = "photo") {
 	const card = el("article", "world-card");
 	card.id = `${slug(state.view)}-${item.id}`;
@@ -1613,18 +1623,19 @@ function cardShell(item, subtitle, kind = "photo") {
 		img.alt = "";
 		img.loading = "lazy";
 		card.appendChild(img);
-	} else if (kind === "cover") {
-		// a book, film or album without a cover gets a blank one that says so, laid
-		// out in every layout like a real cover
-		card.classList.add("has-image", "is-cover");
+	} else if (kind === "cover" || pictureName()) {
+		// something that could have a picture and has none gets a blank one that says so plainly
+		// ("No cover", "No photo", "No logo", "No flag"), laid out in every layout like a real one
+		const what = kind === "cover" ? "cover" : pictureName();
+		card.classList.add("has-image", `is-${kind}`, "no-picture");
 		const slot = el("div", "world-image cover-slot");
-		const blank = el("div", "cover-blank");
-		blank.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/></svg>';
-		blank.appendChild(el("span", null, "No cover"));
+		const blank = el("div", kind === "cover" ? "cover-blank" : "cover-blank picture-blank");
+		blank.innerHTML = kind === "cover" ? NO_COVER_ICON : NO_PHOTO_ICON;
+		blank.appendChild(el("span", null, `No ${what}`));
 		slot.appendChild(blank);
 		card.appendChild(slot);
 	} else {
-		// an empty slot where the image would be: the list layout keeps every row the same shape
+		// what never has a picture: an empty slot, so the list layout keeps every row the same shape
 		card.appendChild(el("div", "world-image no-image"));
 	}
 	const body = el("div", "world-body");
