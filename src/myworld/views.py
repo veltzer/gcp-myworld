@@ -105,13 +105,17 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
         # who wrote it, as the user's people (the People view links to them), named in the language it was read in
         "authors": [{"id": p.id, "name": p.name_in(preferred)} for p in entry.authors],
         "simania_id": entry.work.simania_id,
+        # the cover its card shows, and all of its covers (that one first)
         "image": world.image_url(entry.image_id),
+        "covers": [{"id": image_id, "image": world.image_url(image_id)} for image_id in entry.cover_ids],
         "status": entry.status,
         "rating": entry.rating,
         "started_on": entry.started_on.isoformat() if entry.started_on else None,
         "finished_on": entry.finished_on.isoformat() if entry.finished_on else None,
         # every time it was read: the day and the language, either empty when not known
         "reads": [{"date": read.read_on.isoformat() if read.read_on else None, "locale": read.locale or ""} for read in entry.reads],
+        # what the user thought of it, and anything else they keep about it
+        "review": entry.review,
         "notes": entry.notes,
         "updated_at": entry.updated_at.isoformat(),
     }
@@ -160,7 +164,7 @@ def _apply_reads(entry: UserWork, body: dict[str, Any]) -> None:
         entry.reads.remove(read)
 
 
-def _apply_entry_fields(entry: UserWork, body: dict[str, Any]) -> None:
+def _apply_entry_fields(entry: UserWork, body: dict[str, Any], new: bool = False) -> None:
     status = text(body, "status") or "done"
     if status not in STATUSES:
         raise ApiError(400, f"status: unknown status {status!r}")
@@ -168,17 +172,29 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any]) -> None:
     entry.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
     entry.started_on = opt_date(body, "started_on")
     entry.notes = text(body, "notes")
+    # the review is set only when sent: what does not know of it leaves it alone
+    if "review" in body:
+        entry.review = text(body, "review")
     # the year it came out, on the shared work: only filled in, never changed
     year = opt_int(body, "year", -3000, 3000)
     if year is not None and entry.work.year is None:
         entry.work.year = year
     _apply_reads(entry, body)
-    if "titles" in body:
+    # an entry edited with its title sent says all the titles of its work; with only titles sent they are added
+    if "title" in body and not new:
+        _set_titles(entry.work, body)
+    elif "titles" in body:
         _add_titles(entry.work, body["titles"])
-    # a cover is only ever replaced by a new upload, never blanked by omission
-    image_id = world.owned_image(body)
-    if image_id is not None:
-        entry.image_id = image_id
+    # covers, a list of image ids, are all the entry's covers (the first is the one its card shows);
+    # without it image_id is a new first cover, and a cover is never blanked by omission
+    if "covers" in body:
+        if not isinstance(body["covers"], list):
+            raise ApiError(400, "covers: expected a list of image ids")
+        entry.cover_ids = world.owned_images("covers", body["covers"])
+    else:
+        image_id = world.owned_image(body)
+        if image_id is not None:
+            entry.image_id = image_id
     # the authors, ids of the user's people (any number), are set only when sent;
     # each is a Book Author, when the user keeps that profession
     if "authors" in body:
@@ -205,6 +221,39 @@ def _add_titles(work: Work, value: Any) -> None:
         elif have[locale] != title:
             name = languages.known(flask.g.db)[locale].name
             raise ApiError(400, f"titles: the book already has a title in {name} ({have[locale]}): one title per language")
+
+
+def _set_titles(work: Work, body: dict[str, Any]) -> None:
+    """
+    All the titles of a work, as the dialog sends them: title and
+    title_locale are the one it is known by, titles the others, one per
+    language. A title not sent is taken away, and one sent in a language it
+    has a title in replaces it.
+    """
+    locales = languages.known(flask.g.db)
+    title = " ".join(text(body, "title", required=True).split())
+    locale = text(body, "title_locale") or languages.locale_of(locales, title) or DEFAULT_LOCALE
+    if locale not in locales:
+        raise ApiError(400, f"title_locale: unknown language {locale!r}")
+    if not languages.fits(locales[locale], title):
+        raise ApiError(400, f"title_locale: the title is not written in {locales[locale].name}: choose the language it is in")
+    others = dict(world.localized("titles", body.get("titles", []), "title", one_per_locale=True))
+    if locale in others:
+        raise ApiError(400, f"titles: two titles in {locales[locale].name}: one title per language")
+    if title != work.title:
+        clash = flask.g.db.execute(
+            select(Work.id).where(Work.kind == work.kind, Work.title == title, Work.creator == work.creator, Work.year == work.year, Work.id != work.id)
+        ).first()
+        if clash is not None:
+            raise ApiError(409, f"{title} is already the title of another {KINDS[work.kind][0].lower()} of the same {KINDS[work.kind][2].lower()} and year")
+    work.title, work.title_locale = title, locale
+    kept = {row.locale: row for row in work.titles}
+    rows = []
+    for other_locale, other in others.items():
+        row = kept.get(other_locale) or WorkTitle(locale=other_locale, title=other)
+        row.title = other
+        rows.append(row)
+    work.titles = rows
 
 
 def _apply_work_ids(work: Work, body: dict[str, Any]) -> None:
@@ -361,7 +410,7 @@ def api_library_add() -> tuple[flask.Response, int]:
     if entry is None:
         entry = UserWork(user_id=flask.g.user.id, work_id=work.id, work=work)
         db.add(entry)
-    _apply_entry_fields(entry, body)
+    _apply_entry_fields(entry, body, new=True)
     db.commit()
     return flask.jsonify(_entry_json(entry)), 201 if created else 200
 

@@ -304,8 +304,12 @@ class UserWork(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="done")
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_on: Mapped[datetime.date | None] = mapped_column(nullable=True)
+    # what the user thought of it, in their own words; notes is anything else worth keeping (where they have it, ...)
+    review: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    # the cover: an image of the user's own, as the works are shared
+    # the cover: an image of the user's own, as the works are shared. An entry
+    # may have several: this is the first, the one its card shows, and the
+    # others are in more_covers
     image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
@@ -319,6 +323,21 @@ class UserWork(Base):
     reads: Mapped[list[Read]] = relationship(
         back_populates="entry", cascade="all, delete-orphan", order_by=lambda: Read.id, lazy="selectin",
     )
+
+    # its covers after the first (image_id), in the order they were added
+    more_covers: Mapped[list[Cover]] = relationship(cascade="all, delete-orphan", order_by=lambda: Cover.id, lazy="selectin")
+
+    @property
+    def cover_ids(self) -> list[int]:
+        """ The images of all its covers: the first (image_id), then the others. """
+        return ([self.image_id] if self.image_id is not None else []) + [cover.image_id for cover in self.more_covers]
+
+    @cover_ids.setter
+    def cover_ids(self, image_ids: list[int]) -> None:
+        """ Its covers become these images, in this order: rows of images kept are kept. """
+        self.image_id = image_ids[0] if image_ids else None
+        kept = {cover.image_id: cover for cover in self.more_covers}
+        self.more_covers = [kept.get(image_id) or Cover(image_id=image_id) for image_id in image_ids[1:]]
 
     @property
     def last_read(self) -> Read | None:
@@ -363,6 +382,26 @@ class Read(Base):
     locale: Mapped[str | None] = mapped_column(ForeignKey("locales.code"), nullable=True)
 
     entry: Mapped[UserWork] = relationship(back_populates="reads")
+
+
+class Cover(Base):
+    """
+    A cover of a library entry after its first (library_entries.image_id): a
+    book read in two editions has the cover of each.
+    """
+    __tablename__ = "library_covers"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "work_id"], ["library_entries.user_id", "library_entries.work_id"],
+            ondelete="CASCADE", name="fk_library_covers_entry",
+        ),
+        Index("ix_library_covers_entry", "user_id", "work_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    work_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    image_id: Mapped[int] = mapped_column(ForeignKey("images.id", ondelete="CASCADE"), nullable=False)
 
 
 # ─── concerts, museums, people ───────────────────────────────────────────────
@@ -730,11 +769,26 @@ class City(_Pictured, _Located, Base):
     country: Mapped[Country | None] = relationship(back_populates="cities")
     remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
+    # its photos after the first (image_id and its credit), in the order they were added
+    more_photos: Mapped[list[CityPhoto]] = relationship(cascade="all, delete-orphan", order_by=lambda: CityPhoto.id)  # pylint: disable=used-before-assignment
+
     places: Mapped[list[Place]] = relationship(back_populates="city")
     museums: Mapped[list[Museum]] = relationship(back_populates="city")
     organizations: Mapped[list[Organization]] = relationship(back_populates="city", foreign_keys=lambda: Organization.city_id)
     # the organizations whose headquarters are here
     headquarters_of: Mapped[list[Organization]] = relationship(back_populates="headquarters", foreign_keys=lambda: Organization.headquarters_id)
+
+
+class CityPhoto(Base):
+    """ A photo of a city after its first (cities.image_id), with the credit its license asks for. """
+    __tablename__ = "city_photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    city_id: Mapped[int] = mapped_column(ForeignKey("cities.id", ondelete="CASCADE"), nullable=False, index=True)
+    image_id: Mapped[int] = mapped_column(ForeignKey("images.id", ondelete="CASCADE"), nullable=False)
+    image_source: Mapped[str] = mapped_column(String(1000), nullable=False, default="", server_default="")
+    image_license: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="")
+    image_author: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
 
 
 class Organization(_Addressed, _Located, Base):

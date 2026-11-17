@@ -521,17 +521,29 @@ with hyphens for underscores (`library_entries` is
 others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
 
 - `GET /api/library-entries[?kind=book]`: the user's entries, each with
-  `image`, its cover (the user's own image, the picture on its card), and
+  `image`, its cover (the user's own image, the picture on its card),
+  `covers`, all of its covers (`id` and `image`, that one first: a book may
+  have several), `review` (what the user thought of it) beside `notes`, and
   `authors`, the people who wrote it (`id` and `name`).
 - `POST /api/library-entries`: add (or update, if the work is already in the
   library) with `kind`, `title`, `creator`, `year`, `status`, `rating`,
-  `started_on`, `finished_on`, `notes`, `image_id` (an upload, see
-  `POST /api/images`), and for films optionally `imdb_id`, `tmdb_id`,
+  `started_on`, `finished_on`, `review`, `notes`, `covers` (a list of image
+  ids, all the covers in their order; uploads, see `POST /api/images`) or
+  `image_id` (one upload, a new first cover), and for films optionally `imdb_id`, `tmdb_id`,
   `rotten_tomatoes_id`, for books `goodreads_id` and `simania_id`; the
   catalog ids show as links next to the title. `authors`, a list of ids of
   the user's people, sets the authors; left out, they stay as they are.
 - `PUT /api/library-entries/<work_id>`: update the per-user fields, the
-  cover and (when sent) the authors.
+  covers and (when sent) the authors. With `title` sent (and
+  `title_locale`, `titles`) these are all the titles of the work: one not
+  sent is taken away.
+- In the dialogs a list (titles, reads, names, relations, covers, photos,
+  the chips of a picker) shows what there is, each with a red − that takes
+  it away, and a red + that brings in the row to add another with. Every
+  other picture is one per row: `image_id` replaces it and
+  `image_remove: true` takes it away. A city may have several photos:
+  `photos`, a list of `{image_id, image_source, image_license,
+  image_author}`, is all of them, the first being the one its card shows.
 - Names in languages. The languages are the rows of the `locales` table
   (`code`, `name`, the `script` it is written in, and its `position` in the
   forms), the same for every account; `/api/config` sends them as `locales`

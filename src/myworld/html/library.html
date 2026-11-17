@@ -179,25 +179,25 @@
 				<div class="row">
 					<!-- every title of the book, each in its language, none of them set apart; which one a book
 					     is shown by is the account's preferred language (Settings) -->
-					<label title="Every title the book has, one per language; it is shown by the one in your preferred language (Settings)" class="wide">Titles <span class="chips" id="book-titles"></span></label>
+					<label title="Every title the book has, one per language; it is shown by the one in your preferred language (Settings). + adds a title, − takes one away" class="wide">Titles <span class="chips" id="book-titles"></span></label>
 					<!-- sent with the form: the first title and its language (what the work is known by),
 					     and a book's author text, made from its authors (below) -->
 					<input type="hidden" name="title">
 					<input type="hidden" name="title_locale">
 					<input type="hidden" name="creator">
 				</div>
-				<div class="row">
+				<div class="row adder" id="book-title-row" hidden>
 					<label title="The language of the title, chosen by its letters as you type (a Hebrew title is Hebrew)">Language <select id="book-title-locale" data-locales aria-label="Language of the title to add" title="The language of the title, chosen by its letters as you type (a Hebrew title is Hebrew)"></select></label>
-					<label title="A title of the book in the language chosen: Enter or Add title adds it to Titles" class="wide">Title <input id="book-title-text" dir="auto" placeholder="The book's title in this language (one per language): Enter adds it"></label>
-					<button type="button" class="text" id="book-title-add">Add title</button>
+					<label title="A title of the book in the language chosen: Enter or Add adds it to Titles" class="wide">Title <input id="book-title-text" dir="auto" placeholder="The book's title in this language (one per language): Enter adds it"></label>
+					<button type="button" class="danger" id="book-title-add">Add</button>
 				</div>
 				<div class="row">
-					<label title="Every time you read the book: the day you finished it and the language you read it in" class="wide">Reads <span class="chips" id="book-reads"></span></label>
+					<label title="Every time you read the book: the day you finished it and the language you read it in. + adds a read, − takes one away" class="wide">Reads <span class="chips" id="book-reads"></span></label>
 				</div>
-				<div class="row">
+				<div class="row adder" id="book-read-row" hidden>
 					<label title="The day you finished reading it; leave it empty when you do not know">Read on <input id="book-read-date" type="date" title="The day you finished reading it; leave it empty when you do not know"></label>
 					<label title="The language you read it in: the book is shown in the language of its last read, its title and its authors' names">In <select id="book-read-locale" data-locales data-blank="Not said" aria-label="Language of the read" title="The language you read it in: the book is shown in the language of its last read, its title and its authors' names"></select></label>
-					<button type="button" class="text" id="book-read-add">Add read</button>
+					<button type="button" class="danger" id="book-read-add">Add</button>
 				</div>
 				<div class="row">
 					<label title="Who wrote the book, each one of People; add a new one on the People page" class="wide">Authors <select id="book-authors" multiple data-chips="people" data-field="authors" data-placeholder="Type a person (a book's authors, any number)"><option value=""></option></select></label>
@@ -209,10 +209,18 @@
 					<label title="The day you started reading the book">Started <input name="started_on" type="date"></label>
 				</div>
 				<div class="row">
-					<label title="Anything you want to keep about the book: what you thought of it, where you have it" class="wide">Notes <input name="notes"></label>
+					<label title="What you thought of the book, in your own words" class="wide">Review <input name="review"></label>
 				</div>
 				<div class="row">
-					<label title="The book's cover image: choosing a file replaces the one it has, choosing none keeps it" class="wide">Cover <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="Anything else worth keeping about the book: where you have it, what it was once called" class="wide">Notes <input name="notes"></label>
+				</div>
+				<div class="row">
+					<label title="The book's covers: the first is the one its card shows. + adds a cover, − takes one away" class="wide">Covers <span class="chips pictures" id="add-pictures" data-pictures="many" data-what="cover"></span></label>
+				</div>
+				<div class="adder" data-picture-adder hidden>
+					<div class="row">
+						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Cover file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					</div>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -248,7 +256,12 @@
 					<label title="Anything else worth keeping about the concert" class="wide">Remark <input name="remark"></label>
 				</div>
 				<div class="row">
-					<label title="A picture of the concert: choosing a file replaces the one it has, choosing none keeps it" class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="A picture of the concert. + adds one, in place of the one it has; − takes it away" class="wide">Photo <span class="chips pictures" id="concert-pictures" data-pictures="one" data-what="photo"></span></label>
+				</div>
+				<div class="adder" data-picture-adder hidden>
+					<div class="row">
+						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Photo file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					</div>
 				</div>
 				<div class="row">
 					<label title="The page the picture comes from, for the credit shown with it" class="wide">Photo source <input name="image_source" type="url" placeholder="Where the photo comes from"></label>
@@ -294,7 +307,12 @@
 					<label title="Anything else worth keeping about the museum visit" class="wide">Remark <input name="remark"></label>
 				</div>
 				<div class="row">
-					<label title="A picture of the museum visit: choosing a file replaces the one it has, choosing none keeps it" class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="A picture of the museum visit. + adds one, in place of the one it has; − takes it away" class="wide">Photo <span class="chips pictures" id="museum-pictures" data-pictures="one" data-what="photo"></span></label>
+				</div>
+				<div class="adder" data-picture-adder hidden>
+					<div class="row">
+						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Photo file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					</div>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -331,7 +349,12 @@
 					<label title="Any page about the course, for one that is sold at neither The Great Courses nor Audible" class="wide">Link <input name="link" type="url" placeholder="any page about the course, when it is not sold"></label>
 				</div>
 				<div class="row">
-					<label title="The course's cover image: choosing a file replaces the one it has, choosing none keeps it" class="wide">Cover <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="The course's cover image. + adds one, in place of the one it has; − takes it away" class="wide">Cover <span class="chips pictures" id="audio-course-pictures" data-pictures="one" data-what="cover"></span></label>
+				</div>
+				<div class="adder" data-picture-adder hidden>
+					<div class="row">
+						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Cover file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					</div>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -371,28 +394,28 @@
 					<label title="One word, without spaces: hyphenate a surname of two words (Di-Meola)">Surname <input name="surname" pattern="\S*" title="One word, without spaces: hyphenate a surname of two words (Di-Meola)"></label>
 				</div>
 				<div class="row">
-					<label title="Every name the person has, one per language: the English one is the name parts above, and the person is shown by the one in your preferred language (Settings)" class="wide">Names <span class="chips" id="person-names"></span></label>
+					<label title="Every name the person has, one per language: the English one is the name parts above, and the person is shown by the one in your preferred language (Settings). + adds a name, − takes one away" class="wide">Names <span class="chips" id="person-names"></span></label>
 				</div>
-				<div class="row">
+				<div class="row adder" id="person-name-row" hidden>
 					<label title="The language of the name to add, chosen by its letters as you type">Language <select id="person-name-locale" data-locales data-skip="en" aria-label="Language of the name"></select></label>
-					<label title="The person's whole name in the language chosen: Enter or Add name adds it" class="wide">Name <input id="person-name-text" dir="auto" placeholder="The whole name in that language, e.g. חיים שפירא: Enter adds it"></label>
-					<button type="button" class="text" id="person-name-add">Add name</button>
+					<label title="The person's whole name in the language chosen: Enter or Add adds it" class="wide">Name <input id="person-name-text" dir="auto" placeholder="The whole name in that language, e.g. חיים שפירא: Enter adds it"></label>
+					<button type="button" class="danger" id="person-name-add">Add</button>
 				</div>
 				<div class="row">
 					<label title="What the person does, each one of Professions; add a new one on the Professions page" class="wide">Professions <select multiple data-chips="person-types" data-field="types" data-placeholder="Type a profession"><option value=""></option></select></label>
 				</div>
 				<div class="row">
-					<label title="How the person is related to other people: friend of, parent of, ..." class="wide">Relations <span class="chips" id="person-relations"></span></label>
+					<label title="How the person is related to other people: friend of, parent of, ... + adds a relation, − takes one away" class="wide">Relations <span class="chips" id="person-relations"></span></label>
 				</div>
-				<div class="row">
-					<label title="The kind of relation to add, one of Person relations">Relation <select id="relation-type" aria-label="Relation"></select></label>
+				<div class="row adder" id="person-relation-row" hidden>
+					<label title="The kind of relation to add, one of Person relations">Relation <select id="relation-type" data-first aria-label="Relation"></select></label>
 					<label title="Who the relation is to: picking a person adds it to Relations" class="wide">Of <select id="relation-person" data-placeholder="Type a name from People: picking one adds the relation"></select></label>
 				</div>
 				<div class="row">
-					<label title="The organizations the person belongs to, and how: works at, founded, ..." class="wide">Organizations <span class="chips" id="person-organization-links"></span></label>
+					<label title="The organizations the person belongs to, and how: works at, founded, ... + adds one, − takes one away" class="wide">Organizations <span class="chips" id="person-organization-links"></span></label>
 				</div>
-				<div class="row">
-					<label title="How the person is linked to the organization to add, one of Person-org relations">How <select id="organization-link-type" aria-label="How linked"></select></label>
+				<div class="row adder" id="person-organization-row" hidden>
+					<label title="How the person is linked to the organization to add, one of Person-org relations">How <select id="organization-link-type" data-first aria-label="How linked"></select></label>
 					<label title="The organization: picking one adds the link to Organizations" class="wide">At <select id="organization-link-organization" data-placeholder="Type a name from Organizations: picking one adds the link"></select></label>
 				</div>
 				<div class="row">
@@ -435,7 +458,12 @@
 					<label title="Anything else worth keeping about the organization" class="wide">Remark <input name="remark"></label>
 				</div>
 				<div class="row">
-					<label title="The organization's logo, an SVG image: choosing a file replaces the one it has, choosing none keeps it" class="wide">Logo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="The organization's logo, an SVG image. + adds one, in place of the one it has; − takes it away" class="wide">Logo <span class="chips pictures" id="organization-pictures" data-pictures="one" data-what="logo"></span></label>
+				</div>
+				<div class="adder" data-picture-adder hidden>
+					<div class="row">
+						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Logo file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					</div>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -457,7 +485,12 @@
 					<label title="The group's own website" class="wide">Website <input name="website" type="url" placeholder="https://"></label>
 				</div>
 				<div class="row">
-					<label title="A picture of the group: choosing a file replaces the one it has, choosing none keeps it" class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="A picture of the group. + adds one, in place of the one it has; − takes it away" class="wide">Photo <span class="chips pictures" id="group-pictures" data-pictures="one" data-what="photo"></span></label>
+				</div>
+				<div class="adder" data-picture-adder hidden>
+					<div class="row">
+						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Photo file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					</div>
 				</div>
 				<div class="row">
 					<label title="The page the picture comes from, for the credit shown with it" class="wide">Photo source <input name="image_source" type="url" placeholder="Where it comes from"></label>
@@ -484,12 +517,18 @@
 					<label title="Anything else worth keeping about the city" class="wide">Remark <input name="remark"></label>
 				</div>
 				<div class="row">
-					<label title="A picture of the city: choosing a file replaces the one it has, choosing none keeps it" class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="The city's photos: the first is the one its card shows. + adds a photo, − takes one away" class="wide">Photos <span class="chips pictures" id="city-pictures" data-pictures="many" data-what="photo"></span></label>
 				</div>
-				<div class="row">
-					<label title="The page the picture comes from, for the credit shown with it" class="wide">Photo source <input name="image_source" type="url" placeholder="Where it comes from"></label>
-					<label title="The license the picture is under, e.g. CC BY-SA 4.0, for the credit shown with it">License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
-					<label title="Who made the picture, for the credit shown with it">Author <input name="image_author"></label>
+				<div class="adder" data-picture-adder hidden>
+					<div class="row">
+						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB)" class="wide">Photo file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					</div>
+					<div class="row">
+						<label title="The page the photo to add comes from, for the credit shown with it" class="wide">Photo source <input name="image_source" type="url" placeholder="Where it comes from"></label>
+						<label title="The license the photo to add is under, e.g. CC BY-SA 4.0, for the credit shown with it">License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
+						<label title="Who made the photo to add, for the credit shown with it">Author <input name="image_author"></label>
+						<button type="button" class="danger" data-picture-add>Add</button>
+					</div>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -509,7 +548,12 @@
 					<label title="Anything else worth keeping about the country" class="wide">Remark <input name="remark"></label>
 				</div>
 				<div class="row">
-					<label title="The country's flag: choosing a file replaces the one it has, choosing none keeps it" class="wide">Flag <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="The country's flag. + adds one, in place of the one it has; − takes it away" class="wide">Flag <span class="chips pictures" id="country-pictures" data-pictures="one" data-what="flag"></span></label>
+				</div>
+				<div class="adder" data-picture-adder hidden>
+					<div class="row">
+						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Flag file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					</div>
 				</div>
 				<div class="row">
 					<label title="The page the flag comes from, for the credit shown with it" class="wide">Flag source <input name="image_source" type="url" placeholder="Where it comes from"></label>
@@ -569,7 +613,12 @@
 					<label title="What the profession means: shown as its tooltip and on its page" class="wide">Description <input name="description"></label>
 				</div>
 				<div class="row">
-					<label title="A picture of the profession: choosing a file replaces the one it has, choosing none keeps it" class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="A picture of the profession. + adds one, in place of the one it has; − takes it away" class="wide">Photo <span class="chips pictures" id="profession-pictures" data-pictures="one" data-what="photo"></span></label>
+				</div>
+				<div class="adder" data-picture-adder hidden>
+					<div class="row">
+						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Photo file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					</div>
 				</div>
 				<div class="row">
 					<label title="The page the picture comes from, for the credit shown with it" class="wide">Photo source <input name="image_source" type="url" placeholder="Where it comes from"></label>
@@ -630,7 +679,12 @@
 					<label title="What the device means: shown as its tooltip and on its page" class="wide">Description <input name="description"></label>
 				</div>
 				<div class="row">
-					<label title="A picture of the device: choosing a file replaces the one it has, choosing none keeps it" class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="A picture of the device. + adds one, in place of the one it has; − takes it away" class="wide">Photo <span class="chips pictures" id="device-pictures" data-pictures="one" data-what="photo"></span></label>
+				</div>
+				<div class="adder" data-picture-adder hidden>
+					<div class="row">
+						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Photo file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					</div>
 				</div>
 				<div class="row">
 					<label title="The page the picture comes from, for the credit shown with it" class="wide">Photo source <input name="image_source" type="url" placeholder="Where it comes from"></label>

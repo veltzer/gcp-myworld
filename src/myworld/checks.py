@@ -570,7 +570,7 @@ def _library_checks(kind: str) -> None:
 
     def covers(session: Session) -> Result:
         entries = _entries(session, kind)
-        return Result(checked=len(entries), problems=[_entry_problem(e, "has no cover") for e in entries if e.image_id is None])
+        return Result(checked=len(entries), problems=[_entry_problem(e, "has no cover") for e in entries if not e.cover_ids])
 
     def ratings(session: Session) -> Result:
         done = [e for e in _entries(session, kind) if e.status == "done"]
@@ -589,10 +589,10 @@ def _library_checks(kind: str) -> None:
         ]
         return Result(checked=len(entries), problems=problems)
 
-    covers.__doc__ = f"Every {one} in a library, of every account, has a cover image."
+    covers.__doc__ = f"Every {one} in a library, of every account, has at least one cover image (it may have several)."
     ratings.__doc__ = f"Every {one} an account has {verb} (Done), of every account, has a rating; one not {verb} yet need not."
     duplicates.__doc__ = f"No account has two {noun} of the same title and {creator.lower()} (ignoring case and spaces at the ends), as two works."
-    check(f"{kind}-covers", f"Every {one} has a cover", noun, kind)(covers)
+    check(f"{kind}-covers", f"Every {one} has at least one cover", noun, kind)(covers)
     check(f"{kind}-ratings", f"Every {one} {verb} is rated", f"{noun} {verb}", kind)(ratings)
     check(f"{kind}-duplicates", f"No {one} is listed twice", noun, kind)(duplicates)
 

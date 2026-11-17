@@ -846,10 +846,8 @@ def _reading_day(reading: dict[str, Any]) -> datetime.date | None:
 
 
 def _book_notes(item: dict[str, Any], main: dict[str, Any] | None) -> str:
-    """ What a library entry has no field for, in a few sentences. """
+    """ What a library entry has no field for, in a few sentences (what the user thought of it is its review). """
     parts = []
-    if main is not None and main.get("review"):
-        parts.append(str(main["review"]))
     readings = item["readings"]
     if len(readings) > 1 or any(r["language"] != item["language"] for r in readings):
         described = []
@@ -1057,16 +1055,17 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
         readings = item["readings"]
         main = read_in(item)[0]
         rating = main.get("rating") if main else None
-        notes = _book_notes(item, main)
+        review = str(main["review"]).rstrip(".") if main and main.get("review") else ""
         if rating is None and item.get("text_rating") is not None:
             rating = item["text_rating"]
-            notes = ". ".join(part for part in (item.get("text_review", ""), notes) if part)
+            review = ". ".join(part for part in (item.get("text_review", ""), review) if part)
         session.add(UserWork(
             user_id=owner.id,
             work_id=work.id,
             status="done" if readings else "wishlist",
             rating=rating,
-            notes=notes,
+            review=review,
+            notes=_book_notes(item, main),
             image_id=cover.id if cover else None,
             reads=reads_of(item),
             authors=(authors := [author(name) for name in names]),

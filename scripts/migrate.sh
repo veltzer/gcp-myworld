@@ -171,6 +171,11 @@
 #     titles in several languages is shown by the one in it. English for
 #     every account there is, as for a new one. Adding a column that points
 #     at locales, so after the locales step; run before the deploy.
+#   - library_entries.review, what the user thought of a book, beside its
+#     notes: adding a column, run before the deploy; scripts/split_reviews.py
+#     then moves the review that leads an imported book's notes into it. The
+#     tables of a book's further covers (library_covers) and a city's further
+#     photos (city_photos) are new, made by create_all.
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -419,6 +424,7 @@ for table, column, kind in [
     ("library_works", "goodreads_id", "VARCHAR(20) NOT NULL DEFAULT ''"),
     ("library_works", "simania_id", "VARCHAR(20) NOT NULL DEFAULT ''"),
     ("library_entries", "image_id", "INTEGER REFERENCES images (id) ON DELETE SET NULL"),
+    ("library_entries", "review", "TEXT NOT NULL DEFAULT ''"),
 ]:
     existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
     if existing and column not in existing:
@@ -1511,6 +1517,9 @@ fi
 # the language an account prefers: English, for every account there is. After the locales
 # step above (in the same transaction), which makes the table it points at.
 has "users.locale:.*" || need users.locale "ALTER TABLE users ADD COLUMN locale VARCHAR(10) NOT NULL DEFAULT 'en' CONSTRAINT users_locale_fkey REFERENCES locales (code)"
+
+# what the user thought of a book, beside its notes (scripts/split_reviews.py fills it from them)
+has "library_entries.review:.*" || need library_entries.review "ALTER TABLE library_entries ADD COLUMN review TEXT NOT NULL DEFAULT ''"
 
 if (( ${#changed[@]} == 0 )); then
 	echo "${gcp_sql_instance}/${gcp_db_name}: up to date, nothing to migrate"

@@ -26,8 +26,10 @@ from myworld.models import (
     YOUTUBE_ID_LENGTH,
     AudioCourse,
     City,
+    CityPhoto,
     Concert,
     Country,
+    Cover,
     Device,
     Group,
     Image,
@@ -175,7 +177,12 @@ def city_json(city: City) -> dict[str, Any]:
     museums = {m.name: {"id": m.id, "name": m.name} for m in sorted(city.museums, key=lambda m: m.id)}
     return {
         **(city_ref(city) or {}),
+        # the photo its card shows, and all of its photos (that one first), each with its credit
         **_picture_json(city),
+        "photos": ([{"id": city.image_id, **_picture_json(city)}] if city.image_id is not None else []) + [
+            {"id": photo.image_id, "image": image_url(photo.image_id), "image_source": photo.image_source, "image_license": photo.image_license, "image_author": photo.image_author}
+            for photo in city.more_photos
+        ],
         "latitude": city.latitude,
         "longitude": city.longitude,
         "remark": city.remark,
@@ -566,6 +573,30 @@ def owned_image(body: dict[str, Any]) -> int | None:
     return image_id
 
 
+def owned_images(key: str, values: list[Any]) -> list[int]:
+    """ Ids of the user's own images, as sent in a list (key names it in the error), each once and in the order sent. """
+    ids = [value for value in values if isinstance(value, int) and not isinstance(value, bool)]
+    if len(ids) != len(values) or len(set(ids)) != len(ids):
+        raise ApiError(400, f"{key}: expected a list of image ids, each once")
+    found = set(flask.g.db.scalars(select(Image.id).where(Image.owner_id == flask.g.user.id, Image.id.in_(ids)))) if ids else set()
+    if len(found) != len(ids):
+        raise ApiError(400, f"{key}: unknown image")
+    return ids
+
+
+def apply_image(row: Any, body: dict[str, Any]) -> None:
+    """
+    The one picture of a row: a new upload (image_id) replaces it, and
+    image_remove takes it away; sent neither, it stays as it is (a picture
+    is never blanked by omission).
+    """
+    image_id = owned_image(body)
+    if image_id is not None:
+        row.image_id = image_id
+    elif body.get("image_remove") is True:
+        row.image_id = None
+
+
 def _owned(model: type[Concert | Museum | AudioCourse | YouTubeVideo | Person | Organization | Place | Group | City | Country | OrganizationType | PersonType | RelationType | PersonRelationType | PersonOrganizationType | Device], row_id: int) -> Any:
     row = flask.g.db.get(model, row_id)
     if row is None or row.owner_id != flask.g.user.id:
@@ -581,7 +612,9 @@ def drop_unused_images() -> None:
         select(Organization.image_id).where(Organization.image_id.is_not(None)),
         select(AudioCourse.image_id).where(AudioCourse.image_id.is_not(None)),
         select(UserWork.image_id).where(UserWork.image_id.is_not(None)),
+        select(Cover.image_id),
         select(City.image_id).where(City.image_id.is_not(None)),
+        select(CityPhoto.image_id),
         select(Country.image_id).where(Country.image_id.is_not(None)),
         select(Group.image_id).where(Group.image_id.is_not(None)),
         select(Device.image_id).where(Device.image_id.is_not(None)),
@@ -603,9 +636,7 @@ def _apply_concert(concert: Concert, body: dict[str, Any], current: Concert | No
     concert.review = text(body, "review")
     concert.remark = text(body, "remark")
     # a photo is only ever replaced by a new upload, never blanked by omission
-    image_id = owned_image(body)
-    if image_id is not None:
-        concert.image_id = image_id
+    apply_image(concert, body)
     concert.image_source = text(body, "image_source")
     concert.image_license = text(body, "image_license")
     concert.image_author = text(body, "image_author")
@@ -659,13 +690,31 @@ def _apply_country(country: Country, body: dict[str, Any]) -> None:
 
 
 def _apply_picture(row: City | Country | Group | Device | PersonType, body: dict[str, Any]) -> None:
-    # a photo is only ever replaced by a new upload, never blanked by omission
-    image_id = owned_image(body)
-    if image_id is not None:
-        row.image_id = image_id
+    apply_image(row, body)
     row.image_source = text(body, "image_source")
     row.image_license = text(body, "image_license")
     row.image_author = text(body, "image_author")
+
+
+def _apply_city_photos(city: City, value: Any) -> None:
+    """
+    All the photos of a city, [{image_id, image_source, image_license,
+    image_author}, ...], replacing those it had: the first is the one its
+    card shows (cities.image_id and its credit), the others follow it.
+    """
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise ApiError(400, "photos: expected a list of {image_id, image_source, image_license, image_author}")
+    ids = owned_images("photos", [item.get("image_id") for item in value])
+    credits = [(text(item, "image_source"), text(item, "image_license"), text(item, "image_author")) for item in value]
+    city.image_id = ids[0] if ids else None
+    city.image_source, city.image_license, city.image_author = credits[0] if credits else ("", "", "")
+    kept = {photo.image_id: photo for photo in city.more_photos}
+    rows = []
+    for image_id, (source, license_, author) in zip(ids[1:], credits[1:], strict=True):
+        row = kept.get(image_id) or CityPhoto(image_id=image_id)
+        row.image_source, row.image_license, row.image_author = source, license_, author
+        rows.append(row)
+    city.more_photos = rows
 
 
 def _apply_city(city: City, body: dict[str, Any]) -> None:
@@ -682,7 +731,10 @@ def _apply_city(city: City, body: dict[str, Any]) -> None:
     city.name, city.region, city.country = name, region, country
     city.latitude, city.longitude = coordinates(body)
     city.remark = text(body, "remark")
-    _apply_picture(city, body)
+    if "photos" in body:
+        _apply_city_photos(city, body["photos"])
+    else:
+        _apply_picture(city, body)
 
 
 def _apply_place(place: Place, body: dict[str, Any]) -> None:
@@ -727,9 +779,7 @@ def _apply_museum(museum: Museum, body: dict[str, Any], current: Museum | None) 
     museum.remark = text(body, "remark")
     museum.url = text(body, "url")
     museum.tickets = opt_int(body, "tickets", 0, 1000)
-    image_id = owned_image(body)
-    if image_id is not None:
-        museum.image_id = image_id
+    apply_image(museum, body)
     museum.people = _owned_people(body)
     museum.alone = body.get("alone") is True
     if museum.alone and museum.people:
@@ -769,9 +819,7 @@ def _apply_audio_course(course: AudioCourse, body: dict[str, Any], current: Audi
     course.link = text(body, "link")
     if course.link and not course.link.startswith(("https://", "http://")):
         raise ApiError(400, "link: expected an http(s) URL")
-    image_id = owned_image(body)
-    if image_id is not None:
-        course.image_id = image_id
+    apply_image(course, body)
     for key, value in _dates(body, current).items():
         setattr(course, key, value)
 
@@ -955,7 +1003,6 @@ def _apply_organization(organization: Organization, body: dict[str, Any]) -> Non
     organization.type = _owned_type(OrganizationType, type_id)
     # looked up before anything is set on a new organization, which is not in the session yet
     relations = owned_list(body, "relation_ids", RelationType)
-    image_id = owned_image(body)
     organization.relations = relations
     organization.status = text(body, "status")
     organization.website = text(body, "website")
@@ -966,8 +1013,7 @@ def _apply_organization(organization: Organization, body: dict[str, Any]) -> Non
     organization.latitude, organization.longitude = coordinates(body)
     organization.what_happened = text(body, "what_happened")
     organization.remark = text(body, "remark")
-    if image_id is not None:
-        organization.image_id = image_id
+    apply_image(organization, body)
 
 
 @bp.route("/api/concert-visits", methods=["POST"])

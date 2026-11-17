@@ -12,6 +12,7 @@ import flask
 import import_world
 import link_authors
 import pytest
+import split_reviews
 import webtest
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Engine
@@ -22,6 +23,7 @@ from myworld.models import (
     SEED_LOCALES,
     AudioCourse,
     Concert,
+    Cover,
     Image,
     Museum,
     Organization,
@@ -660,12 +662,13 @@ def test_books(imported: webtest.TestApp) -> None:
     hobbit, may, chess = books["The Hobbit"], books["Thirty Fifth in May"], books["Chess"]
     # the dated reading gives the rating, the review and the day (in Jerusalem, a day after UTC)
     assert (hobbit["creator"], hobbit["status"], hobbit["rating"], hobbit["finished_on"]) == ("J.R.R. Tolkien", "done", 7, "2004-08-13")
-    assert hobbit["notes"] == "Good. Read in English (date unknown); English (2004-08-13). Owned in English"
+    # what was thought of it is its review, and what it has no field for its notes
+    assert (hobbit["review"], hobbit["notes"]) == ("Good", "Read in English (date unknown); English (2004-08-13). Owned in English")
     assert hobbit["goodreads_id"] == "5907"
     assert imported.get(hobbit["image"]).body == b"\xff\xd8hobbit"
     # text_books.yaml rates a book read with no rating of its own
     assert (may["rating"], may["finished_on"], may["simania_id"]) == (8, None, "7005")
-    assert may["notes"] == "nice. Read in Hebrew (date unknown). Written in German. was named: 35 May"
+    assert (may["review"], may["notes"]) == ("nice", "Read in Hebrew (date unknown). Written in German. was named: 35 May")
     # read in Hebrew, but shown in the language the account prefers, English to begin with: its English title, its author's English name
     assert (may["locale"], may["title"], may["main_title"], may["title_locale"]) == ("he", "Thirty Fifth in May", "Thirty Fifth in May", "en")
     assert may["titles"] == [{"locale": "he", "title": "שלושים וחמישה במאי"}]
@@ -790,12 +793,12 @@ def test_books_import_fills_languages(imported: webtest.TestApp, engine: Engine,
     source = write_source(tmp_path / "again")
     # books imported before names had languages: no language read in, no
     # other titles or names, and those said in the notes instead
-    old_notes = "nice. Read in Hebrew (date unknown). Written in German. Hebrew title: שלושים וחמישה במאי. Author in Hebrew: אריך קסטנר. was named: 35 May"
+    old_notes = "Read in Hebrew (date unknown). Written in German. Hebrew title: שלושים וחמישה במאי. Author in Hebrew: אריך קסטנר. was named: 35 May"
     with Session(engine) as session:
         session.execute(delete(WorkTitle))
         session.execute(delete(PersonName))
         session.execute(delete(Read))
-        may = session.scalars(select(UserWork).where(UserWork.notes.startswith("nice."))).one()
+        may = session.scalars(select(UserWork).where(UserWork.review == "nice")).one()
         may.notes = old_notes + ". and an edit of mine"
         session.commit()
         counts = import_world.import_books(session, owner(session), source)
@@ -808,7 +811,7 @@ def test_books_import_fills_languages(imported: webtest.TestApp, engine: Engine,
     may = books["Thirty Fifth in May"]
     assert (may["locale"], may["titles"]) == ("he", [{"locale": "he", "title": "שלושים וחמישה במאי"}])
     # only what the import once wrote goes: the user's own words stay
-    assert may["notes"] == "nice. Read in Hebrew (date unknown). Written in German. was named: 35 May. and an edit of mine"
+    assert may["notes"] == "Read in Hebrew (date unknown). Written in German. was named: 35 May. and an edit of mine"
     assert books["The Hobbit"]["locale"] == "en"
     # and again: nothing more to do
     with Session(engine) as session:
@@ -1617,6 +1620,113 @@ def test_reads(imported: webtest.TestApp) -> None:
     # the reads go with the entry
     imported.delete(url)
     assert all(e["work_id"] != book["work_id"] for e in imported.get("/api/library-entries?kind=book").json)
+
+
+def test_a_book_has_covers(imported: webtest.TestApp, engine: Engine) -> None:
+    """ A book may have several covers; the first is the one its card shows, and the check asks for at least one. """
+    first, second, third = (imported.post("/api/images", upload_files=[("file", f"cover{n}.jpg", JPEG + bytes([n]))]).json["id"] for n in range(3))
+    book = imported.post_json("/api/library-entries", {"kind": "book", "title": "Two Editions", "covers": [first, second]}).json
+    assert (book["image"], [c["id"] for c in book["covers"]]) == (f"/api/images/{first}", [first, second])
+    assert [c["image"] for c in book["covers"]] == [f"/api/images/{first}", f"/api/images/{second}"]
+    url = f"/api/library-entries/{book['work_id']}"
+    # covers not sent stay; image_id alone is a new first cover
+    assert [c["id"] for c in imported.put_json(url, {"rating": 7}).json["covers"]] == [first, second]
+    assert [c["id"] for c in imported.put_json(url, {"image_id": third}).json["covers"]] == [third, second]
+    # covers sent are all of them, in their order: the first taken away, the next is the one shown
+    kept = imported.put_json(url, {"covers": [second, first]}).json
+    assert (kept["image"], [c["id"] for c in kept["covers"]]) == (f"/api/images/{second}", [second, first])
+    only = imported.put_json(url, {"covers": [first]}).json
+    assert (only["image"], [c["id"] for c in only["covers"]]) == (f"/api/images/{first}", [first])
+    for wrong in ({"covers": first}, {"covers": [first, first]}, {"covers": [999999]}, {"covers": ["x"]}):
+        imported.put_json(url, wrong, status=400)
+
+    def uncovered() -> list[str]:
+        with Session(engine) as session:
+            return [p.subject.split(" (")[0] for p in checks.CHECKS["book-covers"].run(session).problems]
+
+    # at least one cover: a book with one or with several passes, one with none does not
+    assert "Two Editions" not in uncovered()
+    imported.put_json(url, {"covers": [first, second]})
+    assert "Two Editions" not in uncovered()
+    none = imported.put_json(url, {"covers": []}).json
+    assert (none["image"], none["covers"]) == (None, [])
+    assert "Two Editions" in uncovered()
+    # the covers go with the entry, and so do images nothing shows any more
+    imported.put_json(url, {"covers": [first, second]})
+    imported.delete(url)
+    with Session(engine) as session:
+        assert session.scalars(select(Cover)).all() == []
+        assert session.get(Image, second) is None
+
+
+def test_a_city_has_photos(imported: webtest.TestApp) -> None:
+    """ A city may have several photos, each with its credit; the first is the one its card shows. """
+    one, two = (imported.post("/api/images", upload_files=[("file", f"city{n}.jpg", JPEG + bytes([n]))]).json["id"] for n in range(2))
+    credit = {"image_source": "https://commons.wikimedia.org/wiki/File:Haifa.jpg", "image_license": "CC BY 4.0", "image_author": "Dana"}
+    haifa = imported.post_json("/api/cities", {"name": "Haifa", "photos": [{"image_id": one, **credit}, {"image_id": two, "image_author": "Noa"}]}, status=201).json
+    assert (haifa["image"], haifa["image_author"]) == (f"/api/images/{one}", "Dana")
+    assert haifa["photos"] == [
+        {"id": one, "image": f"/api/images/{one}", **credit},
+        {"id": two, "image": f"/api/images/{two}", "image_source": "", "image_license": "", "image_author": "Noa"},
+    ]
+    url = f"/api/cities/{haifa['id']}"
+    # photos not sent stay (the one photo and its credit are then the first, as before)
+    assert len(imported.put_json(url, {"name": "Haifa", **credit}).json["photos"]) == 2
+    # the first taken away: the next is the one shown, with its own credit
+    left = imported.put_json(url, {"name": "Haifa", "photos": [{"image_id": two, "image_author": "Noa"}]}).json
+    assert (left["image"], left["image_author"], len(left["photos"])) == (f"/api/images/{two}", "Noa", 1)
+    none = imported.put_json(url, {"name": "Haifa", "photos": []}).json
+    assert (none["image"], none["image_author"], none["photos"]) == (None, "", [])
+    for wrong in ("x", [one], [{"image_id": 999999}], [{"image_id": one}, {"image_id": one}]):
+        imported.put_json(url, {"name": "Haifa", "photos": wrong}, status=400)
+
+
+def test_a_picture_can_be_taken_away(imported: webtest.TestApp) -> None:
+    upload = imported.post("/api/images", upload_files=[("file", "flag.jpg", JPEG)]).json
+    land = imported.post_json("/api/countries", {"name": "Ruritania", "image_id": upload["id"]}, status=201).json
+    assert land["image"] == f"/api/images/{upload['id']}"
+    url = f"/api/countries/{land['id']}"
+    # not sent, it stays; image_remove takes it away
+    assert imported.put_json(url, {"name": "Ruritania"}).json["image"] is not None
+    assert imported.put_json(url, {"name": "Ruritania", "image_remove": True}).json["image"] is None
+
+
+def test_titles_of_a_book_are_edited(imported: webtest.TestApp) -> None:
+    """ The dialog sends all the titles of a book: one not sent is taken away, one sent replaces the one in its language. """
+    book = imported.post_json("/api/library-entries", {"kind": "book", "title": "Thinking", "titles": [{"locale": "he", "title": "חשיבה"}, {"locale": "fr", "title": "Penser"}]}).json
+    url = f"/api/library-entries/{book['work_id']}"
+    # the French one taken away, the Hebrew one reworded
+    edited = imported.put_json(url, {"title": "Thinking", "title_locale": "en", "titles": [{"locale": "he", "title": "לחשוב"}]}).json
+    assert (edited["main_title"], edited["titles"]) == ("Thinking", [{"locale": "he", "title": "לחשוב"}])
+    # the English one taken away: the Hebrew one is what the work is known by
+    hebrew = imported.put_json(url, {"title": "לחשוב", "title_locale": "he", "titles": []}).json
+    assert (hebrew["main_title"], hebrew["title_locale"], hebrew["titles"]) == ("לחשוב", "he", [])
+    # a book keeps a title, in the language of its letters, one per language, and is not another book
+    imported.post_json("/api/library-entries", {"kind": "book", "title": "Other"})
+    for wrong, status in (({"title": ""}, 400), ({"title": "לחשוב", "title_locale": "en"}, 400), ({"title": "Other", "title_locale": "en"}, 409),
+                          ({"title": "Thinking", "title_locale": "en", "titles": [{"locale": "en", "title": "Thought"}]}, 400)):
+        imported.put_json(url, wrong, status=status)
+
+
+def test_split_reviews(imported: webtest.TestApp, engine: Engine) -> None:
+    """ The review that leads a book's notes moves into its own field; the facts stay the notes. """
+    assert split_reviews.split_notes("very good. Read in English (2021-04-23). Owned in Hebrew") == ("very good", "Read in English (2021-04-23). Owned in Hebrew")
+    assert split_reviews.split_notes("cool. well written. Owned in Hebrew") == ("cool. well written", "Owned in Hebrew")
+    assert split_reviews.split_notes("Owned in English. reading in progress") == ("", "Owned in English. reading in progress")
+    # the user's own words, with nothing the import wrote: left as they are
+    assert split_reviews.split_notes("on the top shelf") == ("", "on the top shelf")
+    book = imported.post_json("/api/library-entries", {"kind": "book", "title": "Old Notes", "notes": "not memorable. Owned in Hebrew. Written in Hebrew"}).json
+    assert (book["review"], book["notes"]) == ("", "not memorable. Owned in Hebrew. Written in Hebrew")
+    with Session(engine) as session:
+        assert split_reviews.split(session) == 1
+        session.commit()
+        assert split_reviews.split(session) == 0
+    [after] = [b for b in imported.get("/api/library-entries?kind=book").json if b["work_id"] == book["work_id"]]
+    assert (after["review"], after["notes"]) == ("not memorable", "Owned in Hebrew. Written in Hebrew")
+    # the review is a field of its own: edited when sent, left alone when not
+    url = f"/api/library-entries/{book['work_id']}"
+    assert imported.put_json(url, {"review": "better the second time"}).json["review"] == "better the second time"
+    assert imported.put_json(url, {"rating": 5}).json["review"] == "better the second time"
 
 
 def test_every_person_has_an_english_name(imported: webtest.TestApp, engine: Engine) -> None:

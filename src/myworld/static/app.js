@@ -455,6 +455,7 @@ function libraryCard(entry) {
 		detail(list, "Rating", `${entry.rating}/${state.config.rating_max}`);
 	}
 	detail(list, "Started", entry.started_on ?? "");
+	detail(list, "Review", entry.review);
 	detail(list, "Notes", entry.notes);
 	return card;
 }
@@ -1077,7 +1078,8 @@ async function libraryPage() {
 			// every title, each in its language; the first is the one the work is known by
 			const titles = localizedValues("titles");
 			if (titles.length === 0) {
-				dialogError("A book needs a title: type one and press Add title");
+				$("book-title-row").hidden = false;
+				dialogError("A book needs a title: type one and press Add");
 				return;
 			}
 			body.title = titles[0].title;
@@ -1086,7 +1088,8 @@ async function libraryPage() {
 		}
 		body.reads = readsValues();
 		try {
-			body.image_id = await uploadPhoto(form);
+			// all its covers: the first is the one its card shows
+			body.covers = (await pictures(form)).map((cover) => cover.id);
 			if (state.editing) {
 				await api(`/api/library-entries/${state.editing.work_id}`, { method: "PUT", body });
 			} else {
@@ -1101,6 +1104,7 @@ async function libraryPage() {
 
 	setupMovieSearch();
 	setupLocalized();
+	setupPictures();
 	setupWorlds();
 	setupViewChecks();
 	setupDatePicks();
@@ -2968,6 +2972,148 @@ async function worldList(view) {
 	return worldCache[view];
 }
 
+// ─── what changes things in a dialog: the red + and − ───────────────────────
+
+// A list in a dialog (titles, reads, names, relations, pictures, the chips of a
+// picker) shows what there is, each with a − that takes it away, and one + that
+// brings in the row to add another with (an "adder", hidden until then). The
+// buttons that change things are red, here and everywhere.
+function toggleAdder(row, show = row.hidden) {
+	row.hidden = !show;
+	if (show) {
+		// the box to type in; where a kind is chosen before a pick adds (a relation), the kind
+		(row.querySelector("[data-first]") || row.querySelector("input:not([type=hidden])"))?.focus();
+	}
+}
+
+// the + of a list: brings its adder in, or puts it away again
+function adderButton(row, label) {
+	const button = el("button", "modify", "+");
+	button.type = "button";
+	button.title = label;
+	button.setAttribute("aria-label", label);
+	button.onclick = () => toggleAdder(row);
+	return button;
+}
+
+// the − of one thing in a list
+function removeButton(label, onRemove) {
+	const button = el("button", "modify chip-remove", "\u2212");
+	button.type = "button";
+	button.title = label;
+	button.setAttribute("aria-label", label);
+	button.onclick = onRemove;
+	return button;
+}
+
+// ─── pictures in a dialog: what there is, a − on each, and a + to add one ───
+
+// The pictures of what the dialog edits: {id, image} (and a city photo's
+// credit). A box marked data-pictures="many" keeps them all (a book's covers, a
+// city's photos), the first being the one its card shows; any other keeps one,
+// a new one taking its place. A file chosen is uploaded right away.
+let editingPictures = [];
+
+function renderPictures(form) {
+	const box = form.querySelector("[data-pictures]");
+	if (!box) {
+		return;
+	}
+	const what = box.dataset.what;
+	box.replaceChildren();
+	if (editingPictures.length === 0) {
+		box.appendChild(el("span", "empty", "None yet"));
+	}
+	editingPictures.forEach((picture, index) => {
+		const chip = el("span", "chip picture");
+		const img = el("img");
+		img.src = picture.image;
+		img.alt = `The ${what}`;
+		chip.title = [picture.image_author, picture.image_license, picture.image_source].filter(Boolean).join(", ");
+		chip.append(img, removeButton(`Remove this ${what}`, () => {
+			editingPictures.splice(index, 1);
+			renderPictures(form);
+		}));
+		box.appendChild(chip);
+	});
+	const one = box.dataset.pictures !== "many" && editingPictures.length > 0;
+	box.appendChild(adderButton(form.querySelector("[data-picture-adder]"), one ? `Choose another ${what}, in place of this one` : `Add a ${what}`));
+}
+
+function preparePictures(form, item) {
+	const box = form.querySelector("[data-pictures]");
+	if (!box) {
+		return;
+	}
+	const all = item?.covers || item?.photos;
+	editingPictures = all ? all.map((picture) => ({ ...picture })) : item?.image ? [{ id: Number(item.image.split("/").pop()), image: item.image }] : [];
+	form.elements.photo.value = "";
+	// a city's credit fields are those of the photo to add, not of one it has
+	if (box.dataset.pictures === "many") {
+		for (const field of form.querySelectorAll("[data-picture-adder] input:not([type=file])")) {
+			field.value = "";
+		}
+	}
+	renderPictures(form);
+}
+
+// the file chosen, uploaded and added to the pictures (with the credit typed beside it, where there is one)
+async function addPicture(form) {
+	const input = form.elements.photo;
+	const file = input?.files[0];
+	if (!file) {
+		return;
+	}
+	const id = await uploadPhoto(file);
+	const adder = form.querySelector("[data-picture-adder]");
+	const picture = { id, image: `/api/images/${id}` };
+	for (const field of adder.querySelectorAll("input:not([type=file])")) {
+		picture[field.name] = field.value.trim();
+		field.value = "";
+	}
+	if (form.querySelector("[data-pictures]").dataset.pictures !== "many") {
+		editingPictures = [picture];
+	} else if (!editingPictures.some((other) => other.id === id)) {
+		editingPictures.push(picture);
+	}
+	input.value = "";
+	adder.hidden = true;
+	renderPictures(form);
+}
+
+// the pictures to send, with a file still chosen in the adder (saving does not lose it)
+async function pictures(form) {
+	await addPicture(form);
+	return editingPictures;
+}
+
+// the one picture of a form, as its API takes it: a new one, or its removal
+async function pictureBody(form) {
+	const [picture] = await pictures(form);
+	return { image_id: picture ? picture.id : null, image_remove: !picture };
+}
+
+function setupPictures() {
+	for (const adder of document.querySelectorAll("[data-picture-adder]")) {
+		const form = adder.closest("form");
+		const add = () => addPicture(form).catch((e) => dialogError(e.message));
+		const button = adder.querySelector("[data-picture-add]");
+		if (button) {
+			button.onclick = add;
+		} else {
+			form.elements.photo.onchange = add;
+		}
+	}
+	// a click on a list is not a click on its +: the label around them would pass it on
+	for (const box of document.querySelectorAll(".dialog-form .chips")) {
+		box.addEventListener("click", (event) => {
+			if (!event.target.closest("button, a")) {
+				event.preventDefault();
+			}
+		});
+	}
+}
+
 // ─── pickers over long lists: Tom Select (https://tom-select.js.org/) ───────
 
 // The grey line under a person in a picker: their types and description,
@@ -3018,7 +3164,7 @@ function makePicker(select, onChange) {
 		hideSelected: true,
 		closeAfterSelect: !multiple,
 		searchField: [{ field: "text", weight: 2 }, { field: "sub", weight: 0.5 }],
-		plugins: multiple ? ["remove_button"] : ["clear_button"],
+		plugins: multiple ? { remove_button: { label: "\u2212", title: "Remove" } } : ["clear_button"],
 		render: {
 			option: (data, esc) => `<div class="picker-option"><span>${esc(data.text)}</span>${data.sub ? `<small>${esc(data.sub)}</small>` : ""}</div>`,
 			item,
@@ -3026,6 +3172,17 @@ function makePicker(select, onChange) {
 		},
 		onChange: () => onChange?.(),
 	});
+	// a list of chips shows only what is chosen, each with its −; its + (a click anywhere
+	// in the box does the same) brings in the box to type another in, which goes again
+	// when the picker is left (style.css: the input shows only while it has the focus)
+	if (multiple) {
+		const add = el("button", "modify picker-add", "+");
+		add.type = "button";
+		add.title = "Add one: type a name and pick it";
+		add.setAttribute("aria-label", add.title);
+		add.onclick = () => picker.focus();
+		picker.control.appendChild(add);
+	}
 	// the picker takes a click on a chip for itself (it selects the chip) and cancels it: a click
 	// on the chip's link is kept from it, here on the way down, so the link opens
 	picker.wrapper.addEventListener("click", (event) => {
@@ -3074,15 +3231,13 @@ function syncAlone(form) {
 // field names the row in each link ("person", "organization").
 // ─── names and titles in languages ──────────────────────────────────────────
 
-// The dialogs' lists of what is said in several languages: a person's names in
-// other languages than English (one per language) and a book's other titles
-// (any number in one language). A title the book has already is shared with
-// the other accounts that have it, so it is shown but cannot be taken away.
+// The dialogs' lists of what is said in several languages, one per language: a
+// person's names in other languages than English, and a book's titles.
 const LOCALIZED = {
 	// a person's English name is their name parts, shown first among their names as they are typed
-	names: { box: "person-names", locale: "person-name-locale", text: "person-name-text", add: "person-name-add", field: "name", first: englishName },
+	names: { box: "person-names", row: "person-name-row", locale: "person-name-locale", text: "person-name-text", add: "person-name-add", field: "name", first: englishName },
 	// a book has one title per language
-	titles: { box: "book-titles", locale: "book-title-locale", text: "book-title-text", add: "book-title-add", field: "title" },
+	titles: { box: "book-titles", row: "book-title-row", locale: "book-title-locale", text: "book-title-text", add: "book-title-add", field: "title" },
 };
 const editingLocalized = { names: [], titles: [] };
 
@@ -3143,7 +3298,7 @@ function englishName() {
 }
 
 function renderLocalized(key) {
-	const { box: boxId, first } = LOCALIZED[key];
+	const { box: boxId, row, field, first } = LOCALIZED[key];
 	const box = $(boxId);
 	box.replaceChildren();
 	// the name that is not of this list (a person's English one), shown with the others, none set apart
@@ -3164,17 +3319,14 @@ function renderLocalized(key) {
 		words.dir = "auto";
 		chip.append(`${localeName(item.locale)}: `, words);
 		if (!item.kept) {
-			const remove = el("button", "chip-remove", "\u00d7");
-			remove.type = "button";
-			remove.setAttribute("aria-label", `Remove ${item.text}`);
-			remove.onclick = () => {
+			chip.appendChild(removeButton(`Remove ${item.text}`, () => {
 				editingLocalized[key].splice(index, 1);
 				renderLocalized(key);
-			};
-			chip.appendChild(remove);
+			}));
 		}
 		box.appendChild(chip);
 	});
+	box.appendChild(adderButton($(row), `Add a ${field} in another language`));
 }
 
 // what is typed in the editor's box, added to its list (a person's name in a language replacing the one they had in it)
@@ -3196,6 +3348,7 @@ function addLocalized(key) {
 	editingLocalized[key] = list.filter((item) => item.locale !== locale);
 	editingLocalized[key].push({ locale, text, kept: false });
 	$(textId).value = "";
+	$(LOCALIZED[key].row).hidden = true;
 	renderLocalized(key);
 }
 
@@ -3231,16 +3384,13 @@ function renderReads() {
 	}
 	editingReads.forEach((read, index) => {
 		const chip = el("span", "chip", readText(read));
-		const remove = el("button", "chip-remove", "\u00d7");
-		remove.type = "button";
-		remove.setAttribute("aria-label", `Remove the read ${readText(read)}`);
-		remove.onclick = () => {
+		chip.appendChild(removeButton(`Remove the read ${readText(read)}`, () => {
 			editingReads.splice(index, 1);
 			renderReads();
-		};
-		chip.appendChild(remove);
+		}));
 		box.appendChild(chip);
 	});
+	box.appendChild(adderButton($("book-read-row"), "Add a read"));
 }
 
 // the day and the language chosen, added to the list as a read; with neither chosen, a read
@@ -3254,6 +3404,7 @@ function addRead(asked) {
 	editingReads.push({ date: date || null, locale });
 	$("book-read-date").value = "";
 	$("book-read-locale").value = "";
+	$("book-read-row").hidden = true;
 	renderReads();
 }
 
@@ -3292,7 +3443,7 @@ function setupLocalized() {
 
 const editingLinks = { relations: [], organization_links: [] };
 
-function renderLinks(key, boxId, field) {
+function renderLinks(key, boxId, field, rowId) {
 	const box = $(boxId);
 	box.replaceChildren();
 	if (editingLinks[key].length === 0) {
@@ -3304,19 +3455,16 @@ function renderLinks(key, boxId, field) {
 		const words = el("span");
 		words.append(`${link.type} `, dialogLink(field === "person" ? "people" : "organizations", link[field]));
 		chip.appendChild(words);
-		const remove = el("button", "chip-remove", "\u00d7");
-		remove.type = "button";
-		remove.setAttribute("aria-label", `Remove ${link.type} ${link[field].name}`);
-		remove.onclick = () => {
+		chip.appendChild(removeButton(`Remove ${link.type} ${link[field].name}`, () => {
 			editingLinks[key].splice(index, 1);
-			renderLinks(key, boxId, field);
-		};
-		chip.appendChild(remove);
+			renderLinks(key, boxId, field, rowId);
+		}));
 		box.appendChild(chip);
 	});
+	box.appendChild(adderButton($(rowId), field === "person" ? "Add a relation" : "Add an organization"));
 }
 
-async function prepareLinks({ key, boxId, kindId, pickerId, kindsView, rowsView, field, current, exclude = null, label = (row) => row.name }) {
+async function prepareLinks({ key, boxId, rowId, kindId, pickerId, kindsView, rowsView, field, current, exclude = null, label = (row) => row.name }) {
 	const [kinds, rows] = await Promise.all([worldList(kindsView), worldList(rowsView)]);
 	editingLinks[key] = (current || []).map((link) => ({ ...link }));
 	$(kindId).replaceChildren(...kinds.map((k) => {
@@ -3345,19 +3493,20 @@ async function prepareLinks({ key, boxId, kindId, pickerId, kindsView, rowsView,
 			editingLinks[key].push({ type_id: kind.id, type: kind.name, [field]: { id: row.id, name: row.name } });
 		}
 		picker.clear(true);
-		renderLinks(key, boxId, field);
+		$(rowId).hidden = true;
+		renderLinks(key, boxId, field, rowId);
 	});
-	renderLinks(key, boxId, field);
+	renderLinks(key, boxId, field, rowId);
 }
 
 // The person form's two link editors: relations to people (never to oneself) and links to organizations
 async function preparePersonLinks(item) {
 	await prepareLinks({
-		key: "relations", boxId: "person-relations", kindId: "relation-type", pickerId: "relation-person",
+		key: "relations", boxId: "person-relations", rowId: "person-relation-row", kindId: "relation-type", pickerId: "relation-person",
 		kindsView: "person-relation-types", rowsView: "people", field: "person", current: item?.relations, exclude: item?.id,
 	});
 	await prepareLinks({
-		key: "organization_links", boxId: "person-organization-links", kindId: "organization-link-type", pickerId: "organization-link-organization",
+		key: "organization_links", boxId: "person-organization-links", rowId: "person-organization-row", kindId: "organization-link-type", pickerId: "organization-link-organization",
 		kindsView: "person-organization-types", rowsView: "organizations", field: "organization", current: item?.organization_links,
 	});
 }
@@ -3400,21 +3549,18 @@ function resetForm(form) {
 	syncAlone(form);
 }
 
-// a photo upload and its credit, as the city and country forms send them
+// the one picture of a form and its credit, as the country and group forms send them
 async function pictureFields(form) {
 	return {
-		image_id: await uploadPhoto(form),
+		...(await pictureBody(form)),
 		image_source: form.elements.image_source.value,
 		image_license: form.elements.image_license.value,
 		image_author: form.elements.image_author.value,
 	};
 }
 
-async function uploadPhoto(form) {
-	const file = form.elements.photo.files[0];
-	if (!file) {
-		return null;
-	}
+// an image file, stored: the id it is known by
+async function uploadPhoto(file) {
 	if (file.size > PHOTO_MAX_BYTES) {
 		throw new Error("The photo is larger than 8 MB.");
 	}
@@ -3461,7 +3607,7 @@ const WORLD_BODIES = {
 			great_courses_slug: value("great_courses_slug"),
 			audible_asin: value("audible_asin"),
 			link: value("link"),
-			image_id: await uploadPhoto(form),
+			...(await pictureBody(form)),
 		};
 	},
 	youtube: async (form) => {
@@ -3493,7 +3639,7 @@ const WORLD_BODIES = {
 			broadcast: form.elements.broadcast.checked,
 			review: value("review"),
 			remark: value("remark"),
-			image_id: await uploadPhoto(form),
+			...(await pictureBody(form)),
 			image_source: value("image_source"),
 			image_license: value("image_license"),
 			image_author: value("image_author"),
@@ -3518,7 +3664,7 @@ const WORLD_BODIES = {
 			alone: form.elements.alone.checked,
 			review: value("review"),
 			remark: value("remark"),
-			image_id: await uploadPhoto(form),
+			...(await pictureBody(form)),
 		};
 	},
 	groups: async (form) => ({
@@ -3537,7 +3683,10 @@ const WORLD_BODIES = {
 			latitude: value("latitude"),
 			longitude: value("longitude"),
 			remark: value("remark"),
-			...(await pictureFields(form)),
+			// all its photos, each with its credit: the first is the one its card shows
+			photos: (await pictures(form)).map((photo) => ({
+				image_id: photo.id, image_source: photo.image_source || "", image_license: photo.image_license || "", image_author: photo.image_author || "",
+			})),
 		};
 	},
 	countries: async (form) => {
@@ -3587,7 +3736,7 @@ const WORLD_BODIES = {
 			longitude: value("longitude"),
 			what_happened: value("what_happened"),
 			remark: value("remark"),
-			image_id: await uploadPhoto(form),
+			...(await pictureBody(form)),
 		};
 	},
 	"organization-types": async (form) => ({
@@ -3678,14 +3827,14 @@ async function prepareWorkForm(form, entry) {
 	$("movie-results").hidden = true;
 	$("movie-hint").hidden = true;
 	$("movie-query").value = "";
-	const values = entry || { creator: "", year: "", status: "done", rating: "", started_on: "", notes: "" };
-	for (const name of ["creator", "year", "status", "rating", "started_on", "notes"]) {
+	const values = entry || { creator: "", year: "", status: "done", rating: "", started_on: "", review: "", notes: "" };
+	for (const name of ["creator", "year", "status", "rating", "started_on", "review", "notes"]) {
 		form.elements[name].value = values[name] ?? "";
 	}
-	// its reads, and every title it has, each in its language (the work is shared: the ones it has stay)
+	// its reads, and every title it has, each in its language; a new book starts with the row to type its title in
 	prepareReads(entry?.reads || []);
-	prepareLocalized("titles", entry ? [{ locale: entry.title_locale, title: entry.main_title }, ...entry.titles] : [], true);
-	form.elements.photo.value = "";
+	prepareLocalized("titles", entry ? [{ locale: entry.title_locale, title: entry.main_title }, ...entry.titles] : [], false);
+	$("book-title-row").hidden = Boolean(entry);
 	// a book's authors are the user's people, any number of them; the picker
 	// stays in its place for the other kinds, disabled
 	const authors = $("book-authors").tomselect;
@@ -3731,6 +3880,10 @@ async function openDialog(item) {
 	remove.textContent = "Delete";
 	delete remove.dataset.armed;
 	dialogError("");
+	// every row to add something with is put away: the + of its list brings it in
+	for (const adder of form.querySelectorAll(".adder")) {
+		adder.hidden = true;
+	}
 	if (world) {
 		for (const select of form.querySelectorAll("[data-chips]")) {
 			setPickerRows(select, await worldList(select.dataset.chips));
@@ -3771,6 +3924,7 @@ async function openDialog(item) {
 	} else {
 		await prepareWorkForm(form, item);
 	}
+	preparePictures(form, item);
 	// another view was opened while the lists loaded: its dialog is not this one
 	if (state.view !== view) {
 		return;
@@ -3778,7 +3932,8 @@ async function openDialog(item) {
 	state.editing = item;
 	state.editingView = view;
 	$("add-dialog").showModal();
-	const first = [...form.querySelectorAll("input")].find((i) => i.offsetParent !== null && !i.readOnly);
+	// the first box to type in, but a picker's: that one comes in with its +
+	const first = [...form.querySelectorAll("input")].find((i) => i.offsetParent !== null && !i.readOnly && !i.closest(".ts-wrapper"));
 	if (first) {
 		first.focus();
 	}
@@ -3821,7 +3976,7 @@ function setupAddDialog() {
 	// neither ever closes the dialog or saves the form, even when the list has
 	// already closed by itself (the edits would be lost, or saved half done)
 	dialog.addEventListener("keydown", (event) => {
-		if ((event.key === "Escape" || event.key === "Enter") && event.target.closest?.(".ts-wrapper")) {
+		if ((event.key === "Escape" || event.key === "Enter") && event.target.closest?.(".ts-wrapper") && !event.target.closest("button")) {
 			event.preventDefault();
 		}
 	}, true);

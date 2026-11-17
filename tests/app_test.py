@@ -589,3 +589,20 @@ def test_every_dialog_field_has_balloon_help() -> None:
     assert not bare, bare
     # and the one the request began with
     assert "The year the book was released in" in page
+
+
+def test_what_adds_to_a_list_comes_in_with_its_plus() -> None:
+    """ In every dialog a row to add something with (a title, a read, a name, a relation, a picture) is hidden until the + of its list. """
+    page = (Path(__file__).parent.parent / "src" / "myworld" / "html" / "library.html").read_text(encoding="utf-8")
+    adders = re.findall(r'<div class="(?:row )?adder"[^>]*>', page)
+    assert len(adders) >= 15
+    assert all(re.search(r"\bhidden\b", adder) for adder in adders), adders
+    # a file is only ever chosen in such a row, under the pictures there are
+    for form, body in re.findall(r'<form id="([^"]+)"(.*?)</form>', page, flags=re.DOTALL):
+        files = body.count('type="file"')
+        assert files == body.count("data-picture-adder hidden") == body.count("data-pictures="), form
+        assert files == 0 or body.index("data-pictures=") < body.index("data-picture-adder") < body.index('type="file"'), form
+    # the book's lists, and a city's photos
+    for row in ("book-title-row", "book-read-row", "person-name-row", "person-relation-row", "person-organization-row"):
+        assert f'<div class="row adder" id="{row}" hidden>' in page
+    assert page.count('data-pictures="many"') == 2

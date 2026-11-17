@@ -53,7 +53,7 @@ By dataset: the key is the page's name in the app (`#book`) and what
 
 ### Books (`book`)
 
-- `book-covers`: every book has a cover.
+- `book-covers`: every book has at least one cover (it may have several).
 - `book-links`: every book has a Goodreads or a Simania id, so its card
   links to its page.
 - `book-authors`: every book has an author: one of the account's people,
