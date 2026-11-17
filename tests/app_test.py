@@ -2,7 +2,9 @@
 End to end tests of the myworld app through webtest.
 """
 
+import re
 import urllib.parse
+from pathlib import Path
 
 import pytest
 import webtest
@@ -576,3 +578,14 @@ def test_shared_link_card(app: webtest.TestApp) -> None:
     assert '<meta property="og:image" content="https://localhost/static/social-card.png">' in page
     assert "__ORIGIN__" not in page
     assert app.get("/static/social-card.png").content_type == "image/png"
+
+
+def test_every_dialog_field_has_balloon_help() -> None:
+    """ Every field of every dialog says what it means when the mouse rests on it: its label has a title. """
+    page = (Path(__file__).parent.parent / "src" / "myworld" / "html" / "library.html").read_text(encoding="utf-8")
+    forms = re.findall(r'<form id="([^"]+)"(.*?)</form>', page, flags=re.DOTALL)
+    assert len(forms) > 15
+    bare = [(form, label) for form, body in forms for label in re.findall(r"<label\b[^>]*>", body) if not re.search(r'\btitle="[^"]{10,}"', label)]
+    assert not bare, bare
+    # and the one the request began with
+    assert "The year the book was released in" in page

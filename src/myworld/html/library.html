@@ -161,7 +161,7 @@
 			<form id="add-form" class="dialog-form" hidden>
 				<div id="movie-search" class="movie-search" hidden>
 					<div class="row">
-						<label class="wide">Find on The Movie Database <input id="movie-query" placeholder="Title, e.g. Dune" autocomplete="off"></label>
+						<label title="Type a film's title and press Find: picking a result fills in its title, director, year and ids" class="wide">Find on The Movie Database <input id="movie-query" placeholder="Title, e.g. Dune" autocomplete="off"></label>
 						<button type="button" id="movie-find">Find</button>
 					</div>
 					<p id="movie-hint" class="empty" hidden></p>
@@ -172,14 +172,14 @@
 					<ul id="movie-results" class="movie-results" hidden></ul>
 				</div>
 				<div id="movie-ids" class="row" hidden>
-					<label>IMDb id <span class="id-field"><input name="imdb_id" readonly placeholder="from the search"><a id="imdb-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
-					<label>TMDB id <span class="id-field"><input name="tmdb_id" readonly placeholder="from the search"><a id="tmdb-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
-					<label>Rotten Tomatoes id <span class="id-field"><input name="rotten_tomatoes_id" readonly placeholder="from the search"><a id="rt-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
+					<label title="The film's id on IMDb, filled in by the film search">IMDb id <span class="id-field"><input name="imdb_id" readonly placeholder="from the search"><a id="imdb-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
+					<label title="The film's id on The Movie Database, filled in by the film search">TMDB id <span class="id-field"><input name="tmdb_id" readonly placeholder="from the search"><a id="tmdb-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
+					<label title="The film's id on Rotten Tomatoes, filled in by the film search">Rotten Tomatoes id <span class="id-field"><input name="rotten_tomatoes_id" readonly placeholder="from the search"><a id="rt-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
 				</div>
 				<div class="row">
 					<!-- every title of the book, each in its language, none of them set apart; which one a book
 					     is shown by is the account's preferred language (Settings) -->
-					<label class="wide">Titles <span class="chips" id="book-titles"></span></label>
+					<label title="Every title the book has, one per language; it is shown by the one in your preferred language (Settings)" class="wide">Titles <span class="chips" id="book-titles"></span></label>
 					<!-- sent with the form: the first title and its language (what the work is known by),
 					     and a book's author text, made from its authors (below) -->
 					<input type="hidden" name="title">
@@ -187,32 +187,32 @@
 					<input type="hidden" name="creator">
 				</div>
 				<div class="row">
-					<label>Language <select id="book-title-locale" data-locales aria-label="Language of the title to add" title="The language of the title, chosen by its letters as you type (a Hebrew title is Hebrew)"></select></label>
-					<label class="wide">Title <input id="book-title-text" dir="auto" placeholder="The book's title in this language (one per language): Enter adds it"></label>
+					<label title="The language of the title, chosen by its letters as you type (a Hebrew title is Hebrew)">Language <select id="book-title-locale" data-locales aria-label="Language of the title to add" title="The language of the title, chosen by its letters as you type (a Hebrew title is Hebrew)"></select></label>
+					<label title="A title of the book in the language chosen: Enter or Add title adds it to Titles" class="wide">Title <input id="book-title-text" dir="auto" placeholder="The book's title in this language (one per language): Enter adds it"></label>
 					<button type="button" class="text" id="book-title-add">Add title</button>
 				</div>
 				<div class="row">
-					<label class="wide">Reads <span class="chips" id="book-reads"></span></label>
+					<label title="Every time you read the book: the day you finished it and the language you read it in" class="wide">Reads <span class="chips" id="book-reads"></span></label>
 				</div>
 				<div class="row">
-					<label>Read on <input id="book-read-date" type="date" title="The day you finished reading it; leave it empty when you do not know"></label>
-					<label>In <select id="book-read-locale" data-locales data-blank="Not said" aria-label="Language of the read" title="The language you read it in: the book is shown in the language of its last read, its title and its authors' names"></select></label>
+					<label title="The day you finished reading it; leave it empty when you do not know">Read on <input id="book-read-date" type="date" title="The day you finished reading it; leave it empty when you do not know"></label>
+					<label title="The language you read it in: the book is shown in the language of its last read, its title and its authors' names">In <select id="book-read-locale" data-locales data-blank="Not said" aria-label="Language of the read" title="The language you read it in: the book is shown in the language of its last read, its title and its authors' names"></select></label>
 					<button type="button" class="text" id="book-read-add">Add read</button>
 				</div>
 				<div class="row">
-					<label class="wide">Authors <select id="book-authors" multiple data-chips="people" data-field="authors" data-placeholder="Type a person (a book's authors, any number)"><option value=""></option></select></label>
+					<label title="Who wrote the book, each one of People; add a new one on the People page" class="wide">Authors <select id="book-authors" multiple data-chips="people" data-field="authors" data-placeholder="Type a person (a book's authors, any number)"><option value=""></option></select></label>
 				</div>
 				<div class="row">
-					<label>Status <select name="status"></select></label>
-					<label>Rating <input name="rating" type="number"></label>
-					<label>Year <input name="year" type="number" min="-3000" max="3000" title="The year it came out (negative before the common era); once set it stays"></label>
-					<label>Started <input name="started_on" type="date"></label>
+					<label title="Where you are with the book: want to read it, reading it, read it, or gave it up">Status <select name="status"></select></label>
+					<label title="Your rating of the book, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
+					<label title="The year the book was released in (negative before the common era); once set it stays">Year <input name="year" type="number" min="-3000" max="3000" title="The year the book was released in (negative before the common era); once set it stays"></label>
+					<label title="The day you started reading the book">Started <input name="started_on" type="date"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Notes <input name="notes"></label>
+					<label title="Anything you want to keep about the book: what you thought of it, where you have it" class="wide">Notes <input name="notes"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Cover <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="The book's cover image: choosing a file replaces the one it has, choosing none keeps it" class="wide">Cover <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -222,38 +222,38 @@
 			</form>
 			<form id="concert-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Name <input name="name" required placeholder="Who or what, e.g. Avishai Cohen Trio"></label>
-					<label class="wide">Event <input name="event" placeholder="Festival, tour, occasion"></label>
+					<label title="Who or what you saw: the name the concert is listed by" class="wide">Name <input name="name" required placeholder="Who or what, e.g. Avishai Cohen Trio"></label>
+					<label title="The festival, tour or occasion the concert was part of" class="wide">Event <input name="event" placeholder="Festival, tour, occasion"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Groups <select multiple data-chips="groups" data-field="groups" data-placeholder="Type a name from Groups"><option value=""></option></select></label>
-					<label class="wide">Performers <select multiple data-chips="people" data-field="performers" data-placeholder="Type a name from People"><option value=""></option></select></label>
-					<label>Genre <input name="genre" placeholder="jazz, rock, ..."></label>
+					<label title="The bands and ensembles that played, each one of Groups; add a new one on the Groups page" class="wide">Groups <select multiple data-chips="groups" data-field="groups" data-placeholder="Type a name from Groups"><option value=""></option></select></label>
+					<label title="The people who performed, each one of People; add a new one on the People page" class="wide">Performers <select multiple data-chips="people" data-field="performers" data-placeholder="Type a name from People"><option value=""></option></select></label>
+					<label title="The kind of music: jazz, rock, classical, ...">Genre <input name="genre" placeholder="jazz, rock, ..."></label>
 				</div>
 				<div class="row">
-					<label>Date <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
-					<label class="wide">Place <select name="place_id" data-picker="places" data-placeholder="Type a place" title="Where it was: add a new one on the Places page"></select></label>
+					<label title="How much of the date is known">Date <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
+					<label title="Where it was: add a new one on the Places page" class="wide">Place <select name="place_id" data-picker="places" data-placeholder="Type a place" title="Where it was: add a new one on the Places page"></select></label>
 				</div>
 				<div class="row">
-					<label class="wide">With <select multiple data-chips="people" data-field="people" data-placeholder="Type a name from People"><option value=""></option></select></label>
+					<label title="The people you went with, each one of People; add a new one on the People page" class="wide">With <select multiple data-chips="people" data-field="people" data-placeholder="Type a name from People"><option value=""></option></select></label>
 				</div>
 				<div class="row">
-					<label>Tickets <input name="tickets" type="number" min="0" max="1000"></label>
-					<label class="check"><input name="broadcast" type="checkbox"> Seen on TV</label>
+					<label title="How many tickets you bought">Tickets <input name="tickets" type="number" min="0" max="1000"></label>
+					<label title="Tick when you saw the concert on TV rather than being there" class="check"><input name="broadcast" type="checkbox"> Seen on TV</label>
 				</div>
 				<div class="row">
-					<label class="wide">Review <input name="review"></label>
+					<label title="What you thought of the concert, in your own words" class="wide">Review <input name="review"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Remark <input name="remark"></label>
+					<label title="Anything else worth keeping about the concert" class="wide">Remark <input name="remark"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="A picture of the concert: choosing a file replaces the one it has, choosing none keeps it" class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Photo source <input name="image_source" type="url" placeholder="Where the photo comes from"></label>
-					<label>License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
-					<label>Author <input name="image_author"></label>
+					<label title="The page the picture comes from, for the credit shown with it" class="wide">Photo source <input name="image_source" type="url" placeholder="Where the photo comes from"></label>
+					<label title="The license the picture is under, e.g. CC BY-SA 4.0, for the credit shown with it">License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
+					<label title="Who made the picture, for the credit shown with it">Author <input name="image_author"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -263,38 +263,38 @@
 			</form>
 			<form id="museum-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Name <input name="name" required placeholder="e.g. Louvre"></label>
-					<label>City <select name="city_id" data-picker="cities" data-placeholder="Type a city" title="Add a new one on the Cities page"></select></label>
+					<label title="The museum you visited" class="wide">Name <input name="name" required placeholder="e.g. Louvre"></label>
+					<label title="Add a new one on the Cities page">City <select name="city_id" data-picker="cities" data-placeholder="Type a city" title="Add a new one on the Cities page"></select></label>
 				</div>
 				<div class="row">
-					<label>Date <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
-					<label>Rating <input name="rating" type="number"></label>
-					<label>Tickets <input name="tickets" type="number" min="0" max="1000"></label>
+					<label title="How much of the date is known">Date <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
+					<label title="Your rating of the museum visit, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
+					<label title="How many tickets you bought">Tickets <input name="tickets" type="number" min="0" max="1000"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Street <input name="street" placeholder="Ibn Gabirol 30, 88 7th Avenue South, 1-2-3 Ginza" title="One line, as written there: street and number, building, floor; or directions where there is no street"></label>
-					<label>Neighbourhood <input name="neighbourhood" title="A neighbourhood, ward or district: Sarona, Greenwich Village"></label>
-					<label>Postcode <input name="postcode"></label>
+					<label title="One line, as written there: street and number, building, floor; or directions where there is no street" class="wide">Street <input name="street" placeholder="Ibn Gabirol 30, 88 7th Avenue South, 1-2-3 Ginza" title="One line, as written there: street and number, building, floor; or directions where there is no street"></label>
+					<label title="A neighbourhood, ward or district: Sarona, Greenwich Village">Neighbourhood <input name="neighbourhood" title="A neighbourhood, ward or district: Sarona, Greenwich Village"></label>
+					<label title="The postal code of the address">Postcode <input name="postcode"></label>
 				</div>
 				<div class="row">
-					<label>Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
-					<label>Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
+					<label title="The museum visit's latitude in decimal degrees, north positive: where it is on the map">Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
+					<label title="The museum visit's longitude in decimal degrees, east positive: where it is on the map">Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Website <input name="url" type="url" placeholder="https://"></label>
+					<label title="The museum visit's own website" class="wide">Website <input name="url" type="url" placeholder="https://"></label>
 				</div>
 				<div class="row">
-					<label class="wide">With <select multiple data-chips="people" data-field="people" data-placeholder="Type a name from People"><option value=""></option></select></label>
-					<label class="check"><input name="alone" type="checkbox"> I went alone</label>
+					<label title="The people you went with, each one of People; add a new one on the People page" class="wide">With <select multiple data-chips="people" data-field="people" data-placeholder="Type a name from People"><option value=""></option></select></label>
+					<label title="Tick when you went by yourself: With then stays empty" class="check"><input name="alone" type="checkbox"> I went alone</label>
 				</div>
 				<div class="row">
-					<label class="wide">Review <input name="review"></label>
+					<label title="What you thought of the museum visit, in your own words" class="wide">Review <input name="review"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Remark <input name="remark"></label>
+					<label title="Anything else worth keeping about the museum visit" class="wide">Remark <input name="remark"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="A picture of the museum visit: choosing a file replaces the one it has, choosing none keeps it" class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -304,34 +304,34 @@
 			</form>
 			<form id="audio-course-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Name <input name="name" required></label>
+					<label title="The course's title" class="wide">Name <input name="name" required></label>
 				</div>
 				<div class="row">
-					<label class="wide">Lecturers <select multiple data-chips="people" data-field="lecturers" data-placeholder="Type a name from People"><option value=""></option></select></label>
+					<label title="Who gives the course, each one of People; add a new one on the People page" class="wide">Lecturers <select multiple data-chips="people" data-field="lecturers" data-placeholder="Type a name from People"><option value=""></option></select></label>
 				</div>
 				<div class="row">
-					<label>Finished <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
-					<label>Started <input name="started" pattern="\d{4}-\d{2}-\d{2}(T[0-9:.]+Z)?" placeholder="YYYY-MM-DD"></label>
-					<label>Progress <input name="progress" placeholder="e.g. 4/24"></label>
-					<label>Rating <input name="rating" type="number"></label>
+					<label title="How much of the date is known">Finished <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
+					<label title="The day you started listening, as YYYY-MM-DD">Started <input name="started" pattern="\d{4}-\d{2}-\d{2}(T[0-9:.]+Z)?" placeholder="YYYY-MM-DD"></label>
+					<label title="How far you got in a course you have not finished: lectures heard out of all, e.g. 4/24">Progress <input name="progress" placeholder="e.g. 4/24"></label>
+					<label title="Your rating of the audio course, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Review <input name="review"></label>
+					<label title="What you thought of the audio course, in your own words" class="wide">Review <input name="review"></label>
 				</div>
 				<div class="row">
-					<label>Device <select name="device_id"></select></label>
-					<label>Where <input name="listened_at" placeholder="e.g. Night Walks, Car"></label>
+					<label title="What you listened on, one of Devices; add a new one on the Devices page">Device <select name="device_id"></select></label>
+					<label title="Where you listened to it: on night walks, in the car, ...">Where <input name="listened_at" placeholder="e.g. Night Walks, Car"></label>
 				</div>
 				<div class="row">
-					<label>Great Courses id <input name="great_courses_id" type="number" min="1"></label>
-					<label class="wide">Great Courses slug <input name="great_courses_slug"></label>
-					<label>Audible ASIN <input name="audible_asin"></label>
+					<label title="The course's number at The Great Courses, for the link to its page">Great Courses id <input name="great_courses_id" type="number" min="1"></label>
+					<label title="The course's name in its address at The Great Courses, for the link to its page" class="wide">Great Courses slug <input name="great_courses_slug"></label>
+					<label title="The course's ASIN at Audible, for the link to its page">Audible ASIN <input name="audible_asin"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Link <input name="link" type="url" placeholder="any page about the course, when it is not sold"></label>
+					<label title="Any page about the course, for one that is sold at neither The Great Courses nor Audible" class="wide">Link <input name="link" type="url" placeholder="any page about the course, when it is not sold"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Cover <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="The course's cover image: choosing a file replaces the one it has, choosing none keeps it" class="wide">Cover <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -341,21 +341,21 @@
 			</form>
 			<form id="youtube-video-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Video <input name="youtube_id" required placeholder="the video's id, or a link to it"></label>
+					<label title="The video's id on YouTube, or a link to the video: the id is taken from it" class="wide">Video <input name="youtube_id" required placeholder="the video's id, or a link to it"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Name <input name="name" placeholder="none for a video YouTube no longer has"></label>
+					<label title="The video's title; empty for a video YouTube no longer has" class="wide">Name <input name="name" placeholder="none for a video YouTube no longer has"></label>
 				</div>
 				<div class="row">
-					<label>Watched <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
-					<label>Rating <input name="rating" type="number"></label>
+					<label title="How much of the date is known">Watched <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
+					<label title="Your rating of the video, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Review <input name="review"></label>
+					<label title="What you thought of the video, in your own words" class="wide">Review <input name="review"></label>
 				</div>
 				<div class="row">
-					<label>Device <select name="device_id"></select></label>
-					<label>Where <input name="watched_at" placeholder="e.g. Home"></label>
+					<label title="What you watched on, one of Devices; add a new one on the Devices page">Device <select name="device_id"></select></label>
+					<label title="Where you watched it: at home, ...">Where <input name="watched_at" placeholder="e.g. Home"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -365,38 +365,38 @@
 			</form>
 			<form id="person-form" class="dialog-form" hidden>
 				<div class="row">
-					<label>Honorific <input name="honorific" pattern="\S*" placeholder="Dr., Sir" title="One word, without spaces; usually empty"></label>
-					<label>First name <input name="first_name" pattern="\S*" title="One word, without spaces"></label>
-					<label>Middle name <input name="middle_name" title="Any names between the first name and the surname"></label>
-					<label>Surname <input name="surname" pattern="\S*" title="One word, without spaces: hyphenate a surname of two words (Di-Meola)"></label>
+					<label title="One word, without spaces; usually empty">Honorific <input name="honorific" pattern="\S*" placeholder="Dr., Sir" title="One word, without spaces; usually empty"></label>
+					<label title="One word, without spaces">First name <input name="first_name" pattern="\S*" title="One word, without spaces"></label>
+					<label title="Any names between the first name and the surname">Middle name <input name="middle_name" title="Any names between the first name and the surname"></label>
+					<label title="One word, without spaces: hyphenate a surname of two words (Di-Meola)">Surname <input name="surname" pattern="\S*" title="One word, without spaces: hyphenate a surname of two words (Di-Meola)"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Names in other languages <span class="chips" id="person-names"></span></label>
+					<label title="The person's whole name in other languages than English, one per language: a book in that language shows it" class="wide">Names in other languages <span class="chips" id="person-names"></span></label>
 				</div>
 				<div class="row">
-					<label>Language <select id="person-name-locale" data-locales data-skip="en" aria-label="Language of the name"></select></label>
-					<label class="wide">Name <input id="person-name-text" dir="auto" placeholder="The whole name in that language, e.g. חיים שפירא: Enter adds it"></label>
+					<label title="The language of the name to add, chosen by its letters as you type">Language <select id="person-name-locale" data-locales data-skip="en" aria-label="Language of the name"></select></label>
+					<label title="The person's whole name in the language chosen: Enter or Add name adds it" class="wide">Name <input id="person-name-text" dir="auto" placeholder="The whole name in that language, e.g. חיים שפירא: Enter adds it"></label>
 					<button type="button" class="text" id="person-name-add">Add name</button>
 				</div>
 				<div class="row">
-					<label class="wide">Professions <select multiple data-chips="person-types" data-field="types" data-placeholder="Type a profession"><option value=""></option></select></label>
+					<label title="What the person does, each one of Professions; add a new one on the Professions page" class="wide">Professions <select multiple data-chips="person-types" data-field="types" data-placeholder="Type a profession"><option value=""></option></select></label>
 				</div>
 				<div class="row">
-					<label class="wide">Relations <span class="chips" id="person-relations"></span></label>
+					<label title="How the person is related to other people: friend of, parent of, ..." class="wide">Relations <span class="chips" id="person-relations"></span></label>
 				</div>
 				<div class="row">
-					<label>Relation <select id="relation-type" aria-label="Relation"></select></label>
-					<label class="wide">Of <select id="relation-person" data-placeholder="Type a name from People: picking one adds the relation"></select></label>
+					<label title="The kind of relation to add, one of Person relations">Relation <select id="relation-type" aria-label="Relation"></select></label>
+					<label title="Who the relation is to: picking a person adds it to Relations" class="wide">Of <select id="relation-person" data-placeholder="Type a name from People: picking one adds the relation"></select></label>
 				</div>
 				<div class="row">
-					<label class="wide">Organizations <span class="chips" id="person-organization-links"></span></label>
+					<label title="The organizations the person belongs to, and how: works at, founded, ..." class="wide">Organizations <span class="chips" id="person-organization-links"></span></label>
 				</div>
 				<div class="row">
-					<label>How <select id="organization-link-type" aria-label="How linked"></select></label>
-					<label class="wide">At <select id="organization-link-organization" data-placeholder="Type a name from Organizations: picking one adds the link"></select></label>
+					<label title="How the person is linked to the organization to add, one of Person-org relations">How <select id="organization-link-type" aria-label="How linked"></select></label>
+					<label title="The organization: picking one adds the link to Organizations" class="wide">At <select id="organization-link-organization" data-placeholder="Type a name from Organizations: picking one adds the link"></select></label>
 				</div>
 				<div class="row">
-					<label class="wide">Description <input name="description" placeholder="How you know them"></label>
+					<label title="How you know the person, or who they are" class="wide">Description <input name="description" placeholder="How you know them"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -406,36 +406,36 @@
 			</form>
 			<form id="organization-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Name <input name="name" required></label>
-					<label class="wide">Headquarters, as written <input name="location" placeholder="City, region, country, and anything more"></label>
-					<label>Headquarters <select name="headquarters_id" data-picker="cities" data-placeholder="Type a city" title="The city of its headquarters; add a new one on the Cities page"></select></label>
-					<label>Type <select name="type_id"></select></label>
+					<label title="What the organization is called" class="wide">Name <input name="name" required></label>
+					<label title="Where its headquarters are, in the words of the source: city, region, country" class="wide">Headquarters, as written <input name="location" placeholder="City, region, country, and anything more"></label>
+					<label title="The city of its headquarters; add a new one on the Cities page">Headquarters <select name="headquarters_id" data-picker="cities" data-placeholder="Type a city" title="The city of its headquarters; add a new one on the Cities page"></select></label>
+					<label title="What kind of organization it is, one of Org types; add a new one on the Org page">Type <select name="type_id"></select></label>
 				</div>
 				<div class="row">
-					<label class="wide">Relation to me <select multiple data-chips="relation-types" data-field="relations" data-placeholder="Type a name from Relation types"><option value=""></option></select></label>
-					<label>Status <input name="status" placeholder="active, acquired, defunct"></label>
+					<label title="What the organization is to you, each one of Org relations: taught there, consulted, ..." class="wide">Relation to me <select multiple data-chips="relation-types" data-field="relations" data-placeholder="Type a name from Relation types"><option value=""></option></select></label>
+					<label title="Whether the organization still exists: active, acquired, defunct">Status <input name="status" placeholder="active, acquired, defunct"></label>
 				</div>
 				<div class="row">
-					<label class="wide">What happened <input name="what_happened"></label>
+					<label title="What became of the organization: who bought it, when it closed" class="wide">What happened <input name="what_happened"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Website <input name="website" type="url" placeholder="https://"></label>
+					<label title="The organization's own website" class="wide">Website <input name="website" type="url" placeholder="https://"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Street <input name="street" placeholder="Ibn Gabirol 30, 88 7th Avenue South, 1-2-3 Ginza" title="One line, as written there: street and number, building, floor; or directions where there is no street"></label>
-					<label>Neighbourhood <input name="neighbourhood" title="A neighbourhood, ward or district: Sarona, Greenwich Village"></label>
-					<label>Postcode <input name="postcode"></label>
-					<label>City <select name="city_id" data-picker="cities" data-placeholder="Type a city" title="The city of its address: the office you knew"></select></label>
+					<label title="One line, as written there: street and number, building, floor; or directions where there is no street" class="wide">Street <input name="street" placeholder="Ibn Gabirol 30, 88 7th Avenue South, 1-2-3 Ginza" title="One line, as written there: street and number, building, floor; or directions where there is no street"></label>
+					<label title="A neighbourhood, ward or district: Sarona, Greenwich Village">Neighbourhood <input name="neighbourhood" title="A neighbourhood, ward or district: Sarona, Greenwich Village"></label>
+					<label title="The postal code of the address">Postcode <input name="postcode"></label>
+					<label title="The city of its address: the office you knew">City <select name="city_id" data-picker="cities" data-placeholder="Type a city" title="The city of its address: the office you knew"></select></label>
 				</div>
 				<div class="row">
-					<label>Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
-					<label>Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
+					<label title="The organization's latitude in decimal degrees, north positive: where it is on the map">Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
+					<label title="The organization's longitude in decimal degrees, east positive: where it is on the map">Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Remark <input name="remark"></label>
+					<label title="Anything else worth keeping about the organization" class="wide">Remark <input name="remark"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Logo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="The organization's logo, an SVG image: choosing a file replaces the one it has, choosing none keeps it" class="wide">Logo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -445,24 +445,24 @@
 			</form>
 			<form id="group-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Name <input name="name" required placeholder="Pink Floyd"></label>
+					<label title="What the group is called" class="wide">Name <input name="name" required placeholder="Pink Floyd"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Members <select multiple data-chips="people" data-field="members" data-placeholder="Type a name from People"><option value=""></option></select></label>
+					<label title="The people in the group, each one of People; add a new one on the People page" class="wide">Members <select multiple data-chips="people" data-field="members" data-placeholder="Type a name from People"><option value=""></option></select></label>
 				</div>
 				<div class="row">
-					<label class="wide">Description <input name="description" placeholder="jazz trio, rock band, ..."></label>
+					<label title="What the group is: its music, where it is from" class="wide">Description <input name="description" placeholder="jazz trio, rock band, ..."></label>
 				</div>
 				<div class="row">
-					<label class="wide">Website <input name="website" type="url" placeholder="https://"></label>
+					<label title="The group's own website" class="wide">Website <input name="website" type="url" placeholder="https://"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="A picture of the group: choosing a file replaces the one it has, choosing none keeps it" class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Photo source <input name="image_source" type="url" placeholder="Where it comes from"></label>
-					<label>License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
-					<label>Author <input name="image_author" title="Who took it; for a member's photo, say whose it is"></label>
+					<label title="The page the picture comes from, for the credit shown with it" class="wide">Photo source <input name="image_source" type="url" placeholder="Where it comes from"></label>
+					<label title="The license the picture is under, e.g. CC BY-SA 4.0, for the credit shown with it">License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
+					<label title="Who took it; for a member's photo, say whose it is">Author <input name="image_author" title="Who took it; for a member's photo, say whose it is"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -472,24 +472,24 @@
 			</form>
 			<form id="city-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Name <input name="name" required placeholder="Tel Aviv"></label>
-					<label>Region <input name="region" placeholder="A state or province" title="Where addresses name one: California, Ontario"></label>
-					<label>Country <select name="country_id" data-picker="countries" data-placeholder="Type a country" title="Add a new one on the Countries page"></select></label>
+					<label title="What the city is called" class="wide">Name <input name="name" required placeholder="Tel Aviv"></label>
+					<label title="Where addresses name one: California, Ontario">Region <input name="region" placeholder="A state or province" title="Where addresses name one: California, Ontario"></label>
+					<label title="Add a new one on the Countries page">Country <select name="country_id" data-picker="countries" data-placeholder="Type a country" title="Add a new one on the Countries page"></select></label>
 				</div>
 				<div class="row">
-					<label>Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
-					<label>Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
+					<label title="The city's latitude in decimal degrees, north positive: where it is on the map">Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
+					<label title="The city's longitude in decimal degrees, east positive: where it is on the map">Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Remark <input name="remark"></label>
+					<label title="Anything else worth keeping about the city" class="wide">Remark <input name="remark"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="A picture of the city: choosing a file replaces the one it has, choosing none keeps it" class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Photo source <input name="image_source" type="url" placeholder="Where it comes from"></label>
-					<label>License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
-					<label>Author <input name="image_author"></label>
+					<label title="The page the picture comes from, for the credit shown with it" class="wide">Photo source <input name="image_source" type="url" placeholder="Where it comes from"></label>
+					<label title="The license the picture is under, e.g. CC BY-SA 4.0, for the credit shown with it">License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
+					<label title="Who made the picture, for the credit shown with it">Author <input name="image_author"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -499,22 +499,22 @@
 			</form>
 			<form id="country-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Name <input name="name" required placeholder="Israel"></label>
+					<label title="What the country is called" class="wide">Name <input name="name" required placeholder="Israel"></label>
 				</div>
 				<div class="row">
-					<label>Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
-					<label>Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
+					<label title="The country's latitude in decimal degrees, north positive: where it is on the map">Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
+					<label title="The country's longitude in decimal degrees, east positive: where it is on the map">Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Remark <input name="remark"></label>
+					<label title="Anything else worth keeping about the country" class="wide">Remark <input name="remark"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Flag <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="The country's flag: choosing a file replaces the one it has, choosing none keeps it" class="wide">Flag <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Flag source <input name="image_source" type="url" placeholder="Where it comes from"></label>
-					<label>License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
-					<label>Author <input name="image_author"></label>
+					<label title="The page the flag comes from, for the credit shown with it" class="wide">Flag source <input name="image_source" type="url" placeholder="Where it comes from"></label>
+					<label title="The license the picture is under, e.g. CC BY-SA 4.0, for the credit shown with it">License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
+					<label title="Who made the picture, for the credit shown with it">Author <input name="image_author"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -524,23 +524,23 @@
 			</form>
 			<form id="place-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Name <input name="name" required placeholder="Tmuna Theater"></label>
-					<label>City <select name="city_id" data-picker="cities" data-placeholder="Type a city" title="Add a new one on the Cities page"></select></label>
+					<label title="What the place is called" class="wide">Name <input name="name" required placeholder="Tmuna Theater"></label>
+					<label title="Add a new one on the Cities page">City <select name="city_id" data-picker="cities" data-placeholder="Type a city" title="Add a new one on the Cities page"></select></label>
 				</div>
 				<div class="row">
-					<label class="wide">Street <input name="street" placeholder="Ibn Gabirol 30, 88 7th Avenue South, 1-2-3 Ginza" title="One line, as written there: street and number, building, floor; or directions where there is no street"></label>
-					<label>Neighbourhood <input name="neighbourhood" title="A neighbourhood, ward or district: Sarona, Greenwich Village"></label>
-					<label>Postcode <input name="postcode"></label>
+					<label title="One line, as written there: street and number, building, floor; or directions where there is no street" class="wide">Street <input name="street" placeholder="Ibn Gabirol 30, 88 7th Avenue South, 1-2-3 Ginza" title="One line, as written there: street and number, building, floor; or directions where there is no street"></label>
+					<label title="A neighbourhood, ward or district: Sarona, Greenwich Village">Neighbourhood <input name="neighbourhood" title="A neighbourhood, ward or district: Sarona, Greenwich Village"></label>
+					<label title="The postal code of the address">Postcode <input name="postcode"></label>
 				</div>
 				<div class="row">
-					<label>Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
-					<label>Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
+					<label title="The place's latitude in decimal degrees, north positive: where it is on the map">Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
+					<label title="The place's longitude in decimal degrees, east positive: where it is on the map">Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Website <input name="website" type="url" placeholder="https://"></label>
+					<label title="The place's own website" class="wide">Website <input name="website" type="url" placeholder="https://"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Remark <input name="remark"></label>
+					<label title="Anything else worth keeping about the place" class="wide">Remark <input name="remark"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -550,10 +550,10 @@
 			</form>
 			<form id="organization-type-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Name <input name="name" required placeholder="e.g. Hospital"></label>
+					<label title="What the organization type is called" class="wide">Name <input name="name" required placeholder="e.g. Hospital"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Description <input name="description"></label>
+					<label title="What the organization type means: shown as its tooltip and on its page" class="wide">Description <input name="description"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -563,18 +563,18 @@
 			</form>
 			<form id="profession-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Name <input name="name" required placeholder="e.g. Programmer"></label>
+					<label title="What the profession is called" class="wide">Name <input name="name" required placeholder="e.g. Programmer"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Description <input name="description"></label>
+					<label title="What the profession means: shown as its tooltip and on its page" class="wide">Description <input name="description"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="A picture of the profession: choosing a file replaces the one it has, choosing none keeps it" class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Photo source <input name="image_source" type="url" placeholder="Where it comes from"></label>
-					<label>License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
-					<label>Author <input name="image_author" title="Who took it"></label>
+					<label title="The page the picture comes from, for the credit shown with it" class="wide">Photo source <input name="image_source" type="url" placeholder="Where it comes from"></label>
+					<label title="The license the picture is under, e.g. CC BY-SA 4.0, for the credit shown with it">License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
+					<label title="Who took it">Author <input name="image_author" title="Who took it"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -584,10 +584,10 @@
 			</form>
 			<form id="relation-type-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Name <input name="name" required placeholder="e.g. Taught there"></label>
+					<label title="What the organization relation type is called" class="wide">Name <input name="name" required placeholder="e.g. Taught there"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Description <input name="description"></label>
+					<label title="What the organization relation type means: shown as its tooltip and on its page" class="wide">Description <input name="description"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -597,11 +597,11 @@
 			</form>
 			<form id="person-relation-type-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Name <input name="name" required placeholder="e.g. Mother of"></label>
-					<label class="wide">Other way <input name="inverse" placeholder="e.g. Child of" title="How it reads from the other person's side; empty when it reads the same both ways (Friend of)"></label>
+					<label title="What the person relation type is called" class="wide">Name <input name="name" required placeholder="e.g. Mother of"></label>
+					<label title="How it reads from the other person's side; empty when it reads the same both ways (Friend of)" class="wide">Other way <input name="inverse" placeholder="e.g. Child of" title="How it reads from the other person's side; empty when it reads the same both ways (Friend of)"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Description <input name="description"></label>
+					<label title="What the person relation type means: shown as its tooltip and on its page" class="wide">Description <input name="description"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -611,10 +611,10 @@
 			</form>
 			<form id="person-org-relation-type-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Name <input name="name" required placeholder="e.g. Worked at"></label>
+					<label title="What the person-organization relation type is called" class="wide">Name <input name="name" required placeholder="e.g. Worked at"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Description <input name="description"></label>
+					<label title="What the person-organization relation type means: shown as its tooltip and on its page" class="wide">Description <input name="description"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -624,18 +624,18 @@
 			</form>
 			<form id="device-form" class="dialog-form" hidden>
 				<div class="row">
-					<label class="wide">Name <input name="name" required placeholder="e.g. Samsung S10"></label>
+					<label title="What the device is called" class="wide">Name <input name="name" required placeholder="e.g. Samsung S10"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Description <input name="description"></label>
+					<label title="What the device means: shown as its tooltip and on its page" class="wide">Description <input name="description"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					<label title="A picture of the device: choosing a file replaces the one it has, choosing none keeps it" class="wide">Photo <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Photo source <input name="image_source" type="url" placeholder="Where it comes from"></label>
-					<label>License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
-					<label>Author <input name="image_author" title="Who took it"></label>
+					<label title="The page the picture comes from, for the credit shown with it" class="wide">Photo source <input name="image_source" type="url" placeholder="Where it comes from"></label>
+					<label title="The license the picture is under, e.g. CC BY-SA 4.0, for the credit shown with it">License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
+					<label title="Who took it">Author <input name="image_author" title="Who took it"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -648,12 +648,12 @@
 		<dialog id="settings-dialog" class="dialog settings" aria-labelledby="settings-title">
 			<form id="settings-form">
 				<h2 id="settings-title">Settings</h2>
-				<label for="settings-name">Your name</label>
+				<label title="What the top bar calls you, whichever way you sign in: 1 to 60 characters" for="settings-name">Your name</label>
 				<input id="settings-name" name="name" type="text" maxlength="60" required autocomplete="name">
 				<p class="settings-hint">
 					Shown in the top right corner, whichever way you sign in. Up to 60 characters.
 				</p>
-				<label for="settings-locale">Preferred language</label>
+				<label title="The language you prefer: a book with titles in several languages is shown by the one in it" for="settings-locale">Preferred language</label>
 				<select id="settings-locale" name="locale" data-locales></select>
 				<p class="settings-hint">
 					A book with titles in several languages is shown by its title in this one, and its authors by their names in it.
