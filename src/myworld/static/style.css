@@ -1828,6 +1828,11 @@ button.text.danger:hover {
 	white-space: nowrap;
 }
 
+/* the chip names a row and is a link to it (dialogLink in app.js): it looks like one */
+.ts-wrapper.multi .ts-control > .item a.person-link {
+	color: var(--accent);
+}
+
 .ts-wrapper.plugin-remove_button .item .remove {
 	border-left: none;
 	color: var(--muted);
