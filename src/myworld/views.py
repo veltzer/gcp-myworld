@@ -23,6 +23,7 @@ from myworld.models import (
     Login,
     Person,
     PersonType,
+    Read,
     UserWork,
     Work,
     WorkTitle,
@@ -82,7 +83,7 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
     return {
         "work_id": entry.work_id,
         "kind": work.kind,
-        # the language the user read it in, and the title in it (the main title when it has none in it)
+        # the language the user read it in (last, see UserWork.last_read), and the title in it (the main title when it has none in it)
         "locale": entry.locale or "",
         "title": work.title_in(entry.locale),
         # the main title and its language, and the other titles, each in a language
@@ -105,6 +106,8 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
         "rating": entry.rating,
         "started_on": entry.started_on.isoformat() if entry.started_on else None,
         "finished_on": entry.finished_on.isoformat() if entry.finished_on else None,
+        # every time it was read: the day and the language, either empty when not known
+        "reads": [{"date": read.read_on.isoformat() if read.read_on else None, "locale": read.locale or ""} for read in entry.reads],
         "notes": entry.notes,
         "updated_at": entry.updated_at.isoformat(),
     }
@@ -116,6 +119,43 @@ def _kind(value: str) -> str:
     return value
 
 
+def _read_locale(key: str, value: Any) -> str | None:
+    """ A language sent for a read: one of the locales table, or none when empty. """
+    if value is None or value == "":
+        return None
+    if value not in languages.known(flask.g.db):
+        raise ApiError(400, f"{key}: unknown language {value!r}")
+    return str(value)
+
+
+def _apply_reads(entry: UserWork, body: dict[str, Any]) -> None:
+    """
+    The times the entry was read. `reads`, a list of {date, locale} (either
+    may be empty), replaces them all. Without it, `finished_on` and `locale`
+    (each only when sent) are the day and the language of the read the entry
+    goes by, which is made when the entry has none and dropped again when it
+    would say nothing.
+    """
+    if "reads" in body:
+        value = body["reads"]
+        if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+            raise ApiError(400, "reads: expected a list of {date, locale}")
+        entry.reads = [Read(read_on=opt_date(item, "date"), locale=_read_locale("reads", item.get("locale"))) for item in value]
+        return
+    if "finished_on" not in body and "locale" not in body:
+        return
+    read = entry.last_read
+    if read is None:
+        read = Read()
+        entry.reads.append(read)
+    if "finished_on" in body:
+        read.read_on = opt_date(body, "finished_on")
+    if "locale" in body:
+        read.locale = _read_locale("locale", body["locale"])
+    if read.read_on is None and read.locale is None and read.id is None:
+        entry.reads.remove(read)
+
+
 def _apply_entry_fields(entry: UserWork, body: dict[str, Any]) -> None:
     status = text(body, "status") or "done"
     if status not in STATUSES:
@@ -123,17 +163,12 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any]) -> None:
     entry.status = status
     entry.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
     entry.started_on = opt_date(body, "started_on")
-    entry.finished_on = opt_date(body, "finished_on")
     entry.notes = text(body, "notes")
     # the year it came out, on the shared work: only filled in, never changed
     year = opt_int(body, "year", -3000, 3000)
     if year is not None and entry.work.year is None:
         entry.work.year = year
-    if "locale" in body:
-        locale = text(body, "locale")
-        if locale and locale not in languages.known(flask.g.db):
-            raise ApiError(400, f"locale: unknown language {locale!r}")
-        entry.locale = locale or None
+    _apply_reads(entry, body)
     if "titles" in body:
         _add_titles(entry.work, body["titles"])
     # a cover is only ever replaced by a new upload, never blanked by omission

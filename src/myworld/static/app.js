@@ -445,7 +445,8 @@ function libraryCard(entry) {
 	// a year before the common era is negative: -375 is 375 BCE
 	detail(list, "Year", entry.year === null ? "" : entry.year < 0 ? `${-entry.year} BCE` : String(entry.year));
 	detail(list, "ISBN", entry.isbn);
-	detail(list, "Read in", entry.locale ? localeName(entry.locale) : "");
+	// every time it was read: the day and the language, as far as they are known
+	detail(list, entry.reads.length > 1 ? "Reads" : "Read", entry.reads.map(readText).join("; "));
 	// its titles but the one shown, each with its language
 	const others = [{ locale: entry.title_locale, title: entry.main_title }, ...entry.titles].filter((t) => t.title !== entry.title);
 	detail(list, "Other titles", others.map((t) => `${t.title} (${localeName(t.locale)})`).join("; "));
@@ -454,7 +455,6 @@ function libraryCard(entry) {
 		detail(list, "Rating", `${entry.rating}/${state.config.rating_max}`);
 	}
 	detail(list, "Started", entry.started_on ?? "");
-	detail(list, "Finished", entry.finished_on ?? "");
 	detail(list, "Notes", entry.notes);
 	return card;
 }
@@ -1054,7 +1054,6 @@ async function libraryPage() {
 	fillStatuses(form.elements.status, "done");
 	form.elements.rating.min = rating_min;
 	form.elements.rating.max = rating_max;
-	form.elements.finished_on.value = new Date().toISOString().slice(0, 10);
 	form.onsubmit = async (event) => {
 		event.preventDefault();
 		dialogError("");
@@ -1068,6 +1067,7 @@ async function libraryPage() {
 			body.authors = chosen(form, "authors");
 			body.titles = localizedValues("titles");
 		}
+		body.reads = readsValues();
 		try {
 			body.image_id = await uploadPhoto(form);
 			if (state.editing) {
@@ -3155,7 +3155,7 @@ function addLocalized(key) {
 	const list = editingLocalized[key];
 	// one per language: what is kept (a shared work's title) is not replaced, nor the language taken elsewhere in the form
 	if ((taken?.() === locale || list.some((item) => item.kept && item.locale === locale))) {
-		showError(`There is already a ${field} in ${localeName(locale)}: one per language`);
+		dialogError(`There is already a ${field} in ${localeName(locale)}: one per language`);
 		return;
 	}
 	// what was typed for this language before is replaced
@@ -3179,9 +3179,67 @@ function localizedValues(key) {
 	return editingLocalized[key].map((item) => ({ locale: item.locale, [field]: item.text }));
 }
 
+// ─── the reads of a library entry: each a day and a language ────────────────
+
+// the reads in the dialog, as the server sends them: {date, locale}, either empty when not known
+let editingReads = [];
+
+// "2006-12-01 in Hebrew", with what is not known left out or said
+function readText(read) {
+	return [read.date || "date unknown", read.locale ? `in ${localeName(read.locale)}` : ""].filter(Boolean).join(" ");
+}
+
+function renderReads() {
+	const box = $("book-reads");
+	box.replaceChildren();
+	if (editingReads.length === 0) {
+		box.appendChild(el("span", "empty", "None yet"));
+	}
+	editingReads.forEach((read, index) => {
+		const chip = el("span", "chip", readText(read));
+		const remove = el("button", "chip-remove", "\u00d7");
+		remove.type = "button";
+		remove.setAttribute("aria-label", `Remove the read ${readText(read)}`);
+		remove.onclick = () => {
+			editingReads.splice(index, 1);
+			renderReads();
+		};
+		chip.appendChild(remove);
+		box.appendChild(chip);
+	});
+}
+
+// the day and the language chosen, added to the list as a read; with neither chosen, a read
+// of which nothing is known is added only when asked for (the button), not by saving
+function addRead(asked) {
+	const date = $("book-read-date").value;
+	const locale = $("book-read-locale").value;
+	if (!asked && !date && !locale) {
+		return;
+	}
+	editingReads.push({ date: date || null, locale });
+	$("book-read-date").value = "";
+	$("book-read-locale").value = "";
+	renderReads();
+}
+
+function prepareReads(reads) {
+	editingReads = reads.map((read) => ({ ...read }));
+	$("book-read-date").value = "";
+	$("book-read-locale").value = "";
+	renderReads();
+}
+
+// the reads to send, with a day or a language still chosen in the row (saving does not lose it)
+function readsValues() {
+	addRead(false);
+	return editingReads.map((read) => ({ date: read.date, locale: read.locale }));
+}
+
 // Add, and Enter in the box, add what is typed; Enter never saves the form
 function setupLocalized() {
 	fillLocales();
+	$("book-read-add").onclick = () => addRead(true);
 	// the main title of a book being added: its language follows its letters
 	const { title, title_locale: titleLocale } = $("add-form").elements;
 	title.addEventListener("input", () => pickLocale(titleLocale, title.value));
@@ -3585,8 +3643,8 @@ async function prepareWorkForm(form, entry) {
 	$("movie-results").hidden = true;
 	$("movie-hint").hidden = true;
 	$("movie-query").value = "";
-	const values = entry || { title: "", creator: "", year: "", status: "done", rating: "", started_on: "", notes: "", finished_on: new Date().toISOString().slice(0, 10) };
-	for (const name of ["title", "creator", "year", "status", "rating", "started_on", "finished_on", "notes"]) {
+	const values = entry || { title: "", creator: "", year: "", status: "done", rating: "", started_on: "", notes: "" };
+	for (const name of ["title", "creator", "year", "status", "rating", "started_on", "notes"]) {
 		form.elements[name].value = values[name] ?? "";
 	}
 	// the main title, in its language (both fixed once the book is added: the work is shared),
@@ -3594,7 +3652,7 @@ async function prepareWorkForm(form, entry) {
 	form.elements.title.value = entry ? entry.main_title : "";
 	form.elements.title_locale.value = entry?.title_locale || "en";
 	form.elements.title_locale.disabled = Boolean(entry);
-	form.elements.locale.value = entry?.locale || "";
+	prepareReads(entry?.reads || []);
 	prepareLocalized("titles", entry?.titles || [], true);
 	form.elements.photo.value = "";
 	// a book's authors are the user's people, any number of them; the picker

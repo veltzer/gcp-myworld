@@ -158,6 +158,15 @@
 #     changing nothing, and lists them. Run before the deploy and deploy right
 #     away: the old version writes '' for a language not known, which the
 #     foreign key refuses.
+#   - reads (models.Read, library_reads): every time a book was read, with
+#     its day and its language. Each entry that was read (Done, or with a
+#     finished day or a language) gets one read holding its
+#     library_entries.finished_on and locale; a book read whose language was
+#     not recorded gets Hebrew when it has a Hebrew title, else English when
+#     it has an English one (a recorded language is never changed). Only then
+#     are the two columns dropped. The new code no longer reads them, so run
+#     this right after deploying that version (its create_all makes the table,
+#     made here too); an entry that already has reads is left as it is.
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -201,7 +210,6 @@ COLUMNS = [
     ("people", "honorific", "VARCHAR(50) NOT NULL DEFAULT ''"),
     ("people", "is_self", "BOOLEAN NOT NULL DEFAULT 0"),
     ("library_works", "title_locale", "VARCHAR(10) NOT NULL DEFAULT 'en'"),
-    ("library_entries", "locale", "VARCHAR(10) NOT NULL DEFAULT ''"),
 ]
 
 url = os.environ.get("DATABASE_URL", "sqlite:///db.gi/myworld.sqlite")
@@ -682,7 +690,7 @@ LOCALE_COLUMNS = [
 definitions = {row[0]: row[1] for row in db.execute("SELECT name, sql FROM sqlite_master WHERE type = 'table'")}
 pending = [
     (table, column, kind, replace) for table, column, kind, replace in LOCALE_COLUMNS
-    if table in definitions and not re.search(rf"\b{column} VARCHAR\(10\)[^,)]*REFERENCES locales|FOREIGN KEY ?\({column}\) REFERENCES locales", definitions[table])
+    if table in definitions and re.search(rf"\b{column} VARCHAR\(10\)", definitions[table]) and not re.search(rf"\b{column} VARCHAR\(10\)[^,)]*REFERENCES locales|FOREIGN KEY ?\({column}\) REFERENCES locales", definitions[table])
 ]
 if pending:
     if "locales" not in definitions:
@@ -729,6 +737,48 @@ if pending:
     if any(table == "library_entries" for table, _, _, _ in pending):
         db.execute("UPDATE library_entries SET locale = NULL WHERE locale = ''")
     added.append("locales, and " + ", ".join(f"{table}.{column}" for table, column, _, _ in pending) + " pointing at it")
+# reads (see the header): a read per entry that was read, from its finished_on and locale,
+# then library_entries made again without the two columns (sqlite does not drop a column
+# that a foreign key names)
+entry_columns = [row[1] for row in db.execute("PRAGMA table_info(library_entries)")]
+if "finished_on" in entry_columns:
+    # a database from before entries had a language: none recorded
+    recorded = "e.locale" if "locale" in entry_columns else "NULL"
+    db.execute("""CREATE TABLE IF NOT EXISTS library_reads (
+        id INTEGER NOT NULL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        work_id INTEGER NOT NULL,
+        read_on DATE,
+        locale VARCHAR(10) REFERENCES locales (code),
+        CONSTRAINT fk_library_reads_entry FOREIGN KEY (user_id, work_id) REFERENCES library_entries (user_id, work_id) ON DELETE CASCADE)""")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_library_reads_entry ON library_reads (user_id, work_id)")
+    made = db.execute(f"""INSERT INTO library_reads (user_id, work_id, read_on, locale)
+        SELECT e.user_id, e.work_id, e.finished_on, COALESCE({recorded}, CASE
+            WHEN w.kind <> 'book' THEN NULL
+            WHEN w.title_locale = 'he' OR EXISTS (SELECT 1 FROM library_work_titles t WHERE t.work_id = w.id AND t.locale = 'he') THEN 'he'
+            WHEN w.title_locale = 'en' OR EXISTS (SELECT 1 FROM library_work_titles t WHERE t.work_id = w.id AND t.locale = 'en') THEN 'en' END)
+        FROM library_entries e JOIN library_works w ON w.id = e.work_id
+        WHERE (e.status = 'done' OR e.finished_on IS NOT NULL OR {recorded} IS NOT NULL)
+          AND NOT EXISTS (SELECT 1 FROM library_reads r WHERE r.user_id = e.user_id AND r.work_id = e.work_id)
+        ORDER BY e.user_id, e.work_id""").rowcount
+    definition = db.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'library_entries'").fetchone()[0]
+    changed = definition
+    for gone in (r",\s*finished_on DATE[^,)]*",
+                 r",\s*locale VARCHAR\(10\)(?:(?! REFERENCES)[^,)])*(?: REFERENCES locales \(code\))?[^,)]*",
+                 r",\s*FOREIGN KEY ?\(locale\) REFERENCES locales \(code\)"):
+        changed = re.sub(gone, "", changed, count=1)
+    changed, count = re.subn(r'^CREATE TABLE "?library_entries"?', "CREATE TABLE library_entries_new", changed, count=1)
+    if count != 1 or re.search(r"\b(finished_on|locale)\b", changed):
+        raise SystemExit(f"{path}: library_entries is not defined as expected, look at it: {definition}")
+    kept = ", ".join(column for column in entry_columns if column not in ("finished_on", "locale"))
+    indexes = [row[0] for row in db.execute("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'library_entries' AND sql IS NOT NULL")]
+    db.execute(changed)
+    db.execute(f"INSERT INTO library_entries_new ({kept}) SELECT {kept} FROM library_entries")
+    db.execute("DROP TABLE library_entries")
+    db.execute("ALTER TABLE library_entries_new RENAME TO library_entries")
+    for index in indexes:
+        db.execute(index)
+    added.append(f"library_reads ({made} reads made from library_entries.finished_on and locale, which are dropped)")
 if not db.execute("SELECT 1 FROM users WHERE role = 'admin'").fetchone():
     oldest = db.execute("SELECT min(id) FROM users").fetchone()[0]
     if oldest is not None:
@@ -756,7 +806,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'works' AND column_name IN ('id', 'imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
 	   OR (table_name IN ('museums', 'concerts') AND column_name = 'id')
 	   OR (table_name = 'library_works' AND column_name IN ('id', 'goodreads_id', 'simania_id', 'title_locale', 'isbn', 'openlibrary_id', 'external_id'))
-	   OR (table_name = 'library_entries' AND column_name IN ('image_id', 'locale'))
+	   OR (table_name = 'library_entries' AND column_name IN ('image_id', 'locale', 'finished_on'))
 	   OR (table_name = 'people' AND column_name = 'company')
 	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
 	   OR (table_name = 'organizations' AND column_name IN ('type_id', 'functions'))
@@ -1079,7 +1129,6 @@ has "people.is_self:.*" || need people.is_self "ALTER TABLE people ADD COLUMN is
 # the language of a work's main title and the one the user read it in (adding columns: run before the deploy)
 if has "library_works.id:.*"; then
 	has "library_works.title_locale:.*" || need library_works.title_locale "ALTER TABLE library_works ADD COLUMN title_locale VARCHAR(10) NOT NULL DEFAULT 'en'"
-	has "library_entries.locale:.*" || need library_entries.locale "ALTER TABLE library_entries ADD COLUMN locale VARCHAR(10) NOT NULL DEFAULT ''"
 fi
 # a book's ISBN (copied from external_id) and Open Library work (adding columns: run before the deploy);
 # external_id goes in a run after deploying the version that no longer reads it
@@ -1360,11 +1409,13 @@ elif has "users.google_sub:.*"; then
 fi
 
 # the locales table and every locale column pointing at it (see the header): how many of the
-# tables with a locale column there are, of the foreign keys to locales, and whether a work
+# tables with a locale column there are, of the foreign keys to locales of the three that
+# keep theirs (library_entries.locale goes into the reads, below), and whether a work
 # has one title per language. Every statement is safe to run again.
 locale_state="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	SELECT (SELECT count(*) FROM information_schema.tables WHERE table_name IN ('library_works', 'library_work_titles', 'library_entries', 'person_names'))
-		|| ':' || (SELECT count(*) FROM pg_constraint WHERE contype = 'f' AND confrelid = to_regclass('locales'))
+		|| ':' || (SELECT count(*) FROM pg_constraint WHERE contype = 'f' AND confrelid = to_regclass('locales')
+			AND conrelid IN (to_regclass('library_works'), to_regclass('library_work_titles'), to_regclass('person_names')))
 		|| ':' || (SELECT count(*) FROM pg_constraint WHERE conname = 'uq_work_title_locale')
 ")"
 read -r -d '' point_at_locales <<'SQL' || true
@@ -1416,8 +1467,36 @@ ALTER TABLE person_names DROP CONSTRAINT IF EXISTS person_names_locale_fkey,
 ALTER TABLE library_work_titles DROP CONSTRAINT IF EXISTS uq_work_title, DROP CONSTRAINT IF EXISTS uq_work_title_locale,
 	ADD CONSTRAINT uq_work_title_locale UNIQUE (work_id, locale)
 SQL
-if [[ "${locale_state}" == 4:* && "${locale_state}" != "4:4:1" ]]; then
+if [[ "${locale_state}" == 4:* && "${locale_state}" != "4:3:1" ]]; then
 	need "locales, and the four locale columns pointing at it; one title per language" "${point_at_locales}"
+fi
+
+# reads (see the header): a read per entry that was read, from its finished_on and locale,
+# and then the two columns go. After the locales step, which the reads' language points at.
+read -r -d '' entries_to_reads <<'SQL' || true
+CREATE TABLE IF NOT EXISTS library_reads (
+	id SERIAL NOT NULL,
+	user_id INTEGER NOT NULL,
+	work_id INTEGER NOT NULL,
+	read_on DATE,
+	locale VARCHAR(10),
+	CONSTRAINT library_reads_pkey PRIMARY KEY (id),
+	CONSTRAINT fk_library_reads_entry FOREIGN KEY (user_id, work_id) REFERENCES library_entries (user_id, work_id) ON DELETE CASCADE,
+	CONSTRAINT library_reads_locale_fkey FOREIGN KEY (locale) REFERENCES locales (code));
+CREATE INDEX IF NOT EXISTS ix_library_reads_entry ON library_reads (user_id, work_id);
+INSERT INTO library_reads (user_id, work_id, read_on, locale)
+	SELECT e.user_id, e.work_id, e.finished_on, COALESCE(e.locale, CASE
+		WHEN w.kind <> 'book' THEN NULL
+		WHEN w.title_locale = 'he' OR EXISTS (SELECT 1 FROM library_work_titles t WHERE t.work_id = w.id AND t.locale = 'he') THEN 'he'
+		WHEN w.title_locale = 'en' OR EXISTS (SELECT 1 FROM library_work_titles t WHERE t.work_id = w.id AND t.locale = 'en') THEN 'en' END)
+	FROM library_entries e JOIN library_works w ON w.id = e.work_id
+	WHERE (e.status = 'done' OR e.finished_on IS NOT NULL OR e.locale IS NOT NULL)
+	  AND NOT EXISTS (SELECT 1 FROM library_reads r WHERE r.user_id = e.user_id AND r.work_id = e.work_id)
+	ORDER BY e.user_id, e.work_id;
+ALTER TABLE library_entries DROP COLUMN locale, DROP COLUMN finished_on
+SQL
+if has "library_entries.finished_on:.*" && has "library_entries.locale:.*"; then
+	need "library_reads (a read per entry read, from library_entries.finished_on and locale, which are dropped)" "${entries_to_reads}"
 fi
 
 if (( ${#changed[@]} == 0 )); then

@@ -29,6 +29,7 @@ from myworld.models import (
     Person,
     PersonName,
     PersonType,
+    Read,
     User,
     UserWork,
     Work,
@@ -781,7 +782,7 @@ def test_books_import_fills_languages(imported: webtest.TestApp, engine: Engine,
     with Session(engine) as session:
         session.execute(delete(WorkTitle))
         session.execute(delete(PersonName))
-        session.execute(update(UserWork).values(locale=""))
+        session.execute(delete(Read))
         may = session.scalars(select(UserWork).where(UserWork.notes.startswith("nice."))).one()
         may.notes = old_notes + ". and an edit of mine"
         session.commit()
@@ -1576,3 +1577,31 @@ def test_book_title_checks(imported: webtest.TestApp, engine: Engine) -> None:
         work.title = " "
         session.commit()
     assert problems("book-titles") == [(" ", "has no title")]
+
+
+def test_reads(imported: webtest.TestApp) -> None:
+    """ A book has a list of reads, each with its day and its language. """
+    book = imported.post_json("/api/library-entries", {"kind": "book", "title": "Read Twice", "reads": [
+        {"date": "2001-05-01", "locale": "he"}, {"date": "", "locale": "en"}, {"date": "1999-01-01", "locale": ""},
+    ]}).json
+    assert book["reads"] == [{"date": "2001-05-01", "locale": "he"}, {"date": None, "locale": "en"}, {"date": "1999-01-01", "locale": ""}]
+    # the entry goes by its latest dated read
+    assert (book["locale"], book["finished_on"]) == ("he", "2001-05-01")
+    url = f"/api/library-entries/{book['work_id']}"
+    # reads not sent stay; finished_on and locale alone change the read it goes by
+    kept = imported.put_json(url, {"rating": 7}).json
+    assert kept["reads"] == book["reads"]
+    changed = imported.put_json(url, {"locale": "en", "finished_on": "2002-02-02"}).json
+    assert changed["reads"][0] == {"date": "2002-02-02", "locale": "en"} and len(changed["reads"]) == 3
+    # reads sent replace them all, and none is a book not read
+    assert imported.put_json(url, {"reads": [{"locale": "he"}]}).json["reads"] == [{"date": None, "locale": "he"}]
+    none = imported.put_json(url, {"reads": []}).json
+    assert (none["reads"], none["locale"], none["finished_on"]) == ([], "", None)
+    # a read of the old fields is made when there is none, and not for nothing
+    assert imported.put_json(url, {"locale": "", "finished_on": ""}).json["reads"] == []
+    assert imported.put_json(url, {"locale": "he"}).json["reads"] == [{"date": None, "locale": "he"}]
+    for wrong in ({"reads": "he"}, {"reads": [{"locale": "xx"}]}, {"reads": [{"date": "yesterday"}]}, {"locale": "xx"}):
+        imported.put_json(url, wrong, status=400)
+    # the reads go with the entry
+    imported.delete(url)
+    assert all(e["work_id"] != book["work_id"] for e in imported.get("/api/library-entries?kind=book").json)

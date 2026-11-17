@@ -192,14 +192,20 @@
 					<button type="button" class="text" id="book-title-add">Add title</button>
 				</div>
 				<div class="row">
-					<label>Read in <select name="locale" data-locales data-blank="Not said" title="The language you read it in: the book is shown in it, its title and its authors' names"></select></label>
+					<label class="wide">Reads <span class="chips" id="book-reads"></span></label>
+				</div>
+				<div class="row">
+					<label>Read on <input id="book-read-date" type="date" title="The day you finished reading it; leave it empty when you do not know"></label>
+					<label>In <select id="book-read-locale" data-locales data-blank="Not said" aria-label="Language of the read" title="The language you read it in: the book is shown in the language of its last read, its title and its authors' names"></select></label>
+					<button type="button" class="text" id="book-read-add">Add read</button>
+				</div>
+				<div class="row">
 					<label class="wide">Authors <select id="book-authors" multiple data-chips="people" data-field="authors" data-placeholder="Type a person (a book's authors, any number)"><option value=""></option></select></label>
 				</div>
 				<div class="row">
 					<label>Status <select name="status"></select></label>
 					<label>Rating <input name="rating" type="number"></label>
 					<label>Started <input name="started_on" type="date"></label>
-					<label>Finished <input name="finished_on" type="date"></label>
 				</div>
 				<div class="row">
 					<label class="wide">Notes <input name="notes"></label>

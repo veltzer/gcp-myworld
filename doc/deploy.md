@@ -546,8 +546,14 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   work has one title per language, the main title's included. `titles` sent
   are added to the work's in the languages it has none in, never taken away
   or changed, as the work is shared; a different title in a language it has
-  one in is refused. An entry's `locale` is empty when the language is not
-  known (`NULL` in the table). A person's `names` are their names in other languages
+  one in is refused.
+- Reads: an entry's `reads` are the times the user read it, each
+  `{date, locale}`: the day it was finished and the language it was read
+  in, either empty when not known (rows of `library_reads`). `reads` sent
+  replace them all. `finished_on` and `locale` are those of the read the
+  entry goes by, the latest that has a day, else the last one added (both
+  empty for an entry never read); sent without `reads`, they change that
+  read, which is made when the entry has none. A person's `names` are their names in other languages
   than English, `{locale, name}`, one per language, replaced when sent;
   `name` is the English one, which every view but a book shows.
 - `DELETE /api/library-entries/<work_id>`: remove from the library.

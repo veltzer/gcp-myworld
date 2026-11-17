@@ -29,6 +29,7 @@ from sqlalchemy import (
     Double,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -294,13 +295,9 @@ class UserWork(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="done")
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_on: Mapped[datetime.date | None] = mapped_column(nullable=True)
-    finished_on: Mapped[datetime.date | None] = mapped_column(nullable=True)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     # the cover: an image of the user's own, as the works are shared
     image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
-    # the language the user read it in (none when not known): the book is shown
-    # in it, its title and its authors' names
-    locale: Mapped[str | None] = mapped_column(ForeignKey("locales.code"), nullable=True)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
     user: Mapped[User] = relationship(back_populates="works")
@@ -309,6 +306,54 @@ class UserWork(Base):
     authors: Mapped[list[Person]] = relationship(
         secondary=lambda: library_entry_authors, back_populates="wrote", order_by=lambda: Person.id,
     )
+    # the times the user read it, each with its day and its language, in the order they were added
+    reads: Mapped[list[Read]] = relationship(
+        back_populates="entry", cascade="all, delete-orphan", order_by=lambda: Read.id, lazy="selectin",
+    )
+
+    @property
+    def last_read(self) -> Read | None:
+        """ The read the entry goes by: the latest that has a day, else the last one added; none when it was never read. """
+        dated = [read for read in self.reads if read.read_on is not None]
+        if dated:
+            return max(dated, key=lambda read: read.read_on or datetime.date.min)
+        return self.reads[-1] if self.reads else None
+
+    @property
+    def locale(self) -> str | None:
+        """ The language the user read it in, last (none when not known): the book is shown in it, its title and its authors' names. """
+        read = self.last_read
+        return read.locale if read else None
+
+    @property
+    def finished_on(self) -> datetime.date | None:
+        """ The day the user finished it, last. """
+        read = self.last_read
+        return read.read_on if read else None
+
+
+class Read(Base):
+    """
+    One time a user read a book of their library (an entry): the day it was
+    finished and the language it was read in, either of them empty when not
+    known. An entry read twice has two.
+    """
+    __tablename__ = "library_reads"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "work_id"], ["library_entries.user_id", "library_entries.work_id"],
+            ondelete="CASCADE", name="fk_library_reads_entry",
+        ),
+        Index("ix_library_reads_entry", "user_id", "work_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    work_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    read_on: Mapped[datetime.date | None] = mapped_column(nullable=True)
+    locale: Mapped[str | None] = mapped_column(ForeignKey("locales.code"), nullable=True)
+
+    entry: Mapped[UserWork] = relationship(back_populates="reads")
 
 
 # ─── concerts, museums, people ───────────────────────────────────────────────

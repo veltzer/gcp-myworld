@@ -105,6 +105,7 @@ from myworld.models import (
     PersonRelationType,
     PersonType,
     Place,
+    Read,
     RelationType,
     User,
     UserWork,
@@ -992,6 +993,10 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
         main = dated[-1] if dated else readings[-1] if readings else None
         return main, _locale(main["language"]) if main else ""
 
+    def reads_of(item: dict[str, Any]) -> list[Read]:
+        """ Every reading of the book, as a read of the entry: its day and its language, where known. """
+        return [Read(read_on=_reading_day(reading), locale=_locale(reading["language"]) or None) for reading in item["readings"]]
+
     locales = languages.known(session)
     for item in items:
         main_name = _english_first(item["names"])
@@ -1024,9 +1029,9 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
         entry = session.get(UserWork, (owner.id, work.id))
         if entry is not None:
             skipped += 1
-            # the language it was read in, for an entry imported before there was one
-            if not entry.locale:
-                entry.locale = read_in(item)[1] or None
+            # its reads, for an entry imported before there were any
+            if not entry.reads and item["readings"]:
+                entry.reads = reads_of(item)
                 localized += bool(entry.locale)
             # what notes said of the other titles and names, now fields of their own
             stripped = _strip_parts(entry.notes, _named_parts(item, title))
@@ -1050,7 +1055,7 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
             continue
         cover = book_cover(goodreads_id, simania_id)
         readings = item["readings"]
-        main, locale = read_in(item)
+        main = read_in(item)[0]
         rating = main.get("rating") if main else None
         notes = _book_notes(item, main)
         if rating is None and item.get("text_rating") is not None:
@@ -1061,10 +1066,9 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
             work_id=work.id,
             status="done" if readings else "wishlist",
             rating=rating,
-            finished_on=_reading_day(main) if main else None,
             notes=notes,
             image_id=cover.id if cover else None,
-            locale=locale or None,
+            reads=reads_of(item),
             authors=(authors := [author(name) for name in names]),
         ))
         other_names(item, authors)

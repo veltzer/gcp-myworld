@@ -59,8 +59,12 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `book-authors`: every book has an author: one of the account's people,
   linked to it.
 - `book-years`: every book has the year it came out.
-- `book-languages`: every book read (not only wanted) says the language it
-  was read in; it is shown in it, its title and its authors' names.
+- `book-reads`: every book read (Done) has at least one read: the time it
+  was read, with its day and its language.
+- `book-languages`: every read of a book says the language it was read in;
+  the book is shown in the language of its last read, its title and its
+  authors' names.
+- `book-read-dates`: every read of a book has the day it was finished.
 - `book-titles`: every book has at least one title (its main title is not
   empty).
 - `book-english-titles`: every book that has a title in Hebrew has one in

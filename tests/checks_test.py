@@ -36,6 +36,7 @@ from myworld.models import (
     Person,
     PersonType,
     Place,
+    Read,
     RelationType,
     User,
     UserWork,
@@ -88,7 +89,7 @@ def test_every_check_describes_itself() -> None:
         assert chosen.dataset in checks.DATASETS
     # every dataset has checks to run from its page
     assert {c.dataset for c in checks.CHECKS.values()} == set(checks.DATASETS)
-    assert {name for name, c in checks.CHECKS.items() if c.dataset == "book"} == {"book-covers", "book-links", "book-authors", "book-years", "book-languages", "book-titles", "book-english-titles", "book-title-languages", "book-ratings", "book-duplicates"}
+    assert {name for name, c in checks.CHECKS.items() if c.dataset == "book"} == {"book-covers", "book-links", "book-authors", "book-years", "book-languages", "book-reads", "book-read-dates", "book-titles", "book-english-titles", "book-title-languages", "book-ratings", "book-duplicates"}
 
 
 def test_a_name_is_registered_once() -> None:
@@ -319,16 +320,16 @@ def test_books(engine: Engine) -> None:
         session.flush()
         session.add_all([
             # every rule kept: read, rated, with a cover and a link
-            UserWork(user_id=alice.id, work_id=works["Good"].id, status="done", rating=8, image_id=cover.id, authors=[ann], locale="en"),
+            UserWork(user_id=alice.id, work_id=works["Good"].id, status="done", rating=8, image_id=cover.id, authors=[ann], reads=[Read(locale="en")]),
             # not read yet: no rating asked for
             UserWork(user_id=alice.id, work_id=works["Hebrew"].id, status="wishlist", image_id=cover.id, authors=[ann]),
             # each of these breaks rules
             UserWork(user_id=alice.id, work_id=works["Bare"].id, status="done"),
-            UserWork(user_id=alice.id, work_id=works["Twice"].id, status="done", rating=6, image_id=cover.id, authors=[ann], locale="he"),
-            UserWork(user_id=alice.id, work_id=works["twice "].id, status="done", rating=6, image_id=cover.id, authors=[ann], locale="he"),
+            UserWork(user_id=alice.id, work_id=works["Twice"].id, status="done", rating=6, image_id=cover.id, authors=[ann], reads=[Read(locale="he")]),
+            UserWork(user_id=alice.id, work_id=works["twice "].id, status="done", rating=6, image_id=cover.id, authors=[ann], reads=[Read(locale="he")]),
             UserWork(user_id=alice.id, work_id=works["Film"].id, status="done"),
             # bob has the same book as alice: two accounts, no duplicate
-            UserWork(user_id=bob.id, work_id=works["Good"].id, status="done", rating=5, image_id=cover.id, authors=[bobs_ann], locale="en"),
+            UserWork(user_id=bob.id, work_id=works["Good"].id, status="done", rating=5, image_id=cover.id, authors=[bobs_ann], reads=[Read(locale="en")]),
         ])
         session.commit()
 
@@ -339,8 +340,20 @@ def test_books(engine: Engine) -> None:
         assert found("book-links") == [("Bare", "has neither a Goodreads nor a Simania id")]
         assert found("book-authors") == [("Bare", "has no author")]
         assert found("book-years") == [("Bare", "has no year it came out")]
-        # a book only wanted was not read in any language
-        assert found("book-languages") == [("Bare", "does not say the language it was read in")]
+        # a book only wanted was not read; one read has a read, with its language and its day
+        assert found("book-reads") == [("Bare", "is read but has no read")]
+        assert found("book-languages") == []
+        assert [name for name, _ in found("book-read-dates")] == ["Good", "Twice", "twice ", "Good"]
+        good = session.get(UserWork, (alice.id, works["Good"].id))
+        assert good is not None
+        # the entry goes by its latest dated read
+        good.reads = [Read(read_on=datetime.date(2001, 5, 1), locale="he"), Read(read_on=datetime.date(1999, 1, 1), locale="en"), Read()]
+        session.commit()
+        assert (good.locale, good.finished_on) == ("he", datetime.date(2001, 5, 1))
+        assert found("book-languages") == [("Good", "has a read that does not say the language it was read in")]
+        assert [name for name, _ in found("book-read-dates")] == ["Good", "Twice", "twice ", "Good"]
+        good.reads = [Read(read_on=datetime.date(2001, 5, 1), locale="en")]
+        session.commit()
         assert found("book-ratings") == [("Bare", "is read but has no rating")]
         assert checks.CHECKS["book-ratings"].run(session).checked == 5
         assert [name for name, _ in found("book-duplicates")] == ["Twice", "twice "]
