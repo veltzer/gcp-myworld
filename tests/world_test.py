@@ -1625,6 +1625,13 @@ def test_every_person_has_an_english_name(imported: webtest.TestApp, engine: Eng
             return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS["people-english-names"].run(session).problems]
 
     assert problems() == []
-    imported.post_json("/api/people", {"first_name": "", "description": "A red-headed guitarist"}, status=201)
+    # someone whose name is not known has a description instead
+    nameless = imported.post_json("/api/people", {"first_name": "", "description": "A red-headed guitarist"}, status=201).json
     imported.post_json("/api/people", {"first_name": "חיים", "surname": "שפירא"}, status=201)
-    assert sorted(problems()) == [("A red-headed guitarist", "has no name"), ("חיים שפירא", "the name is written in Hebrew letters, not in English")]
+    assert problems() == [("חיים שפירא", "the name is written in Hebrew letters, not in English")]
+    with Session(engine) as session:
+        person = session.get(Person, nameless["id"])
+        assert person is not None
+        person.description = " "
+        session.commit()
+    assert sorted(message for _, message in problems()) == ["has neither a name nor a description", "the name is written in Hebrew letters, not in English"]
