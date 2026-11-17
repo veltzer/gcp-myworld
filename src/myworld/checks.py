@@ -20,10 +20,11 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from myworld import names
+from myworld import languages, names
 from myworld.cities import city_key, country_name
 from myworld.models import (
     KINDS,
+    LOCALES,
     YOUTUBE_ID_LENGTH,
     AudioCourse,
     City,
@@ -330,6 +331,24 @@ def check_person_names(session: Session) -> Result:
     return Result(checked=len(people), problems=problems)
 
 
+@check("people-name-languages", "Every name in a language is in that language", "names", "people")
+def check_person_name_languages(session: Session) -> Result:
+    """
+    Every person's name in another language, of every account, is written in
+    the script of the language it says: a name in Hebrew letters is not
+    Russian. scripts/fix_languages.py sets the language its letters say.
+    """
+    people = session.scalars(select(Person).order_by(Person.owner_id, Person.first_name, Person.surname, Person.id)).all()
+    problems, checked = [], 0
+    for person in people:
+        for other in person.names:
+            checked += 1
+            if not languages.fits(other.locale, other.name):
+                message = f"the name {other.name!r} says {LOCALES.get(other.locale, other.locale)} but is written in {languages.script_of(other.name)} letters"
+                problems.append(Problem(f"{person.name} (person {person.id}, account {person.owner_id})", message, f"people/{person.id}", person.owner_id))
+    return Result(checked=checked, problems=problems)
+
+
 # ─── museums ────────────────────────────────────────────────────────────────
 
 @check("museum-dates", "Every museum visit has a date", "museum visits", "museums")
@@ -592,6 +611,24 @@ def check_book_languages(session: Session) -> Result:
     """ Every book in a library, of every account, that was read (not one only wanted) says the language it was read in: it is shown in it. """
     books = [b for b in _entries(session, "book") if b.status != "wishlist"]
     return Result(checked=len(books), problems=[_entry_problem(b, "does not say the language it was read in") for b in books if not b.locale])
+
+
+@check("book-title-languages", "Every title is in the language it says", "titles", "book")
+def check_book_title_languages(session: Session) -> Result:
+    """
+    Every title of a book in a library, of every account, the main one and
+    those in other languages, is written in the script of the language it
+    says: a title in Hebrew letters is not English. scripts/fix_languages.py
+    sets the language its letters say.
+    """
+    problems, checked = [], 0
+    for book in _entries(session, "book"):
+        work = book.work
+        for locale, title in [(work.title_locale, work.title), *((t.locale, t.title) for t in work.titles)]:
+            checked += 1
+            if not languages.fits(locale, title):
+                problems.append(_entry_problem(book, f"the title {title!r} says {LOCALES.get(locale, locale)} but is written in {languages.script_of(title)} letters"))
+    return Result(checked=checked, problems=problems)
 
 
 # ─── concerts ───────────────────────────────────────────────────────────────

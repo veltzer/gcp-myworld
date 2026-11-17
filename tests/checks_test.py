@@ -88,7 +88,7 @@ def test_every_check_describes_itself() -> None:
         assert chosen.dataset in checks.DATASETS
     # every dataset has checks to run from its page
     assert {c.dataset for c in checks.CHECKS.values()} == set(checks.DATASETS)
-    assert {name for name, c in checks.CHECKS.items() if c.dataset == "book"} == {"book-covers", "book-links", "book-authors", "book-years", "book-languages", "book-ratings", "book-duplicates"}
+    assert {name for name, c in checks.CHECKS.items() if c.dataset == "book"} == {"book-covers", "book-links", "book-authors", "book-years", "book-languages", "book-title-languages", "book-ratings", "book-duplicates"}
 
 
 def test_a_name_is_registered_once() -> None:

@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import fetch_book_details
+import fix_languages
 import flask
 import import_world
 import link_authors
@@ -16,7 +17,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from myworld import addresses, cities, names
+from myworld import addresses, checks, cities, languages, names
 from myworld.models import (
     AudioCourse,
     Concert,
@@ -29,6 +30,7 @@ from myworld.models import (
     PersonType,
     User,
     UserWork,
+    Work,
     WorkTitle,
     YouTubeVideo,
     concert_companions,
@@ -1488,3 +1490,50 @@ def test_stats_are_per_user(imported: webtest.TestApp) -> None:
     stats = imported.get("/api/stats").json
     assert (stats["concerts"], stats["people"], stats["images"], stats["performers"]) == (0, 0, 0, 0)
     assert stats["concerts_by_year"] == []
+
+
+def test_a_title_is_in_the_language_of_its_letters(imported: webtest.TestApp) -> None:
+    assert languages.script_of("שיחות על תורת המשחקים: אסטרטגיות") == "Hebrew"
+    assert languages.script_of("C++ בעברית למתחילים") == "Hebrew"
+    assert languages.script_of("1984") == ""
+    assert (languages.locale_of("בעלת הארמון"), languages.locale_of("Война и мир"), languages.locale_of("Emma"), languages.locale_of("源氏物語")) == ("he", "ru", "en", "")
+    assert languages.fits("yi", "בעלת הארמון") and languages.fits("fr", "Émile") and languages.fits("he", "1984")
+    assert not languages.fits("en", "בעלת הארמון") and not languages.fits("he", "Emma")
+    assert imported.get("/api/config").json["locale_scripts"]["he"] == "Hebrew"
+    # a Hebrew title that says English is refused, and with no language said it is Hebrew
+    response = imported.post_json("/api/library-entries", {"kind": "book", "title": "בעלת הארמון", "title_locale": "en"}, status=400)
+    assert "not written in English" in response.json["error"]
+    book = imported.post_json("/api/library-entries", {"kind": "book", "title": "בעלת הארמון"}).json
+    assert book["title_locale"] == "he"
+    assert imported.post_json("/api/library-entries", {"kind": "book", "title": "Emma"}).json["title_locale"] == "en"
+    # its other titles are held to the same
+    response = imported.post_json("/api/library-entries", {"kind": "book", "title": "Persuasion", "titles": [{"locale": "en", "title": "הטיה"}]}, status=400)
+    assert "not written in English" in response.json["error"]
+
+
+def test_fix_languages(imported: webtest.TestApp, engine: Engine) -> None:
+    """ What was kept before the forms checked: the check lists it, the script sets the language its letters say. """
+    def problems(name: str) -> list[str]:
+        with Session(engine) as session:
+            return [p.message for p in checks.CHECKS[name].run(session).problems]
+
+    book = imported.post_json("/api/library-entries", {"kind": "book", "title": "Games", "titles": [{"locale": "he", "title": "משחקים"}]}).json
+    person = imported.get("/api/people").json[0]
+    with Session(engine) as session:
+        work = session.get(Work, book["work_id"])
+        assert work is not None
+        work.title, work.titles[0].locale = "שיחות על תורת המשחקים", "en"
+        session.add(PersonName(person_id=person["id"], locale="ru", name="חיים שפירא"))
+        session.commit()
+    assert problems("book-title-languages") == [
+        "the title 'שיחות על תורת המשחקים' says English but is written in Hebrew letters",
+        "the title 'משחקים' says English but is written in Hebrew letters",
+    ]
+    assert problems("people-name-languages") == ["the name 'חיים שפירא' says Russian but is written in Hebrew letters"]
+    with Session(engine) as session:
+        assert fix_languages.fix(session) == (3, 0)
+        session.commit()
+        assert fix_languages.fix(session) == (0, 0)
+    assert problems("book-title-languages") == problems("people-name-languages") == []
+    fixed = next(e for e in imported.get("/api/library-entries?kind=book").json if e["work_id"] == book["work_id"])
+    assert (fixed["title_locale"], fixed["titles"]) == ("he", [{"locale": "he", "title": "משחקים"}])

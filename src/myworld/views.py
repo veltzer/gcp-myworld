@@ -12,7 +12,7 @@ import werkzeug
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from myworld import auth, movies, world
+from myworld import auth, languages, movies, world
 from myworld.api import ApiError, json_body, opt_date, opt_int, text
 from myworld.models import (
     DEFAULT_LOCALE,
@@ -245,6 +245,8 @@ def api_config() -> flask.Response:
         "kinds": {k: {"name": name, "plural": plural, "creator": creator} for k, (name, plural, creator) in KINDS.items()},
         "statuses": STATUSES,
         "locales": LOCALES,
+        # the script of each language: the forms pick the language of what is typed by it
+        "locale_scripts": languages.SCRIPTS,
         "rating_min": RATING_MIN,
         "rating_max": RATING_MAX,
         "name_max_length": NAME_MAX_LENGTH,
@@ -281,9 +283,12 @@ def api_library_add() -> tuple[flask.Response, int]:
         select(Work).where(Work.kind == kind, Work.title == title, Work.creator == creator, Work.year == year)
     ).scalar_one_or_none()
     if work is None:
-        title_locale = text(body, "title_locale") or DEFAULT_LOCALE
+        # the language sent, else the one the title's letters say, else English
+        title_locale = text(body, "title_locale") or languages.locale_of(title) or DEFAULT_LOCALE
         if title_locale not in LOCALES:
             raise ApiError(400, f"title_locale: unknown language {title_locale!r}")
+        if not languages.fits(title_locale, title):
+            raise ApiError(400, f"title_locale: the title is not written in {LOCALES[title_locale]}: choose the language it is in")
         work = Work(kind=kind, title=title, creator=creator, year=year, title_locale=title_locale)
         db.add(work)
     _apply_work_ids(work, body)

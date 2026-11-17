@@ -61,6 +61,11 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `book-years`: every book has the year it came out.
 - `book-languages`: every book read (not only wanted) says the language it
   was read in; it is shown in it, its title and its authors' names.
+- `book-title-languages`: every title of a book, the main one and those in
+  other languages, is written in the script of the language it says (a
+  title in Hebrew letters is not English). The forms and the API refuse a
+  title that is not; `scripts/fix_languages.py` repairs the ones kept
+  before they did.
 - `book-ratings`: every book read (Done) has a rating.
 - `book-duplicates`: no account has two books of the same title and
   author.
@@ -153,6 +158,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
   surname of two words hyphenated, more names in the middle name). What
   `scripts/tidy_names.py` could not split is listed: mostly bands and
   descriptions kept whole in the first name.
+- `people-name-languages`: every name in another language is written in the
+  script of that language; `scripts/fix_languages.py` repairs those too.
 
 ### Organizations (`organizations`)
 

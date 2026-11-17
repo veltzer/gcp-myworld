@@ -15,7 +15,7 @@ import werkzeug
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from myworld import auth, names
+from myworld import auth, languages, names
 from myworld.api import ApiError, coordinates, json_body, opt_int, text
 from myworld.models import (
     DEFAULT_LOCALE,
@@ -826,7 +826,8 @@ def _apply_person(person: Person, body: dict[str, Any]) -> None:
 def localized(key: str, value: Any, field: str, one_per_locale: bool) -> list[tuple[str, str]]:
     """
     [{"locale", field}, ...] as (locale, text) pairs, each once: a language
-    of LOCALES and a text not empty; one_per_locale refuses two in one language.
+    of LOCALES and a text not empty, written in that language's script;
+    one_per_locale refuses two in one language.
     """
     if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
         raise ApiError(400, f"{key}: expected a list of {{locale, {field}}}")
@@ -837,6 +838,8 @@ def localized(key: str, value: Any, field: str, one_per_locale: bool) -> list[tu
             raise ApiError(400, f"{key}: unknown language {locale!r}")
         if not isinstance(words, str) or not words.strip():
             raise ApiError(400, f"{key}: a {field} is needed in {LOCALES[locale]}")
+        if not languages.fits(locale, words):
+            raise ApiError(400, f"{key}: {words.strip()!r} is not written in {LOCALES[locale]}: choose the language it is in")
         out[locale, " ".join(words.split())] = None
     pairs = list(out)
     if one_per_locale and len({locale for locale, _ in pairs}) != len(pairs):

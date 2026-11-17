@@ -81,6 +81,7 @@ import yaml
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.orm import Session, selectinload
 
+from myworld import languages
 from myworld import names as naming
 from myworld.addresses import parse_address
 from myworld.cities import city_key, country_name, parse_location
@@ -1010,7 +1011,7 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
                 Work.kind == "book", Work.title == title, Work.creator == creator, Work.year.is_(None),
             )).one_or_none()
         if work is None:
-            work = Work(kind="book", title=title, creator=creator, year=None, title_locale=_locale(main_name["language"]) or DEFAULT_LOCALE)
+            work = Work(kind="book", title=title, creator=creator, year=None, title_locale=_locale(main_name["language"]) or languages.locale_of(title) or DEFAULT_LOCALE)
             session.add(work)
         # the author and the catalog ids are only filled in, never overwritten
         work.creator = work.creator or creator

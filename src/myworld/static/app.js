@@ -333,6 +333,7 @@ async function pickMovie(movie) {
 	try {
 		const film = await api(`/api/movies/${movie.tmdb_id}`);
 		form.elements.title.value = film.title;
+		pickLocale(form.elements.title_locale, film.title);
 		form.elements.creator.value = film.creator;
 		form.elements.year.value = film.year ?? "";
 		showMovieIds(film);
@@ -3050,6 +3051,34 @@ function fillLocales() {
 	}
 }
 
+// the script most of the letters of text are in ("Hebrew"), of those the languages are written in; "" with no such letters
+function scriptOf(text) {
+	let best = "";
+	let most = 0;
+	for (const script of new Set(Object.values(state.config.locale_scripts))) {
+		const count = (text.match(new RegExp(`\\p{Script=${script}}`, "gu")) || []).length;
+		if (count > most) {
+			best = script;
+			most = count;
+		}
+	}
+	return best;
+}
+
+// what is typed is in the language it says: when its letters are not that language's
+// (a Hebrew title, "English" chosen), choose the first language of its letters the select offers
+function pickLocale(select, text) {
+	const scripts = state.config.locale_scripts;
+	const script = scriptOf(text);
+	if (select.disabled || !script || scripts[select.value] === script) {
+		return;
+	}
+	const fitting = Array.from(select.options).find((option) => scripts[option.value] === script);
+	if (fitting) {
+		select.value = fitting.value;
+	}
+}
+
 function renderLocalized(key) {
 	const { box: boxId } = LOCALIZED[key];
 	const box = $(boxId);
@@ -3079,8 +3108,9 @@ function renderLocalized(key) {
 // what is typed in the editor's box, added to its list (a person's name in a language replacing the one they had in it)
 function addLocalized(key) {
 	const { locale: localeId, text: textId, onePerLocale } = LOCALIZED[key];
-	const locale = $(localeId).value;
 	const text = $(textId).value.trim().split(/\s+/).join(" ");
+	pickLocale($(localeId), text);
+	const locale = $(localeId).value;
 	if (!locale || !text) {
 		return;
 	}
@@ -3113,8 +3143,12 @@ function localizedValues(key) {
 // Add, and Enter in the box, add what is typed; Enter never saves the form
 function setupLocalized() {
 	fillLocales();
-	for (const [key, { add, text }] of Object.entries(LOCALIZED)) {
+	// the main title of a book being added: its language follows its letters
+	const { title, title_locale: titleLocale } = $("add-form").elements;
+	title.addEventListener("input", () => pickLocale(titleLocale, title.value));
+	for (const [key, { add, text, locale }] of Object.entries(LOCALIZED)) {
 		$(add).onclick = () => addLocalized(key);
+		$(text).addEventListener("input", () => pickLocale($(locale), $(text).value));
 		$(text).addEventListener("keydown", (event) => {
 			if (event.key === "Enter") {
 				event.preventDefault();
