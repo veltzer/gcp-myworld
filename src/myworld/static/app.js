@@ -418,8 +418,16 @@ function editable(node, item) {
 function libraryCard(entry) {
 	const { creator } = state.config.kinds[state.kind];
 	// the title and the authors' names in the language it was read in (the server picks them)
-	const by = entry.authors.length ? entry.authors.map((a) => a.name).join(", ") : entry.creator;
-	const { card, body, list } = cardShell({ ...entry, name: entry.title }, [by, entry.year].filter(Boolean).join(", "), "cover");
+	// under the title: each author a link to them in People (a click opens the author, not the book), then the year
+	let subtitle = [entry.creator, entry.year].filter(Boolean).join(", ");
+	if (entry.authors.length) {
+		subtitle = document.createDocumentFragment();
+		appendLinks(subtitle, "people", entry.authors);
+		if (entry.year) {
+			subtitle.append(`, ${entry.year}`);
+		}
+	}
+	const { card, body, list } = cardShell({ ...entry, name: entry.title }, subtitle, "cover");
 	// an entry is known by its work: "book-12", opened by the link #book/12
 	card.id = `${state.kind}-${entry.work_id}`;
 	// the dialog edits the entry as it is
@@ -1586,8 +1594,10 @@ function cardShell(item, subtitle, kind = "photo") {
 	const heading = el("h2", "world-title", item.name);
 	heading.dir = "auto";
 	body.appendChild(heading);
+	// the subtitle is text, or nodes of its own (a book's authors, as links)
 	if (subtitle) {
-		const line = el("p", "world-subtitle", subtitle);
+		const line = el("p", "world-subtitle");
+		line.append(subtitle);
 		line.dir = "auto";
 		body.appendChild(line);
 	}
