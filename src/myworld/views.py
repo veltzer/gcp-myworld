@@ -80,8 +80,10 @@ def health() -> flask.Response:
 
 def _entry_json(entry: UserWork) -> dict[str, Any]:
     work = entry.work
-    # shown in the language the user prefers (Settings) when the work has a title in it, else in its main title's
-    shown = work.locale_for(entry.user.locale)
+    # shown in the language the user prefers (Settings) when the work has a title in it, else in its main title's;
+    # its authors, as people are everywhere, by their names in the language preferred
+    preferred = entry.user.locale
+    shown = work.locale_for(preferred)
     return {
         "work_id": entry.work_id,
         "kind": work.kind,
@@ -101,7 +103,7 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
         "isbn": entry.work.isbn,
         "openlibrary_id": entry.work.openlibrary_id,
         # who wrote it, as the user's people (the People view links to them), named in the language it was read in
-        "authors": [{"id": p.id, "name": p.name_in(shown)} for p in entry.authors],
+        "authors": [{"id": p.id, "name": p.name_in(preferred)} for p in entry.authors],
         "simania_id": entry.work.simania_id,
         "image": world.image_url(entry.image_id),
         "status": entry.status,

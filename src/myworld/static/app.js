@@ -1910,8 +1910,9 @@ function connectionsButton(person) {
 function personCard(item) {
 	const { card, list } = cardShell(item, item.description);
 	card.appendChild(connectionsButton(item));
-	// shown in English everywhere; a book read in another language names them in it
-	detail(list, "Other names", item.names.map((n) => `${n.name} (${localeName(n.locale)})`).join("; "));
+	// their names but the one shown (the one in the preferred language), each with its language
+	const others = [{ locale: "en", name: item.english_name }, ...item.names].filter((n) => n.name && n.name !== item.name);
+	detail(list, "Other names", others.map((n) => `${n.name} (${localeName(n.locale)})`).join("; "));
 	linksDetail(list, "Profession", "person-types", item.types);
 	// each with how they are linked: "Worked at Schema", "Mother of Dana"
 	linksDetail(list, "Organizations", "organizations", item.organization_links.map((link) => ({ id: link.organization.id, name: link.name })));
@@ -3078,7 +3079,8 @@ function syncAlone(form) {
 // (any number in one language). A title the book has already is shared with
 // the other accounts that have it, so it is shown but cannot be taken away.
 const LOCALIZED = {
-	names: { box: "person-names", locale: "person-name-locale", text: "person-name-text", add: "person-name-add", field: "name" },
+	// a person's English name is their name parts, shown first among their names as they are typed
+	names: { box: "person-names", locale: "person-name-locale", text: "person-name-text", add: "person-name-add", field: "name", first: englishName },
 	// a book has one title per language
 	titles: { box: "book-titles", locale: "book-title-locale", text: "book-title-text", add: "book-title-add", field: "title" },
 };
@@ -3134,11 +3136,26 @@ function pickLocale(select, text) {
 	}
 }
 
+// the person form's name parts as the whole English name
+function englishName() {
+	const { honorific, first_name: first, middle_name: middle, surname } = $("person-form").elements;
+	return [honorific, first, middle, surname].map((part) => part.value.trim()).filter(Boolean).join(" ");
+}
+
 function renderLocalized(key) {
-	const { box: boxId } = LOCALIZED[key];
+	const { box: boxId, first } = LOCALIZED[key];
 	const box = $(boxId);
 	box.replaceChildren();
-	if (editingLocalized[key].length === 0) {
+	// the name that is not of this list (a person's English one), shown with the others, none set apart
+	const fixed = first?.();
+	if (fixed) {
+		const chip = el("span", "chip kept");
+		const words = el("span", null, fixed);
+		words.dir = "auto";
+		chip.append(`${localeName("en")}: `, words);
+		box.appendChild(chip);
+	}
+	if (editingLocalized[key].length === 0 && !fixed) {
 		box.appendChild(el("span", "empty", "None yet"));
 	}
 	editingLocalized[key].forEach((item, index) => {
@@ -3257,6 +3274,10 @@ function readsValues() {
 function setupLocalized() {
 	fillLocales();
 	$("book-read-add").onclick = () => addRead(true);
+	// the English name among a person's names follows the name parts as they are typed
+	for (const part of ["honorific", "first_name", "middle_name", "surname"]) {
+		$("person-form").elements[part].addEventListener("input", () => renderLocalized("names"));
+	}
 	for (const [key, { add, text, locale }] of Object.entries(LOCALIZED)) {
 		$(add).onclick = () => addLocalized(key);
 		$(text).addEventListener("input", () => pickLocale($(locale), $(text).value));

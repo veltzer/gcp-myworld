@@ -371,7 +371,7 @@
 					<label title="One word, without spaces: hyphenate a surname of two words (Di-Meola)">Surname <input name="surname" pattern="\S*" title="One word, without spaces: hyphenate a surname of two words (Di-Meola)"></label>
 				</div>
 				<div class="row">
-					<label title="The person's whole name in other languages than English, one per language: a book in that language shows it" class="wide">Names in other languages <span class="chips" id="person-names"></span></label>
+					<label title="Every name the person has, one per language: the English one is the name parts above, and the person is shown by the one in your preferred language (Settings)" class="wide">Names <span class="chips" id="person-names"></span></label>
 				</div>
 				<div class="row">
 					<label title="The language of the name to add, chosen by its letters as you type">Language <select id="person-name-locale" data-locales data-skip="en" aria-label="Language of the name"></select></label>
@@ -653,10 +653,10 @@
 				<p class="settings-hint">
 					Shown in the top right corner, whichever way you sign in. Up to 60 characters.
 				</p>
-				<label title="The language you prefer: a book with titles in several languages is shown by the one in it" for="settings-locale">Preferred language</label>
+				<label title="The language you prefer: a book with titles in several languages, or a person with names in several, is shown by the one in it" for="settings-locale">Preferred language</label>
 				<select id="settings-locale" name="locale" data-locales></select>
 				<p class="settings-hint">
-					A book with titles in several languages is shown by its title in this one, and its authors by their names in it.
+					A book with titles in several languages is shown by its title in this one, and a person with names in several by their name in it.
 				</p>
 				<p id="settings-error" class="warning" hidden></p>
 				<div class="dialog-actions">

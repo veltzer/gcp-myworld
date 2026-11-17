@@ -331,6 +331,26 @@ def check_person_names(session: Session) -> Result:
     return Result(checked=len(people), problems=problems)
 
 
+@check("people-english-names", "Every person has an English name", "people", "people")
+def check_person_english_names(session: Session) -> Result:
+    """
+    Every person, of every account, has an English name: the honorific, first
+    name, middle name and surname are not all empty, and are written in
+    Latin letters (a name in another language is one of their other names).
+    One with no name is listed by their description: a person whose name is
+    not known, or a band or an organization kept as a person.
+    """
+    people = session.scalars(select(Person).order_by(Person.owner_id, Person.first_name, Person.surname, Person.id)).all()
+    problems = []
+    for person in people:
+        parts = " ".join(part for part in (person.honorific, person.first_name, person.middle_name, person.surname) if part)
+        script = languages.script_of(parts)
+        if script != "Latin":
+            message = "has no name" if not parts.strip() else f"the name is written in {script or 'no'} letters, not in English"
+            problems.append(Problem(f"{person.name} (person {person.id}, account {person.owner_id})", message, f"people/{person.id}", person.owner_id))
+    return Result(checked=len(people), problems=problems)
+
+
 @check("people-name-languages", "Every name in a language is in that language", "names", "people")
 def check_person_name_languages(session: Session) -> Result:
     """

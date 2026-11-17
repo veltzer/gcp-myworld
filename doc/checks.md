@@ -165,6 +165,10 @@ By dataset: the key is the page's name in the app (`#book`) and what
   surname of two words hyphenated, more names in the middle name). What
   `scripts/tidy_names.py` could not split is listed: mostly bands and
   descriptions kept whole in the first name.
+- `people-english-names`: every person has an English name: the name parts
+  are not all empty and are written in Latin letters. One with no name is
+  listed by their description (a person whose name is not known, or a band
+  or an organization kept as a person).
 - `people-name-languages`: every name in another language is written in the
   script of that language; `scripts/fix_languages.py` repairs those too.
 

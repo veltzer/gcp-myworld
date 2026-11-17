@@ -84,14 +84,25 @@ def image_url(image_id: int | None) -> str | None:
     return None if image_id is None else flask.url_for("world.api_image", image_id=image_id)
 
 
+def shown_name(person: Person) -> str:
+    """ What a person is called to the signed-in account: their name in the language it prefers (Settings) when they have one in it, else their English name. """
+    return person.name_in(flask.g.user.locale)
+
+
+def _name(row: Any) -> str:
+    """ What a row is called: a person as shown_name says, anything else by its name. """
+    name: str = shown_name(row) if isinstance(row, Person) else row.name
+    return name
+
+
 def _names(people: list[Person]) -> list[str]:
-    return sorted(p.name for p in people)
+    return sorted(shown_name(p) for p in people)
 
 
 def _refs(rows: list[Person] | list[Organization] | list[PersonType] | list[RelationType] | list[Group] | list[Concert] | list[Place] | list[City]) -> list[dict[str, Any]]:
     """ Names with the ids the People and Organizations views link to, each row once (a person may be linked to one organization twice). """
     unique = {row.id: row for row in rows}.values()
-    return [{"id": row.id, "name": row.name} for row in sorted(unique, key=lambda row: row.name)]
+    return sorted(({"id": row.id, "name": _name(row)} for row in unique), key=lambda ref: ref["name"])
 
 
 def concert_json(concert: Concert) -> dict[str, Any]:
@@ -291,14 +302,16 @@ def youtube_video_json(video: YouTubeVideo) -> dict[str, Any]:
 def person_json(person: Person) -> dict[str, Any]:
     return {
         "id": person.id,
-        "name": person.name,
+        # what they are shown by: their name in the language the account prefers, else the English one
+        "name": shown_name(person),
+        "english_name": person.name,
         # the account owner themselves
         "is_self": person.is_self,
         "honorific": person.honorific,
         "first_name": person.first_name,
         "middle_name": person.middle_name,
         "surname": person.surname,
-        # their name in other languages ("he": "חיים שפירא"); "name" is the English one
+        # their name in other languages ("he": "חיים שפירא"); the English one is the name parts above
         "names": [{"locale": n.locale, "name": n.name} for n in person.names],
         "types": _refs(person.types),
         # each organization they are linked to, once; and the links, each of a kind ("Worked at Schema")
@@ -317,7 +330,7 @@ def person_json(person: Person) -> dict[str, Any]:
 
 
 def _relation_json(type_id: int, phrase: str, other: Person) -> dict[str, Any]:
-    return {"type_id": type_id, "type": phrase, "person": {"id": other.id, "name": other.name}, "name": f"{phrase} {other.name}"}
+    return {"type_id": type_id, "type": phrase, "person": {"id": other.id, "name": shown_name(other)}, "name": f"{phrase} {shown_name(other)}"}
 
 
 def organization_json(organization: Organization) -> dict[str, Any]:
@@ -343,9 +356,9 @@ def organization_json(organization: Organization) -> dict[str, Any]:
         "people": _refs(organization.people),
         # how each is linked to it: "Dana Cohen (Worked at)"
         "person_links": [
-            {"type_id": link.relation_type.id, "type": link.relation_type.name, "person": {"id": link.person.id, "name": link.person.name},
-             "name": f"{link.person.name} ({link.relation_type.name})"}
-            for link in sorted(organization.person_links, key=lambda link: (link.person.name, link.relation_type.name))
+            {"type_id": link.relation_type.id, "type": link.relation_type.name, "person": {"id": link.person.id, "name": shown_name(link.person)},
+             "name": f"{shown_name(link.person)} ({link.relation_type.name})"}
+            for link in sorted(organization.person_links, key=lambda link: (shown_name(link.person), link.relation_type.name))
         ],
     }
 

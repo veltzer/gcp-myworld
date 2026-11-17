@@ -676,6 +676,10 @@ def test_books(imported: webtest.TestApp) -> None:
     in_hebrew = {b["main_title"]: b for b in imported.get("/api/library-entries?kind=book").json}
     assert (in_hebrew["Thirty Fifth in May"]["title"], [a["name"] for a in in_hebrew["Thirty Fifth in May"]["authors"]]) == ("שלושים וחמישה במאי", ["אריך קסטנר"])
     assert in_hebrew["The Hobbit"]["title"] == "The Hobbit"
+    # and so are people, everywhere: one with a Hebrew name by it, with the English one kept beside it
+    people = {p["english_name"]: p for p in imported.get("/api/people").json}
+    assert (people["Erich Kestner"]["name"], people["Erich Kestner"]["names"]) == ("אריך קסטנר", [{"locale": "he", "name": "אריך קסטנר"}])
+    assert all(p["name"] == p["english_name"] for p in people.values() if not p["names"])
     imported.put_json("/api/account/locale", {"locale": "xx"}, status=400)
     imported.put_json("/api/account/locale", {"locale": "en"})
     assert (hobbit["locale"], hobbit["title"], hobbit["titles"]) == ("en", "The Hobbit", [])
@@ -907,7 +911,7 @@ def test_people(imported: webtest.TestApp) -> None:
     assert [c["name"] for c in alice["organizations"]] == ["Startup"]
     assert [c["name"] for c in bob["organizations"]] == ["Acme", "Startup"]
     # only the person and their organizations: their concerts and museums are not listed next to them
-    assert set(alice) == {"id", "name", "is_self", "honorific", "first_name", "middle_name", "surname", "relations", "related", "types", "organizations", "organization_links", "description", "names"}
+    assert set(alice) == {"id", "name", "is_self", "honorific", "first_name", "middle_name", "surname", "relations", "related", "types", "organizations", "organization_links", "description", "names", "english_name"}
 
 
 def test_organizations(imported: webtest.TestApp) -> None:
@@ -1613,3 +1617,14 @@ def test_reads(imported: webtest.TestApp) -> None:
     # the reads go with the entry
     imported.delete(url)
     assert all(e["work_id"] != book["work_id"] for e in imported.get("/api/library-entries?kind=book").json)
+
+
+def test_every_person_has_an_english_name(imported: webtest.TestApp, engine: Engine) -> None:
+    def problems() -> list[tuple[str, str]]:
+        with Session(engine) as session:
+            return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS["people-english-names"].run(session).problems]
+
+    assert problems() == []
+    imported.post_json("/api/people", {"first_name": "", "description": "A red-headed guitarist"}, status=201)
+    imported.post_json("/api/people", {"first_name": "חיים", "surname": "שפירא"}, status=201)
+    assert sorted(problems()) == [("A red-headed guitarist", "has no name"), ("חיים שפירא", "the name is written in Hebrew letters, not in English")]
