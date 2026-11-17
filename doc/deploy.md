@@ -593,7 +593,10 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
 - `DELETE /api/library-entries/<work_id>`: remove from the library.
 - `GET /api/locales`: the languages (the locales table, the sidebar's
   Languages page), the same for every account, each with its `code`,
-  `name`, `script` and how much is said in it (`count`). An admin adds one
+  `name`, `script`, `native` (what it is called in itself, in its own
+  script) and how much is said in it (`count`). Its picture (`image`,
+  `/api/locales/<id>/picture.svg`) is drawn: that name written out, on
+  the color of its script. An admin adds one
   (`POST`, with a `code` of two or three letters), renames it or changes
   its script (`PUT /api/locales/<id>`; the code stays, as everything said
   in the language points at it) and deletes one nothing is said in

@@ -26,6 +26,7 @@ from myworld.models import (
     Concert,
     Cover,
     Image,
+    Locale,
     Museum,
     Organization,
     OrganizationType,
@@ -1808,6 +1809,11 @@ def test_languages_are_a_page(imported: webtest.TestApp, engine: Engine) -> None
     assert [(row["code"], row["name"], row["script"]) for row in listed][:2] == [("en", "English", "Latin"), ("he", "Hebrew", "Hebrew")]
     assert all(row["count"] >= 0 for row in listed) and len({row["id"] for row in listed}) == len(listed)
     assert imported.get("/api/stats").json["locales"] == len(listed)
+    # each has a picture: what it is called in itself, in its own script, drawn
+    hebrew = listed[1]
+    assert hebrew["native"] == "עברית" and hebrew["image"].startswith(f"/api/locales/{hebrew['id']}/picture.svg?v=")
+    picture = imported.get(hebrew["image"])
+    assert picture.content_type == "image/svg+xml" and "עברית" in picture.text and "<script" not in picture.text
     with Session(engine) as session:
         me = owner(session)
         role, me.role = me.role, "user"
@@ -1827,6 +1833,16 @@ def test_languages_are_a_page(imported: webtest.TestApp, engine: Engine) -> None
         ({"code": "xx", "name": "", "script": "Latin"}, 400),
     ):
         imported.post_json("/api/locales", wrong, status=status)
+    # its own name is in its own script, and its picture shows it (escaped), at a new address
+    imported.put_json(url, {"code": "nl", "name": "Dutch", "script": "Latin", "native": "עברית"}, status=400)
+    named = imported.put_json(url, {"code": "nl", "name": "Dutch", "script": "Latin", "native": "Neder<lands"}).json
+    assert named["native"] == "Neder<lands" and named["image"] != dutch["image"]
+    assert "Neder&lt;lands" in imported.get(named["image"]).text
+    with Session(engine) as session:
+        assert checks.CHECKS["locale-native-names"].run(session).problems == []
+        session.scalars(select(Locale).where(Locale.code == "nl")).one().native = ""
+        session.commit()
+        assert [p.message for p in checks.CHECKS["locale-native-names"].run(session).problems] == ["does not say what it is called in itself"]
     # renamed; its code stays
     assert imported.put_json(url, {"code": "nl", "name": "Nederlands", "script": "Latin"}).json["name"] == "Nederlands"
     imported.put_json(url, {"code": "du", "name": "Dutch", "script": "Latin"}, status=400)

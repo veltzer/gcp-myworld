@@ -81,6 +81,11 @@ SEED_LOCALES: list[tuple[str, str, str]] = [
     ("el", "Greek", "Greek"),
 ]
 DEFAULT_LOCALE = "en"
+# what each of them is called in itself, written in its own script: what its picture shows
+LOCALE_NATIVE: dict[str, str] = {
+    "en": "English", "he": "עברית", "ar": "العربية", "yi": "ייִדיש", "fr": "Français", "de": "Deutsch",
+    "es": "Español", "it": "Italiano", "pt": "Português", "ru": "Русский", "cs": "Čeština", "el": "Ελληνικά",
+}
 
 RATING_MIN = 1
 RATING_MAX = 10
@@ -207,13 +212,15 @@ class Locale(Base):
     script: Mapped[str] = mapped_column(String(50), nullable=False)
     # where the forms list it; the first of a script is the one its letters suggest
     position: Mapped[int] = mapped_column(Integer, nullable=False)
+    # what it is called in itself, in its own script ("עברית"): its picture is this, written out
+    native: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="")
 
 
 @event.listens_for(Locale.__table__, "after_create")
 def _fill_locales(target: Table, connection: Connection, **_: Any) -> None:
     """ A locales table just made starts with the languages of SEED_LOCALES. """
     connection.execute(insert(target), [
-        {"code": code, "name": name, "script": script, "position": position}
+        {"code": code, "name": name, "script": script, "position": position, "native": LOCALE_NATIVE.get(code, "")}
         for position, (code, name, script) in enumerate(SEED_LOCALES)
     ])
 
@@ -1146,7 +1153,7 @@ def seed_locales(engine: Engine) -> None:
     with Session(engine) as session:
         have = set(session.scalars(select(Locale.code)))
         session.add_all(
-            Locale(code=code, name=name, script=script, position=position)
+            Locale(code=code, name=name, script=script, position=position, native=LOCALE_NATIVE.get(code, ""))
             for position, (code, name, script) in enumerate(SEED_LOCALES)
             if code not in have
         )

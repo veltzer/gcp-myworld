@@ -239,6 +239,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
 
 ### Languages (`locales`)
 
+- `locale-native-names`: every language says what it is called in itself,
+  in its own script: its picture is that name, written out.
 - `locale-scripts`: every language of the locales table names the script it
   is written in as Unicode names it (Latin, Hebrew, Cyrillic): a title or a
   name is told to be in a language by its letters.

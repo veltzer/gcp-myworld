@@ -1037,6 +1037,23 @@ def check_locale_scripts(session: Session) -> Result:
     ])
 
 
+@check("locale-native-names", "Every language has its own name, in its own script", "languages", "locales")
+def check_locale_native_names(session: Session) -> Result:
+    """
+    Every language (the locales table) says what it is called in itself,
+    written in its own script ("עברית", "Русский"): its picture is that
+    name, written out, so the page shows what the script looks like.
+    """
+    locales = languages.known(session).values()
+    problems = []
+    for locale in locales:
+        if not locale.native.strip():
+            problems.append(Problem(f"{locale.name} ({locale.code})", "does not say what it is called in itself", f"locales/{locale.position}"))
+        elif not languages.fits(locale, locale.native):
+            problems.append(Problem(f"{locale.name} ({locale.code})", f"is called {locale.native} in itself, which is not written in {locale.script} letters", f"locales/{locale.position}"))
+    return Result(checked=len(locales), problems=problems)
+
+
 @check("person-type-photos", "Every profession has a photo", "professions", "person-types")
 def check_profession_photos(session: Session) -> Result:
     """ Every profession, of every account, has a photo (scripts/fetch_pictures.py --only professions takes Wikipedia's). """

@@ -1952,7 +1952,8 @@ const TYPE_COUNTS = {
 
 // A language of the locales table: its code, the script it is written in, and how much is said in it
 function localeCard(item) {
-	const { card, list } = cardShell(item, "");
+	// its picture is its own name in its own script
+	const { card, list } = cardShell(item, item.native);
 	detail(list, "Code", item.code);
 	detail(list, "Script", item.script);
 	// always shown, 0 too
@@ -3940,6 +3941,7 @@ const WORLD_BODIES = {
 		code: form.elements.code.value,
 		name: form.elements.name.value,
 		script: form.elements.script.value,
+		native: form.elements.native.value,
 	}),
 };
 

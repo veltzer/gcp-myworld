@@ -182,6 +182,9 @@
 #     them, its other readings are Done, and the four columns of
 #     library_entries are dropped. The new code needs the new columns and
 #     the old one the old: deploy and run this right after.
+#   - locales.native, what a language is called in itself in its own script
+#     ("עברית"): its picture is that name, written out. The languages the
+#     table starts with get theirs. Adding a column: run before the deploy.
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -226,6 +229,9 @@ COLUMNS = [
     ("people", "is_self", "BOOLEAN NOT NULL DEFAULT 0"),
     ("library_works", "title_locale", "VARCHAR(10) NOT NULL DEFAULT 'en'"),
 ]
+
+# what the languages the locales table starts with are called in themselves (models.LOCALE_NATIVE)
+LOCALE_NATIVE = {"en": "English", "he": "עברית", "ar": "العربية", "yi": "ייִדיש", "fr": "Français", "de": "Deutsch", "es": "Español", "it": "Italiano", "pt": "Português", "ru": "Русский", "cs": "Čeština", "el": "Ελληνικά"}
 
 url = os.environ.get("DATABASE_URL", "sqlite:///db.gi/myworld.sqlite")
 if not url.startswith("sqlite:///"):
@@ -838,6 +844,13 @@ if "status" in entry_columns and read_columns:
     for index in indexes:
         db.execute(index)
     added.append(f"library_reads.status, rating, started_on and review (from library_entries, where they are dropped; {made} readings made for entries with none)")
+# what a language is called in itself (see the header): the languages the table starts with get theirs
+locale_columns = {row[1] for row in db.execute("PRAGMA table_info(locales)")}
+if locale_columns and "native" not in locale_columns:
+    db.execute("ALTER TABLE locales ADD COLUMN native VARCHAR(100) NOT NULL DEFAULT ''")
+    for code, native in LOCALE_NATIVE.items():
+        db.execute("UPDATE locales SET native = ? WHERE code = ? AND native = ''", (native, code))
+    added.append("locales.native")
 # the language an account prefers: English, for every account there is
 user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
 if user_columns and "locale" not in user_columns and db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'locales'").fetchone():
@@ -872,6 +885,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'library_works' AND column_name IN ('id', 'goodreads_id', 'simania_id', 'title_locale', 'isbn', 'openlibrary_id', 'external_id'))
 	   OR (table_name = 'library_entries' AND column_name IN ('image_id', 'locale', 'finished_on', 'review', 'status'))
 	   OR (table_name = 'library_reads' AND column_name IN ('id', 'status'))
+	   OR (table_name = 'locales' AND column_name IN ('code', 'native'))
 	   OR (table_name = 'people' AND column_name = 'company')
 	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
 	   OR (table_name = 'organizations' AND column_name IN ('type_id', 'functions'))
@@ -1594,6 +1608,11 @@ ALTER TABLE library_entries DROP COLUMN status, DROP COLUMN rating, DROP COLUMN 
 SQL
 if has "library_entries.status:.*" && ! has "library_reads.status:.*"; then
 	need "library_reads.status, rating, started_on and review (from library_entries, where they are dropped)" "${entries_into_reads}"
+fi
+
+# what a language is called in itself (see the header): adding a column, run before the deploy
+if has "locales.code:.*" && ! has "locales.native:.*"; then
+	need locales.native "ALTER TABLE locales ADD COLUMN native VARCHAR(100) NOT NULL DEFAULT ''; UPDATE locales SET native = 'English' WHERE code = 'en' AND native = ''; UPDATE locales SET native = 'עברית' WHERE code = 'he' AND native = ''; UPDATE locales SET native = 'العربية' WHERE code = 'ar' AND native = ''; UPDATE locales SET native = 'ייִדיש' WHERE code = 'yi' AND native = ''; UPDATE locales SET native = 'Français' WHERE code = 'fr' AND native = ''; UPDATE locales SET native = 'Deutsch' WHERE code = 'de' AND native = ''; UPDATE locales SET native = 'Español' WHERE code = 'es' AND native = ''; UPDATE locales SET native = 'Italiano' WHERE code = 'it' AND native = ''; UPDATE locales SET native = 'Português' WHERE code = 'pt' AND native = ''; UPDATE locales SET native = 'Русский' WHERE code = 'ru' AND native = ''; UPDATE locales SET native = 'Čeština' WHERE code = 'cs' AND native = ''; UPDATE locales SET native = 'Ελληνικά' WHERE code = 'el' AND native = ''"
 fi
 
 if (( ${#changed[@]} == 0 )); then

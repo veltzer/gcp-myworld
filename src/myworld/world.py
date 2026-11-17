@@ -7,6 +7,7 @@ owner_id, so a user only ever sees, and only ever links to, their own rows.
 import collections
 import datetime
 import hashlib
+import html
 import re
 import zoneinfo
 from typing import Any
@@ -1356,7 +1357,9 @@ def _locale_uses(code: str) -> int:
 
 def locale_json(locale: Locale) -> dict[str, Any]:
     return {
-        "id": locale.position, "code": locale.code, "name": locale.name, "script": locale.script,
+        "id": locale.position, "code": locale.code, "name": locale.name, "script": locale.script, "native": locale.native,
+        # its picture: its own name in its own script, drawn (the address changes with what it shows)
+        "image": f"/api/locales/{locale.position}/picture.svg?v={hashlib.sha256(_locale_picture(locale).encode()).hexdigest()[:12]}",
         "description": f"{locale.code}, written in {locale.script} letters", "count": _locale_uses(locale.code),
     }
 
@@ -1380,7 +1383,39 @@ def _apply_locale(locale: Locale, body: dict[str, Any]) -> None:
     script = text(body, "script", required=True).title()
     if script not in languages.scripts():
         raise ApiError(400, f"script: {script} is not a script letters are written in (Latin, Hebrew, Cyrillic, Arabic, Greek, ...)")
-    locale.name, locale.script = name, script
+    native = text(body, "native")
+    if languages.script_of(native) not in ("", script):
+        raise ApiError(400, f"native: {native} is not written in {script} letters: it is what the language is called in itself")
+    locale.name, locale.script, locale.native = name, script, native
+
+
+# the ground of a language's picture, by its script: languages of one script look alike
+PICTURE_GROUNDS = ("#1d4ed8", "#b45309", "#047857", "#7c3aed", "#be123c", "#0e7490", "#4d7c0f", "#a21caf")
+
+
+def _locale_picture(locale: Locale) -> str:
+    """ The picture of a language, as SVG: what it is called in itself, in its own script, on the colour of that script. """
+    shown = locale.native or locale.name
+    ground = PICTURE_GROUNDS[int(hashlib.sha256(locale.script.encode()).hexdigest(), 16) % len(PICTURE_GROUNDS)]
+    size = max(34, min(96, 560 // max(len(shown), 1)))
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img">'
+        f"<title>{html.escape(locale.name)}</title>"
+        f'<rect width="400" height="300" fill="{ground}"/>'
+        f'<text x="200" y="150" text-anchor="middle" dominant-baseline="central" fill="#fff" font-family="serif" font-size="{size}">{html.escape(shown)}</text>'
+        f'<text x="200" y="270" text-anchor="middle" fill="#fff" fill-opacity="0.75" font-family="sans-serif" font-size="20">{html.escape(locale.script)}</text>'
+        "</svg>"
+    )
+
+
+@bp.route("/api/locales/<int:row_id>/picture.svg", methods=["GET"])
+@auth.login_required
+def api_locale_picture(row_id: int) -> flask.Response:
+    response = flask.Response(_locale_picture(_locale(row_id)), mimetype="image/svg+xml")
+    # the address says what it shows (v), so it can be kept; a drawing runs nothing
+    response.headers["Cache-Control"] = "private, max-age=31536000, immutable"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    return response
 
 
 @bp.route("/api/locales", methods=["GET"])
