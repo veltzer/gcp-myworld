@@ -3500,6 +3500,7 @@ function setupLocalized() {
 	$("book-year-edit").onclick = () => {
 		const year = $("add-form").elements.year;
 		year.readOnly = false;
+		year.tabIndex = 0;
 		$("book-year-edit").disabled = true;
 		year.focus();
 	};
@@ -3913,6 +3914,8 @@ async function prepareWorkForm(form, entry) {
 	prepareReads(entry?.reads || [], !entry);
 	// the year released is there to see; its pencil lets it be changed (a book with none yet just takes one)
 	form.elements.year.readOnly = Boolean(entry) && entry.year !== null;
+	// locked, it is not typed into, selected or stopped at by Tab
+	form.elements.year.tabIndex = form.elements.year.readOnly ? -1 : 0;
 	$("book-year-edit").disabled = !form.elements.year.readOnly;
 	prepareLocalized("titles", entry ? [{ locale: entry.title_locale, title: entry.main_title }, ...entry.titles] : [], false);
 	$("book-title-row").hidden = Boolean(entry);

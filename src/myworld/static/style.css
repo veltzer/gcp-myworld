@@ -849,11 +849,17 @@ button.danger {
 	width: 11rem;
 }
 
-/* values that came from a catalog lookup: shown, not typed */
-.add input[readonly] {
-	background: var(--bg);
+/* values shown, not typed (what a catalog lookup gave, a year released until its pencil):
+   greyed, and neither clicked into nor selected */
+.dialog-form input[readonly] {
+	background: #eef0f3;
+	border-color: transparent;
 	color: var(--muted);
 	cursor: default;
+	pointer-events: none;
+	user-select: none;
+	-moz-appearance: textfield;
+	appearance: textfield;
 }
 
 .id-link {
