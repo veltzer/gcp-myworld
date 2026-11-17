@@ -164,6 +164,16 @@ def _apply_reads(entry: UserWork, body: dict[str, Any]) -> None:
         entry.reads.remove(read)
 
 
+def _set_year(work: Work, year: int) -> None:
+    """ The year a work came out, changed: no other work may be the same one by then. """
+    clash = flask.g.db.execute(
+        select(Work.id).where(Work.kind == work.kind, Work.title == work.title, Work.creator == work.creator, Work.year == year, Work.id != work.id)
+    ).first()
+    if clash is not None:
+        raise ApiError(409, f"year: there is already another {KINDS[work.kind][0].lower()} called {work.title} of the same {KINDS[work.kind][2].lower()} and year")
+    work.year = year
+
+
 def _apply_entry_fields(entry: UserWork, body: dict[str, Any], new: bool = False) -> None:
     status = text(body, "status") or "done"
     if status not in STATUSES:
@@ -175,10 +185,10 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any], new: bool = False
     # the review is set only when sent: what does not know of it leaves it alone
     if "review" in body:
         entry.review = text(body, "review")
-    # the year it came out, on the shared work: only filled in, never changed
+    # the year it came out, on the shared work: filled in or put right when sent, never emptied
     year = opt_int(body, "year", -3000, 3000)
-    if year is not None and entry.work.year is None:
-        entry.work.year = year
+    if year is not None and year != entry.work.year:
+        _set_year(entry.work, year)
     _apply_reads(entry, body)
     # an entry edited with its title sent says all the titles of its work; with only titles sent they are added
     if "title" in body and not new:

@@ -261,9 +261,11 @@ filters on it, and another account sees nothing, images included.
 
 Everything is added and edited in the same dialog: the + button at the
 lower right adds to whatever tab is open, and clicking any card or row
-opens it for editing, with a Delete that asks twice. Library entries edit
-only their per-user fields; their title, creator and year belong to the
-shared work row.
+opens it for editing, with a Delete that asks twice. A library entry's
+title, creator and year belong to the shared work row: the dialog rewords
+the titles and puts the year released right (`year` sent changes it, unless
+another work of the same title and creator already has that year: 409; a
+year is never emptied).
 
 A concert links two lists of people: who was on stage (performers) and
 who the user went with. The import makes every performer a person,

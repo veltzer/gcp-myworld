@@ -858,12 +858,19 @@ def test_names_in_languages(imported: webtest.TestApp) -> None:
 
 
 def test_book_year_and_ids(imported: webtest.TestApp) -> None:
-    # the year it came out, the ISBN and the Open Library work are only filled in on the shared work
+    # the year it came out is filled in or put right on the shared work; the ISBN and the Open Library work are only filled in
     book = imported.post_json("/api/library-entries", {"kind": "book", "title": "The Republic", "isbn": "9780140455113", "openlibrary_id": "OL123W"}).json
     assert (book["year"], book["isbn"], book["openlibrary_id"]) == (None, "9780140455113", "OL123W")
     dated = imported.put_json(f"/api/library-entries/{book['work_id']}", {"year": -375}).json
     assert dated["year"] == -375
-    assert imported.put_json(f"/api/library-entries/{book['work_id']}", {"year": 1999}).json["year"] == -375
+    # a wrong year is put right, and one not sent leaves it as it is
+    assert imported.put_json(f"/api/library-entries/{book['work_id']}", {"year": 1999}).json["year"] == 1999
+    assert imported.put_json(f"/api/library-entries/{book['work_id']}", {"rating": 9}).json["year"] == 1999
+    assert imported.put_json(f"/api/library-entries/{book['work_id']}", {"year": -375}).json["year"] == -375
+    # but not to the year of another book of the same title and author
+    other = imported.post_json("/api/library-entries", {"kind": "book", "title": "The Republic", "year": 1955}).json
+    assert other["work_id"] != book["work_id"]
+    imported.put_json(f"/api/library-entries/{other['work_id']}", {"year": -375}, status=409)
     again = imported.post_json("/api/library-entries", {"kind": "book", "title": "The Republic", "year": -375, "isbn": "0", "openlibrary_id": "OL9W"}).json
     assert (again["work_id"], again["isbn"], again["openlibrary_id"]) == (book["work_id"], "9780140455113", "OL123W")
 

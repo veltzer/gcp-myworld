@@ -446,7 +446,7 @@ function libraryCard(entry) {
 	detail(list, "Year", entry.year === null ? "" : entry.year < 0 ? `${-entry.year} BCE` : String(entry.year));
 	detail(list, "ISBN", entry.isbn);
 	// every time it was read: the day and the language, as far as they are known
-	detail(list, entry.reads.length > 1 ? "Reads" : "Read", entry.reads.map(readText).join("; "));
+	detail(list, entry.reads.length > 1 ? "Readings" : "Reading", entry.reads.map(readText).join("; "));
 	// its titles but the one shown, each with its language
 	const others = [{ locale: entry.title_locale, title: entry.main_title }, ...entry.titles].filter((t) => t.title !== entry.title);
 	detail(list, "Other titles", others.map((t) => `${t.title} (${localeName(t.locale)})`).join("; "));
@@ -3384,13 +3384,13 @@ function renderReads() {
 	}
 	editingReads.forEach((read, index) => {
 		const chip = el("span", "chip", readText(read));
-		chip.appendChild(removeButton(`Remove the read ${readText(read)}`, () => {
+		chip.appendChild(removeButton(`Remove the reading ${readText(read)}`, () => {
 			editingReads.splice(index, 1);
 			renderReads();
 		}));
 		box.appendChild(chip);
 	});
-	box.appendChild(adderButton($("book-read-row"), "Add a read"));
+	box.appendChild(adderButton($("book-read-row"), "Add a reading"));
 }
 
 // the day and the language chosen, added to the list as a read; with neither chosen, a read
@@ -3845,8 +3845,6 @@ async function prepareWorkForm(form, entry) {
 	} else {
 		authors.disable();
 	}
-	// the work is shared: its title stays as it is, and its year can only be filled in while it has none
-	form.elements.year.readOnly = Boolean(entry) && entry.year !== null;
 }
 
 // The organization dialog's type list: the user's own organization types, and "none".

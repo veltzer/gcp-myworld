@@ -192,7 +192,7 @@
 					<button type="button" class="danger" id="book-title-add">Add</button>
 				</div>
 				<div class="row">
-					<label title="Every time you read the book: the day you finished it and the language you read it in. + adds a read, − takes one away" class="wide">Reads <span class="chips" id="book-reads"></span></label>
+					<label title="Every time you read the book: the day you finished it and the language you read it in. + adds a reading, − takes one away" class="wide">Readings <span class="chips" id="book-reads"></span></label>
 				</div>
 				<div class="row adder" id="book-read-row" hidden>
 					<label title="The day you finished reading it; leave it empty when you do not know">Read on <input id="book-read-date" type="date" title="The day you finished reading it; leave it empty when you do not know"></label>
@@ -201,11 +201,11 @@
 				</div>
 				<div class="row">
 					<label title="Who wrote the book, each one of People; add a new one on the People page" class="wide">Authors <select id="book-authors" multiple data-chips="people" data-field="authors" data-placeholder="Type a person (a book's authors, any number)"><option value=""></option></select></label>
+					<label title="The year the book was released in (negative before the common era, -375 is 375 BCE)">Year released <input name="year" type="number" min="-3000" max="3000" placeholder="The year it came out" title="The year the book was released in (negative before the common era, -375 is 375 BCE)"></label>
 				</div>
 				<div class="row">
 					<label title="Where you are with the book: want to read it, reading it, read it, or gave it up">Status <select name="status"></select></label>
 					<label title="Your rating of the book, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
-					<label title="The year the book was released in (negative before the common era); once set it stays">Year <input name="year" type="number" min="-3000" max="3000" title="The year the book was released in (negative before the common era); once set it stays"></label>
 					<label title="The day you started reading the book">Started <input name="started_on" type="date"></label>
 				</div>
 				<div class="row">
