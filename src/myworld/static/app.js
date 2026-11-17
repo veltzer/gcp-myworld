@@ -3062,7 +3062,21 @@ function renderPictures(form) {
 		img.src = picture.image;
 		img.alt = `The ${what}`;
 		chip.title = [picture.image_author, picture.image_license, picture.image_source].filter(Boolean).join(", ");
-		chip.append(img, removeButton(`Remove this ${what}`, () => {
+		chip.append(img);
+		if (box.dataset.pictures === "many") {
+			// the first is the default, the one the card shows: the star of another puts it first
+			const star = el("button", "modify chip-remove", "\u2605");
+			star.type = "button";
+			star.disabled = index === 0;
+			star.title = index === 0 ? `The default ${what}: the one the card shows` : `Make this the default ${what}: the one the card shows`;
+			star.setAttribute("aria-label", star.title);
+			star.onclick = () => {
+				editingPictures.unshift(...editingPictures.splice(index, 1));
+				renderPictures(form);
+			};
+			chip.append(star);
+		}
+		chip.append(removeButton(`Remove this ${what}`, () => {
 			editingPictures.splice(index, 1);
 			renderPictures(form);
 		}));
@@ -3266,12 +3280,10 @@ function syncAlone(form) {
 // The dialogs' lists of what is said in several languages, one per language: a
 // person's names in other languages than English, and a book's titles.
 const LOCALIZED = {
-	// a person's English name is their name parts, shown first among their names as they are typed
-	names: { box: "person-names", row: "person-name-row", locale: "person-name-locale", text: "person-name-text", add: "person-name-add", field: "name", first: englishName },
 	// a book has one title per language
 	titles: { box: "book-titles", row: "book-title-row", locale: "book-title-locale", text: "book-title-text", add: "book-title-add", field: "title" },
 };
-const editingLocalized = { names: [], titles: [] };
+const editingLocalized = { titles: [] };
 
 function localeName(code) {
 	return state.config.locales[code] || code;
@@ -3323,10 +3335,129 @@ function pickLocale(select, text) {
 	}
 }
 
-// the person form's name parts as the whole English name
-function englishName() {
-	const { honorific, first_name: first, middle_name: middle, surname } = $("person-form").elements;
-	return [honorific, first, middle, surname].map((part) => part.value.trim()).filter(Boolean).join(" ");
+// ─── the names of a person: one per language, each in its parts ─────────────
+
+// the boxes of the row a name is typed in, by the part each holds
+const NAME_BOXES = { honorific: "person-name-honorific", first_name: "person-name-first", middle_name: "person-name-middle", surname: "person-name-surname" };
+
+// the names in the dialog: {locale, honorific, first_name, middle_name, surname}; the
+// English one is the person's own name parts, the others their names in other languages
+let editingNames = [];
+// the name the row is editing (its place in the list), null when the row adds one
+let editingName = null;
+
+function wholeName(name) {
+	return Object.keys(NAME_BOXES).map((part) => name[part]).filter(Boolean).join(" ");
+}
+
+// the row's boxes show this name; a new one is in the first language the person has no name in
+function fillNameRow(name) {
+	const taken = new Set(editingNames.map((other) => other.locale));
+	$("person-name-locale").value = name ? name.locale : Object.keys(state.config.locales).find((code) => !taken.has(code)) || "en";
+	for (const [part, box] of Object.entries(NAME_BOXES)) {
+		$(box).value = name?.[part] || "";
+	}
+	$("person-name-add").textContent = name ? "Update" : "Add";
+}
+
+// the row comes in to add a name (index null) or to edit the one at index; asked again for the same, it goes away
+function openNameRow(index) {
+	const row = $("person-name-row");
+	if (!row.hidden && editingName === index) {
+		row.hidden = true;
+		return;
+	}
+	editingName = index;
+	fillNameRow(index === null ? null : editingNames[index]);
+	toggleAdder(row, true);
+}
+
+function renderNames() {
+	const box = $("person-names");
+	box.replaceChildren();
+	if (editingNames.length === 0) {
+		box.appendChild(el("span", "empty", "None yet"));
+	}
+	editingNames.forEach((name, index) => {
+		const chip = el("span", "chip");
+		const words = el("span", null, wholeName(name));
+		words.dir = "auto";
+		chip.append(`${localeName(name.locale)}: `, words);
+		const edit = el("button", "modify chip-remove", "\u270e");
+		edit.type = "button";
+		edit.title = `Edit the name ${wholeName(name)}`;
+		edit.setAttribute("aria-label", edit.title);
+		edit.onclick = () => openNameRow(index);
+		chip.appendChild(edit);
+		chip.appendChild(removeButton(`Remove the name ${wholeName(name)}`, () => {
+			editingNames.splice(index, 1);
+			editingName = null;
+			$("person-name-row").hidden = true;
+			renderNames();
+		}));
+		box.appendChild(chip);
+	});
+	const add = el("button", "modify", "+");
+	add.type = "button";
+	add.title = "Add a name in another language";
+	add.setAttribute("aria-label", add.title);
+	add.onclick = () => openNameRow(null);
+	box.appendChild(add);
+}
+
+// what the row says becomes a name of the list: a new one, or the one it was editing. A row
+// left empty adds nothing. False when it cannot be (a part of two words, a second name in a
+// language), and the dialog says why.
+function addName() {
+	const name = { locale: $("person-name-locale").value };
+	for (const [part, box] of Object.entries(NAME_BOXES)) {
+		name[part] = $(box).value.trim().split(/\s+/).join(" ");
+	}
+	if (wholeName(name)) {
+		for (const part of ["honorific", "first_name", "surname"]) {
+			if (/\s/.test(name[part])) {
+				dialogError("The honorific, the first name and the surname are one word each: more names go in the middle name");
+				return false;
+			}
+		}
+		if (editingNames.some((other, index) => other.locale === name.locale && index !== editingName)) {
+			dialogError(`There is already a name in ${localeName(name.locale)}: one per language (its pencil edits it)`);
+			return false;
+		}
+		if (editingName === null) {
+			editingNames.push(name);
+		} else {
+			editingNames[editingName] = name;
+		}
+	}
+	editingName = null;
+	$("person-name-row").hidden = true;
+	renderNames();
+	return true;
+}
+
+// someone new starts with the row in, to say their English name; someone edited with their names listed
+function prepareNames(person) {
+	const english = { locale: "en", honorific: person?.honorific || "", first_name: person?.first_name || "", middle_name: person?.middle_name || "", surname: person?.surname || "" };
+	editingNames = [...(wholeName(english) ? [english] : []), ...(person?.names || []).map((name) => ({
+		locale: name.locale, honorific: name.honorific || "", first_name: name.first_name || "", middle_name: name.middle_name || "", surname: name.surname || "",
+	}))];
+	editingName = null;
+	fillNameRow(null);
+	$("person-name-row").hidden = Boolean(person);
+	renderNames();
+}
+
+// what to send of the names, with what the row says while it is in (saving does not lose
+// it): the English one as the person's name parts, the others as their names. Null when
+// the row's name cannot be.
+function namesValues() {
+	if (!$("person-name-row").hidden && !addName()) {
+		return null;
+	}
+	const english = editingNames.find((name) => name.locale === "en");
+	const parts = Object.fromEntries(Object.keys(NAME_BOXES).map((part) => [part, english?.[part] || ""]));
+	return { ...parts, names: editingNames.filter((name) => name.locale !== "en").map((name) => ({ ...name })) };
 }
 
 function renderLocalized(key) {
@@ -3359,6 +3490,15 @@ function renderLocalized(key) {
 		box.appendChild(chip);
 	});
 	box.appendChild(adderButton($(row), `Add a ${field} in another language`));
+}
+
+// the names to send, or the save stops: the dialog already says what is wrong with the row's name
+function namesOrStop() {
+	const names = namesValues();
+	if (names === null) {
+		throw new Error($("dialog-error").textContent || "The name cannot be added as it is");
+	}
+	return names;
 }
 
 // what is typed in the editor's box, added to its list (a person's name in a language replacing the one they had in it)
@@ -3596,10 +3736,13 @@ function setupLocalized() {
 		$("book-year-edit").disabled = true;
 		year.focus();
 	};
-	// the English name among a person's names follows the name parts as they are typed
-	for (const part of ["honorific", "first_name", "middle_name", "surname"]) {
-		$("person-form").elements[part].addEventListener("input", () => renderLocalized("names"));
-	}
+	$("person-name-add").onclick = () => addName();
+	// the language of a name being added follows its letters as they are typed
+	$("person-name-first").addEventListener("input", () => {
+		if (editingName === null) {
+			pickLocale($("person-name-locale"), $("person-name-first").value);
+		}
+	});
 	for (const [key, { add, text, locale }] of Object.entries(LOCALIZED)) {
 		$(add).onclick = () => addLocalized(key);
 		$(text).addEventListener("input", () => pickLocale($(locale), $(text).value));
@@ -3879,11 +4022,12 @@ const WORLD_BODIES = {
 		};
 	},
 	people: async (form) => ({
-		honorific: form.elements.honorific.value,
-		first_name: form.elements.first_name.value,
-		middle_name: form.elements.middle_name.value,
-		surname: form.elements.surname.value,
-		names: localizedValues("names"),
+		// every name in its parts: the English one is the person's own, the others their names in other languages
+		...namesOrStop(),
+		// all their photos, each with its credit: the first is the default, the one their card shows
+		photos: (await pictures(form)).map((photo) => ({
+			image_id: photo.id, image_source: photo.image_source || "", image_license: photo.image_license || "", image_author: photo.image_author || "",
+		})),
 		type_ids: chosen(form, "types"),
 		relations: editingLinks.relations.map((r) => ({ type_id: r.type_id, person_id: r.person.id })),
 		organization_links: editingLinks.organization_links.map((l) => ({ type_id: l.type_id, organization_id: l.organization.id })),
@@ -4103,7 +4247,7 @@ async function openDialog(item) {
 			setPickerValue(select, chosen ? [chosen.id] : []);
 		}
 		if (form.id === "person-form") {
-			prepareLocalized("names", item?.names || [], false);
+			prepareNames(item);
 			await preparePersonLinks(item);
 		}
 		syncAlone(form);

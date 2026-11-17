@@ -398,18 +398,35 @@
 			</form>
 			<form id="person-form" class="dialog-form" hidden>
 				<div class="row">
-					<label title="One word, without spaces; usually empty">Honorific <input name="honorific" pattern="\S*" placeholder="Dr., Sir" title="One word, without spaces; usually empty"></label>
-					<label title="One word, without spaces">First name <input name="first_name" pattern="\S*" title="One word, without spaces"></label>
-					<label title="Any names between the first name and the surname">Middle name <input name="middle_name" title="Any names between the first name and the surname"></label>
-					<label title="One word, without spaces: hyphenate a surname of two words (Di-Meola)">Surname <input name="surname" pattern="\S*" title="One word, without spaces: hyphenate a surname of two words (Di-Meola)"></label>
+					<!-- every name of the person, each in its language and in its parts, none of them set apart: the
+					     English one is the person's own name parts, the others their names in other languages -->
+					<label title="Every name the person has, one per language, each with its honorific, first name, middle name and surname; the person is shown by the one in your preferred language (Settings). + adds a name, the pencil edits one, − takes one away" class="wide">Names <span class="chips" id="person-names"></span></label>
+				</div>
+				<div class="adder" id="person-name-row" hidden>
+					<div class="row">
+						<label title="The language of the name, chosen by its letters as you type">Language <select id="person-name-locale" data-locales aria-label="Language of the name" title="The language of the name, chosen by its letters as you type"></select></label>
+						<label title="One word, without spaces; usually empty">Honorific <input id="person-name-honorific" dir="auto" pattern="\S*" placeholder="Dr., Sir" title="One word, without spaces; usually empty"></label>
+						<label title="One word, without spaces" class="wide">First name <input id="person-name-first" data-first dir="auto" pattern="\S*" title="One word, without spaces"></label>
+					</div>
+					<div class="row">
+						<label title="Any names between the first name and the surname" class="wide">Middle name <input id="person-name-middle" dir="auto" title="Any names between the first name and the surname"></label>
+						<label title="One word, without spaces: hyphenate a surname of two words (Di-Meola)" class="wide">Surname <input id="person-name-surname" dir="auto" pattern="\S*" title="One word, without spaces: hyphenate a surname of two words (Di-Meola)"></label>
+						<button type="button" class="danger" id="person-name-add">Add</button>
+					</div>
 				</div>
 				<div class="row">
-					<label title="Every name the person has, one per language: the English one is the name parts above, and the person is shown by the one in your preferred language (Settings). + adds a name, − takes one away" class="wide">Names <span class="chips" id="person-names"></span></label>
+					<label title="The person's photos: the first is the default, the one their card shows. + adds a photo, the star makes one the default, − takes one away" class="wide">Photos <span class="chips pictures" id="person-pictures" data-pictures="many" data-what="photo"></span></label>
 				</div>
-				<div class="row adder" id="person-name-row" hidden>
-					<label title="The language of the name to add, chosen by its letters as you type">Language <select id="person-name-locale" data-locales data-skip="en" aria-label="Language of the name"></select></label>
-					<label title="The person's whole name in the language chosen: Enter or Add adds it" class="wide">Name <input id="person-name-text" dir="auto" placeholder="The whole name in that language, e.g. חיים שפירא: Enter adds it"></label>
-					<button type="button" class="danger" id="person-name-add">Add</button>
+				<div class="adder" data-picture-adder hidden>
+					<div class="row">
+						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB)" class="wide">Photo file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					</div>
+					<div class="row">
+						<label title="The page the photo to add comes from, for the credit shown with it" class="wide">Photo source <input name="image_source" type="url" placeholder="Where it comes from"></label>
+						<label title="The license the photo to add is under, e.g. CC BY-SA 4.0, for the credit shown with it">License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
+						<label title="Who made the photo to add, for the credit shown with it">Author <input name="image_author"></label>
+						<button type="button" class="danger" data-picture-add>Add</button>
+					</div>
 				</div>
 				<div class="row">
 					<label title="What the person does, each one of Professions; add a new one on the Professions page" class="wide">Professions <select multiple data-chips="person-types" data-field="types" data-placeholder="Type a profession"><option value=""></option></select></label>

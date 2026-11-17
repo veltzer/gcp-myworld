@@ -588,8 +588,18 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   titles, authors and year released, covers, readings, owned in, notes;
   every row that adds something ends with a red × that puts it away
   again, nothing added. A person's `names` are their names in other languages
-  than English, `{locale, name}`, one per language, replaced when sent;
-  `name` is the English one, which every view but a book shows.
+  than English, one per language, replaced when sent: each
+  `{locale, honorific, first_name, middle_name, surname}`, the parts the
+  English name has (`name` is them together; sent as `{locale, name}`, a
+  whole name is split into them), every part written in that language.
+  The person's own `honorific`, `first_name`, `middle_name` and `surname`
+  are the English one. The person dialog lists them all alike in its Names
+  box, each with a red pencil, a red − and one red + (the row holds the
+  language and the four parts). A person's `photos`, a list of
+  `{image_id, image_source, image_license, image_author}` (rows of
+  `person_photos`), are all their photos in order: the first is the
+  default, the one their card shows (`image`); in a dialog a red star on
+  another photo (or cover) makes it the first.
 - `DELETE /api/library-entries/<work_id>`: remove from the library.
 - `GET /api/locales`: the languages (the locales table, the sidebar's
   Languages page), the same for every account, each with its `code`,

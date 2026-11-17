@@ -45,6 +45,7 @@ from myworld.models import (
     PersonName,
     PersonOrganization,
     PersonOrganizationType,
+    PersonPhoto,
     PersonRelation,
     PersonRelationType,
     PersonType,
@@ -326,8 +327,17 @@ def person_json(person: Person) -> dict[str, Any]:
         "first_name": person.first_name,
         "middle_name": person.middle_name,
         "surname": person.surname,
-        # their name in other languages ("he": "חיים שפירא"); the English one is the name parts above
-        "names": [{"locale": n.locale, "name": n.name} for n in person.names],
+        # their name in other languages ("he": "חיים שפירא"), each in its parts; the English one is the name parts above
+        "names": [
+            {"locale": n.locale, "name": n.name, "honorific": n.honorific, "first_name": n.first_name, "middle_name": n.middle_name, "surname": n.surname}
+            for n in person.names
+        ],
+        # their photos, each with its credit: the first is the default, the one their card shows
+        "image": image_url(person.photos[0].image_id) if person.photos else None,
+        "photos": [
+            {"id": photo.image_id, "image": image_url(photo.image_id), "image_source": photo.image_source, "image_license": photo.image_license, "image_author": photo.image_author}
+            for photo in person.photos
+        ],
         "types": _refs(person.types),
         # each organization they are linked to, once; and the links, each of a kind ("Worked at Schema")
         "organizations": _refs(person.organizations),
@@ -627,6 +637,7 @@ def drop_unused_images() -> None:
         select(Group.image_id).where(Group.image_id.is_not(None)),
         select(Device.image_id).where(Device.image_id.is_not(None)),
         select(PersonType.image_id).where(PersonType.image_id.is_not(None)),
+        select(PersonPhoto.image_id),
     )
     for image in db.execute(select(Image).where(Image.owner_id == flask.g.user.id, Image.id.not_in(used))).scalars():
         db.delete(image)
@@ -887,6 +898,8 @@ def _apply_person(person: Person, body: dict[str, Any]) -> None:
     person.types = owned_list(body, "type_ids", PersonType)
     if "names" in body:
         _apply_person_names(person, body["names"])
+    if "photos" in body:
+        _apply_person_photos(person, body["photos"])
     if "relations" in body:
         person.relations = _person_relations(person, body["relations"])
 
@@ -916,18 +929,66 @@ def localized(key: str, value: Any, field: str, one_per_locale: bool) -> list[tu
     return pairs
 
 
+NAME_PARTS = ("honorific", "first_name", "middle_name", "surname")
+
+
 def _apply_person_names(person: Person, value: Any) -> None:
-    """ A person's names in other languages than English, replacing those they had (a row kept per language, renamed in place). """
-    pairs = localized("names", value, "name", one_per_locale=True)
-    if any(locale == DEFAULT_LOCALE for locale, _ in pairs):
-        raise ApiError(400, "names: the English name is the person's own name parts")
+    """
+    A person's names in other languages than English, replacing those they
+    had (a row kept per language, renamed in place): [{locale, honorific,
+    first_name, middle_name, surname}, ...], one per language, each part
+    written in that language; or {locale, name}, the whole name, which is
+    split into its parts.
+    """
+    locales = languages.known(flask.g.db)
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise ApiError(400, "names: expected a list of {locale, honorific, first_name, middle_name, surname}")
     kept = {n.locale: n for n in person.names}
+    rows: dict[str, PersonName] = {}
+    for item in value:
+        locale = item.get("locale")
+        if locale not in locales:
+            raise ApiError(400, f"names: unknown language {locale!r}")
+        if locale == DEFAULT_LOCALE:
+            raise ApiError(400, "names: the English name is the person's own name parts")
+        if locale in rows:
+            raise ApiError(400, "names: one name per language")
+        row = kept.get(locale) or PersonName(locale=locale, name="")
+        if any(part in item for part in NAME_PARTS):
+            honorific, first, middle, surname = (" ".join(text(item, part).split()) for part in NAME_PARTS)
+            for key, part in (("honorific", honorific), ("first_name", first), ("surname", surname)):
+                if names.has_space(part):
+                    raise ApiError(400, f"names: {key}: one word, without spaces (more names go in the middle name)")
+            row.set_parts(honorific, first, middle, surname)
+        else:
+            row.set_whole(text(item, "name"))
+        if not row.name:
+            raise ApiError(400, f"names: a name is needed in {locales[locale].name}")
+        # each part by itself: a surname in other letters does not hide behind the rest
+        strange = next((part for part in (row.honorific, row.first_name, row.middle_name, row.surname) if not languages.fits(locales[locale], part)), None)
+        if strange is not None:
+            raise ApiError(400, f"names: {strange!r} is not written in {locales[locale].name}: choose the language it is in")
+        rows[locale] = row
+    person.names = list(rows.values())
+
+
+def _apply_person_photos(person: Person, value: Any) -> None:
+    """
+    All the photos of a person, [{image_id, image_source, image_license,
+    image_author}, ...], replacing those they had, in this order: the first
+    is the default, the one their card shows.
+    """
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise ApiError(400, "photos: expected a list of {image_id, image_source, image_license, image_author}")
+    ids = owned_images("photos", [item.get("image_id") for item in value])
+    kept = {photo.image_id: photo for photo in person.photos}
     rows = []
-    for locale, name in pairs:
-        row = kept.get(locale) or PersonName(locale=locale, name=name)
-        row.name = name
+    for position, (image_id, item) in enumerate(zip(ids, value, strict=True)):
+        row = kept.get(image_id) or PersonPhoto(image_id=image_id)
+        row.position = position
+        row.image_source, row.image_license, row.image_author = text(item, "image_source"), text(item, "image_license"), text(item, "image_author")
         rows.append(row)
-    person.names = rows
+    person.photos = rows
 
 
 def _organization_links(person: Person, value: Any) -> list[PersonOrganization]:
@@ -1121,6 +1182,9 @@ def api_people_add() -> tuple[flask.Response, int]:
 def api_people_update(row_id: int) -> flask.Response:
     person = _owned(Person, row_id)
     _apply_person(person, json_body())
+    # a photo taken away goes, with its image
+    flask.g.db.flush()
+    drop_unused_images()
     flask.g.db.commit()
     return flask.jsonify(person_json(person))
 

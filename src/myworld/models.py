@@ -643,6 +643,10 @@ class Person(Base):
     names: Mapped[list[PersonName]] = relationship(
         back_populates="person", cascade="all, delete-orphan", order_by=lambda: PersonName.locale,
     )
+    # their photos, in order: the first is the default, the one their card shows
+    photos: Mapped[list[PersonPhoto]] = relationship(
+        cascade="all, delete-orphan", order_by=lambda: (PersonPhoto.position, PersonPhoto.id), lazy="selectin",
+    )
 
     @property
     def name(self) -> str:
@@ -669,9 +673,10 @@ class Person(Base):
 
 class PersonName(Base):
     """
-    A person's whole name in a language other than English: "חיים שפירא"
-    (he) of Haim Shapira. One per language; the person's own name parts are
-    their English name, the one every view shows but a book in that language.
+    A person's name in a language other than English: "חיים שפירא" (he) of
+    Haim Shapira, in its parts as the English one is (honorific, first name,
+    middle name, surname; name is the parts together). One per language; the
+    person's own name parts are their English name.
     """
     __tablename__ = "person_names"
     __table_args__ = (UniqueConstraint("person_id", "locale", name="uq_person_name_locale"),)
@@ -680,8 +685,35 @@ class PersonName(Base):
     person_id: Mapped[int] = mapped_column(ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
     locale: Mapped[str] = mapped_column(ForeignKey("locales.code"), nullable=False)
     name: Mapped[str] = mapped_column(String(500), nullable=False)
+    honorific: Mapped[str] = mapped_column(String(50), nullable=False, default="", server_default="")
+    first_name: Mapped[str] = mapped_column(String(200), nullable=False, default="", server_default="")
+    middle_name: Mapped[str] = mapped_column(String(200), nullable=False, default="", server_default="")
+    surname: Mapped[str] = mapped_column(String(200), nullable=False, default="", server_default="")
 
     person: Mapped[Person] = relationship(back_populates="names")
+
+    def set_parts(self, honorific: str, first_name: str, middle_name: str, surname: str) -> None:
+        """ The name in its parts; name is them together. """
+        self.honorific, self.first_name, self.middle_name, self.surname = honorific, first_name, middle_name, surname
+        self.name = " ".join(part for part in (honorific, first_name, middle_name, surname) if part)
+
+    def set_whole(self, name: str) -> None:
+        """ The name as one text, split into parts: the first word, the last, and what is between (one word is a first name). """
+        words = name.split()
+        self.set_parts("", words[0] if words else "", " ".join(words[1:-1]), words[-1] if len(words) > 1 else "")
+
+
+class PersonPhoto(Base):
+    """ A photo of a person, with the credit its license asks for; the first (by position) is their default one, which their card shows. """
+    __tablename__ = "person_photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    person_id: Mapped[int] = mapped_column(ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
+    image_id: Mapped[int] = mapped_column(ForeignKey("images.id", ondelete="CASCADE"), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    image_source: Mapped[str] = mapped_column(String(1000), nullable=False, default="", server_default="")
+    image_license: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="")
+    image_author: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
 
 
 class OrganizationType(Base):

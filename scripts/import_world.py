@@ -967,7 +967,9 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
                 locale = _locale(other["language"])
                 if other is shown or not locale or locale == DEFAULT_LOCALE or any(n.locale == locale for n in person.names):
                     continue
-                person.names.append(PersonName(locale=locale, name=other["name"]))
+                in_locale = PersonName(locale=locale, name="")
+                in_locale.set_whole(other["name"])
+                person.names.append(in_locale)
                 named += 1
 
     def other_titles(item: dict[str, Any], work: Work, main: dict[str, Any]) -> None:

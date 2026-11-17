@@ -185,6 +185,12 @@
 #   - locales.native, what a language is called in itself in its own script
 #     ("עברית"): its picture is that name, written out. The languages the
 #     table starts with get theirs. Adding a column: run before the deploy.
+#   - a person's name in another language has its parts, as the English one
+#     has (person_names.honorific, first_name, middle_name, surname): the
+#     whole name each had is split into them, the first word the first name,
+#     the last the surname, what is between the middle name. A person's
+#     photos (person_photos) are a new table, made by create_all. Adding
+#     columns: run before the deploy.
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -851,6 +857,16 @@ if locale_columns and "native" not in locale_columns:
     for code, native in LOCALE_NATIVE.items():
         db.execute("UPDATE locales SET native = ? WHERE code = ? AND native = ''", (native, code))
     added.append("locales.native")
+# a person's name in another language, in its parts (see the header)
+name_columns = {row[1] for row in db.execute("PRAGMA table_info(person_names)")}
+if name_columns and "first_name" not in name_columns:
+    for column, size in (("honorific", 50), ("first_name", 200), ("middle_name", 200), ("surname", 200)):
+        db.execute(f"ALTER TABLE person_names ADD COLUMN {column} VARCHAR({size}) NOT NULL DEFAULT ''")
+    for row_id, name in db.execute("SELECT id, name FROM person_names").fetchall():
+        words = name.split()
+        db.execute("UPDATE person_names SET first_name = ?, middle_name = ?, surname = ? WHERE id = ?",
+                   (words[0] if words else "", " ".join(words[1:-1]), words[-1] if len(words) > 1 else "", row_id))
+    added.append("person_names.honorific, first_name, middle_name and surname")
 # the language an account prefers: English, for every account there is
 user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
 if user_columns and "locale" not in user_columns and db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'locales'").fetchone():
@@ -886,6 +902,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'library_entries' AND column_name IN ('image_id', 'locale', 'finished_on', 'review', 'status'))
 	   OR (table_name = 'library_reads' AND column_name IN ('id', 'status'))
 	   OR (table_name = 'locales' AND column_name IN ('code', 'native'))
+	   OR (table_name = 'person_names' AND column_name IN ('id', 'first_name'))
 	   OR (table_name = 'people' AND column_name = 'company')
 	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
 	   OR (table_name = 'organizations' AND column_name IN ('type_id', 'functions'))
@@ -1613,6 +1630,22 @@ fi
 # what a language is called in itself (see the header): adding a column, run before the deploy
 if has "locales.code:.*" && ! has "locales.native:.*"; then
 	need locales.native "ALTER TABLE locales ADD COLUMN native VARCHAR(100) NOT NULL DEFAULT ''; UPDATE locales SET native = 'English' WHERE code = 'en' AND native = ''; UPDATE locales SET native = 'עברית' WHERE code = 'he' AND native = ''; UPDATE locales SET native = 'العربية' WHERE code = 'ar' AND native = ''; UPDATE locales SET native = 'ייִדיש' WHERE code = 'yi' AND native = ''; UPDATE locales SET native = 'Français' WHERE code = 'fr' AND native = ''; UPDATE locales SET native = 'Deutsch' WHERE code = 'de' AND native = ''; UPDATE locales SET native = 'Español' WHERE code = 'es' AND native = ''; UPDATE locales SET native = 'Italiano' WHERE code = 'it' AND native = ''; UPDATE locales SET native = 'Português' WHERE code = 'pt' AND native = ''; UPDATE locales SET native = 'Русский' WHERE code = 'ru' AND native = ''; UPDATE locales SET native = 'Čeština' WHERE code = 'cs' AND native = ''; UPDATE locales SET native = 'Ελληνικά' WHERE code = 'el' AND native = ''"
+fi
+
+# a person's name in another language, in its parts (see the header): adding columns, run before the deploy
+read -r -d '' name_parts <<'SQL' || true
+ALTER TABLE person_names
+	ADD COLUMN honorific VARCHAR(50) NOT NULL DEFAULT '',
+	ADD COLUMN first_name VARCHAR(200) NOT NULL DEFAULT '',
+	ADD COLUMN middle_name VARCHAR(200) NOT NULL DEFAULT '',
+	ADD COLUMN surname VARCHAR(200) NOT NULL DEFAULT '';
+UPDATE person_names SET
+	first_name = split_part(name, ' ', 1),
+	middle_name = CASE WHEN name ~ '^[^ ]+ .+ [^ ]+$' THEN regexp_replace(name, '^[^ ]+ (.*) [^ ]+$', '\1') ELSE '' END,
+	surname = CASE WHEN name LIKE '% %' THEN regexp_replace(name, '^.* ', '') ELSE '' END
+SQL
+if has "person_names.id:.*" && ! has "person_names.first_name:.*"; then
+	need "person_names.honorific, first_name, middle_name and surname" "${name_parts}"
 fi
 
 if (( ${#changed[@]} == 0 )); then

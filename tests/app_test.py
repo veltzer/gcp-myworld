@@ -603,8 +603,10 @@ def test_what_adds_to_a_list_comes_in_with_its_plus() -> None:
         assert files == body.count("data-picture-adder hidden") == body.count("data-pictures="), form
         assert files == 0 or body.index("data-pictures=") < body.index("data-picture-adder") < body.index('type="file"'), form
     # the book's lists, and a city's photos
-    for row in ("book-title-row", "person-name-row", "person-relation-row", "person-organization-row"):
+    for row in ("book-title-row", "person-relation-row", "person-organization-row"):
         assert f'<div class="row adder" id="{row}" hidden>' in page
     # a reading has several rows: its status, rating and language, its days, its review
     assert '<div class="adder" id="book-read-row" hidden>' in page
-    assert page.count('data-pictures="many"') == 2
+    # so has a name: its language and its parts
+    assert '<div class="adder" id="person-name-row" hidden>' in page
+    assert page.count('data-pictures="many"') == 3

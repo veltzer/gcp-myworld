@@ -685,14 +685,14 @@ def test_books(imported: webtest.TestApp) -> None:
     assert in_hebrew["The Hobbit"]["title"] == "The Hobbit"
     # and so are people, everywhere: one with a Hebrew name by it, with the English one kept beside it
     people = {p["english_name"]: p for p in imported.get("/api/people").json}
-    assert (people["Erich Kestner"]["name"], people["Erich Kestner"]["names"]) == ("אריך קסטנר", [{"locale": "he", "name": "אריך קסטנר"}])
+    assert (people["Erich Kestner"]["name"], people["Erich Kestner"]["names"]) == ("אריך קסטנר", [named("he", "אריך", "קסטנר")])
     assert all(p["name"] == p["english_name"] for p in people.values() if not p["names"])
     imported.put_json("/api/account/locale", {"locale": "xx"}, status=400)
     imported.put_json("/api/account/locale", {"locale": "en"})
     assert (hobbit["locale"], hobbit["title"], hobbit["titles"]) == ("en", "The Hobbit", [])
     # every other view names the author in English, with the other names alongside
     [kestner] = [p for p in imported.get("/api/people").json if p["name"] == "Erich Kestner"]
-    assert kestner["names"] == [{"locale": "he", "name": "אריך קסטנר"}]
+    assert kestner["names"] == [named("he", "אריך", "קסטנר")]
     # owned but not read, with no cover
     assert (chess["status"], chess["creator"], chess["image"], chess["locale"]) == ("wishlist", "", None, "")
     assert (chess["notes"], chess["owned"]) == ("Written in Hebrew", ["he"])
@@ -826,10 +826,17 @@ def test_books_import_fills_languages(imported: webtest.TestApp, engine: Engine,
 def test_names_in_languages(imported: webtest.TestApp) -> None:
     # a person's names in other languages, one per language, replaced when sent
     bob = imported.post_json("/api/people", {"first_name": "Haim", "surname": "Shapira", "names": [{"locale": "he", "name": " חיים  שפירא "}]}, status=201).json
-    assert (bob["name"], bob["names"]) == ("Haim Shapira", [{"locale": "he", "name": "חיים שפירא"}])
+    assert (bob["name"], bob["names"]) == ("Haim Shapira", [named("he", "חיים", "שפירא")])
     body = {"first_name": "Haim", "surname": "Shapira"}
     renamed = imported.put_json(f"/api/people/{bob['id']}", dict(body, names=[{"locale": "he", "name": "חיים שפירה"}, {"locale": "ru", "name": "Хаим Шапира"}])).json
-    assert renamed["names"] == [{"locale": "he", "name": "חיים שפירה"}, {"locale": "ru", "name": "Хаим Шапира"}]
+    assert renamed["names"] == [named("he", "חיים", "שפירה"), named("ru", "Хаим", "Шапира")]
+    # a name in its parts, as the English one is: the honorific, the first name, the middle name, the surname
+    parts = {"locale": "he", "honorific": 'ד"ר', "first_name": "חיים", "middle_name": " בן  דוד ", "surname": "שפירא"}
+    in_parts = imported.put_json(f"/api/people/{bob['id']}", dict(body, names=[parts])).json["names"]
+    assert in_parts == [named("he", "חיים", "שפירא", middle="בן דוד", honorific='ד"ר')]
+    for wrong in ({**parts, "first_name": "חיים דוד"}, {**parts, "surname": "Shapira"}, {"locale": "he", "first_name": "", "surname": ""}):
+        imported.put_json(f"/api/people/{bob['id']}", dict(body, names=[wrong]), status=400)
+    imported.put_json(f"/api/people/{bob['id']}", dict(body, names=renamed["names"]))
     assert imported.put_json(f"/api/people/{bob['id']}", body).json["names"] == renamed["names"]
     for wrong in ([{"locale": "he", "name": "א"}, {"locale": "he", "name": "ב"}], [{"locale": "xx", "name": "x"}], [{"locale": "en", "name": "x"}], [{"locale": "he", "name": " "}], "he"):
         imported.put_json(f"/api/people/{bob['id']}", dict(body, names=wrong), status=400)
@@ -925,7 +932,7 @@ def test_people(imported: webtest.TestApp) -> None:
     assert [c["name"] for c in alice["organizations"]] == ["Startup"]
     assert [c["name"] for c in bob["organizations"]] == ["Acme", "Startup"]
     # only the person and their organizations: their concerts and museums are not listed next to them
-    assert set(alice) == {"id", "name", "is_self", "honorific", "first_name", "middle_name", "surname", "relations", "related", "types", "organizations", "organization_links", "description", "names", "english_name"}
+    assert set(alice) == {"id", "name", "is_self", "honorific", "first_name", "middle_name", "surname", "relations", "related", "types", "organizations", "organization_links", "description", "names", "english_name", "image", "photos"}
 
 
 def test_organizations(imported: webtest.TestApp) -> None:
@@ -1605,6 +1612,12 @@ def test_book_title_checks(imported: webtest.TestApp, engine: Engine) -> None:
     assert problems("book-titles") == [(" ", "has no title")]
 
 
+def named(locale: str, first: str, surname: str, middle: str = "", honorific: str = "") -> dict[str, str]:
+    """ A person's name in a language as the API gives it: the parts, and the whole. """
+    name = " ".join(part for part in (honorific, first, middle, surname) if part)
+    return {"locale": locale, "name": name, "honorific": honorific, "first_name": first, "middle_name": middle, "surname": surname}
+
+
 def reading(**said: object) -> dict[str, object]:
     """ A reading as the API gives it: what is said, and the rest as it is when not. """
     return {"date": None, "locale": "", "status": "done", "rating": None, "review": "", "started_on": None, **said}
@@ -1858,6 +1871,30 @@ def test_languages_are_a_page(imported: webtest.TestApp, engine: Engine) -> None
         owner(session).role = role
         session.commit()
         assert checks.CHECKS["locale-scripts"].run(session).problems == []
+
+
+def test_a_person_has_photos(imported: webtest.TestApp, engine: Engine) -> None:
+    """ A person may have several photos, each with its credit; the first is the default, the one their card shows. """
+    first, second = (imported.post("/api/images", upload_files=[("file", f"face{n}.jpg", JPEG + bytes([40 + n]))]).json["id"] for n in range(2))
+    ann = imported.post_json("/api/people", {"first_name": "Ann", "photos": [
+        {"image_id": first, "image_source": "https://example.com/ann", "image_license": "CC BY 4.0", "image_author": "Bo"}, {"image_id": second},
+    ]}, status=201).json
+    assert (ann["image"], [p["id"] for p in ann["photos"]]) == (f"/api/images/{first}", [first, second])
+    assert (ann["photos"][0]["image_source"], ann["photos"][0]["image_license"], ann["photos"][0]["image_author"]) == ("https://example.com/ann", "CC BY 4.0", "Bo")
+    url = f"/api/people/{ann['id']}"
+    # photos not sent stay; sent in another order, the first is the default, and each keeps its credit
+    assert [p["id"] for p in imported.put_json(url, {"first_name": "Ann"}).json["photos"]] == [first, second]
+    third = imported.post("/api/images", upload_files=[("file", "face2.jpg", JPEG + bytes([42]))]).json["id"]
+    swapped = imported.put_json(url, {"first_name": "Ann", "photos": [{"image_id": second}, {**ann["photos"][0], "image_id": first}, {"image_id": third}]}).json
+    assert (swapped["image"], [p["id"] for p in swapped["photos"]]) == (f"/api/images/{second}", [second, first, third])
+    assert swapped["photos"][1]["image_author"] == "Bo"
+    for wrong in ({"photos": [{"image_id": first}, {"image_id": first}]}, {"photos": [{"image_id": 10**9}]}, {"photos": "x"}):
+        imported.put_json(url, {"first_name": "Ann", **wrong}, status=400)
+    # one taken away goes, with its image
+    assert [p["id"] for p in imported.put_json(url, {"first_name": "Ann", "photos": [{"image_id": third}]}).json["photos"]] == [third]
+    with Session(engine) as session:
+        assert session.get(Image, first) is None and session.get(Image, third) is not None
+    assert imported.put_json(url, {"first_name": "Ann", "photos": []}).json["image"] is None
 
 
 def test_authors_of_hebrew_books_have_hebrew_names(imported: webtest.TestApp, engine: Engine) -> None:
