@@ -119,6 +119,9 @@ class User(Base):
     # every account and change its role (the Users page) and run checks over
     # the whole database. The first admin is made by scripts/migrate.sh.
     role: Mapped[str] = mapped_column(String(20), nullable=False, default=ROLE_USER, server_default=ROLE_USER)
+    # the language they prefer (Settings): a book with titles in several languages is
+    # shown by its title in this one, and its authors by their names in it
+    locale: Mapped[str] = mapped_column(ForeignKey("locales.code"), nullable=False, default=DEFAULT_LOCALE, server_default=DEFAULT_LOCALE)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     last_login: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -244,6 +247,12 @@ class Work(Base):
         back_populates="work", cascade="all, delete-orphan", order_by=lambda: WorkTitle.id,  # pylint: disable=used-before-assignment
     )
 
+    def locale_for(self, preferred: str) -> str:
+        """ The language the work is shown in to someone who prefers one: that one when it has a title in it, else its main title's. """
+        if preferred == self.title_locale or any(other.locale == preferred for other in self.titles):
+            return preferred
+        return self.title_locale
+
     def title_in(self, locale: str | None) -> str:
         """ The title in locale: the main one when it is in it, else the other title in it, else the main one. """
         if locale and locale != self.title_locale:
@@ -321,7 +330,7 @@ class UserWork(Base):
 
     @property
     def locale(self) -> str | None:
-        """ The language the user read it in, last (none when not known): the book is shown in it, its title and its authors' names. """
+        """ The language the user read it in, last (none when not known). """
         read = self.last_read
         return read.locale if read else None
 

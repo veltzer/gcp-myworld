@@ -538,9 +538,11 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   (code to name) and `locale_scripts` (code to script). Every locale column
   is a foreign key to `locales.code`, and a text is only kept with a
   language of its own script. An entry's
-  `locale` is the language the user read it in, and the entry is shown in
-  it: `title` is its title in that language and each author's `name` theirs
-  (the main ones where it has none in it). `main_title` and `title_locale`
+  `title` is the title it is shown by, the one in the language the account
+  prefers (`users.locale`, English to begin with, chosen in Settings: `PUT
+  /api/account/locale` with `locale`) when the work has a title in it, else
+  its main title, and each author's `name` is theirs in that same language.
+  The dialog lists every title alike; the first is the main one. `main_title` and `title_locale`
   are the main title and its language (`title_locale` is sent when the book
   is added), `titles` its titles in other languages, `{locale, title}`: a
   work has one title per language, the main title's included. `titles` sent

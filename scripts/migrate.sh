@@ -167,6 +167,10 @@
 #     are the two columns dropped. The new code no longer reads them, so run
 #     this right after deploying that version (its create_all makes the table,
 #     made here too); an entry that already has reads is left as it is.
+#   - users.locale, the language an account prefers (Settings): a book with
+#     titles in several languages is shown by the one in it. English for
+#     every account there is, as for a new one. Adding a column that points
+#     at locales, so after the locales step; run before the deploy.
 #
 # A table renamed here can come back empty if the old version of the app
 # starts (create_all) between this and the deploy; a rename finding both
@@ -779,6 +783,11 @@ if "finished_on" in entry_columns:
     for index in indexes:
         db.execute(index)
     added.append(f"library_reads ({made} reads made from library_entries.finished_on and locale, which are dropped)")
+# the language an account prefers: English, for every account there is
+user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
+if user_columns and "locale" not in user_columns and db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'locales'").fetchone():
+    db.execute("ALTER TABLE users ADD COLUMN locale VARCHAR(10) NOT NULL DEFAULT 'en' REFERENCES locales (code)")
+    added.append("users.locale")
 if not db.execute("SELECT 1 FROM users WHERE role = 'admin'").fetchone():
     oldest = db.execute("SELECT min(id) FROM users").fetchone()[0]
     if oldest is not None:
@@ -800,7 +809,7 @@ source .gcp.conf
 present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	SELECT table_name || '.' || column_name || ':' || COALESCE(character_maximum_length::text, '')
 	FROM information_schema.columns
-	WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash', 'role', 'verified', 'last_login'))
+	WHERE (table_name = 'users' AND column_name IN ('google_sub', 'password_hash', 'role', 'verified', 'last_login', 'locale'))
 	   OR (table_name = 'logins' AND column_name IN ('subject', 'verified', 'password_hash'))
 	   OR (table_name = 'email_verifications' AND column_name = 'email')
 	   OR (table_name = 'works' AND column_name IN ('id', 'imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
@@ -1498,6 +1507,10 @@ SQL
 if has "library_entries.finished_on:.*" && has "library_entries.locale:.*"; then
 	need "library_reads (a read per entry read, from library_entries.finished_on and locale, which are dropped)" "${entries_to_reads}"
 fi
+
+# the language an account prefers: English, for every account there is. After the locales
+# step above (in the same transaction), which makes the table it points at.
+has "users.locale:.*" || need users.locale "ALTER TABLE users ADD COLUMN locale VARCHAR(10) NOT NULL DEFAULT 'en' CONSTRAINT users_locale_fkey REFERENCES locales (code)"
 
 if (( ${#changed[@]} == 0 )); then
 	echo "${gcp_sql_instance}/${gcp_db_name}: up to date, nothing to migrate"

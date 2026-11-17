@@ -332,8 +332,8 @@ async function pickMovie(movie) {
 	hint.textContent = `Fetching details for ${movie.title}...`;
 	try {
 		const film = await api(`/api/movies/${movie.tmdb_id}`);
-		form.elements.title.value = film.title;
-		pickLocale(form.elements.title_locale, film.title);
+		editingLocalized.titles = [{ locale: "en", text: film.title, kept: false }];
+		renderLocalized("titles");
 		form.elements.creator.value = film.creator;
 		form.elements.year.value = film.year ?? "";
 		showMovieIds(film);
@@ -389,7 +389,7 @@ function setupMovieSearch() {
 	$("movie-unlock").onclick = () => {
 		movieIdsReset();
 		$("movie-hint").hidden = true;
-		$("add-form").elements.title.focus();
+		$("book-title-text").focus();
 	};
 	box.hidden = state.kind !== "film";
 }
@@ -998,15 +998,18 @@ function showWho(user) {
 }
 
 // The Settings button opens the settings dialog with the name ready to edit;
-// Cancel, Escape and the backdrop close it unsaved, Save sends the name
+// Cancel, Escape and the backdrop close it unsaved, Save sends the name and the preferred language
 function setupSettings(user) {
 	const dialog = $("settings-dialog");
 	const name = $("settings-name");
 	const error = $("settings-error");
 	name.maxLength = state.config.name_max_length;
+	const locale = $("settings-locale");
 	let saved = user.name;
+	let savedLocale = user.locale;
 	$("settings-button").onclick = () => {
 		name.value = saved;
+		locale.value = savedLocale;
 		error.hidden = true;
 		dialog.showModal();
 		name.select();
@@ -1023,6 +1026,12 @@ function setupSettings(user) {
 			const account = await api("/api/account/name", { method: "PUT", body: { name: name.value } });
 			saved = account.name;
 			showWho(account);
+			if (locale.value !== savedLocale) {
+				savedLocale = (await api("/api/account/locale", { method: "PUT", body: { locale: locale.value } })).locale;
+				// every book may be shown by another title now: load the page again
+				window.location.reload();
+				return;
+			}
 			dialog.close();
 		} catch (e) {
 			error.textContent = e.message;
@@ -1065,7 +1074,15 @@ async function libraryPage() {
 		}
 		if (state.editingView === "book") {
 			body.authors = chosen(form, "authors");
-			body.titles = localizedValues("titles");
+			// every title, each in its language; the first is the one the work is known by
+			const titles = localizedValues("titles");
+			if (titles.length === 0) {
+				dialogError("A book needs a title: type one and press Add title");
+				return;
+			}
+			body.title = titles[0].title;
+			body.title_locale = titles[0].locale;
+			body.titles = titles.slice(1);
 		}
 		body.reads = readsValues();
 		try {
@@ -3062,8 +3079,8 @@ function syncAlone(form) {
 // the other accounts that have it, so it is shown but cannot be taken away.
 const LOCALIZED = {
 	names: { box: "person-names", locale: "person-name-locale", text: "person-name-text", add: "person-name-add", field: "name" },
-	// a book has one title per language: the main title's language is taken
-	titles: { box: "book-titles", locale: "book-title-locale", text: "book-title-text", add: "book-title-add", field: "title", taken: () => $("add-form").elements.title_locale.value },
+	// a book has one title per language
+	titles: { box: "book-titles", locale: "book-title-locale", text: "book-title-text", add: "book-title-add", field: "title" },
 };
 const editingLocalized = { names: [], titles: [] };
 
@@ -3145,7 +3162,7 @@ function renderLocalized(key) {
 
 // what is typed in the editor's box, added to its list (a person's name in a language replacing the one they had in it)
 function addLocalized(key) {
-	const { locale: localeId, text: textId, field, taken } = LOCALIZED[key];
+	const { locale: localeId, text: textId, field } = LOCALIZED[key];
 	const text = $(textId).value.trim().split(/\s+/).join(" ");
 	pickLocale($(localeId), text);
 	const locale = $(localeId).value;
@@ -3153,8 +3170,8 @@ function addLocalized(key) {
 		return;
 	}
 	const list = editingLocalized[key];
-	// one per language: what is kept (a shared work's title) is not replaced, nor the language taken elsewhere in the form
-	if ((taken?.() === locale || list.some((item) => item.kept && item.locale === locale))) {
+	// one per language: what is kept (a shared work's title) is not replaced
+	if (list.some((item) => item.kept && item.locale === locale)) {
 		dialogError(`There is already a ${field} in ${localeName(locale)}: one per language`);
 		return;
 	}
@@ -3240,9 +3257,6 @@ function readsValues() {
 function setupLocalized() {
 	fillLocales();
 	$("book-read-add").onclick = () => addRead(true);
-	// the main title of a book being added: its language follows its letters
-	const { title, title_locale: titleLocale } = $("add-form").elements;
-	title.addEventListener("input", () => pickLocale(titleLocale, title.value));
 	for (const [key, { add, text, locale }] of Object.entries(LOCALIZED)) {
 		$(add).onclick = () => addLocalized(key);
 		$(text).addEventListener("input", () => pickLocale($(locale), $(text).value));
@@ -3643,17 +3657,13 @@ async function prepareWorkForm(form, entry) {
 	$("movie-results").hidden = true;
 	$("movie-hint").hidden = true;
 	$("movie-query").value = "";
-	const values = entry || { title: "", creator: "", year: "", status: "done", rating: "", started_on: "", notes: "" };
-	for (const name of ["title", "creator", "year", "status", "rating", "started_on", "notes"]) {
+	const values = entry || { creator: "", year: "", status: "done", rating: "", started_on: "", notes: "" };
+	for (const name of ["creator", "year", "status", "rating", "started_on", "notes"]) {
 		form.elements[name].value = values[name] ?? "";
 	}
-	// the main title, in its language (both fixed once the book is added: the work is shared),
-	// the other titles, and the language it was read in
-	form.elements.title.value = entry ? entry.main_title : "";
-	form.elements.title_locale.value = entry?.title_locale || "en";
-	form.elements.title_locale.disabled = Boolean(entry);
+	// its reads, and every title it has, each in its language (the work is shared: the ones it has stay)
 	prepareReads(entry?.reads || []);
-	prepareLocalized("titles", entry?.titles || [], true);
+	prepareLocalized("titles", entry ? [{ locale: entry.title_locale, title: entry.main_title }, ...entry.titles] : [], true);
 	form.elements.photo.value = "";
 	// a book's authors are the user's people, any number of them; the picker
 	// stays in its place for the other kinds, disabled
@@ -3666,7 +3676,6 @@ async function prepareWorkForm(form, entry) {
 		authors.disable();
 	}
 	// the work is shared: its title stays as it is, and its year can only be filled in while it has none
-	form.elements.title.readOnly = Boolean(entry);
 	form.elements.year.readOnly = Boolean(entry) && entry.year !== null;
 }
 

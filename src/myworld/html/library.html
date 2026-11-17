@@ -177,18 +177,18 @@
 					<label>Rotten Tomatoes id <span class="id-field"><input name="rotten_tomatoes_id" readonly placeholder="from the search"><a id="rt-link" class="id-link" target="_blank" rel="noopener" hidden>open</a></span></label>
 				</div>
 				<div class="row">
-					<label class="wide">Title <input name="title" required dir="auto"></label>
-					<label>Title language <select name="title_locale" data-locales title="The language the title is in, chosen by its letters as you type (a Hebrew title is Hebrew); set when the book is added"></select></label>
-					<!-- a book's author text is made from its authors (below); a film's director comes from the film search -->
+					<!-- every title of the book, each in its language, none of them set apart; which one a book
+					     is shown by is the account's preferred language (Settings) -->
+					<label class="wide">Titles <span class="chips" id="book-titles"></span></label>
+					<!-- sent with the form: the first title and its language (what the work is known by),
+					     and a book's author text, made from its authors (below) -->
+					<input type="hidden" name="title">
+					<input type="hidden" name="title_locale">
 					<input type="hidden" name="creator">
-					<label>Year <input name="year" type="number" min="-3000" max="3000" title="The year it came out (negative before the common era); once set it stays"></label>
 				</div>
 				<div class="row">
-					<label class="wide">Titles in other languages <span class="chips" id="book-titles"></span></label>
-				</div>
-				<div class="row">
-					<label>Language <select id="book-title-locale" data-locales aria-label="Language of the title to add"></select></label>
-					<label class="wide">Title in it <input id="book-title-text" dir="auto" placeholder="The book's title in another language (one per language): Enter adds it"></label>
+					<label>Language <select id="book-title-locale" data-locales aria-label="Language of the title to add" title="The language of the title, chosen by its letters as you type (a Hebrew title is Hebrew)"></select></label>
+					<label class="wide">Title <input id="book-title-text" dir="auto" placeholder="The book's title in this language (one per language): Enter adds it"></label>
 					<button type="button" class="text" id="book-title-add">Add title</button>
 				</div>
 				<div class="row">
@@ -205,6 +205,7 @@
 				<div class="row">
 					<label>Status <select name="status"></select></label>
 					<label>Rating <input name="rating" type="number"></label>
+					<label>Year <input name="year" type="number" min="-3000" max="3000" title="The year it came out (negative before the common era); once set it stays"></label>
 					<label>Started <input name="started_on" type="date"></label>
 				</div>
 				<div class="row">
@@ -643,7 +644,7 @@
 				</div>
 			</form>
 		</dialog>
-		<!-- the Settings button opens this; Save sends the name, Cancel and Escape leave it as it was -->
+		<!-- the Settings button opens this; Save sends the name and the preferred language, Cancel and Escape leave them as they were -->
 		<dialog id="settings-dialog" class="dialog settings" aria-labelledby="settings-title">
 			<form id="settings-form">
 				<h2 id="settings-title">Settings</h2>
@@ -651,6 +652,11 @@
 				<input id="settings-name" name="name" type="text" maxlength="60" required autocomplete="name">
 				<p class="settings-hint">
 					Shown in the top right corner, whichever way you sign in. Up to 60 characters.
+				</p>
+				<label for="settings-locale">Preferred language</label>
+				<select id="settings-locale" name="locale" data-locales></select>
+				<p class="settings-hint">
+					A book with titles in several languages is shown by its title in this one, and its authors by their names in it.
 				</p>
 				<p id="settings-error" class="warning" hidden></p>
 				<div class="dialog-actions">

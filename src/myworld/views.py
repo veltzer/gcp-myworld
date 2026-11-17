@@ -80,12 +80,14 @@ def health() -> flask.Response:
 
 def _entry_json(entry: UserWork) -> dict[str, Any]:
     work = entry.work
+    # shown in the language the user prefers (Settings) when the work has a title in it, else in its main title's
+    shown = work.locale_for(entry.user.locale)
     return {
         "work_id": entry.work_id,
         "kind": work.kind,
-        # the language the user read it in (last, see UserWork.last_read), and the title in it (the main title when it has none in it)
+        # the title it is shown by, and the language the user read it in (last, see UserWork.last_read)
+        "title": work.title_in(shown),
         "locale": entry.locale or "",
-        "title": work.title_in(entry.locale),
         # the main title and its language, and the other titles, each in a language
         "main_title": work.title,
         "title_locale": work.title_locale,
@@ -99,7 +101,7 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
         "isbn": entry.work.isbn,
         "openlibrary_id": entry.work.openlibrary_id,
         # who wrote it, as the user's people (the People view links to them), named in the language it was read in
-        "authors": [{"id": p.id, "name": p.name_in(entry.locale)} for p in entry.authors],
+        "authors": [{"id": p.id, "name": p.name_in(shown)} for p in entry.authors],
         "simania_id": entry.work.simania_id,
         "image": world.image_url(entry.image_id),
         "status": entry.status,
@@ -247,6 +249,8 @@ def _account_json(login: Login) -> dict[str, Any]:
         "name": user.name,
         "picture": user.picture,
         "role": user.role,
+        # the language they prefer (Settings): what a book with several titles is shown by
+        "locale": user.locale,
         # the account panel: since when, how this session signed in, and every way they sign in
         "since": user.created_at.date().isoformat(),
         "method": login.method,
@@ -268,6 +272,20 @@ def api_account_name() -> flask.Response:
     login = auth.current_login()
     assert login is not None
     login.user.name = name
+    flask.g.db.commit()
+    return flask.jsonify(_account_json(login))
+
+
+@bp.route("/api/account/locale", methods=["PUT"])
+@auth.login_required
+def api_account_locale() -> flask.Response:
+    """ The signed-in person chooses the language they prefer: a book with titles in several languages is shown by the one in it. """
+    locale = text(json_body(), "locale")
+    if locale not in languages.known(flask.g.db):
+        raise ApiError(400, f"locale: unknown language {locale!r}")
+    login = auth.current_login()
+    assert login is not None
+    login.user.locale = locale
     flask.g.db.commit()
     return flask.jsonify(_account_json(login))
 

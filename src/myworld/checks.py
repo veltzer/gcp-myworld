@@ -616,7 +616,7 @@ def check_book_reads(session: Session) -> Result:
 
 @check("book-languages", "Every read of a book says the language it was read in", "reads", "book")
 def check_book_languages(session: Session) -> Result:
-    """ Every read of a book, of every account, says the language it was read in: the book is shown in the language of its last read. """
+    """ Every read of a book, of every account, says the language it was read in. """
     reads = [(b, read) for b in _entries(session, "book") for read in b.reads]
     return Result(checked=len(reads), problems=[_entry_problem(b, "has a read that does not say the language it was read in") for b, read in reads if not read.locale])
 

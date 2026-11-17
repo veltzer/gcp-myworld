@@ -666,10 +666,18 @@ def test_books(imported: webtest.TestApp) -> None:
     # text_books.yaml rates a book read with no rating of its own
     assert (may["rating"], may["finished_on"], may["simania_id"]) == (8, None, "7005")
     assert may["notes"] == "nice. Read in Hebrew (date unknown). Written in German. was named: 35 May"
-    # read in Hebrew: shown by its Hebrew title, its author by his Hebrew name; the English title is the main one
-    assert (may["locale"], may["title"], may["main_title"], may["title_locale"]) == ("he", "שלושים וחמישה במאי", "Thirty Fifth in May", "en")
+    # read in Hebrew, but shown in the language the account prefers, English to begin with: its English title, its author's English name
+    assert (may["locale"], may["title"], may["main_title"], may["title_locale"]) == ("he", "Thirty Fifth in May", "Thirty Fifth in May", "en")
     assert may["titles"] == [{"locale": "he", "title": "שלושים וחמישה במאי"}]
-    assert [a["name"] for a in may["authors"]] == ["אריך קסטנר"]
+    assert [a["name"] for a in may["authors"]] == ["Erich Kestner"]
+    # preferring Hebrew (Settings): a book with a Hebrew title is shown by it, its author by his Hebrew name; one without is as it was
+    assert imported.get("/api/config").json["user"]["locale"] == "en"
+    assert imported.put_json("/api/account/locale", {"locale": "he"}).json["locale"] == "he"
+    in_hebrew = {b["main_title"]: b for b in imported.get("/api/library-entries?kind=book").json}
+    assert (in_hebrew["Thirty Fifth in May"]["title"], [a["name"] for a in in_hebrew["Thirty Fifth in May"]["authors"]]) == ("שלושים וחמישה במאי", ["אריך קסטנר"])
+    assert in_hebrew["The Hobbit"]["title"] == "The Hobbit"
+    imported.put_json("/api/account/locale", {"locale": "xx"}, status=400)
+    imported.put_json("/api/account/locale", {"locale": "en"})
     assert (hobbit["locale"], hobbit["title"], hobbit["titles"]) == ("en", "The Hobbit", [])
     # every other view names the author in English, with the other names alongside
     [kestner] = [p for p in imported.get("/api/people").json if p["name"] == "Erich Kestner"]
@@ -794,7 +802,7 @@ def test_books_import_fills_languages(imported: webtest.TestApp, engine: Engine,
     }
     books = {b["main_title"]: b for b in imported.get("/api/library-entries?kind=book").json}
     may = books["Thirty Fifth in May"]
-    assert (may["locale"], may["title"], [a["name"] for a in may["authors"]]) == ("he", "שלושים וחמישה במאי", ["אריך קסטנר"])
+    assert (may["locale"], may["titles"]) == ("he", [{"locale": "he", "title": "שלושים וחמישה במאי"}])
     # only what the import once wrote goes: the user's own words stay
     assert may["notes"] == "nice. Read in Hebrew (date unknown). Written in German. was named: 35 May. and an edit of mine"
     assert books["The Hobbit"]["locale"] == "en"
@@ -818,7 +826,7 @@ def test_names_in_languages(imported: webtest.TestApp) -> None:
     book = imported.post_json("/api/library-entries", {"kind": "book", "title": "Thinking About Thinking", "title_locale": "en", "locale": "he",
                                                        "titles": [{"locale": "he", "title": "לחשוב על חשיבה"}],
                                                        "authors": [bob["id"]]}).json
-    assert (book["title"], book["main_title"], [a["name"] for a in book["authors"]]) == ("לחשוב על חשיבה", "Thinking About Thinking", ["חיים שפירה"])
+    assert (book["title"], book["main_title"], [a["name"] for a in book["authors"]]) == ("Thinking About Thinking", "Thinking About Thinking", ["Haim Shapira"])
     assert [t["title"] for t in book["titles"]] == ["לחשוב על חשיבה"]
     # one title per language: two in one are refused, sent together or one after the other, and so is one in the main title's
     for titles in ([{"locale": "fr", "title": "Penser"}, {"locale": "fr", "title": "Pensées"}], [{"locale": "he", "title": "חשיבה"}], [{"locale": "en", "title": "Thinking"}]):
