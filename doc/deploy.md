@@ -265,7 +265,11 @@ opens it for editing, with a Delete that asks twice. A library entry's
 title, creator and year belong to the shared work row: the dialog rewords
 the titles and puts the year released right (`year` sent changes it, unless
 another work of the same title and creator already has that year: 409; a
-year is never emptied).
+year is never emptied). A book's `original_locale` is the language it was
+first written in (Dune: English, whatever it was read in), on the shared
+work too: sent, it is set (an unknown language: 400); empty or not sent,
+it stays. The dialog shows it locked beside the year released, with a red
+pencil of its own.
 
 A concert links two lists of people: who was on stage (performers) and
 who the user went with. The import makes every performer a person,

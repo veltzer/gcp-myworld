@@ -650,6 +650,13 @@ def check_book_years(session: Session) -> Result:
     return Result(checked=len(books), problems=[_entry_problem(b, "has no year it came out") for b in books if b.work.year is None])
 
 
+@check("book-original-languages", "Every book has the language it was written in", "books", "book")
+def check_book_original_languages(session: Session) -> Result:
+    """ Every book in a library, of every account, says the language it was first written in. """
+    books = _entries(session, "book")
+    return Result(checked=len(books), problems=[_entry_problem(b, "has no original language") for b in books if not b.work.original_locale])
+
+
 @check("book-reads", "Every book has a reading", "books", "book")
 def check_book_reads(session: Session) -> Result:
     """ Every book in a library, of every account, has at least one reading: where its status, rating and review are, with its day and its language. """

@@ -249,6 +249,8 @@ class Work(Base):
     simania_id: Mapped[str] = mapped_column(String(20), nullable=False, default="")
     # the language the title is in; the work's titles in other languages are in titles
     title_locale: Mapped[str] = mapped_column(ForeignKey("locales.code"), nullable=False, default=DEFAULT_LOCALE, server_default=DEFAULT_LOCALE)
+    # the language it was first written in (Dune: English, whatever it was read in); empty while not known
+    original_locale: Mapped[str | None] = mapped_column(ForeignKey("locales.code"), nullable=True)
 
     users: Mapped[list[UserWork]] = relationship(back_populates="work")  # pylint: disable=used-before-assignment
     titles: Mapped[list[WorkTitle]] = relationship(

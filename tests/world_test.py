@@ -886,6 +886,19 @@ def test_book_year_and_ids(imported: webtest.TestApp) -> None:
     assert (again["work_id"], again["isbn"], again["openlibrary_id"]) == (book["work_id"], "9780140455113", "OL123W")
 
 
+def test_book_original_language(imported: webtest.TestApp) -> None:
+    # the language a book was first written in is on the shared work: not known at first, set when sent, never emptied
+    book = imported.post_json("/api/library-entries", {"kind": "book", "title": "The Joke"}).json
+    assert book["original_locale"] == ""
+    url = f"/api/library-entries/{book['work_id']}"
+    assert imported.put_json(url, {"original_locale": "cs"}).json["original_locale"] == "cs"
+    assert imported.put_json(url, {"original_locale": ""}).json["original_locale"] == "cs"
+    assert imported.put_json(url, {"notes": "x"}).json["original_locale"] == "cs"
+    imported.put_json(url, {"original_locale": "xx"}, status=400)
+    # a new book may say it at once, and the language counts what is said in it
+    assert imported.post_json("/api/library-entries", {"kind": "book", "title": "Dune 2", "original_locale": "en"}).json["original_locale"] == "en"
+
+
 def test_fetch_book_details_pages(monkeypatch: pytest.MonkeyPatch) -> None:
     pages = {
         "https://www.goodreads.com/book/show/1": '<p>First published February 17, 1884</p>"isbn":"1568461933","isbn13":"9781568461939"',

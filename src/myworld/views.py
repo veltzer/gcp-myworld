@@ -96,6 +96,8 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
         "titles": [{"locale": t.locale, "title": t.title} for t in work.titles],
         "creator": entry.work.creator,
         "year": entry.work.year,
+        # the language it was first written in, "" while not known
+        "original_locale": work.original_locale or "",
         "imdb_id": entry.work.imdb_id,
         "tmdb_id": entry.work.tmdb_id,
         "rotten_tomatoes_id": entry.work.rotten_tomatoes_id,
@@ -223,6 +225,12 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any], new: bool = False
     year = opt_int(body, "year", -3000, 3000)
     if year is not None and year != entry.work.year:
         _set_year(entry.work, year)
+    # the language it was first written in, on the shared work as the year is: set when sent, never emptied
+    original = text(body, "original_locale")
+    if original:
+        if original not in languages.known(flask.g.db):
+            raise ApiError(400, f"original_locale: unknown language {original!r}")
+        entry.work.original_locale = original
     _apply_reads(entry, body, new)
     # owned, a list of languages, is every language the user owns it in; not sent, they stay
     if "owned" in body:

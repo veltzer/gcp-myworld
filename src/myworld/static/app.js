@@ -444,6 +444,7 @@ function libraryCard(entry) {
 	}
 	// a year before the common era is negative: -375 is 375 BCE
 	detail(list, "Year", entry.year === null ? "" : entry.year < 0 ? `${-entry.year} BCE` : String(entry.year));
+	detail(list, "Original language", entry.original_locale ? localeName(entry.original_locale) : "");
 	detail(list, "ISBN", entry.isbn);
 	// every time it was read: the day and the language, as far as they are known
 	detail(list, entry.reads.length > 1 ? "Readings" : "Reading", entry.reads.map(readText).join("; "));
@@ -1093,6 +1094,7 @@ async function libraryPage() {
 			body.title = titles[0].title;
 			body.title_locale = titles[0].locale;
 			body.titles = titles.slice(1);
+			body.original_locale = $("book-original").value;
 		}
 		// where the user is with it, their rating and review: those of each reading
 		body.reads = readsValues();
@@ -3736,6 +3738,12 @@ function setupLocalized() {
 		$("book-year-edit").disabled = true;
 		year.focus();
 	};
+	// and so does the language it was first written in
+	$("book-original-edit").onclick = () => {
+		$("book-original").disabled = false;
+		$("book-original-edit").disabled = true;
+		$("book-original").focus();
+	};
 	$("person-name-add").onclick = () => addName();
 	// the language of a name being added follows its letters as they are typed
 	$("person-name-first").addEventListener("input", () => {
@@ -4160,6 +4168,10 @@ async function prepareWorkForm(form, entry) {
 	// locked, it is not typed into or stopped at by Tab; its text can still be selected and copied
 	form.elements.year.tabIndex = form.elements.year.readOnly ? -1 : 0;
 	$("book-year-edit").disabled = !form.elements.year.readOnly;
+	// the same for the language it was first written in
+	$("book-original").value = entry?.original_locale || "";
+	$("book-original").disabled = Boolean(entry?.original_locale);
+	$("book-original-edit").disabled = !$("book-original").disabled;
 	prepareLocalized("titles", entry ? [{ locale: entry.title_locale, title: entry.main_title }, ...entry.titles] : [], false);
 	$("book-title-row").hidden = Boolean(entry);
 	// a book's authors are the user's people, any number of them; the picker

@@ -1411,7 +1411,7 @@ def api_stats() -> flask.Response:
 
 # everything that says a language: the columns that point at locales.code
 LOCALE_USES = (
-    Work.title_locale, WorkTitle.locale, Read.locale, Owning.locale, PersonName.locale, User.locale,
+    Work.title_locale, Work.original_locale, WorkTitle.locale, Read.locale, Owning.locale, PersonName.locale, User.locale,
 )
 
 

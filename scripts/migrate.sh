@@ -185,6 +185,8 @@
 #   - locales.native, what a language is called in itself in its own script
 #     ("עברית"): its picture is that name, written out. The languages the
 #     table starts with get theirs. Adding a column: run before the deploy.
+#   - library_works.original_locale, the language a book was first written
+#     in (empty while not known). Adding a column: run before the deploy.
 #   - a person's name in another language has its parts, as the English one
 #     has (person_names.honorific, first_name, middle_name, surname): the
 #     whole name each had is split into them, the first word the first name,
@@ -857,6 +859,11 @@ if locale_columns and "native" not in locale_columns:
     for code, native in LOCALE_NATIVE.items():
         db.execute("UPDATE locales SET native = ? WHERE code = ? AND native = ''", (native, code))
     added.append("locales.native")
+# the language a work was first written in (see the header)
+work_columns = {row[1] for row in db.execute("PRAGMA table_info(library_works)")}
+if work_columns and "original_locale" not in work_columns:
+    db.execute("ALTER TABLE library_works ADD COLUMN original_locale VARCHAR(10) REFERENCES locales (code)")
+    added.append("library_works.original_locale")
 # a person's name in another language, in its parts (see the header)
 name_columns = {row[1] for row in db.execute("PRAGMA table_info(person_names)")}
 if name_columns and "first_name" not in name_columns:
@@ -898,7 +905,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'email_verifications' AND column_name = 'email')
 	   OR (table_name = 'works' AND column_name IN ('id', 'imdb_id', 'tmdb_id', 'rotten_tomatoes_id'))
 	   OR (table_name IN ('museums', 'concerts') AND column_name = 'id')
-	   OR (table_name = 'library_works' AND column_name IN ('id', 'goodreads_id', 'simania_id', 'title_locale', 'isbn', 'openlibrary_id', 'external_id'))
+	   OR (table_name = 'library_works' AND column_name IN ('id', 'goodreads_id', 'simania_id', 'title_locale', 'isbn', 'openlibrary_id', 'external_id', 'original_locale'))
 	   OR (table_name = 'library_entries' AND column_name IN ('image_id', 'locale', 'finished_on', 'review', 'status'))
 	   OR (table_name = 'library_reads' AND column_name IN ('id', 'status'))
 	   OR (table_name = 'locales' AND column_name IN ('code', 'native'))
@@ -1630,6 +1637,11 @@ fi
 # what a language is called in itself (see the header): adding a column, run before the deploy
 if has "locales.code:.*" && ! has "locales.native:.*"; then
 	need locales.native "ALTER TABLE locales ADD COLUMN native VARCHAR(100) NOT NULL DEFAULT ''; UPDATE locales SET native = 'English' WHERE code = 'en' AND native = ''; UPDATE locales SET native = 'עברית' WHERE code = 'he' AND native = ''; UPDATE locales SET native = 'العربية' WHERE code = 'ar' AND native = ''; UPDATE locales SET native = 'ייִדיש' WHERE code = 'yi' AND native = ''; UPDATE locales SET native = 'Français' WHERE code = 'fr' AND native = ''; UPDATE locales SET native = 'Deutsch' WHERE code = 'de' AND native = ''; UPDATE locales SET native = 'Español' WHERE code = 'es' AND native = ''; UPDATE locales SET native = 'Italiano' WHERE code = 'it' AND native = ''; UPDATE locales SET native = 'Português' WHERE code = 'pt' AND native = ''; UPDATE locales SET native = 'Русский' WHERE code = 'ru' AND native = ''; UPDATE locales SET native = 'Čeština' WHERE code = 'cs' AND native = ''; UPDATE locales SET native = 'Ελληνικά' WHERE code = 'el' AND native = ''"
+fi
+
+# the language a work was first written in (see the header): adding a column, run before the deploy
+if has "library_works.id:.*" && ! has "library_works.original_locale:.*"; then
+	need library_works.original_locale "ALTER TABLE library_works ADD COLUMN original_locale VARCHAR(10) REFERENCES locales (code)"
 fi
 
 # a person's name in another language, in its parts (see the header): adding columns, run before the deploy

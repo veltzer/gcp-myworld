@@ -851,6 +851,13 @@ button.danger {
 
 /* values shown, not typed (what a catalog lookup gave, a year released until its pencil):
    greyed; their text can be selected and copied */
+.dialog-form .id-field select:disabled {
+	background: #eef0f3;
+	border-color: transparent;
+	color: var(--muted);
+	opacity: 1;
+}
+
 .dialog-form input[readonly] {
 	background: #eef0f3;
 	border-color: transparent;
