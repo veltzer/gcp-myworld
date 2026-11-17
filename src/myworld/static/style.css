@@ -1978,6 +1978,12 @@ button.modify:disabled {
 	cursor: default;
 }
 
+/* the × of a row that adds something: at its end, level with its boxes */
+.adder-close {
+	align-self: flex-end;
+	margin-bottom: 0.45rem;
+}
+
 /* a row to add something with, and the rows of a picture to add: in only after the + */
 .adder[hidden] {
 	display: none;

@@ -455,6 +455,7 @@ function libraryCard(entry) {
 		detail(list, "Rating", `${entry.rating}/${state.config.rating_max}`);
 	}
 	detail(list, "Started", entry.started_on ?? "");
+	detail(list, "Owned in", (entry.owned || []).map(localeName).join(", "));
 	detail(list, "Review", entry.review);
 	detail(list, "Notes", entry.notes);
 	return card;
@@ -1091,6 +1092,7 @@ async function libraryPage() {
 		if (body.reads === null) {
 			return;
 		}
+		body.owned = ownedValues();
 		try {
 			// all its covers: the first is the one its card shows
 			body.covers = (await pictures(form)).map((cover) => cover.id);
@@ -3492,10 +3494,74 @@ function readsValues() {
 	return editingReads.map((read) => ({ ...read }));
 }
 
+// ─── the languages a book is owned in ───────────────────────────────────────
+
+// the languages (locale codes) the book in the dialog is owned in
+let editingOwned = [];
+
+function renderOwned() {
+	const box = $("book-owned");
+	box.replaceChildren();
+	if (editingOwned.length === 0) {
+		box.appendChild(el("span", "empty", "None yet"));
+	}
+	editingOwned.forEach((code, index) => {
+		const chip = el("span", "chip", localeName(code));
+		chip.appendChild(removeButton(`No longer owned in ${localeName(code)}`, () => {
+			editingOwned.splice(index, 1);
+			renderOwned();
+		}));
+		box.appendChild(chip);
+	});
+	box.appendChild(adderButton($("book-owned-row"), "Add a language you own it in"));
+}
+
+// the language chosen in the row joins the list (once), and the row goes
+function addOwned() {
+	const code = $("book-owned-locale").value;
+	if (code && !editingOwned.includes(code)) {
+		editingOwned.push(code);
+	}
+	$("book-owned-row").hidden = true;
+	renderOwned();
+}
+
+function prepareOwned(owned) {
+	editingOwned = [...owned];
+	renderOwned();
+}
+
+// the languages to send, with the one chosen in the row while it is in (saving does not lose it)
+function ownedValues() {
+	if (!$("book-owned-row").hidden) {
+		addOwned();
+	}
+	return [...editingOwned];
+}
+
+// The × of a row that adds something: puts the row away again, nothing added (a
+// change of mind). Every such row of every dialog has one, after what it holds.
+function setupAdderClose() {
+	for (const adder of document.querySelectorAll(".adder")) {
+		const close = el("button", "modify adder-close", "\u00d7");
+		close.type = "button";
+		close.title = "Never mind: put this away, adding nothing";
+		close.setAttribute("aria-label", close.title);
+		close.onclick = () => {
+			adder.hidden = true;
+		};
+		// a row holds it itself; a block of rows, its last row
+		const rows = adder.querySelectorAll(".row");
+		(adder.classList.contains("row") || rows.length === 0 ? adder : rows[rows.length - 1]).appendChild(close);
+	}
+}
+
 // Add, and Enter in the box, add what is typed; Enter never saves the form
 function setupLocalized() {
 	fillLocales();
 	$("book-read-add").onclick = () => addRead();
+	$("book-owned-add").onclick = () => addOwned();
+	setupAdderClose();
 	// the year a book came out stays as it is until its pencil is pressed
 	$("book-year-edit").onclick = () => {
 		const year = $("add-form").elements.year;
@@ -3912,6 +3978,7 @@ async function prepareWorkForm(form, entry) {
 	}
 	// its reads, and every title it has, each in its language; a new book starts with the row to type its title in
 	prepareReads(entry?.reads || [], !entry);
+	prepareOwned(entry?.owned || []);
 	// the year released is there to see; its pencil lets it be changed (a book with none yet just takes one)
 	form.elements.year.readOnly = Boolean(entry) && entry.year !== null;
 	// locked, it is not typed into or stopped at by Tab; its text can still be selected and copied

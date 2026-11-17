@@ -91,12 +91,14 @@ from myworld.models import (
     City,
     Concert,
     Country,
+    Cover,
     Device,
     Group,
     Image,
     Museum,
     Organization,
     OrganizationType,
+    Owning,
     Person,
     PersonName,
     PersonOrganization,
@@ -522,7 +524,11 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     ))
     # every person goes, so every author link of owner's library entries does too
     session.execute(delete(library_entry_authors).where(library_entry_authors.c.user_id == owner.id))
-    # the books are added again below; other library entries lose their cover, as every image goes
+    # the books are added again below, and what hangs on them goes with them (said here, as not
+    # every database deletes it by itself); other library entries lose their cover, as every image goes
+    books = select(Work.id).where(Work.kind == "book")
+    for model in (Read, Cover, Owning):
+        session.execute(delete(model).where(model.user_id == owner.id, model.work_id.in_(books)))
     session.execute(delete(UserWork).where(
         UserWork.user_id == owner.id, UserWork.work_id.in_(select(Work.id).where(Work.kind == "book")),
     ))
@@ -855,9 +861,6 @@ def _book_notes(item: dict[str, Any]) -> str:
             day = _reading_day(reading)
             described.append(f"{_language(reading['language'])} ({day.isoformat() if day else 'date unknown'})")
         parts.append(f"Read in {'; '.join(described)}")
-    owned = sorted({_language(o["language"]) for o in item.get("ownings", [])})
-    if owned:
-        parts.append(f"Owned in {' and '.join(owned)}")
     if item["language"] not in ("english", "unknown"):
         parts.append(f"Written in {_language(item['language'])}")
     # the other titles and the authors' other names are fields of their own (titles, people's names)
@@ -1067,6 +1070,7 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
             notes=_book_notes(item),
             image_id=cover.id if cover else None,
             reads=reads_of(item),
+            owned=[locale for locale in dict.fromkeys(_locale(o["language"]) for o in item.get("ownings", [])) if locale],
             authors=(authors := [author(name) for name in names]),
         ))
         other_names(item, authors)

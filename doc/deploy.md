@@ -580,7 +580,14 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   entry has none; a new entry always has one. In the dialog the Readings
   box lists them, each with a red pencil that brings it into the row to
   edit, a red − and one red + to add another. The year released is
-  shown locked; its red pencil lets it be changed. A person's `names` are their names in other languages
+  shown locked; its red pencil lets it be changed. An entry's `owned`
+  is the list of languages (locale codes) the user owns it in (rows of
+  `library_ownings`): sent, it is all of them; not sent, they stay.
+  `scripts/owned_from_notes.py` moves what the notes of imported books
+  say of it ("Owned in Hebrew") into the list. The book dialog goes
+  titles, authors and year released, covers, readings, owned in, notes;
+  every row that adds something ends with a red × that puts it away
+  again, nothing added. A person's `names` are their names in other languages
   than English, `{locale, name}`, one per language, replaced when sent;
   `name` is the English one, which every view but a book shows.
 - `DELETE /api/library-entries/<work_id>`: remove from the library.

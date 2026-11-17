@@ -114,6 +114,8 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
         "finished_on": entry.finished_on.isoformat() if entry.finished_on else None,
         # every time it was read: the day and the language, either empty when not known
         "reads": [_read_json(read) for read in entry.reads],
+        # the languages the user owns it in
+        "owned": entry.owned,
         # what the user thought of it, and anything else they keep about it
         "review": entry.review,
         "notes": entry.notes,
@@ -222,6 +224,15 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any], new: bool = False
     if year is not None and year != entry.work.year:
         _set_year(entry.work, year)
     _apply_reads(entry, body, new)
+    # owned, a list of languages, is every language the user owns it in; not sent, they stay
+    if "owned" in body:
+        owned = body["owned"]
+        if not isinstance(owned, list) or not all(isinstance(locale, str) for locale in owned):
+            raise ApiError(400, "owned: expected a list of languages")
+        unknown = [locale for locale in owned if locale not in languages.known(flask.g.db)]
+        if unknown:
+            raise ApiError(400, f"owned: unknown language {unknown[0]!r}")
+        entry.owned = owned
     # an entry edited with its title sent says all the titles of its work; with only titles sent they are added
     if "title" in body and not new:
         _set_titles(entry.work, body)

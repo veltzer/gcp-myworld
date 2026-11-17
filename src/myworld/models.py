@@ -322,6 +322,20 @@ class UserWork(Base):
     # its covers after the first (image_id), in the order they were added
     more_covers: Mapped[list[Cover]] = relationship(cascade="all, delete-orphan", order_by=lambda: Cover.id, lazy="selectin")
 
+    # the languages the user owns it in, one row each, in the order they were added
+    ownings: Mapped[list[Owning]] = relationship(cascade="all, delete-orphan", order_by=lambda: Owning.id, lazy="selectin")
+
+    @property
+    def owned(self) -> list[str]:
+        """ The languages the user owns it in (locale codes). """
+        return [owning.locale for owning in self.ownings]
+
+    @owned.setter
+    def owned(self, locales: list[str]) -> None:
+        """ The user owns it in these languages, each once, in this order: rows of languages kept are kept. """
+        kept = {owning.locale: owning for owning in self.ownings}
+        self.ownings = [kept.get(locale) or Owning(locale=locale) for locale in dict.fromkeys(locales)]
+
     @property
     def cover_ids(self) -> list[int]:
         """ The images of all its covers: the first (image_id), then the others. """
@@ -443,6 +457,26 @@ class Cover(Base):
     user_id: Mapped[int] = mapped_column(Integer, nullable=False)
     work_id: Mapped[int] = mapped_column(Integer, nullable=False)
     image_id: Mapped[int] = mapped_column(ForeignKey("images.id", ondelete="CASCADE"), nullable=False)
+
+
+class Owning(Base):
+    """
+    A language the user owns a book of their library in: one who has it in
+    Hebrew and in English has two.
+    """
+    __tablename__ = "library_ownings"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "work_id"], ["library_entries.user_id", "library_entries.work_id"],
+            ondelete="CASCADE", name="fk_library_ownings_entry",
+        ),
+        UniqueConstraint("user_id", "work_id", "locale", name="uq_library_owning_locale"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    work_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    locale: Mapped[str] = mapped_column(ForeignKey("locales.code"), nullable=False)
 
 
 # ─── concerts, museums, people ───────────────────────────────────────────────

@@ -11,6 +11,7 @@ import fix_languages
 import flask
 import import_world
 import link_authors
+import owned_from_notes
 import pytest
 import webtest
 from sqlalchemy import delete, func, select, update
@@ -662,7 +663,9 @@ def test_books(imported: webtest.TestApp) -> None:
     # the dated reading gives the rating, the review and the day (in Jerusalem, a day after UTC)
     assert (hobbit["creator"], hobbit["status"], hobbit["rating"], hobbit["finished_on"]) == ("J.R.R. Tolkien", "done", 7, "2004-08-13")
     # what was thought of it is its review, and what it has no field for its notes
-    assert (hobbit["review"], hobbit["notes"]) == ("Good", "Read in English (date unknown); English (2004-08-13). Owned in English")
+    assert (hobbit["review"], hobbit["notes"]) == ("Good", "Read in English (date unknown); English (2004-08-13)")
+    # the languages it is owned in are a list of its own
+    assert hobbit["owned"] == ["en"]
     assert hobbit["goodreads_id"] == "5907"
     assert imported.get(hobbit["image"]).body == b"\xff\xd8hobbit"
     # text_books.yaml rates a book read with no rating of its own
@@ -690,7 +693,7 @@ def test_books(imported: webtest.TestApp) -> None:
     assert kestner["names"] == [{"locale": "he", "name": "אריך קסטנר"}]
     # owned but not read, with no cover
     assert (chess["status"], chess["creator"], chess["image"], chess["locale"]) == ("wishlist", "", None, "")
-    assert chess["notes"] == "Owned in Hebrew. Written in Hebrew"
+    assert (chess["notes"], chess["owned"]) == ("Written in Hebrew", ["he"])
 
 
 def test_books_import_adds_once(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
@@ -1745,6 +1748,34 @@ def test_each_reading_has_its_own_status_rating_and_review(imported: webtest.Tes
     imported.put_json(url, {"reads": [{"status": "lost"}]}, status=400)
     imported.put_json(url, {"reads": [{"rating": 11}]}, status=400)
     assert imported.put_json(url, {"reads": [{}]}).json["reads"] == [{"date": None, "locale": "", "status": "done", "rating": None, "review": "", "started_on": None}]
+
+
+def test_a_book_is_owned_in_languages(imported: webtest.TestApp, engine: Engine) -> None:
+    """ A book has the languages it is owned in, a list; the notes that said so give it and lose the sentence. """
+    book = imported.post_json("/api/library-entries", {"kind": "book", "title": "On The Shelf", "owned": ["he", "en", "he"]}).json
+    assert book["owned"] == ["he", "en"]
+    url = f"/api/library-entries/{book['work_id']}"
+    # not sent, they stay; sent, they are all of them
+    assert imported.put_json(url, {"notes": "kept"}).json["owned"] == ["he", "en"]
+    assert imported.put_json(url, {"owned": ["en"]}).json["owned"] == ["en"]
+    assert imported.put_json(url, {"owned": []}).json["owned"] == []
+    for wrong in ({"owned": "he"}, {"owned": ["xx"]}, {"owned": [1]}):
+        imported.put_json(url, wrong, status=400)
+    # what the notes say of ownership, as the import once wrote it
+    codes = {"english": "en", "hebrew": "he"}
+    assert owned_from_notes.split_notes("Read in Hebrew (2001-05-01). Owned in Hebrew. Written in Hebrew", codes) == (["he"], "Read in Hebrew (2001-05-01). Written in Hebrew")
+    assert owned_from_notes.split_notes("Owned in English and Hebrew", codes) == (["en", "he"], "")
+    assert owned_from_notes.split_notes("Publisher: x. Owned in English", codes) == (["en"], "Publisher: x")
+    # anything else is left as it is: a language not known, the user's own words
+    assert owned_from_notes.split_notes("Owned in Klingon", codes) == ([], "Owned in Klingon")
+    assert owned_from_notes.split_notes("I owned it in my youth", codes) == ([], "I owned it in my youth")
+    imported.put_json(url, {"notes": "Owned in Hebrew. on the top shelf", "owned": ["en"]})
+    with Session(engine) as session:
+        assert owned_from_notes.derive(session) == 1
+        session.commit()
+        assert owned_from_notes.derive(session) == 0
+    [after] = [b for b in imported.get("/api/library-entries?kind=book").json if b["work_id"] == book["work_id"]]
+    assert (after["owned"], after["notes"]) == (["en", "he"], "on the top shelf")
 
 
 def test_authors_of_hebrew_books_have_hebrew_names(imported: webtest.TestApp, engine: Engine) -> None:

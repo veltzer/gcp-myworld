@@ -192,6 +192,18 @@
 					<button type="button" class="danger" id="book-title-add">Add</button>
 				</div>
 				<div class="row">
+					<label title="Who wrote the book, each one of People; add a new one on the People page" class="wide">Authors <select id="book-authors" multiple data-chips="people" data-field="authors" data-placeholder="Type a person (a book's authors, any number)"><option value=""></option></select></label>
+					<label title="The year the book was released in (negative before the common era, -375 is 375 BCE); the pencil lets you change it">Year released <span class="id-field"><input name="year" type="number" min="-3000" max="3000" placeholder="The year it came out" title="The year the book was released in (negative before the common era, -375 is 375 BCE); the pencil lets you change it"><button type="button" class="modify" id="book-year-edit" title="Edit the year released" aria-label="Edit the year released">&#9998;</button></span></label>
+				</div>
+				<div class="row">
+					<label title="The book's covers: the first is the one its card shows. + adds a cover, − takes one away" class="wide">Covers <span class="chips pictures" id="add-pictures" data-pictures="many" data-what="cover"></span></label>
+				</div>
+				<div class="adder" data-picture-adder hidden>
+					<div class="row">
+						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Cover file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					</div>
+				</div>
+				<div class="row">
 					<!-- where you are with the book, your rating and your review belong to each reading -->
 					<label title="Every time you read the book, or mean to: each reading has its own status, rating, review, days and language. + adds a reading, the pencil edits one, − takes one away" class="wide">Readings <span class="chips" id="book-reads"></span></label>
 				</div>
@@ -211,19 +223,14 @@
 					</div>
 				</div>
 				<div class="row">
-					<label title="Who wrote the book, each one of People; add a new one on the People page" class="wide">Authors <select id="book-authors" multiple data-chips="people" data-field="authors" data-placeholder="Type a person (a book's authors, any number)"><option value=""></option></select></label>
-					<label title="The year the book was released in (negative before the common era, -375 is 375 BCE); the pencil lets you change it">Year released <span class="id-field"><input name="year" type="number" min="-3000" max="3000" placeholder="The year it came out" title="The year the book was released in (negative before the common era, -375 is 375 BCE); the pencil lets you change it"><button type="button" class="modify" id="book-year-edit" title="Edit the year released" aria-label="Edit the year released">&#9998;</button></span></label>
+					<label title="The languages you own the book in: one for each language you have a copy in. + adds a language, − takes one away" class="wide">Owned in <span class="chips" id="book-owned"></span></label>
+				</div>
+				<div class="row adder" id="book-owned-row" hidden>
+					<label title="A language you own the book in: Add adds it to Owned in">Language <select id="book-owned-locale" data-locales data-first aria-label="Language you own the book in" title="A language you own the book in: Add adds it to Owned in"></select></label>
+					<button type="button" class="danger" id="book-owned-add">Add</button>
 				</div>
 				<div class="row">
-					<label title="Anything else worth keeping about the book: where you have it, what it was once called" class="wide">Notes <input name="notes"></label>
-				</div>
-				<div class="row">
-					<label title="The book's covers: the first is the one its card shows. + adds a cover, − takes one away" class="wide">Covers <span class="chips pictures" id="add-pictures" data-pictures="many" data-what="cover"></span></label>
-				</div>
-				<div class="adder" data-picture-adder hidden>
-					<div class="row">
-						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Cover file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
-					</div>
+					<label title="Anything else worth keeping about the book: its publisher, what it was once called" class="wide">Notes <input name="notes"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
