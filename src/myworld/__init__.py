@@ -72,15 +72,18 @@ def create_app(engine: Engine | None = None, mail: verification.Mailer | None = 
     app.config["GZIP_MIN_BYTES"] = GZIP_MIN_BYTES
     # The hostname the service is meant to be reached on (gcp_domain in .gcp.conf); empty in dev.
     app.config["CANONICAL_HOST"] = os.environ.get("CANONICAL_HOST", "")
+    # More hostnames the site is served on as it is (gcp_alias_domains in .gcp.conf), space separated.
+    app.config["ALIAS_HOSTS"] = frozenset(os.environ.get("ALIAS_HOSTS", "").split())
 
     @app.before_request
     def redirect_to_canonical_host() -> werkzeug.Response | None:
         # Cloud Run also answers on its run.app hostnames. Send those to the custom domain
-        # before anything else happens, so there is one origin for cookies and links and the
-        # sign-in providers only ever see the callback URL that is registered with them.
+        # before anything else happens, so the sign-in providers only ever see origins and
+        # callback URLs that are registered with them. The alias hosts are registered too and
+        # are served as they are, each with its own cookies and links.
         # The health check is exempt so probes that address the service directly keep working.
         host = app.config["CANONICAL_HOST"]
-        if not host or flask.request.host == host or flask.request.path == "/app/health":
+        if not host or flask.request.host == host or flask.request.host in app.config["ALIAS_HOSTS"] or flask.request.path == "/app/health":
             return None
         url = urllib.parse.urlsplit(flask.request.url)._replace(scheme="https", netloc=host).geturl()
         return flask.redirect(url, code=308)

@@ -384,6 +384,16 @@ def _provider(key: str) -> OAuthProvider:
 
 
 def _callback_url(provider: OAuthProvider) -> str:
+    """
+    The callback registered with the provider. A GitHub OAuth app takes one
+    callback URL only, so it is always the one on the canonical host, also
+    for a sign-in that started on an alias host: oauth_callback hands that
+    one back to where it started.
+    """
+    path = flask.url_for("auth.oauth_callback", provider=provider.key)
+    canonical = flask.current_app.config["CANONICAL_HOST"]
+    if canonical:
+        return f"https://{canonical}{path}"
     # Cloud Run terminates TLS in front of the app, so build the https URL by hand there.
     scheme = "https" if "K_SERVICE" in os.environ else None
     return flask.url_for("auth.oauth_callback", provider=provider.key, _external=True, _scheme=scheme)
@@ -435,7 +445,8 @@ def fetch_claims(provider: OAuthProvider, token: str) -> dict[str, Any]:
 @bp.route("/oauth/<provider>", methods=["GET"])
 def oauth_start(provider: str) -> werkzeug.Response:
     oauth = _provider(provider)
-    state = secrets.token_urlsafe(32)
+    # the state names the host the sign-in started on, for oauth_callback to return to
+    state = f"{secrets.token_urlsafe(32)}@{flask.request.host}"
     flask.session["oauth_state"] = state
     params = {
         "client_id": oauth.client_id,
@@ -450,8 +461,15 @@ def oauth_start(provider: str) -> werkzeug.Response:
 @bp.route("/oauth/<provider>/callback", methods=["GET"])
 def oauth_callback(provider: str) -> werkzeug.Response:
     oauth = _provider(provider)
-    expected = flask.session.pop("oauth_state", "")
     given = flask.request.args.get("state", "")
+    # A sign-in that started on an alias host comes back to the canonical one (_callback_url),
+    # where its session is not: pass the answer on to the alias, which holds the state to
+    # check it against. Only our own alias hosts are ever redirected to.
+    started_on = given.rpartition("@")[2]
+    config = flask.current_app.config
+    if flask.request.host == config["CANONICAL_HOST"] and started_on in config["ALIAS_HOSTS"]:
+        return flask.redirect(urllib.parse.urlsplit(flask.request.url)._replace(scheme="https", netloc=started_on).geturl())
+    expected = flask.session.pop("oauth_state", "")
     if not expected or not hmac.compare_digest(expected, given):
         flask.abort(400, "OAuth state mismatch")
     code = flask.request.args.get("code", "")

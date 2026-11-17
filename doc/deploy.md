@@ -89,11 +89,39 @@ The service keeps answering on its `run.app` hostnames, but those are not
 registered with the sign-in providers and would fail the login with a
 `redirect_uri` mismatch. So `gcp_run_args` in `.gcp.conf` passes
 `CANONICAL_HOST=${gcp_domain}` to the app, and every request on any other
-hostname is redirected (308) to the same path on the custom domain before
-it is served; only `/app/health` is exempt, for probes that address the
-service directly. Unset locally, where the app answers on whatever host it
-is reached on. Because of this redirect only the custom domain needs to be
-registered with the providers.
+hostname (but the alias names below) is redirected (308) to the same path
+on the custom domain before it is served; only `/app/health` is exempt,
+for probes that address the service directly. Unset locally, where the app
+answers on whatever host it is reached on. Because of this redirect only
+the names the site is served on need to be registered with the providers.
+
+### A second name: `myworld.veltzer.org`
+
+The site is also served, as it is and without a redirect, on every name in
+`gcp_alias_domains` in `.gcp.conf`, which reaches the app as `ALIAS_HOSTS`
+(space separated). Each name is an origin of its own: its own cookies, so
+signing in on one name does not sign in on the other, and its own links
+in the mail and on the shared card. Adding one takes, in this order:
+
+1. Register the name with what checks origins, before it resolves:
+   1. Google OAuth client: `https://<name>` in the authorized JavaScript
+      origins and `https://<name>/auth/login` in the redirect URIs.
+   1. Identity Platform: the name in `authorizedDomains` (the `PATCH` of the
+      one-time setup above), or the Continue link of the verification mail
+      is refused.
+   1. GitHub needs nothing. Its OAuth app takes one callback URL only, so
+      the callback is always the one on `gcp_domain`; a sign-in that
+      started on another name carries that name in its `state`, and the
+      callback on `gcp_domain` passes GitHub's answer on to it (only ever
+      to a name in `ALIAS_HOSTS`), where the state is checked and the
+      session starts.
+1. Add the name to `gcp_alias_domains` and deploy.
+1. Map it: `gcloud beta run domain-mappings create --service myworld
+   --domain <name> --region us-central1` (the parent domain must be
+   verified, see `gcloud domains list-user-verified`), and add the record it
+   prints at the DNS host, DNS only: for a subdomain a `CNAME` to
+   `ghs.googlehosted.com`. `gcloud beta run domain-mappings describe
+   --domain <name> --region us-central1` shows the certificate's progress.
 
 `www.myworld.stream` is not mapped; if wanted, add a second mapping for it
 (`gcloud beta run domain-mappings create --domain www.myworld.stream`,

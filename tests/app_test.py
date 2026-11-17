@@ -2,6 +2,8 @@
 End to end tests of the myworld app through webtest.
 """
 
+import urllib.parse
+
 import pytest
 import webtest
 from sqlalchemy import select
@@ -49,6 +51,16 @@ def test_canonical_host_redirect(app: webtest.TestApp, engine: Engine, monkeypat
     # probes that address the service directly still get their answer
     response = canonical.get("/app/health", extra_environ={"HTTP_HOST": "myworld-123.us-central1.run.app"})
     assert response.json == {"status": "ok"}
+    # an alias host is served as it is, and its links stay on it
+    monkeypatch.setenv("ALIAS_HOSTS", "myworld.alias.example other.example")
+    aliased = webtest.TestApp(create_app(engine))
+    response = aliased.get("/", extra_environ={"HTTP_HOST": "myworld.alias.example"})
+    assert response.status_int == 200
+    assert 'content="http://myworld.alias.example/"' in response.text
+    response = aliased.get("/library", extra_environ={"HTTP_HOST": "other.example"})
+    assert (response.status_int, response.location) == (302, "/")
+    response = aliased.get("/library", extra_environ={"HTTP_HOST": "stranger.example"})
+    assert (response.status_int, response.location) == (308, "https://myworld.example/library")
     # unset in development, where the app answers on whatever host it is reached on
     assert app.get("/", extra_environ={"HTTP_HOST": "127.0.0.1:8080"}).status_int == 200
 
@@ -417,6 +429,44 @@ def test_oauth_callback(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -
         "id": 1, "email": "dave@example.com", "name": "Dave", "role": "user", "method": "github",
     }
     assert [(login["method"], login["provider_id"]) for login in user["logins"]] == [("github", "42")]
+
+
+def test_oauth_from_alias_host(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
+    """ GitHub knows one callback URL, the canonical host's, which hands the answer back to the alias. """
+    configure_github(monkeypatch)
+    monkeypatch.setenv("CANONICAL_HOST", "myworld.example")
+    monkeypatch.setenv("ALIAS_HOSTS", "myworld.alias.example")
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    redirects: list[str] = []
+
+    def fake_exchange(provider: auth.OAuthProvider, code: str, redirect_uri: str) -> str:
+        redirects.append(redirect_uri)
+        return "access-token"
+
+    def fake_claims(provider: auth.OAuthProvider, token: str) -> dict[str, str | bool]:
+        return {"sub": "github:42", "email": "dave@example.com", "name": "Dave", "picture": "", "verified": True}
+
+    monkeypatch.setattr(auth, "exchange_code", fake_exchange)
+    monkeypatch.setattr(auth, "fetch_claims", fake_claims)
+    app = webtest.TestApp(create_app(engine))
+    alias = {"HTTP_HOST": "myworld.alias.example"}
+    canonical = {"HTTP_HOST": "myworld.example"}
+
+    start = app.get("/auth/oauth/github", extra_environ=alias)
+    assert start.location is not None
+    assert "redirect_uri=https%3A%2F%2Fmyworld.example%2Fauth%2Foauth%2Fgithub%2Fcallback" in start.location
+    state = start.location.split("state=")[1].split("&")[0]
+    # GitHub answers on the canonical host, which passes the answer on untouched
+    response = app.get(f"/auth/oauth/github/callback?code=abc&state={state}", extra_environ=canonical)
+    assert response.status_int == 302
+    assert response.location == f"https://myworld.alias.example/auth/oauth/github/callback?code=abc&state={urllib.parse.unquote(state)}"
+    assert not redirects
+    # a state naming a host that is not ours is never redirected to
+    app.get("/auth/oauth/github/callback?code=abc&state=x@evil.example", extra_environ=canonical, status=400)
+    # the alias checks the state it handed out and signs in there
+    response = app.get(f"/auth/oauth/github/callback?code=abc&state={state}", extra_environ=alias)
+    assert (response.status_int, response.location) == (302, "/library")
+    assert redirects == ["https://myworld.example/auth/oauth/github/callback"]
 
 
 def test_oauth_callback_failures_return_to_landing(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> None:

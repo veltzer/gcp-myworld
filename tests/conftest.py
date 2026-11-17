@@ -62,6 +62,7 @@ def fixture_app(engine: Engine, mailer: FakeMailer, monkeypatch: pytest.MonkeyPa
     monkeypatch.setenv("SECRET_KEY", "test-secret")
     monkeypatch.delenv("K_SERVICE", raising=False)
     monkeypatch.delenv("CANONICAL_HOST", raising=False)
+    monkeypatch.delenv("ALIAS_HOSTS", raising=False)
     monkeypatch.setattr(auth, "verify_google_token", fake_claims)
     return webtest.TestApp(create_app(engine, mailer))
 
