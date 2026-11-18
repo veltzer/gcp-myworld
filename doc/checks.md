@@ -302,10 +302,13 @@ By dataset: the key is the page's name in the app (`#book`) and what
 
 ## Adding one
 
-A check is one function in `src/myworld/checks.py`, from a database
+A check is one function in the module of its page in
+`src/myworld/checks/` (`concerts.py`, `library.py`, ...), from a database
 session to a `Result` (how many things it looked at, and a `Problem` for
 each thing wrong: what it is about, so a person can find it, and what is
-wrong). Register it with `@check(name, title, noun, dataset)`, the
+wrong). Read the rows with `rows(session, Model)` and tell what is wrong
+with one with `problem(row, message)`, both in `core.py`, which also has
+`twice()` for what is listed twice. Register it with `@check(name, title, noun, dataset)`, the
 dataset a key of `DATASETS` (a new dataset is one more entry there); its
 docstring is the description the page (as the title's tooltip) and
 `--list` show. The Checks page, the dataset's page, the API

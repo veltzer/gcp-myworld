@@ -1,6 +1,6 @@
 """
 What only an admin may do: run the checks over the whole database (see
-checks.py), see the structure of the database as the database itself
+checks/), see the structure of the database as the database itself
 reports it, and see every account and give or take the admin
 role. Regular accounts are users; an admin can make another account an
 admin, and so delegate, or turn an admin back into a user, but the last

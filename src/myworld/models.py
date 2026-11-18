@@ -292,7 +292,7 @@ class WorkTitle(Base):
 
 class DisabledCheck(Base):
     """
-    A database check (checks.py) an admin turned off for themselves, one
+    A database check (checks/) an admin turned off for themselves, one
     they cannot pass yet: Run all skips it, on the Checks page and on its
     data's page, and so does scripts/check.py --email. Turned back on, the
     row goes.

@@ -3,7 +3,7 @@ What the notes of a book say that the book says elsewhere: the language it
 was written in ("Written in French") and a name it once had ("was named:
 Ulysees") that is one of its titles told a little differently.
 scripts/tidy_book_notes.py takes these out of the notes, and the check
-book-notes (checks.py) finds the notes that still say them.
+book-notes (checks/library.py) finds the notes that still say them.
 """
 
 import difflib
