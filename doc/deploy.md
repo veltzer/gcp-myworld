@@ -465,7 +465,7 @@ a person is written with `type_ids`, a list.
   `postcode`, any of them empty. Places, museum visits and organizations
   have them, and `address`, the whole in one line in one order everywhere:
   `Ibn Gabirol 30, Sarona, Tel Aviv 6473424, Israel`
-  (`src/myworld/addresses.py`; `scripts/split_addresses.py` split the old
+  (`src/myworld/addresses.py`; `scripts/history/split_addresses.py` split the old
   one-line addresses).
 - `GET /api/places`: by name, with `city` (id, name, region and its
   `country`, id and name; written as `city_id`), the address parts, `latitude`,
