@@ -41,7 +41,9 @@ from sqlalchemy import (
     event,
     false,
     insert,
+    inspect,
     select,
+    text,
 )
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
@@ -1194,9 +1196,32 @@ def make_engine(url: str | None = None) -> Engine:
     if url.startswith("sqlite:///") and url != "sqlite:///:memory:":
         os.makedirs(os.path.dirname(url.removeprefix("sqlite:///")) or ".", exist_ok=True)
     engine = create_engine(url, pool_pre_ping=True)
-    Base.metadata.create_all(engine)
+    prepare_schema(engine)
     seed_locales(engine)
     return engine
+
+
+# The migration (scripts/migrations/versions/) these models are at: a database made
+# from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
+# A change to the tables is a new migration, and its number goes here.
+SCHEMA_REVISION = "0001"
+
+
+def prepare_schema(engine: Engine) -> None:
+    """
+    An empty database gets every table, and is marked as being at
+    SCHEMA_REVISION. One the migrations keep (it has alembic_version) is
+    left alone: only scripts/migrate.sh changes it. One from before the
+    migrations kept count gets the tables it lacks, as it always did.
+    """
+    tables = set(inspect(engine).get_table_names())
+    if "alembic_version" in tables:
+        return
+    Base.metadata.create_all(engine)
+    if not tables:
+        with engine.begin() as connection:
+            connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL, CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num))"))
+            connection.execute(text("INSERT INTO alembic_version (version_num) VALUES (:revision)"), {"revision": SCHEMA_REVISION})
 
 
 def seed_locales(engine: Engine) -> None:

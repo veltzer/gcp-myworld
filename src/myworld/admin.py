@@ -146,6 +146,10 @@ def _column_json(column: dict[str, Any], primary: list[str]) -> dict[str, Any]:
     }
 
 
+# where Alembic remembers which migration the database is at
+MIGRATIONS_TABLE = "alembic_version"
+
+
 def table_json(inspector: Any, name: str, rows: int) -> dict[str, Any]:
     """ One table as the database reports it, and how it differs from the model the code has. """
     primary = inspector.get_pk_constraint(name).get("constrained_columns") or []
@@ -174,7 +178,8 @@ def table_json(inspector: Any, name: str, rows: int) -> dict[str, Any]:
         "unique": [{"name": u.get("name") or "", "columns": u["column_names"]} for u in inspector.get_unique_constraints(name)],
         "checks": [{"name": c.get("name") or "", "sql": c["sqltext"]} for c in inspector.get_check_constraints(name)],
         # drift: what a migration has not caught up with (or left behind)
-        "in_model": model is not None,
+        # (the table the migrations keep their place in is not the code's, and is no drift)
+        "in_model": model is not None or name == MIGRATIONS_TABLE,
         "only_in_database": sorted(in_database - in_model) if model is not None else [],
         "only_in_model": sorted(in_model - in_database),
     }
@@ -196,6 +201,6 @@ def api_schema() -> flask.Response:
         "dialect": engine.dialect.name,
         "server_version": ".".join(str(part) for part in engine.dialect.server_version_info or ()),
         "tables": tables,
-        # tables the code has that the database does not: create_all makes them at the next start
+        # tables the code has that the database does not: a migration (scripts/migrate.sh) still to run
         "missing": sorted(set(Base.metadata.tables) - set(names)),
     })

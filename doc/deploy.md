@@ -692,10 +692,36 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   `organization_relation_types`.
 
 The Schema page (`schema.md`) shows the tables as the database has them.
-Tables are created on startup with `create_all`, which never alters one:
-`scripts/migrate.sh` makes the changes it cannot (columns, renames), and
-says at the top of each step whether to run it before or after the
-deploy.
+The tables are kept by Alembic migrations: every change to them is one
+numbered step in `scripts/migrations/versions/`, and the database
+remembers which step it is at (its `alembic_version` table), so each runs
+once. `scripts/migrate.sh` applies the ones the database lacks (`--local`
+for the local sqlite file) and ends with one line saying what it did;
+`scripts/migrate.sh --drift` only lists how the database differs from
+what the models declare.
+
+An empty database is given every table when the app starts, and marked
+as being at the newest step (`SCHEMA_REVISION` in `models.py`). A
+database that has a step is never changed by the app: a version of the
+code that needs a new table or column needs its migration run first. So
+the order is:
+
+- adding (a table, a column with a default): `scripts/migrate.sh`, then
+  deploy;
+- dropping what the new code no longer uses: deploy, then
+  `scripts/migrate.sh` right after.
+
+A new step: change the models, run
+`alembic -c scripts/migrations/alembic.ini revision --autogenerate -m "what changed"`
+against a database that is at the head, read what it wrote, and put its
+number in `SCHEMA_REVISION`. `tests/migrations_test.py` fails while the
+models and the migrations disagree. Try a step on a copy of the database
+before running it on the real one.
+
+The steps before Alembic are `scripts/history/migrate_legacy.sh`, kept
+for a database that predates it: `scripts/migrate.sh` runs it for such a
+database (tables, but no `alembic_version`) and then marks it as being
+at the first step.
 
 ## Local development
 

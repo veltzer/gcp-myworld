@@ -9,14 +9,14 @@ an organization's location, for its headquarters (and its city when it has
 none yet: "Santa Clara, California, USA (Nvidia)"; the
 text stays, as it says more than the city). A city written two ways is one
 city (src/myworld/cities.py). Only rows not linked yet are linked; safe to
-run again. Run it after scripts/migrate.sh has added the city links and
+run again. Run it after scripts/history/migrate_legacy.sh has added the city links and
 before it drops the old city columns.
 
-  scripts/link_cities.py            link them
-  scripts/link_cities.py --dry-run  only print what it would do
+  scripts/history/link_cities.py            link them
+  scripts/history/link_cities.py --dry-run  only print what it would do
 
 The database is DATABASE_URL (default: the local sqlite file); for Cloud SQL
-run it through the proxy: scripts/with_cloud_db.sh scripts/link_cities.py.
+run it through the proxy: scripts/with_cloud_db.sh scripts/history/link_cities.py.
 """
 
 import argparse
@@ -26,7 +26,7 @@ from collections import Counter
 from pathlib import Path
 
 # the myworld package is in src/, not installed (see scripts/check.py)
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 os.chdir(ROOT)
 

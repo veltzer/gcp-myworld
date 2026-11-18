@@ -17,17 +17,17 @@ spot gets the parts the map gives for that spot; one whose location is
 approximate gets none, rather than a street that is not its own, and keeps
 a short (typed) address in its remark.
 
-  scripts/split_addresses.py            split them
-  scripts/split_addresses.py --dry-run  only print what it would do
-  scripts/split_addresses.py --drop     split, then drop the address columns
+  scripts/history/split_addresses.py            split them
+  scripts/history/split_addresses.py --dry-run  only print what it would do
+  scripts/history/split_addresses.py --drop     split, then drop the address columns
 
-Run it after scripts/migrate.sh has added the parts; --drop once the version
+Run it after scripts/history/migrate_legacy.sh has added the parts; --drop once the version
 that no longer has the address column is deployed (right after: that
 version cannot add a place while places.address is there). Rows that have
 parts already are left alone, so it is safe to run again.
 
 The database is DATABASE_URL (default: the local sqlite file); for Cloud SQL
-run it through the proxy: scripts/with_cloud_db.sh scripts/split_addresses.py.
+run it through the proxy: scripts/with_cloud_db.sh scripts/history/split_addresses.py.
 """
 
 import argparse
@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any
 
 # the myworld package is in src/, not installed (see scripts/check.py)
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 os.chdir(ROOT)
 
