@@ -534,8 +534,8 @@ def test_youtube(engine: Engine) -> None:
 
 
 def test_every_page_has_checks() -> None:
-    """ Every page of data in the sidebar (the library's kinds, then NAV_GROUPS in app.js) is a dataset with checks. """
-    app_js = (Path(__file__).resolve().parent.parent / "src" / "myworld" / "static" / "app.js").read_text(encoding="UTF8")
+    """ Every page of data in the sidebar (the library's kinds, then NAV_GROUPS in js/sidebar.js) is a dataset with checks. """
+    app_js = (Path(__file__).resolve().parent.parent / "src" / "myworld" / "static" / "js" / "sidebar.js").read_text(encoding="UTF8")
     groups = re.search(r"const NAV_GROUPS = \[(.*?)\n\];", app_js, re.DOTALL)
     assert groups is not None
     pages = set(KINDS) | set(re.findall(r'"([a-z-]+)"', re.sub(r'\["[A-Z][a-z]+", ', "", groups.group(1))))

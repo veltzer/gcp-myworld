@@ -1,5 +1,5 @@
 """
-Pages (static HTML, the browser side is static/app.js) and the JSON API
+Pages (static HTML, the browser side is static/app.js and static/js/) and the JSON API
 it talks to.
 """
 

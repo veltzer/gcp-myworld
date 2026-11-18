@@ -73,19 +73,18 @@ def _apply_locale(locale: Locale, body: dict[str, Any]) -> None:
     locale.name, locale.script, locale.native = name, script, native
 
 
-# the ground of a language's picture, by its script: languages of one script look alike
-PICTURE_GROUNDS = ("#1d4ed8", "#b45309", "#047857", "#7c3aed", "#be123c", "#0e7490", "#4d7c0f", "#a21caf")
+# the ground of a language's picture: the same for every language, so the page is of one piece
+PICTURE_GROUND = "#1d4ed8"
 
 
 def _locale_picture(locale: Locale) -> str:
-    """ The picture of a language, as SVG: what it is called in itself, in its own script, on the colour of that script. """
+    """ The picture of a language, as SVG: what it is called in itself, in its own script, on the ground every language has. """
     shown = locale.native or locale.name
-    ground = PICTURE_GROUNDS[int(hashlib.sha256(locale.script.encode()).hexdigest(), 16) % len(PICTURE_GROUNDS)]
     size = max(34, min(96, 560 // max(len(shown), 1)))
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img">'
         f"<title>{html.escape(locale.name)}</title>"
-        f'<rect width="400" height="300" fill="{ground}"/>'
+        f'<rect width="400" height="300" fill="{PICTURE_GROUND}"/>'
         f'<text x="200" y="150" text-anchor="middle" dominant-baseline="central" fill="#fff" font-family="serif" font-size="{size}">{html.escape(shown)}</text>'
         f'<text x="200" y="270" text-anchor="middle" fill="#fff" fill-opacity="0.75" font-family="sans-serif" font-size="20">{html.escape(locale.script)}</text>'
         "</svg>"

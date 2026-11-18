@@ -542,7 +542,11 @@ a person is written with `type_ids`, a list.
 
 ## Pages and API
 
-The HTML under `src/myworld/html/` is static; `static/app.js` fetches
+The HTML under `src/myworld/html/` is static. The browser side is ES
+modules, loaded as they are with no build step: `static/app.js` is where a
+page starts, and `static/js/` has a module for each part (`cards.js`,
+`dialog.js`, `forms.js`, `locks.js`, `map.js`, ...), each importing what it
+uses from the others. It fetches
 `/api/config` (who is signed in, the kinds and statuses) and then reads and
 writes `/api/library-entries` as JSON. The API is what a future mobile client or a
 script would use as well. A path for rows is named after their table,
@@ -633,7 +637,7 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   `name`, `script`, `native` (what it is called in itself, in its own
   script) and how much is said in it (`count`). Its picture (`image`,
   `/api/locales/<id>/picture.svg`) is drawn: that name written out, on
-  the color of its script. An admin adds one
+  the one background every language has. An admin adds one
   (`POST`, with a `code` of two or three letters), renames it or changes
   its script (`PUT /api/locales/<id>`; the code stays, as everything said
   in the language points at it) and deletes one nothing is said in

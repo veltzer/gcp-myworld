@@ -1892,6 +1892,9 @@ def test_languages_are_a_page(imported: webtest.TestApp, engine: Engine) -> None
     assert hebrew["native"] == "עברית" and hebrew["image"].startswith(f"/api/locales/{hebrew['id']}/picture.svg?v=")
     picture = imported.get(hebrew["image"])
     assert picture.content_type == "image/svg+xml" and "עברית" in picture.text and "<script" not in picture.text
+    # every language is drawn on the same ground, whatever its script
+    grounds = {imported.get(row["image"]).text.split('<rect width="400" height="300" fill="')[1][:7] for row in listed}
+    assert len(grounds) == 1 and len({row["script"] for row in listed}) > 1
     with Session(engine) as session:
         me = owner(session)
         role, me.role = me.role, "user"
