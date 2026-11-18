@@ -38,6 +38,7 @@ from myworld.models import (
     Image,
     Locale,
     Museum,
+    MuseumVisit,
     Organization,
     OrganizationType,
     Owning,
@@ -76,7 +77,7 @@ IMAGE_SIGNATURES: dict[str, tuple[bytes, ...]] = {
 IMAGE_EXTENSIONS = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp"}
 
 
-def _date_json(row: Concert | Museum | AudioCourse | YouTubeVideo) -> dict[str, Any]:
+def _date_json(row: Concert | MuseumVisit | AudioCourse | YouTubeVideo) -> dict[str, Any]:
     """ The date as precisely as it is known, and a sortable key for it. """
     if row.date_utcz is not None:
         utc = row.date_utcz.replace(tzinfo=datetime.UTC)
@@ -110,7 +111,7 @@ def _names(people: list[Person]) -> list[str]:
     return sorted(shown_name(p) for p in people)
 
 
-def _refs(rows: list[Person] | list[Organization] | list[PersonType] | list[RelationType] | list[Group] | list[Concert] | list[Place] | list[City]) -> list[dict[str, Any]]:
+def _refs(rows: list[Person] | list[Organization] | list[PersonType] | list[RelationType] | list[Group] | list[Concert] | list[Place] | list[City] | list[Museum]) -> list[dict[str, Any]]:
     """ Names with the ids the People and Organizations views link to, each row once (a person may be linked to one organization twice). """
     unique = {row.id: row for row in rows}.values()
     return sorted(({"id": row.id, "name": _name(row)} for row in unique), key=lambda ref: ref["name"])
@@ -182,8 +183,6 @@ def _place_ref(place: Place) -> dict[str, Any]:
 
 
 def city_json(city: City) -> dict[str, Any]:
-    # a museum visited twice is one museum here
-    museums = {m.name: {"id": m.id, "name": m.name} for m in sorted(city.museums, key=lambda m: m.id)}
     return {
         **(city_ref(city) or {}),
         # the photo its card shows, and all of its photos (that one first), each with its credit
@@ -196,7 +195,7 @@ def city_json(city: City) -> dict[str, Any]:
         "longitude": city.longitude,
         "remark": city.remark,
         "places": _refs(city.places),
-        "museums": sorted(museums.values(), key=lambda m: m["name"]),
+        "museums": _refs(city.museums),
         "organizations": _refs(city.organizations),
         "headquarters_of": _refs(city.headquarters_of),
     }
@@ -232,27 +231,45 @@ def group_json(group: Group) -> dict[str, Any]:
     }
 
 
+def _visit_json(visit: MuseumVisit) -> dict[str, Any]:
+    return {
+        "id": visit.id,
+        **_date_json(visit),
+        "date_timezone": visit.date_timezone,
+        "rating": visit.rating,
+        "review": visit.review,
+        "remark": visit.remark,
+        "tickets": visit.tickets,
+        "alone": visit.alone,
+        "with": _names(visit.people),
+        "people": _refs(visit.people),
+    }
+
+
 def museum_json(museum: Museum) -> dict[str, Any]:
+    # the visits, the latest first (one with no date last)
+    visits = sorted((_visit_json(visit) for visit in museum.visits), key=lambda visit: (visit["date_sort"], visit["id"]), reverse=True)
+    rated = [visit["rating"] for visit in visits if visit["rating"] is not None]
+    people = {person.id: person for visit in museum.visits for person in visit.people}
     return {
         "id": museum.id,
         "name": museum.name,
-        **_date_json(museum),
-        "date_timezone": museum.date_timezone,
         "city": city_ref(museum.city),
         # the address in one line, and its parts (the city carries region and country)
         "address": museum.address,
         **_address_parts(museum),
         "latitude": museum.latitude,
         "longitude": museum.longitude,
-        "rating": museum.rating,
-        "review": museum.review,
-        "remark": museum.remark,
         "url": museum.url,
-        "tickets": museum.tickets,
-        "alone": museum.alone,
-        "with": _names(museum.people),
-        "people": _refs(museum.people),
         "image": image_url(museum.image_id),
+        "visits": visits,
+        # what its card, the sorting and the filters go by: when it was last visited, the rating
+        # it was last given, and everyone the user ever went there with
+        "date": visits[0]["date"] if visits else None,
+        "date_precision": visits[0]["date_precision"] if visits else None,
+        "date_sort": visits[0]["date_sort"] if visits else "",
+        "rating": rated[0] if rated else None,
+        "people": _refs(sorted(people.values(), key=lambda person: person.name)),
     }
 
 
@@ -423,7 +440,9 @@ def api_youtube() -> flask.Response:
 @bp.route("/api/museum-visits", methods=["GET"])
 @auth.login_required
 def api_museums() -> flask.Response:
-    query = select(Museum).where(Museum.owner_id == flask.g.user.id).options(selectinload(Museum.people), selectinload(Museum.city).selectinload(City.country))
+    query = select(Museum).where(Museum.owner_id == flask.g.user.id).options(
+        selectinload(Museum.visits).selectinload(MuseumVisit.people), selectinload(Museum.city).selectinload(City.country),
+    )
     museums = flask.g.db.execute(query).scalars().all()
     return flask.jsonify(_newest_first([museum_json(m) for m in museums]))
 
@@ -527,7 +546,7 @@ def _sniff(data: bytes) -> str | None:
     return None
 
 
-def _dates(body: dict[str, Any], current: Concert | Museum | AudioCourse | YouTubeVideo | None = None) -> dict[str, Any]:
+def _dates(body: dict[str, Any], current: Concert | MuseumVisit | AudioCourse | YouTubeVideo | None = None) -> dict[str, Any]:
     """
     The date as typed: YYYY, YYYY-MM or YYYY-MM-DD, stored at that precision,
     or nothing. date_timezone is where it happened (an IANA name). On an edit
@@ -791,23 +810,53 @@ def _apply_group(group: Group, body: dict[str, Any]) -> None:
     _apply_picture(group, body)
 
 
-def _apply_museum(museum: Museum, body: dict[str, Any], current: Museum | None) -> None:
-    museum.name = text(body, "name", required=True)
-    museum.city = _owned_city(body)
-    _apply_address(museum, body)
-    museum.latitude, museum.longitude = coordinates(body)
-    museum.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
-    museum.review = text(body, "review")
-    museum.remark = text(body, "remark")
-    museum.url = text(body, "url")
-    museum.tickets = opt_int(body, "tickets", 0, 1000)
-    apply_image(museum, body)
-    museum.people = _owned_people(body)
-    museum.alone = body.get("alone") is True
-    if museum.alone and museum.people:
+def _apply_visit(visit: MuseumVisit, body: dict[str, Any], current: MuseumVisit | None) -> None:
+    visit.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
+    visit.review = text(body, "review")
+    visit.remark = text(body, "remark")
+    visit.tickets = opt_int(body, "tickets", 0, 1000)
+    visit.people = _owned_people(body)
+    visit.alone = body.get("alone") is True
+    if visit.alone and visit.people:
         raise ApiError(400, "a visit made alone has no one in With")
     for key, value in _dates(body, current).items():
-        setattr(museum, key, value)
+        setattr(visit, key, value)
+
+
+def _apply_museum(museum: Museum, body: dict[str, Any]) -> None:
+    name = text(body, "name", required=True)
+    city = _owned_city(body)
+    clash = flask.g.db.execute(
+        select(Museum.id).where(
+            Museum.owner_id == flask.g.user.id, Museum.name == name, Museum.city_id == city.id if city else Museum.city_id.is_(None), Museum.id != museum.id,
+        )
+    ).first()
+    if clash is not None:
+        raise ApiError(409, f"{name}{', ' + city.name if city else ''} is already in Museums: add the visit to it")
+    museum.name = name
+    museum.city = city
+    _apply_address(museum, body)
+    museum.latitude, museum.longitude = coordinates(body)
+    museum.url = text(body, "url")
+    apply_image(museum, body)
+    # visits, sent, are all the visits of the museum: one with the id of a visit it has is
+    # that visit, changed; the others are new, and those it had that are not sent are gone.
+    # Not sent, they stay
+    if "visits" not in body:
+        return
+    sent = body["visits"]
+    if not isinstance(sent, list) or not all(isinstance(item, dict) for item in sent):
+        raise ApiError(400, "visits: expected a list of visits")
+    had = {visit.id: visit for visit in museum.visits}
+    visits = []
+    for item in sent:
+        visit_id = item.get("id")
+        if visit_id is not None and (visit_id not in had or visit_id in {visit.id for visit in visits}):
+            raise ApiError(400, "visits: unknown visit")
+        visit = had[visit_id] if visit_id is not None else MuseumVisit()
+        _apply_visit(visit, item, visit if visit_id is not None else None)
+        visits.append(visit)
+    museum.visits = visits
 
 
 def _stamp(body: dict[str, Any], key: str, current: datetime.datetime | None) -> datetime.datetime | None:
@@ -1113,7 +1162,7 @@ def api_concerts_update(row_id: int) -> flask.Response:
 @auth.login_required
 def api_museums_add() -> tuple[flask.Response, int]:
     museum = Museum(owner_id=flask.g.user.id)
-    _apply_museum(museum, json_body(), None)
+    _apply_museum(museum, json_body())
     flask.g.db.add(museum)
     flask.g.db.commit()
     return flask.jsonify(museum_json(museum)), 201
@@ -1123,7 +1172,7 @@ def api_museums_add() -> tuple[flask.Response, int]:
 @auth.login_required
 def api_museums_update(row_id: int) -> flask.Response:
     museum = _owned(Museum, row_id)
-    _apply_museum(museum, json_body(), museum)
+    _apply_museum(museum, json_body())
     flask.g.db.flush()
     drop_unused_images()
     flask.g.db.commit()
@@ -1304,7 +1353,7 @@ def api_world_delete(what: str, row_id: int) -> flask.Response:
 
 # ─── stats ──────────────────────────────────────────────────────────────────
 
-def _per_year(rows: list[Concert] | list[Museum]) -> list[dict[str, int]]:
+def _per_year(rows: list[Concert] | list[MuseumVisit]) -> list[dict[str, int]]:
     """ How many rows fall in each year that has any, oldest first; undated rows are left out. """
     years: dict[int, int] = {}
     for row in rows:
@@ -1349,7 +1398,8 @@ def api_stats() -> flask.Response:
         by_status = {label: counts[status] for status, label in STATUSES.items() if counts[status]}
         library.append({"kind": kind, "label": plural, "total": sum(by_status.values()), "by_status": by_status})
     concerts = db.execute(select(Concert).where(Concert.owner_id == me)).scalars().all()
-    museums = db.execute(select(Museum).where(Museum.owner_id == me)).scalars().all()
+    museums = db.execute(select(Museum).where(Museum.owner_id == me).options(selectinload(Museum.visits))).scalars().all()
+    visits = [visit for museum in museums for visit in museum.visits]
     people = db.execute(select(Person).where(Person.owner_id == me).options(selectinload(Person.types))).scalars().all()
     organizations = db.execute(
         select(Organization).where(Organization.owner_id == me).options(selectinload(Organization.type), selectinload(Organization.relations))
@@ -1377,8 +1427,8 @@ def api_stats() -> flask.Response:
         "library": library,
         "concerts": len(concerts),
         "performers": performers,
-        "museum_visits": len(museums),
-        "museums": len({m.name for m in museums}),
+        "museum_visits": len(visits),
+        "museums": len(museums),
         "audio_courses": count(AudioCourse),
         "youtube_videos": count(YouTubeVideo),
         "people": len(people),
@@ -1399,7 +1449,7 @@ def api_stats() -> flask.Response:
         "organizations_by_type": _by_type(organizations_by_type),
         "organizations_by_relation": _by_type(organizations_by_relation),
         "concerts_by_year": _per_year(list(concerts)),
-        "museums_by_year": _per_year(list(museums)),
+        "museums_by_year": _per_year(visits),
         "youtube_by_channel": _youtube_by(YouTubeVideo.channel, TOP_CHANNELS),
         "youtube_by_category": _youtube_by(YouTubeVideo.category),
     })

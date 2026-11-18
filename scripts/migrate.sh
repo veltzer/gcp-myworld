@@ -187,6 +187,13 @@
 #     table starts with get theirs. Adding a column: run before the deploy.
 #   - library_works.original_locale, the language a book was first written
 #     in (empty while not known). Adding a column: run before the deploy.
+#   - a museum is one row (museum_sites: its name, city, address, place on
+#     the map, website and photo) and the times it was visited hang on it
+#     (museum_visits.museum_id): the museums are made from the visits (one
+#     per name and city, with what its first visit said of it), every visit
+#     is pointed at its museum, and the columns of museum_visits that are
+#     the museum's (and owner_id) are dropped. The new code needs the new
+#     columns and the old one the old: deploy and run this right after.
 #   - a person's name in another language has its parts, as the English one
 #     has (person_names.honorific, first_name, middle_name, surname): the
 #     whole name each had is split into them, the first word the first name,
@@ -526,14 +533,15 @@ db.execute("CREATE INDEX IF NOT EXISTS ix_cities_owner_id ON cities (owner_id)")
 db.execute("CREATE INDEX IF NOT EXISTS ix_cities_country_id ON cities (country_id)")
 for table in ("places", "museum_visits", "organizations"):
     existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
-    if existing and "city_id" not in existing:
+    # visits that hang on their museums already (museum_id) have their city there
+    if existing and "city_id" not in existing and "museum_id" not in existing:
         db.execute(f"ALTER TABLE {table} ADD COLUMN city_id INTEGER REFERENCES cities (id) ON DELETE SET NULL")
         db.execute(f"CREATE INDEX IF NOT EXISTS ix_{table}_city_id ON {table} (city_id)")
         added.append(f"{table}.city_id")
 for table in ("places", "museum_visits", "organizations"):
     existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
     for column, kind in (("street", "VARCHAR(300) NOT NULL DEFAULT ''"), ("neighbourhood", "VARCHAR(200) NOT NULL DEFAULT ''"), ("postcode", "VARCHAR(20) NOT NULL DEFAULT ''")):
-        if existing and column not in existing:
+        if existing and column not in existing and "museum_id" not in existing:
             db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
             added.append(f"{table}.{column}")
 organization_columns = {row[1] for row in db.execute("PRAGMA table_info(organizations)")}
@@ -859,6 +867,56 @@ if locale_columns and "native" not in locale_columns:
     for code, native in LOCALE_NATIVE.items():
         db.execute("UPDATE locales SET native = ? WHERE code = ? AND native = ''", (native, code))
     added.append("locales.native")
+# a museum is one row and its visits hang on it (see the header)
+visit_columns = {row[1] for row in db.execute("PRAGMA table_info(museum_visits)")}
+if visit_columns and "museum_id" not in visit_columns:
+    db.execute("""CREATE TABLE IF NOT EXISTS museum_sites (
+        id INTEGER NOT NULL,
+        owner_id INTEGER NOT NULL,
+        name VARCHAR(300) NOT NULL,
+        city_id INTEGER,
+        url VARCHAR(1000) NOT NULL,
+        image_id INTEGER,
+        street VARCHAR(300) DEFAULT '' NOT NULL,
+        neighbourhood VARCHAR(200) DEFAULT '' NOT NULL,
+        postcode VARCHAR(20) DEFAULT '' NOT NULL,
+        latitude DOUBLE,
+        longitude DOUBLE,
+        PRIMARY KEY (id),
+        FOREIGN KEY(owner_id) REFERENCES users (id) ON DELETE CASCADE,
+        FOREIGN KEY(city_id) REFERENCES cities (id) ON DELETE SET NULL,
+        FOREIGN KEY(image_id) REFERENCES images (id) ON DELETE SET NULL)""")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_museum_sites_owner_id ON museum_sites (owner_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS ix_museum_sites_city_id ON museum_sites (city_id)")
+    of_museum = "owner_id, name, city_id, url, image_id, street, neighbourhood, postcode, latitude, longitude"
+    museums = db.execute(f"""INSERT INTO museum_sites ({of_museum})
+        SELECT {of_museum} FROM museum_visits v
+        WHERE v.id = (SELECT min(f.id) FROM museum_visits f WHERE f.owner_id = v.owner_id AND f.name = v.name AND f.city_id IS v.city_id)
+        ORDER BY v.id""").rowcount
+    db.execute("""CREATE TABLE museum_visits_new (
+        id INTEGER NOT NULL,
+        museum_id INTEGER NOT NULL,
+        rating INTEGER,
+        review TEXT NOT NULL,
+        remark TEXT NOT NULL,
+        tickets INTEGER,
+        alone BOOLEAN DEFAULT 0 NOT NULL,
+        date_utcz DATETIME,
+        date_ymd DATE,
+        date_my VARCHAR(7) NOT NULL,
+        date_y INTEGER,
+        date_timezone VARCHAR(64) NOT NULL,
+        PRIMARY KEY (id),
+        CONSTRAINT ck_museum_rating_range CHECK (rating IS NULL OR (rating >= 1 AND rating <= 10)),
+        FOREIGN KEY(museum_id) REFERENCES museum_sites (id) ON DELETE CASCADE)""")
+    of_visit = "rating, review, remark, tickets, alone, date_utcz, date_ymd, date_my, date_y, date_timezone"
+    visits = db.execute(f"""INSERT INTO museum_visits_new (id, museum_id, {of_visit})
+        SELECT v.id, (SELECT s.id FROM museum_sites s WHERE s.owner_id = v.owner_id AND s.name = v.name AND s.city_id IS v.city_id), {of_visit}
+        FROM museum_visits v ORDER BY v.id""").rowcount
+    db.execute("DROP TABLE museum_visits")
+    db.execute("ALTER TABLE museum_visits_new RENAME TO museum_visits")
+    db.execute("CREATE INDEX ix_museum_visits_museum_id ON museum_visits (museum_id)")
+    added.append(f"museum_sites ({museums} museums made from {visits} visits) and museum_visits.museum_id (what is the museum's is dropped from the visits)")
 # the language a work was first written in (see the header)
 work_columns = {row[1] for row in db.execute("PRAGMA table_info(library_works)")}
 if work_columns and "original_locale" not in work_columns:
@@ -910,6 +968,7 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'library_reads' AND column_name IN ('id', 'status'))
 	   OR (table_name = 'locales' AND column_name IN ('code', 'native'))
 	   OR (table_name = 'person_names' AND column_name IN ('id', 'first_name'))
+	   OR (table_name = 'museum_visits' AND column_name IN ('id', 'museum_id', 'name'))
 	   OR (table_name = 'people' AND column_name = 'company')
 	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
 	   OR (table_name = 'organizations' AND column_name IN ('type_id', 'functions'))
@@ -1300,7 +1359,8 @@ if has "person_organizations.person_id:.*" && ! has "person_organizations.relati
 fi
 # cities: the table and the links (adding: run before the deploy)
 for table in places museum_visits organizations; do
-	if ! has "${table}.city_id:.*"; then
+	# visits that hang on their museums already (museum_id) have their city there
+	if ! has "${table}.city_id:.*" && ! { [[ "${table}" == museum_visits ]] && has "museum_visits.museum_id:.*"; }; then
 		need "${table}.city_id" "CREATE TABLE IF NOT EXISTS countries (
 				id SERIAL PRIMARY KEY,
 				owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -1322,7 +1382,7 @@ for table in places museum_visits organizations; do
 done
 # addresses in parts (adding columns: run before the deploy; scripts/split_addresses.py fills them)
 for table in places museum_visits organizations; do
-	if ! has "${table}.street:.*"; then
+	if ! has "${table}.street:.*" && ! { [[ "${table}" == museum_visits ]] && has "museum_visits.museum_id:.*"; }; then
 		need "${table}.street" "ALTER TABLE ${table} ADD COLUMN street VARCHAR(300) NOT NULL DEFAULT '';
 			ALTER TABLE ${table} ADD COLUMN neighbourhood VARCHAR(200) NOT NULL DEFAULT '';
 			ALTER TABLE ${table} ADD COLUMN postcode VARCHAR(20) NOT NULL DEFAULT ''"
@@ -1644,6 +1704,43 @@ fi
 # what a language is called in itself (see the header): adding a column, run before the deploy
 if has "locales.code:.*" && ! has "locales.native:.*"; then
 	need locales.native "ALTER TABLE locales ADD COLUMN native VARCHAR(100) NOT NULL DEFAULT ''; UPDATE locales SET native = 'English' WHERE code = 'en' AND native = ''; UPDATE locales SET native = 'עברית' WHERE code = 'he' AND native = ''; UPDATE locales SET native = 'العربية' WHERE code = 'ar' AND native = ''; UPDATE locales SET native = 'ייִדיש' WHERE code = 'yi' AND native = ''; UPDATE locales SET native = 'Français' WHERE code = 'fr' AND native = ''; UPDATE locales SET native = 'Deutsch' WHERE code = 'de' AND native = ''; UPDATE locales SET native = 'Español' WHERE code = 'es' AND native = ''; UPDATE locales SET native = 'Italiano' WHERE code = 'it' AND native = ''; UPDATE locales SET native = 'Português' WHERE code = 'pt' AND native = ''; UPDATE locales SET native = 'Русский' WHERE code = 'ru' AND native = ''; UPDATE locales SET native = 'Čeština' WHERE code = 'cs' AND native = ''; UPDATE locales SET native = 'Ελληνικά' WHERE code = 'el' AND native = ''"
+fi
+
+# a museum is one row and its visits hang on it (see the header): deploy first, run this right after
+read -r -d '' visits_on_museums <<'SQL' || true
+CREATE TABLE IF NOT EXISTS museum_sites (
+	id SERIAL NOT NULL,
+	owner_id INTEGER NOT NULL,
+	name VARCHAR(300) NOT NULL,
+	city_id INTEGER,
+	url VARCHAR(1000) NOT NULL,
+	image_id INTEGER,
+	street VARCHAR(300) DEFAULT '' NOT NULL,
+	neighbourhood VARCHAR(200) DEFAULT '' NOT NULL,
+	postcode VARCHAR(20) DEFAULT '' NOT NULL,
+	latitude DOUBLE PRECISION,
+	longitude DOUBLE PRECISION,
+	CONSTRAINT museum_sites_pkey PRIMARY KEY (id),
+	CONSTRAINT museum_sites_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES users (id) ON DELETE CASCADE,
+	CONSTRAINT museum_sites_city_id_fkey FOREIGN KEY (city_id) REFERENCES cities (id) ON DELETE SET NULL,
+	CONSTRAINT museum_sites_image_id_fkey FOREIGN KEY (image_id) REFERENCES images (id) ON DELETE SET NULL);
+CREATE INDEX IF NOT EXISTS ix_museum_sites_owner_id ON museum_sites (owner_id);
+CREATE INDEX IF NOT EXISTS ix_museum_sites_city_id ON museum_sites (city_id);
+INSERT INTO museum_sites (owner_id, name, city_id, url, image_id, street, neighbourhood, postcode, latitude, longitude)
+	SELECT owner_id, name, city_id, url, image_id, street, neighbourhood, postcode, latitude, longitude FROM museum_visits v
+	WHERE v.id = (SELECT min(f.id) FROM museum_visits f WHERE f.owner_id = v.owner_id AND f.name = v.name AND f.city_id IS NOT DISTINCT FROM v.city_id)
+	ORDER BY v.id;
+ALTER TABLE museum_visits ADD COLUMN museum_id INTEGER;
+UPDATE museum_visits v SET museum_id = s.id FROM museum_sites s
+	WHERE s.owner_id = v.owner_id AND s.name = v.name AND s.city_id IS NOT DISTINCT FROM v.city_id;
+ALTER TABLE museum_visits ALTER COLUMN museum_id SET NOT NULL;
+ALTER TABLE museum_visits ADD CONSTRAINT museum_visits_museum_id_fkey FOREIGN KEY (museum_id) REFERENCES museum_sites (id) ON DELETE CASCADE;
+CREATE INDEX ix_museum_visits_museum_id ON museum_visits (museum_id);
+ALTER TABLE museum_visits DROP COLUMN owner_id, DROP COLUMN name, DROP COLUMN city_id, DROP COLUMN url, DROP COLUMN image_id,
+	DROP COLUMN street, DROP COLUMN neighbourhood, DROP COLUMN postcode, DROP COLUMN latitude, DROP COLUMN longitude
+SQL
+if has "museum_visits.name:.*" && ! has "museum_visits.museum_id:.*"; then
+	need "museum_sites (the museums, made from the visits) and museum_visits.museum_id (what is the museum's is dropped from the visits)" "${visits_on_museums}"
 fi
 
 # the language a work was first written in (see the header): adding a column, run before the deploy

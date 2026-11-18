@@ -405,9 +405,21 @@ first `companies` tables to `organizations`, then making
   and `people` holds the ids and names of who the user went with; a
   concert's `performers` are people too (ids and names), its `groups` the
   groups (bands) that performed (ids and names, written as a list of ids), and its `place`
-  is where it was (id, name, city and country; written as `place_id`). A museum visit
-  also has `address`, `latitude` and `longitude` (`maps.md`), and `alone`:
-  true when the user went alone, which is never sent with people.
+  is where it was (id, name, city and country; written as `place_id`).
+  `/api/museum-visits` lists the museums (`museum_sites`), each once
+  whatever the times it was visited (a name is a museum once in a city:
+  409 for a second), with its `city`, `address`, `latitude` and
+  `longitude` (`maps.md`), `url`, `image` and its `visits`
+  (`museum_visits`), the latest first: each with its `id`, date, `rating`,
+  `review`, `remark`, `tickets`, `people` and `alone` (true when the user
+  went alone, which is never sent with people). The museum's own `date`,
+  `rating` and `people` are those of its latest visit, the latest rating
+  given and everyone it was ever visited with: what its card, the sorting
+  and the filters go by. Written, `visits` is all the visits of the
+  museum: one with the `id` of a visit it has is that visit, changed; the
+  others are new; those not sent are gone; not sent at all, they stay. A
+  museum may have no visit yet. In the dialog the Visits box lists them,
+  each with a red pencil, a red − and one red + to add another.
 - `GET /api/youtube-videos`: the YouTube videos watched, newest first (the
   watch history, with no dates, after), with `youtube_id`, rating,
   review, `device` (id and name), `watched_at`, and what YouTube says

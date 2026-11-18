@@ -96,6 +96,7 @@ from myworld.models import (
     Group,
     Image,
     Museum,
+    MuseumVisit,
     Organization,
     OrganizationType,
     Owning,
@@ -511,7 +512,9 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     session.execute(delete(concert_performers).where(concert_performers.c.concert_id.in_(concerts_of_owner)))
     session.execute(delete(concert_groups).where(concert_groups.c.concert_id.in_(concerts_of_owner)))
     session.execute(delete(group_members).where(group_members.c.group_id.in_(select(Group.id).where(Group.owner_id == owner.id))))
-    session.execute(delete(museum_companions).where(museum_companions.c.museum_id.in_(select(Museum.id).where(Museum.owner_id == owner.id))))
+    visits_of_owner = select(MuseumVisit.id).where(MuseumVisit.museum_id.in_(select(Museum.id).where(Museum.owner_id == owner.id)))
+    session.execute(delete(museum_companions).where(museum_companions.c.museum_id.in_(visits_of_owner)))
+    session.execute(delete(MuseumVisit).where(MuseumVisit.museum_id.in_(select(Museum.id).where(Museum.owner_id == owner.id))))
     session.execute(delete(audio_course_lecturers).where(
         audio_course_lecturers.c.audio_course_id.in_(select(AudioCourse.id).where(AudioCourse.owner_id == owner.id)),
     ))
@@ -663,21 +666,25 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
             **_dates(item),
         ))
 
-    # every visit of a museum shows the photo of its first (lowest internal_id) visit
-    first_visit: dict[str, int] = {}
+    # a museum is one row whatever the times it was visited: its city, its website and its photo
+    # are those of its first (lowest internal_id) visit, and every item is a visit of it
+    museums: dict[str, Museum] = {}
+    for item in sorted(museum_items, key=lambda item: item["internal_id"]):
+        if item["name"] not in museums:
+            museums[item["name"]] = Museum(
+                owner_id=owner.id,
+                name=item["name"],
+                city=city(item.get("city", ""), "", ""),
+                url=item.get("url", ""),
+                image=image(image_dir / f"museum-{item['internal_id']}.jpg", required=False),
+            )
+            session.add(museums[item["name"]])
     for item in museum_items:
-        first_visit[item["name"]] = min(first_visit.get(item["name"], item["internal_id"]), item["internal_id"])
-    for item in museum_items:
-        session.add(Museum(
-            owner_id=owner.id,
-            name=item["name"],
-            city=city(item.get("city", ""), "", ""),
+        museums[item["name"]].visits.append(MuseumVisit(
             rating=item.get("rating"),
             review=item.get("review", ""),
             remark=item.get("remark", ""),
-            url=item.get("url", ""),
             tickets=item.get("tickets"),
-            image=image(image_dir / f"museum-{first_visit[item['name']]}.jpg", required=False),
             people=with_people(item),
             **_dates(item),
         ))
@@ -690,7 +697,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     return {
         "people": len(people) + courses["lecturers added"] + books["authors added"], "organizations": len(organizations), "organization types": len(types),
         "relation types": len(relation_types), "person types": len(PERSON_TYPES), "people with a profession": typed["people given a profession"], "people related to the user": typed["people given a relation"],
-        "concerts": len(concert_items), "places": place.added, "museums": len(museum_items), "audio courses": courses["audio courses"],
+        "concerts": len(concert_items), "places": place.added, "museums": len(museums), "museum visits": len(museum_items), "audio courses": courses["audio courses"],
         "YouTube videos": videos["YouTube videos"] + history["YouTube videos added"], "devices": courses["devices added"] + videos["devices added"],
         "books": books["books"], "images": len(images) + courses["images"] + books["covers"],
     }

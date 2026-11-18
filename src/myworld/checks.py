@@ -34,6 +34,7 @@ from myworld.models import (
     Group,
     Image,
     Museum,
+    MuseumVisit,
     Organization,
     OrganizationType,
     Person,
@@ -395,40 +396,49 @@ def check_person_name_languages(session: Session) -> Result:
 
 # ─── museums ────────────────────────────────────────────────────────────────
 
+def _museums(session: Session) -> list[Museum]:
+    return list(session.scalars(select(Museum).order_by(Museum.owner_id, Museum.name, Museum.id)))
+
+
+def _visits(session: Session) -> list[MuseumVisit]:
+    """ Every visit of every museum, by its museum and then as added. """
+    return [visit for museum in _museums(session) for visit in museum.visits]
+
+
+def _visit_problem(visit: MuseumVisit, message: str) -> Problem:
+    museum = visit.museum
+    return Problem(f"{museum.name} (museum visit {visit.id}, account {museum.owner_id})", message, f"museums/{museum.id}", museum.owner_id)
+
+
+def _museum_problem(museum: Museum, message: str) -> Problem:
+    return Problem(f"{museum.name} (museum {museum.id}, account {museum.owner_id})", message, f"museums/{museum.id}", museum.owner_id)
+
+
 @check("museum-dates", "Every museum visit has a date", "museum visits", "museums")
 def check_museum_dates(session: Session) -> Result:
     """ Every museum visit, of every account, has a date: a day, a month, a year or a full time, whichever is known. """
-    visits = session.scalars(select(Museum).order_by(Museum.owner_id, Museum.name, Museum.id)).all()
+    visits = _visits(session)
     problems = [
-        Problem(f"{visit.name} (museum visit {visit.id}, account {visit.owner_id})", "has no date", f"museums/{visit.id}", visit.owner_id)
+        _visit_problem(visit, "has no date")
         for visit in visits
         if visit.date_utcz is None and visit.date_ymd is None and not visit.date_my and visit.date_y is None
     ]
     return Result(checked=len(visits), problems=problems)
 
 
-@check("museum-addresses", "Every museum visit has an address", "museum visits", "museums")
+@check("museum-addresses", "Every museum has an address", "museums", "museums")
 def check_museum_addresses(session: Session) -> Result:
-    """ Every museum visit, of every account, has the museum's street address. """
-    visits = session.scalars(select(Museum).order_by(Museum.owner_id, Museum.name, Museum.id)).all()
-    problems = [
-        Problem(f"{visit.name} (museum visit {visit.id}, account {visit.owner_id})", "has no address", f"museums/{visit.id}", visit.owner_id)
-        for visit in visits
-        if not visit.street.strip()
-    ]
-    return Result(checked=len(visits), problems=problems)
+    """ Every museum, of every account, has its street address. """
+    museums = _museums(session)
+    return Result(checked=len(museums), problems=[_museum_problem(museum, "has no address") for museum in museums if not museum.street.strip()])
 
 
-@check("museum-locations", "Every museum visit is on the map", "museum visits", "museums")
+@check("museum-locations", "Every museum is on the map", "museums", "museums")
 def check_museum_locations(session: Session) -> Result:
-    """ Every museum visit, of every account, has a latitude and a longitude (scripts/geocode.py finds them from the address). """
-    visits = session.scalars(select(Museum).order_by(Museum.owner_id, Museum.name, Museum.id)).all()
-    problems = [
-        Problem(f"{visit.name} (museum visit {visit.id}, account {visit.owner_id})", "has no latitude and longitude", f"museums/{visit.id}", visit.owner_id)
-        for visit in visits
-        if visit.latitude is None or visit.longitude is None
-    ]
-    return Result(checked=len(visits), problems=problems)
+    """ Every museum, of every account, has a latitude and a longitude (scripts/geocode.py finds them from the address). """
+    museums = _museums(session)
+    problems = [_museum_problem(museum, "has no latitude and longitude") for museum in museums if museum.latitude is None or museum.longitude is None]
+    return Result(checked=len(museums), problems=problems)
 
 
 @check("museum-company", "Every museum visit says who you were with", "museum visits", "museums")
@@ -439,14 +449,13 @@ def check_museum_company(session: Session) -> Result:
     nobody filled in; and none is both.
     """
     with_people = set(session.scalars(select(museum_companions.c.museum_id)))
-    visits = session.scalars(select(Museum).order_by(Museum.owner_id, Museum.name, Museum.id)).all()
+    visits = _visits(session)
     problems = []
     for visit in visits:
-        subject = f"{visit.name} (museum visit {visit.id}, account {visit.owner_id})"
         if visit.alone and visit.id in with_people:
-            problems.append(Problem(subject, "is marked alone but has people in With", f"museums/{visit.id}", visit.owner_id))
+            problems.append(_visit_problem(visit, "is marked alone but has people in With"))
         elif not visit.alone and visit.id not in with_people:
-            problems.append(Problem(subject, "has no one in With and is not marked alone", f"museums/{visit.id}", visit.owner_id))
+            problems.append(_visit_problem(visit, "has no one in With and is not marked alone"))
     return Result(checked=len(visits), problems=problems)
 
 

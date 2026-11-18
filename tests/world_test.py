@@ -28,6 +28,7 @@ from myworld.models import (
     Image,
     Locale,
     Museum,
+    MuseumVisit,
     Organization,
     OrganizationType,
     Person,
@@ -284,7 +285,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         session.commit()
     assert counts == {
         "people": 7, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 3, "people with a profession": 4, "people related to the user": 2,
-        "concerts": 3, "places": 1, "museums": 3, "audio courses": 2, "YouTube videos": 4, "devices": 3, "books": 3, "images": 7}
+        "concerts": 3, "places": 1, "museums": 2, "museum visits": 3, "audio courses": 2, "YouTube videos": 4, "devices": 3, "books": 3, "images": 7}
     return app
 
 
@@ -499,14 +500,32 @@ def test_performers_are_people(imported: webtest.TestApp) -> None:
     imported.post_json("/api/concert-visits", {"name": "x", "performers": ["Singer"]}, status=400)
 
 
-def test_museums_share_the_first_visit_photo(imported: webtest.TestApp) -> None:
+def test_a_museum_has_its_visits(imported: webtest.TestApp) -> None:
+    # a museum visited twice is one museum, with the photo of its first visit and both visits, the latest first
     museums = imported.get("/api/museum-visits").json
-    assert [m["name"] for m in museums] == ["No Photo Museum", "The Louvre", "The Louvre"]
+    assert [(m["name"], len(m["visits"])) for m in museums] == [("No Photo Museum", 1), ("The Louvre", 2)]
     assert museums[0]["image"] is None
-    assert museums[1]["image"] is not None
-    assert museums[1]["image"] == museums[2]["image"]
-    assert museums[2]["rating"] == 9
-    assert museums[2]["with"] == ["Bob Buddy"]
+    louvre = museums[1]
+    assert louvre["image"] is not None
+    first = louvre["visits"][1]
+    assert (first["rating"], first["with"]) == (9, ["Bob Buddy"])
+    # the museum goes by its latest visit, and by everyone it was ever visited with
+    assert (louvre["date"], louvre["date_sort"]) == (louvre["visits"][0]["date"], louvre["visits"][0]["date_sort"])
+    assert [p["name"] for p in louvre["people"]] == ["Bob Buddy"]
+    # a visit is added, one is changed and one taken away: sent, visits are all of them
+    kept = dict(first, people=[p["id"] for p in first["people"]], rating=10)
+    changed = imported.put_json(f"/api/museum-visits/{louvre['id']}", {"name": "The Louvre", "visits": [kept, {"date": "2024-03", "alone": True, "review": "crowded"}]}).json
+    assert [(v["date"], v["rating"], v["alone"], v["review"] == "crowded") for v in changed["visits"]] == [("2024-03", None, True, True), (first["date"], 10, False, False)]
+    assert changed["visits"][1]["id"] == first["id"] and changed["rating"] == 10
+    # not sent, they stay; a visit of another museum, or one sent twice, is no visit of this one
+    assert len(imported.put_json(f"/api/museum-visits/{louvre['id']}", {"name": "The Louvre"}).json["visits"]) == 2
+    imported.put_json(f"/api/museum-visits/{louvre['id']}", {"name": "The Louvre", "visits": [{"id": museums[0]["visits"][0]["id"]}]}, status=400)
+    imported.put_json(f"/api/museum-visits/{louvre['id']}", {"name": "The Louvre", "visits": [{"id": first["id"]}, {"id": first["id"]}]}, status=400)
+    # a museum is listed once: its name again (in the same city) is refused, and one may have no visit yet
+    imported.post_json("/api/museum-visits", {"name": "The Louvre"}, status=409)
+    assert imported.put_json(f"/api/museum-visits/{louvre['id']}", {"name": "The Louvre", "visits": []}).json["visits"] == []
+    stats = imported.get("/api/stats").json
+    assert (stats["museums"], stats["museum_visits"]) == (2, 1)
 
 
 def test_audio_courses(imported: webtest.TestApp) -> None:
@@ -934,9 +953,9 @@ def test_books_unknown_field(engine: Engine, tmp_path: Path, app: webtest.TestAp
 
 def test_people_links_point_at_people(imported: webtest.TestApp) -> None:
     ids = {p["name"]: p["id"] for p in imported.get("/api/people").json}
-    for path in ("/api/concert-visits", "/api/museum-visits"):
-        for item in imported.get(path).json:
-            assert [ids[p["name"]] for p in item["people"]] == [p["id"] for p in item["people"]]
+    visits = [visit for museum in imported.get("/api/museum-visits").json for visit in museum["visits"]]
+    for item in [*imported.get("/api/concert-visits").json, *visits]:
+        assert [ids[p["name"]] for p in item["people"]] == [p["id"] for p in item["people"]]
 
 
 def test_people(imported: webtest.TestApp) -> None:
@@ -1226,7 +1245,7 @@ def test_reimport_replaces(imported: webtest.TestApp, engine: Engine, tmp_path: 
     with Session(engine) as session:
         import_world.import_world(session, owner(session), tmp_path, replace=True)
         session.commit()
-        for model, count in ((Concert, 3), (Museum, 3), (AudioCourse, 2), (Person, 8), (Organization, 3), (Image, 7)):
+        for model, count in ((Concert, 3), (Museum, 2), (MuseumVisit, 3), (AudioCourse, 2), (Person, 8), (Organization, 3), (Image, 7)):
             assert session.scalar(select(func.count()).select_from(model)) == count
         assert session.scalar(select(func.count()).select_from(concert_companions)) == 3
         assert session.scalar(select(func.count()).select_from(person_organizations)) == 3
@@ -1301,7 +1320,8 @@ def test_add_validates(imported: webtest.TestApp) -> None:
     imported.post_json("/api/concert-visits", {"name": "x", "date": "last year"}, status=400)
     imported.post_json("/api/concert-visits", {"name": "x", "date_timezone": "Mars/Olympus"}, status=400)
     imported.post_json("/api/concert-visits", {"name": "x", "people": [999]}, status=400)
-    imported.post_json("/api/museum-visits", {"name": "x", "rating": 11}, status=400)
+    imported.post_json("/api/museum-visits", {"name": "x", "visits": [{"rating": 11}]}, status=400)
+    imported.post_json("/api/museum-visits", {"name": "x", "visits": "often"}, status=400)
     imported.post_json("/api/museum-visits", {"name": "x", "latitude": 91, "longitude": 0}, status=400)
     imported.post_json("/api/museum-visits", {"name": "x", "latitude": "north", "longitude": 0}, status=400)
     # one coordinate without the other is no place
@@ -1331,21 +1351,21 @@ def test_person_with_no_name(imported: webtest.TestApp) -> None:
 def test_add_museum_and_person(imported: webtest.TestApp) -> None:
     person = imported.post_json("/api/people", {"first_name": "Carol", "description": "Zed"}, status=201).json
     museum = imported.post_json("/api/museum-visits", {
-        "name": "Prado", "date": "2012", "rating": 9, "people": [person["id"]],
+        "name": "Prado", "visits": [{"date": "2012", "rating": 9, "people": [person["id"]]}],
     }, status=201).json
-    assert museum["date"] == "2012"
-    assert museum["with"] == ["Carol"]
+    assert (museum["date"], museum["rating"]) == ("2012", 9)
+    assert museum["visits"][0]["with"] == ["Carol"]
     assert museum["image"] is None
 
 
 def test_museum_alone(imported: webtest.TestApp) -> None:
-    alone = imported.post_json("/api/museum-visits", {"name": "Prado", "alone": True}, status=201).json
+    [alone] = imported.post_json("/api/museum-visits", {"name": "Prado", "visits": [{"alone": True}]}, status=201).json["visits"]
     assert alone["alone"] is True
     assert alone["with"] == []
-    assert imported.post_json("/api/museum-visits", {"name": "Tate"}, status=201).json["alone"] is False
+    assert imported.post_json("/api/museum-visits", {"name": "Tate", "visits": [{}]}, status=201).json["visits"][0]["alone"] is False
     # alone with company is a contradiction
     person = imported.post_json("/api/people", {"first_name": "Carol"}, status=201).json
-    imported.post_json("/api/museum-visits", {"name": "Uffizi", "alone": True, "people": [person["id"]]}, status=400)
+    imported.post_json("/api/museum-visits", {"name": "Uffizi", "visits": [{"alone": True, "people": [person["id"]]}]}, status=400)
 
 
 def test_addresses_and_coordinates(imported: webtest.TestApp) -> None:
@@ -1359,7 +1379,7 @@ def test_addresses_and_coordinates(imported: webtest.TestApp) -> None:
     assert (museum["street"], museum["neighbourhood"], museum["postcode"]) == ("Calle de Ruiz de Alarcón 23", "Retiro", "28014")
     assert (museum["address"], museum["latitude"], museum["longitude"]) == ("Calle de Ruiz de Alarcón 23, Retiro, Madrid 28014, Spain", 40.4138, -3.6921)
     # a dialog with the coordinates cleared leaves the place off the map
-    cleared = imported.put_json(f"/api/museum-visits/{museum['id']}", dict(museum, people=[], latitude="", longitude="")).json
+    cleared = imported.put_json(f"/api/museum-visits/{museum['id']}", dict(museum, city_id=madrid["id"], latitude="", longitude="")).json
     assert (cleared["latitude"], cleared["longitude"]) == (None, None)
     organization = imported.post_json("/api/organizations", {"name": "Glil", "street": "Kibbutz Glil Yam", "latitude": 32.15556, "longitude": 34.82361}, status=201).json
     assert (organization["latitude"], organization["longitude"]) == (32.15556, 34.82361)
@@ -1384,8 +1404,8 @@ def test_edit_person(imported: webtest.TestApp) -> None:
     bob = imported.put_json(f"/api/people/{ids['Bob Buddy']}", {"first_name": "Robert", "surname": "Buddy", "description": "x"}).json
     assert bob["name"] == "Robert Buddy"
     assert (bob["first_name"], bob["surname"]) == ("Robert", "Buddy")
-    louvre = next(m for m in imported.get("/api/museum-visits").json if m["with"])
-    assert louvre["with"] == ["Robert Buddy"]
+    louvre = next(m for m in imported.get("/api/museum-visits").json if m["people"])
+    assert [p["name"] for p in louvre["people"]] == ["Robert Buddy"]
     # no organizations sent: the links stay as they were, as relations do
     assert [o["name"] for o in bob["organizations"]] == ["Acme", "Startup"]
 
@@ -1832,6 +1852,17 @@ def test_notes_lose_what_the_book_says_elsewhere(imported: webtest.TestApp, engi
     # it still goes by the reading it went by
     assert (after["rating"], after["review"], after["locale"]) == (9, "great", "en")
     assert (books[other["work_id"]]["notes"], books[other["work_id"]]["reads"]) == ("was named: Kept Once. on the top shelf", [reading(locale="he")])
+
+
+def test_a_name_that_is_the_title() -> None:
+    same = tidy_book_notes.same_title
+    # a part of the title, the title but for its spelling, its punctuation, a leading article or an & for an and
+    assert same("The Blind Watchmaker", ["The Blind Watchmaker: Why the Evidence of Evolution Reveals a Universe Without Design"])
+    assert same("The Strange Case of Dr. Jekyll and Mr. Hyde", ["Strange Case Of Dr. Jekyll & Mr. Hyde"])
+    assert same("Ulysees", ["Ulysses"]) and same("Godel, Escher & Bach", ["Gödel, Escher, Bach: An Eternal Golden Braid"])
+    assert same("Guide to Movies and Videos 1996", ["Blockbuster Video Guide to Movies and Videos 1996"])
+    # another name is not the title
+    assert not same("Kufsa Shora", ["Black Box"]) and not same("Pipes", ["Pipelines"]) and not same("", ["Dune"])
 
 
 def test_languages_are_a_page(imported: webtest.TestApp, engine: Engine) -> None:

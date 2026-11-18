@@ -32,6 +32,7 @@ from myworld.models import (
     Image,
     Login,
     Museum,
+    MuseumVisit,
     Organization,
     Person,
     PersonType,
@@ -196,16 +197,17 @@ def test_museum_dates(engine: Engine) -> None:
         session.flush()
         session.add_all([
             # any one precision is a date
-            Museum(owner_id=alice.id, name="Louvre", date_ymd=datetime.date(2019, 5, 1)),
-            Museum(owner_id=alice.id, name="Prado", date_my="06-2018"),
-            Museum(owner_id=alice.id, name="Tate", date_y=2015),
-            Museum(owner_id=alice.id, name="MoMA", date_utcz=datetime.datetime(2020, 1, 2, 15, 0)),
-            Museum(owner_id=alice.id, name="Uffizi"),
+            Museum(owner_id=alice.id, name="Louvre", visits=[MuseumVisit(date_ymd=datetime.date(2019, 5, 1)), MuseumVisit(date_my="06-2018")]),
+            Museum(owner_id=alice.id, name="Tate", visits=[MuseumVisit(date_y=2015)]),
+            Museum(owner_id=alice.id, name="MoMA", visits=[MuseumVisit(date_utcz=datetime.datetime(2020, 1, 2, 15, 0))]),
+            Museum(owner_id=alice.id, name="Uffizi", visits=[MuseumVisit()]),
+            # one not visited yet has no visit to date
+            Museum(owner_id=alice.id, name="Prado"),
         ])
         session.commit()
         result = checks.CHECKS["museum-dates"].run(session)
     assert result.checked == 5
-    assert [(p.subject, p.message) for p in result.problems] == [("Uffizi (museum visit 5, account 1)", "has no date")]
+    assert [(p.subject.split(" (")[0], p.message, p.link) for p in result.problems] == [("Uffizi", "has no date", "museums/4")]
 
 
 def test_locations(engine: Engine) -> None:
@@ -225,8 +227,8 @@ def test_locations(engine: Engine) -> None:
         addresses = checks.CHECKS["museum-addresses"].run(session)
         locations = checks.CHECKS["museum-locations"].run(session)
     assert [p.subject for p in organizations.problems] == ["Lost (organization 2, account 1)"]
-    assert [p.subject for p in addresses.problems] == ["Tate (museum visit 3, account 1)"]
-    assert [p.subject for p in locations.problems] == ["Prado (museum visit 2, account 1)", "Tate (museum visit 3, account 1)"]
+    assert [p.subject for p in addresses.problems] == ["Tate (museum 3, account 1)"]
+    assert [p.subject for p in locations.problems] == ["Prado (museum 2, account 1)", "Tate (museum 3, account 1)"]
 
 
 def test_museum_company(engine: Engine) -> None:
@@ -236,10 +238,10 @@ def test_museum_company(engine: Engine) -> None:
         session.flush()
         friend = Person(owner_id=alice.id, first_name="Dana")
         session.add_all([
-            Museum(owner_id=alice.id, name="Louvre", people=[friend]),
-            Museum(owner_id=alice.id, name="Prado", alone=True),
-            Museum(owner_id=alice.id, name="Tate"),
-            Museum(owner_id=alice.id, name="Uffizi", alone=True, people=[friend]),
+            Museum(owner_id=alice.id, name="Louvre", visits=[MuseumVisit(people=[friend])]),
+            Museum(owner_id=alice.id, name="Prado", visits=[MuseumVisit(alone=True)]),
+            Museum(owner_id=alice.id, name="Tate", visits=[MuseumVisit()]),
+            Museum(owner_id=alice.id, name="Uffizi", visits=[MuseumVisit(alone=True, people=[friend])]),
         ])
         session.commit()
         result = checks.CHECKS["museum-company"].run(session)

@@ -9,11 +9,16 @@ it has a field now, and is said twice; this takes those sentences out:
   the readings. Each one the book does not have yet becomes a reading of it
   (its language, its day, its rating and review), in the order the notes
   list them, and the sentence goes.
-- "was named: Macbeth", when that is one of the book's titles.
+- "was named: Macbeth", when that is one of the book's titles, or one of
+  them told a little differently: a part of it ("The Blind Watchmaker" of
+  "The Blind Watchmaker: Why the Evidence..."), or it but for its spelling,
+  its punctuation, a leading "The" or an "&" for an "and" ("Ulysees").
+- "Written in French", when French is the language the book was first
+  written in, or one it has a title, a reading or a copy in.
 
 Only a sentence that is exactly one of these is touched: the rest of the
-notes (the publisher, the language it was written in, a name it once had,
-the user's own words) stay as they are. A book whose status, rating,
+notes (the publisher, a name it once had that is not its title, the user's
+own words) stay as they are. A book whose status, rating,
 review, day or language would come out different is left alone and said.
 It can run again: what is gone is not looked for.
 
@@ -23,9 +28,11 @@ It can run again: what is gone is not looked for.
 
 import argparse
 import datetime
+import difflib
 import os
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 # the myworld package is in src/, not installed (see scripts/check.py)
@@ -63,6 +70,54 @@ def readings_said(sentence: str, codes: dict[str, str]) -> list[Read] | None:
     return reads
 
 
+WRITTEN = re.compile(r"Written in (\w+)(?:\. |\.?$)")
+# the name the book once had: the last thing its notes say, after a sentence or a clause
+NAMED = re.compile(r"(?:^|; |\. )was named: (.+)$")
+# how alike a name and a title are for one to be the other misspelt ("Silmarilion")
+ALIKE = 0.85
+
+
+def _plain(text: str) -> str:
+    """ A title as it is compared: its letters and digits, lowercase and unaccented, "&" an "and", no leading article. """
+    text = unicodedata.normalize("NFKD", text.casefold().replace("&", " and "))
+    words = re.findall(r"\w+", "".join(char for char in text if not unicodedata.combining(char)).replace("'", "").replace("’", ""))
+    return " ".join(words[1:] if words and words[0] in ("the", "a", "an") else words)
+
+
+def same_title(name: str, titles: list[str]) -> bool:
+    """
+    Whether name is one of titles told a little differently: a part of it
+    (words in a row, of two or more words or a whole part before or after
+    its colon), or it or such a part but for the spelling.
+    """
+    said = _plain(name)
+    if not said:
+        return False
+    for title in titles:
+        whole = _plain(title)
+        parts = [whole, *(_plain(part) for part in re.split(r":| or, |, or | - ", title))]
+        if said in parts or (" " in said and f" {said} " in f" {whole} "):
+            return True
+        if any(difflib.SequenceMatcher(None, said, part).ratio() >= ALIKE for part in parts if part):
+            return True
+    return False
+
+
+def without_said_twice(entry: UserWork, codes: dict[str, str]) -> str:
+    """ The entry's notes without the language it was written in and the name it once had, where the book says them elsewhere. """
+    notes = entry.notes
+    work = entry.work
+    written = WRITTEN.match(notes)
+    if written:
+        known = {work.original_locale, work.title_locale, *(t.locale for t in work.titles), *(read.locale for read in entry.reads), *entry.owned}
+        if codes.get(written.group(1).lower()) in known - {None}:
+            notes = notes[written.end():]
+    named = NAMED.search(notes)
+    if named and same_title(named.group(1).rstrip("."), [work.title, *(t.title for t in work.titles)]):
+        notes = notes[:named.start()]
+    return notes.strip()
+
+
 def _goes_by(entry: UserWork) -> tuple[object, ...]:
     return (entry.status, entry.rating, entry.review, entry.locale, entry.finished_on, entry.started_on)
 
@@ -82,7 +137,9 @@ def tidy_entry(entry: UserWork, codes: dict[str, str]) -> tuple[int, str] | None
             said += reads
         elif not (sentence.startswith("was named: ") and sentence.removeprefix("was named: ").rstrip(".").strip().casefold() in titles):
             kept.append(sentence)
-    notes = ". ".join(kept).strip()
+    entry.notes = ". ".join(kept).strip()
+    notes = without_said_twice(entry, codes)
+    entry.notes = before
     if notes == before:
         return None
     # the readings in the order the notes list them: one the entry has already (same day and

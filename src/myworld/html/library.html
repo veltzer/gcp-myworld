@@ -287,13 +287,8 @@
 			</form>
 			<form id="museum-form" class="dialog-form" hidden>
 				<div class="row">
-					<label title="The museum you visited" class="wide">Name <input name="name" required placeholder="e.g. Louvre"></label>
+					<label title="The museum" class="wide">Name <input name="name" required placeholder="e.g. Louvre"></label>
 					<label title="Add a new one on the Cities page">City <select name="city_id" data-picker="cities" data-placeholder="Type a city" title="Add a new one on the Cities page"></select></label>
-				</div>
-				<div class="row">
-					<label title="How much of the date is known">Date <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
-					<label title="Your rating of the museum visit, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
-					<label title="How many tickets you bought">Tickets <input name="tickets" type="number" min="0" max="1000"></label>
 				</div>
 				<div class="row">
 					<label title="One line, as written there: street and number, building, floor; or directions where there is no street" class="wide">Street <input name="street" placeholder="Ibn Gabirol 30, 88 7th Avenue South, 1-2-3 Ginza" title="One line, as written there: street and number, building, floor; or directions where there is no street"></label>
@@ -301,28 +296,40 @@
 					<label title="The postal code of the address">Postcode <input name="postcode"></label>
 				</div>
 				<div class="row">
-					<label title="The museum visit's latitude in decimal degrees, north positive: where it is on the map">Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
-					<label title="The museum visit's longitude in decimal degrees, east positive: where it is on the map">Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
+					<label title="The museum's latitude in decimal degrees, north positive: where it is on the map">Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
+					<label title="The museum's longitude in decimal degrees, east positive: where it is on the map">Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
 				</div>
 				<div class="row">
-					<label title="The museum visit's own website" class="wide">Website <input name="url" type="url" placeholder="https://"></label>
+					<label title="The museum's own website" class="wide">Website <input name="url" type="url" placeholder="https://"></label>
 				</div>
 				<div class="row">
-					<label title="The people you went with, each one of People; add a new one on the People page" class="wide">With <select multiple data-chips="people" data-field="people" data-placeholder="Type a name from People"><option value=""></option></select></label>
-					<label title="Tick when you went by yourself: With then stays empty" class="check"><input name="alone" type="checkbox"> I went alone</label>
-				</div>
-				<div class="row">
-					<label title="What you thought of the museum visit, in your own words" class="wide">Review <input name="review"></label>
-				</div>
-				<div class="row">
-					<label title="Anything else worth keeping about the museum visit" class="wide">Remark <input name="remark"></label>
-				</div>
-				<div class="row">
-					<label title="A picture of the museum visit. + adds one, in place of the one it has; − takes it away" class="wide">Photo <span class="chips pictures" id="museum-pictures" data-pictures="one" data-what="photo"></span></label>
+					<label title="A picture of the museum. + adds one, in place of the one it has; − takes it away" class="wide">Photo <span class="chips pictures" id="museum-pictures" data-pictures="one" data-what="photo"></span></label>
 				</div>
 				<div class="adder" data-picture-adder hidden>
 					<div class="row">
 						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Photo file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					</div>
+				</div>
+				<div class="row">
+					<!-- every time you went there: its day, your rating and review of it, and who you went with belong to each visit -->
+					<label title="Every time you went to the museum, each with its day, your rating and who you went with. + adds a visit, the pencil changes one, − takes it away" class="wide">Visits <span class="chips" id="museum-visits"></span></label>
+				</div>
+				<div class="adder" id="museum-visit-row" hidden>
+					<div class="row">
+						<label title="When you went; how much of the date is known">Date <span class="date-pick" id="museum-visit-date"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden"></span></label>
+						<label title="Your rating of this visit, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input id="museum-visit-rating" type="number"></label>
+						<label title="How many tickets you bought">Tickets <input id="museum-visit-tickets" type="number" min="0" max="1000"></label>
+					</div>
+					<div class="row">
+						<label title="The people you went with, each one of People; add a new one on the People page" class="wide">With <select multiple data-chips="people" data-field="people" data-placeholder="Type a name from People"><option value=""></option></select></label>
+						<label title="Tick when you went by yourself: With then stays empty" class="check"><input name="alone" type="checkbox"> I went alone</label>
+					</div>
+					<div class="row">
+						<label title="What you thought of this visit, in your own words" class="wide">Review <input id="museum-visit-review"></label>
+					</div>
+					<div class="row">
+						<label title="Anything else worth keeping about this visit" class="wide">Remark <input id="museum-visit-remark"></label>
+						<button type="button" class="danger" id="museum-visit-add">Add</button>
 					</div>
 				</div>
 				<div class="dialog-actions">

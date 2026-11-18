@@ -522,7 +522,7 @@ async function loadCounts() {
 		setCount(kind.kind, kind.total);
 	}
 	const keys = {
-		concerts: "concerts", museums: "museum_visits", "audio-courses": "audio_courses", youtube: "youtube_videos",
+		concerts: "concerts", museums: "museums", "audio-courses": "audio_courses", youtube: "youtube_videos",
 		places: "places", cities: "cities", countries: "countries", people: "people", groups: "groups", organizations: "organizations", "organization-types": "organization_types",
 		"person-types": "person_types", "relation-types": "relation_types", "person-relation-types": "person_relation_types",
 		"person-organization-types": "person_organization_types", devices: "devices", locales: "locales",
@@ -697,7 +697,7 @@ const SORTS = {
 		["name", "Name", (m) => m.name, "asc"],
 		["city", "City", (m) => m.city?.name, "asc"],
 		["rating", "Rating", (m) => m.rating, "desc"],
-		["tickets", "Tickets", (m) => m.tickets, "desc"],
+		["visits", "Visits", (m) => m.visits.length, "desc"],
 	],
 	"audio-courses": [
 		["date", "Finished", (c) => c.date_sort, "desc"],
@@ -1761,18 +1761,12 @@ function museumCard(item) {
 	const { card, list } = cardShell(item, item.city?.name);
 	card.appendChild(placeButton(item));
 	linksDetail(list, "City", "cities", item.city ? [item.city] : []);
-	detail(list, "Date", formatDate(item));
 	detail(list, "Address", item.address);
-	if (item.rating !== null) {
-		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
-	}
-	if (item.alone) {
-		detail(list, "With", "alone");
-	}
+	// every time it was visited, the latest first: the day, the rating and the company of each
+	detail(list, item.visits.length === 1 ? "Visit" : "Visits", item.visits.length ? item.visits.map(visitText).join("; ") : "none yet");
 	linksDetail(list, "With", "people", item.people);
-	detail(list, "Tickets", item.tickets);
-	detail(list, "Review", item.review);
-	detail(list, "Remark", item.remark);
+	detail(list, "Review", item.visits.map((visit) => visit.review).filter(Boolean).join("; "));
+	detail(list, "Remark", item.visits.map((visit) => visit.remark).filter(Boolean).join("; "));
 	websiteDetail(list, item.url);
 	return card;
 }
@@ -3681,6 +3675,152 @@ function readsValues() {
 	return editingReads.map((read) => ({ ...read }));
 }
 
+// ─── the visits of a museum ─────────────────────────────────────────────────
+// A museum is one row whatever the times it was visited: each visit has its own
+// day, rating, review, remark, tickets and company.
+
+// the visits in the dialog, as the server sends them
+let editingVisits = [];
+// the visit the row is editing (its place in the list), null when the row adds one
+let editingVisit = null;
+
+// "4 May 2010, 8/10, with Dana", with what is not known left out or said
+function visitText(visit) {
+	const company = visit.alone ? "alone" : visit.people.length ? `with ${visit.people.map((p) => p.name).join(", ")}` : "";
+	const rating = visit.rating !== null && visit.rating !== undefined ? `${visit.rating}/${state.config.rating_max}` : "";
+	return [formatDate(visit) || "date unknown", rating, company].filter(Boolean).join(", ");
+}
+
+// the row's boxes show this visit (a new one: all empty)
+function fillVisitRow(visit) {
+	const form = $("museum-form");
+	$("museum-visit-date").querySelector("input[type=hidden]").value = visit?.date || "";
+	syncDatePicks(form);
+	$("museum-visit-rating").value = visit?.rating ?? "";
+	$("museum-visit-tickets").value = visit?.tickets ?? "";
+	setPickerValue(form.querySelector("[data-field=people]"), (visit?.people || []).map((p) => p.id));
+	form.elements.alone.checked = Boolean(visit?.alone);
+	syncAlone(form);
+	$("museum-visit-review").value = visit?.review || "";
+	$("museum-visit-remark").value = visit?.remark || "";
+	$("museum-visit-add").textContent = visit ? "Update" : "Add";
+}
+
+// the row comes in to add a visit (index null) or to edit the one at index; asked again for the same, it goes away
+function openVisitRow(index) {
+	const row = $("museum-visit-row");
+	if (!row.hidden && editingVisit === index) {
+		row.hidden = true;
+		return;
+	}
+	editingVisit = index;
+	fillVisitRow(index === null ? null : editingVisits[index]);
+	toggleAdder(row, true);
+}
+
+function renderVisits() {
+	const box = $("museum-visits");
+	box.replaceChildren();
+	if (editingVisits.length === 0) {
+		box.appendChild(el("span", "empty", "None yet"));
+	}
+	editingVisits.forEach((visit, index) => {
+		const chip = el("span", "chip", visitText(visit));
+		chip.title = visit.review || "";
+		const edit = el("button", "modify chip-remove", "\u270e");
+		edit.type = "button";
+		edit.title = `Edit the visit ${visitText(visit)}`;
+		edit.setAttribute("aria-label", edit.title);
+		edit.onclick = () => openVisitRow(index);
+		chip.appendChild(edit);
+		chip.appendChild(removeButton(`Remove the visit ${visitText(visit)}`, () => {
+			editingVisits.splice(index, 1);
+			editingVisit = null;
+			$("museum-visit-row").hidden = true;
+			renderVisits();
+		}));
+		box.appendChild(chip);
+	});
+	const add = el("button", "modify", "+");
+	add.type = "button";
+	add.title = "Add a visit";
+	add.setAttribute("aria-label", add.title);
+	add.onclick = () => openVisitRow(null);
+	box.appendChild(add);
+}
+
+// what the row says, as a visit
+function visitOfRow() {
+	const form = $("museum-form");
+	const old = editingVisit === null ? null : editingVisits[editingVisit];
+	const picker = form.querySelector("[data-field=people]").tomselect;
+	const date = $("museum-visit-date").querySelector("input[type=hidden]").value || null;
+	const number = (id) => $(id).value === "" ? null : Number($(id).value);
+	return {
+		id: old?.id,
+		date,
+		// a date left as it was keeps how precisely it is known (a full time too)
+		date_precision: !date ? null : date === old?.date ? old.date_precision : $("museum-visit-date").querySelector(".date-precision").value,
+		date_timezone: old?.date_timezone || where(),
+		rating: number("museum-visit-rating"),
+		tickets: number("museum-visit-tickets"),
+		people: picker.getValue().map((id) => ({ id: Number(id), name: picker.options[id].text })),
+		alone: form.elements.alone.checked,
+		review: $("museum-visit-review").value.trim(),
+		remark: $("museum-visit-remark").value.trim(),
+	};
+}
+
+// what the row says becomes a visit of the list: a new one, or the one it was editing.
+// False when a number in it is not one (the browser says so), and nothing changes.
+function addVisit() {
+	if (!$("museum-visit-rating").reportValidity() || !$("museum-visit-tickets").reportValidity()) {
+		return false;
+	}
+	const visit = visitOfRow();
+	if (editingVisit === null) {
+		editingVisits.push(visit);
+	} else {
+		editingVisits[editingVisit] = visit;
+	}
+	editingVisit = null;
+	$("museum-visit-row").hidden = true;
+	renderVisits();
+	return true;
+}
+
+// a new museum starts with the row in, to say its first visit; one edited with its visits listed
+function prepareVisits(visits, isNew) {
+	editingVisits = visits.map((visit) => ({ ...visit }));
+	editingVisit = null;
+	fillVisitRow(null);
+	$("museum-visit-row").hidden = !isNew;
+	renderVisits();
+}
+
+// the visits to send, with what the row says while it is in (saving does not lose it; a row
+// to add one that says nothing adds none); null when a number in the row is not one
+function visitsValues() {
+	if (!$("museum-visit-row").hidden) {
+		const said = visitOfRow();
+		const empty = editingVisit === null && !said.date && said.rating === null && said.tickets === null && !said.people.length && !said.alone && !said.review && !said.remark;
+		if (!empty && !addVisit()) {
+			return null;
+		}
+	}
+	return editingVisits.map((visit) => ({
+		id: visit.id,
+		date: visit.date || "",
+		date_timezone: visit.date_timezone || "",
+		rating: visit.rating ?? "",
+		tickets: visit.tickets ?? "",
+		people: visit.people.map((p) => p.id),
+		alone: visit.alone,
+		review: visit.review,
+		remark: visit.remark,
+	}));
+}
+
 // ─── the languages a book is owned in ───────────────────────────────────────
 
 // the languages (locale codes) the book in the dialog is owned in
@@ -3748,6 +3888,7 @@ function setupLocalized() {
 	fillLocales();
 	$("book-read-add").onclick = () => addRead();
 	$("book-owned-add").onclick = () => addOwned();
+	$("museum-visit-add").onclick = () => addVisit();
 	setupAdderClose();
 	$("person-name-add").onclick = () => addName();
 	// the language of a name being added follows its letters as they are typed
@@ -3974,6 +4115,11 @@ const WORLD_BODIES = {
 	},
 	museums: async (form) => {
 		const value = (name) => form.elements[name].value;
+		// every visit of the museum, each with its day, rating, review and company
+		const visits = visitsValues();
+		if (visits === null) {
+			throw new Error("A visit's rating or tickets is not a number: put it right");
+		}
 		return {
 			name: value("name"),
 			city_id: value("city_id"),
@@ -3982,15 +4128,8 @@ const WORLD_BODIES = {
 			postcode: value("postcode"),
 			latitude: value("latitude"),
 			longitude: value("longitude"),
-			date: value("date"),
-			date_timezone: state.editing?.date_timezone || where(),
-			rating: value("rating"),
-			tickets: value("tickets"),
 			url: value("url"),
-			people: chosen(form, "people"),
-			alone: form.elements.alone.checked,
-			review: value("review"),
-			remark: value("remark"),
+			visits,
 			...(await pictureBody(form)),
 		};
 	},
@@ -4363,6 +4502,9 @@ async function openDialog(item) {
 			const chosen = item?.[select.name.replace(/_id$/, "")];
 			setPickerValue(select, chosen ? [chosen.id] : []);
 		}
+		if (form.id === "museum-form") {
+			prepareVisits(item?.visits || [], !item);
+		}
 		if (form.id === "person-form") {
 			prepareNames(item);
 			await preparePersonLinks(item);
@@ -4432,8 +4574,8 @@ function setupAddDialog() {
 	}, true);
 	$("museum-form").elements.alone.onchange = () => syncAlone($("museum-form"));
 	const { rating_min, rating_max } = state.config;
-	$("museum-form").elements.rating.min = rating_min;
-	$("museum-form").elements.rating.max = rating_max;
+	$("museum-visit-rating").min = rating_min;
+	$("museum-visit-rating").max = rating_max;
 	$("audio-course-form").elements.rating.min = rating_min;
 	$("audio-course-form").elements.rating.max = rating_max;
 	$("youtube-video-form").elements.rating.min = rating_min;

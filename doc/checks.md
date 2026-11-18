@@ -97,8 +97,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
 
 - `museum-dates`: every museum visit has a date (a day, a month, a year
   or a full time).
-- `museum-addresses`: every museum visit has an address.
-- `museum-locations`: every museum visit has a latitude and a longitude.
+- `museum-addresses`: every museum has an address.
+- `museum-locations`: every museum has a latitude and a longitude.
 - `museum-company`: every museum visit has people in With or is marked
   "I went alone", and none is both.
 

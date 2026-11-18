@@ -510,6 +510,7 @@ concert_companions = Table(
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
 )
 
+# who the user went to a museum with, on one visit (museum_id is the visit's id: the column keeps its old name)
 museum_companions = Table(
     "museum_companions",
     Base.metadata,
@@ -661,7 +662,7 @@ class Person(Base):
             if other.locale == locale:
                 return other.name
         return self.name
-    museums: Mapped[list[Museum]] = relationship(
+    museum_visits: Mapped[list[MuseumVisit]] = relationship(
         secondary=museum_companions, back_populates="people",
     )
     lectured: Mapped[list[AudioCourse]] = relationship(
@@ -1033,12 +1034,13 @@ class Group(_Pictured, Base):
     concerts: Mapped[list[Concert]] = relationship(secondary=concert_groups, back_populates="groups")
 
 
-class Museum(_Dated, _Addressed, _Located, Base):
-    """ One visit to a museum; a museum visited twice is two rows. """
-    __tablename__ = "museum_visits"
-    __table_args__ = (
-        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_museum_rating_range"),
-    )
+class Museum(_Addressed, _Located, Base):
+    """
+    A museum: its name, where it is, its website and its photo. A name is a
+    museum once in each city. The times the user went there are its visits
+    (museum_visits), any number of them, none for one not visited yet.
+    """
+    __tablename__ = "museum_sites"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -1046,17 +1048,34 @@ class Museum(_Dated, _Addressed, _Located, Base):
     # the city it is in (the Cities page)
     city_id: Mapped[int | None] = mapped_column(ForeignKey("cities.id", ondelete="SET NULL"), nullable=True, index=True)
     city: Mapped[City | None] = relationship(back_populates="museums")
-    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    review: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
     url: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    tickets: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # went alone: no one is missing from people, there was no one; never true with people
-    alone: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     image: Mapped[Image | None] = relationship()
 
-    people: Mapped[list[Person]] = relationship(secondary=museum_companions, back_populates="museums")
+    # in the order they were added
+    visits: Mapped[list[MuseumVisit]] = relationship(
+        back_populates="museum", cascade="all, delete-orphan", order_by=lambda: MuseumVisit.id,  # pylint: disable=used-before-assignment
+    )
+
+
+class MuseumVisit(_Dated, Base):
+    """ One visit to a museum: when, what the user thought of it, and who they went with. """
+    __tablename__ = "museum_visits"
+    __table_args__ = (
+        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_museum_rating_range"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    museum_id: Mapped[int] = mapped_column(ForeignKey("museum_sites.id", ondelete="CASCADE"), nullable=False, index=True)
+    museum: Mapped[Museum] = relationship(back_populates="visits")
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    review: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    tickets: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # went alone: no one is missing from people, there was no one; never true with people
+    alone: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+
+    people: Mapped[list[Person]] = relationship(secondary=museum_companions, back_populates="museum_visits")
 
 
 class Device(_Pictured, Base):
