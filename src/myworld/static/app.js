@@ -3189,16 +3189,21 @@ function pickerNote(row) {
 }
 
 // A person (or any row of a view) named in a dialog is a link to them. It opens
-// in a new tab: the dialog stays open, with whatever was typed in it.
-const DIALOG_LINK_TITLE = "Open in a new tab: this dialog stays as it is";
+// here, as every link inside the application does (only a link to another site
+// opens a tab of its own): the dialog closes, what was typed in it unsaved.
+const DIALOG_LINK_TITLE = "Go there: this dialog closes, unsaved";
+
+// a click on such a link: the dialog goes, and the link is followed in this tab
+function leaveDialog() {
+	$("add-dialog").close();
+}
 
 function dialogLink(view, row) {
 	const a = el("a", "person-link", row.name);
 	a.dir = "auto";
 	a.href = `/library#${view}/${row.id}`;
-	a.target = "_blank";
-	a.rel = "noopener";
 	a.title = DIALOG_LINK_TITLE;
+	a.onclick = leaveDialog;
 	return a;
 }
 
@@ -3213,7 +3218,7 @@ function makePicker(select, onChange) {
 	// a chosen row of a view (a person, a group, a profession) is a link to it, see dialogLink
 	const view = select.dataset.chips;
 	const item = (data, esc) => view
-		? `<div><a class="person-link" href="/library#${esc(view)}/${esc(data.value)}" target="_blank" rel="noopener" title="${esc(DIALOG_LINK_TITLE)}">${esc(data.text)}</a></div>`
+		? `<div><a class="person-link" href="/library#${esc(view)}/${esc(data.value)}" title="${esc(DIALOG_LINK_TITLE)}">${esc(data.text)}</a></div>`
 		: `<div>${esc(data.text)}</div>`;
 	const picker = new TomSelect(select, {
 		maxItems: multiple ? null : 1,
@@ -3249,6 +3254,7 @@ function makePicker(select, onChange) {
 	picker.wrapper.addEventListener("click", (event) => {
 		if (event.target.closest("a.person-link")) {
 			event.stopPropagation();
+			leaveDialog();
 		}
 	}, true);
 	return picker;
@@ -4196,7 +4202,8 @@ async function fillTypes(select, typesView, label = (t) => t.name) {
 // ─── read only until its pencil is pressed ──────────────────────────────────
 
 // What a dialog shows of something that exists is there to read: every box that
-// holds a value is locked, and the red pencil beside it lets it be changed. A
+// holds a value is locked, and the red pencil beside it lets it be changed; the
+// pencil is then a red × that puts back what was there and locks it again. A
 // box with nothing in it yet, and every box of something being added, just
 // takes what is typed. Lists of chips are not locked: nothing in them changes
 // without their own +, pencil or −.
@@ -4228,10 +4235,35 @@ function setupLocks(dialog) {
 		}
 		box.classList.add("lock-box");
 		box.appendChild(pencil);
+		pencil.dataset.edit = pencil.title;
+		pencil.dataset.discard = `Put ${what} back as it was`;
 		pencil.onclick = () => {
+			const controls = lockControls(box);
+			if (box.classList.contains("editing")) {
+				// the ×: what was there comes back, locked again
+				controls.forEach((control, index) => {
+					if (control.tomselect) {
+						control.tomselect.setValue(box.saved[index], true);
+					} else if (control.type === "checkbox") {
+						control.checked = box.saved[index];
+					} else {
+						control.value = box.saved[index];
+					}
+					// what follows a box (a date's hidden field, I went alone and its picker) follows it back
+					control.dispatchEvent(new Event(control.tagName === "SELECT" || control.type === "checkbox" ? "change" : "input", { bubbles: true }));
+				});
+				setLocked(box, true);
+				return;
+			}
+			// the pencil: the box is freed, and until the form is saved the pencil is a × that regrets it
+			box.saved = controls.map((control) => control.tomselect ? [...control.tomselect.items] : control.type === "checkbox" ? control.checked : control.value);
 			setLocked(box, false);
-			const first = box.querySelector("input:not([type=hidden]), select");
-			(first.tomselect || first).focus();
+			box.classList.add("editing");
+			pencil.textContent = "\u00D7";
+			pencil.title = pencil.dataset.discard;
+			pencil.setAttribute("aria-label", pencil.title);
+			pencil.disabled = false;
+			(controls[0].tomselect || controls[0]).focus();
 		};
 	}
 }
@@ -4255,7 +4287,13 @@ function setLocked(box, locked) {
 			control.toggleAttribute("inert", locked);
 		}
 	}
-	box.querySelector(".lock-edit").disabled = !locked;
+	// not being edited (any more): the button is the pencil again
+	const pencil = box.querySelector(".lock-edit");
+	box.classList.remove("editing");
+	pencil.textContent = "\u270E";
+	pencil.title = pencil.dataset.edit;
+	pencil.setAttribute("aria-label", pencil.title);
+	pencil.disabled = !locked;
 }
 
 // The boxes of a form as it opens: those of something that exists are locked

@@ -273,7 +273,8 @@ it stays.
 What a dialog shows of something that exists is there to read: every box
 that holds a value (a text or a number, a choice, a picker of one row, a
 date, a tick box) is locked, shown in gray, its text still selectable to copy,
-and the red pencil beside it lets it be changed. A box with nothing in it
+and the red pencil beside it lets it be changed; the pencil is then a red
+× that puts back what was there and locks the box again. A box with nothing in it
 yet, and every box of something being added, just takes what is typed;
 its pencil is there, disabled. Lists of chips are not locked: nothing in
 them changes without their own +, pencil or −. A language's code is never
