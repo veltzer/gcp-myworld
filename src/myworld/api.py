@@ -1,12 +1,14 @@
 """
 What every JSON endpoint shares: the error that becomes a {"error": ...}
-answer, and the readers that validate fields of a request body.
+answer, the readers that validate fields of a request body, and the ones
+that turn the ids it sends into rows of the signed-in user.
 """
 
 import datetime
 from typing import Any
 
 import flask
+from sqlalchemy import select
 
 
 class ApiError(Exception):
@@ -86,3 +88,38 @@ def opt_date(body: dict[str, Any], key: str) -> datetime.date | None:
         return datetime.date.fromisoformat(value)
     except ValueError as e:
         raise ApiError(400, f"{key}: expected a date as YYYY-MM-DD") from e
+
+
+def owned[T](model: type[T], row_id: int) -> T:
+    """ The user's own row row_id of model: the one an address names (404 when it is not theirs). """
+    row: Any = flask.g.db.get(model, row_id)
+    if row is None or row.owner_id != flask.g.user.id:
+        raise ApiError(404, "no such entry")
+    return row
+
+
+def owned_ref[T](body: dict[str, Any], key: str, model: type[T], what: str) -> T | None:
+    """ body[key], the id of one of the user's own rows of model (what names it in the error), as that row; None when none is sent. """
+    row_id = opt_int(body, key, 1, 2**31 - 1)
+    if row_id is None:
+        return None
+    row: Any = flask.g.db.get(model, row_id)
+    if row is None or row.owner_id != flask.g.user.id:
+        raise ApiError(400, f"{key}: unknown {what}")
+    return row
+
+
+def owned_list[T](body: dict[str, Any], key: str, model: type[T]) -> list[T]:
+    """ body[key], a list of ids of the user's own rows of model, as those rows. """
+    ids = body.get(key) or []
+    if not isinstance(ids, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
+        raise ApiError(400, f"{key}: expected a list of ids")
+    if not ids:
+        return []
+    table: Any = model
+    rows = flask.g.db.execute(
+        select(table).where(table.owner_id == flask.g.user.id, table.id.in_(ids))
+    ).scalars().all()
+    if len(rows) != len(set(ids)):
+        raise ApiError(400, f"{key}: unknown {model.__name__.lower()}")
+    return list(rows)

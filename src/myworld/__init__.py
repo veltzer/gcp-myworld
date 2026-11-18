@@ -18,7 +18,17 @@ from flask.json.provider import DefaultJSONProvider
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from myworld import admin, auth, verification, views, world
+from myworld import (
+    admin,
+    auth,
+    enumerations,
+    locales,
+    pictures,
+    stats,
+    verification,
+    views,
+    world,
+)
 from myworld.api import ApiError, handle_api_error
 from myworld.models import make_engine
 
@@ -119,4 +129,8 @@ def create_app(engine: Engine | None = None, mail: verification.Mailer | None = 
     app.register_blueprint(auth.bp)
     app.register_blueprint(views.bp)
     app.register_blueprint(world.bp)
+    app.register_blueprint(enumerations.bp)
+    app.register_blueprint(locales.bp)
+    app.register_blueprint(pictures.bp)
+    app.register_blueprint(stats.bp)
     return app

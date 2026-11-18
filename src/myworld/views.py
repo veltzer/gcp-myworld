@@ -12,8 +12,8 @@ import werkzeug
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from myworld import auth, languages, movies, world
-from myworld.api import ApiError, json_body, opt_date, opt_int, text
+from myworld import auth, languages, movies, pictures, world
+from myworld.api import ApiError, json_body, opt_date, opt_int, owned_list, text
 from myworld.models import (
     DEFAULT_LOCALE,
     KINDS,
@@ -108,8 +108,8 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
         "authors": [{"id": p.id, "name": p.name_in(preferred)} for p in entry.authors],
         "simania_id": entry.work.simania_id,
         # the cover its card shows, and all of its covers (that one first)
-        "image": world.image_url(entry.image_id),
-        "covers": [{"id": image_id, "image": world.image_url(image_id)} for image_id in entry.cover_ids],
+        "image": pictures.image_url(entry.image_id),
+        "covers": [{"id": image_id, "image": pictures.image_url(image_id)} for image_id in entry.cover_ids],
         "status": entry.status,
         "rating": entry.rating,
         "started_on": entry.started_on.isoformat() if entry.started_on else None,
@@ -258,15 +258,15 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any], new: bool = False
     if "covers" in body:
         if not isinstance(body["covers"], list):
             raise ApiError(400, "covers: expected a list of image ids")
-        entry.cover_ids = world.owned_images("covers", body["covers"])
+        entry.cover_ids = pictures.owned_images("covers", body["covers"])
     else:
-        image_id = world.owned_image(body)
+        image_id = pictures.owned_image(body)
         if image_id is not None:
             entry.image_id = image_id
     # the authors, ids of the user's people (any number), are set only when sent;
     # each is a Book Author, when the user keeps that profession
     if "authors" in body:
-        entry.authors = world.owned_list(body, "authors", Person)
+        entry.authors = owned_list(body, "authors", Person)
         # the shared work's author text, only filled in (another account may have it too)
         entry.work.creator = entry.work.creator or ", ".join(p.name for p in entry.authors)
         book_author = flask.g.db.scalars(select(PersonType).where(PersonType.owner_id == flask.g.user.id, PersonType.name == "Book Author")).first()
@@ -454,7 +454,7 @@ def api_library_add() -> tuple[flask.Response, int]:
     kind = _kind(text(body, "kind", required=True))
     title = text(body, "title", required=True)
     # a book's author text is its authors' names, as the import writes it ("Kernighan, Ritchie"), when none is sent
-    creator = text(body, "creator") or ", ".join(p.name for p in world.owned_list(body, "authors", Person))
+    creator = text(body, "creator") or ", ".join(p.name for p in owned_list(body, "authors", Person))
     # a year before the common era is negative (Plato's Republic, -375)
     year = opt_int(body, "year", -3000, 3000)
     db = flask.g.db
@@ -498,7 +498,7 @@ def api_library_delete(work_id: int) -> flask.Response:
     entry = _own_entry(work_id)
     flask.g.db.delete(entry)
     flask.g.db.flush()
-    world.drop_unused_images()
+    pictures.drop_unused_images()
     flask.g.db.commit()
     return flask.Response(status=204)
 

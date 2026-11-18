@@ -575,12 +575,16 @@ class Image(Base):
     data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
 
 
-class _Pictured:
-    """ A photo (or a flag) and the credit its license asks for. """
-    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
+class _Credited:
+    """ The credit the license of a picture asks for: where it is from, its license and who made it. """
     image_source: Mapped[str] = mapped_column(String(1000), nullable=False, default="", server_default="")
     image_license: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="")
     image_author: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
+
+
+class _Pictured(_Credited):
+    """ A photo (or a flag) and the credit its license asks for. """
+    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
 
 
 class PersonType(_Pictured, Base):
@@ -708,7 +712,7 @@ class PersonName(Base):
         self.set_parts("", words[0] if words else "", " ".join(words[1:-1]), words[-1] if len(words) > 1 else "")
 
 
-class PersonPhoto(Base):
+class PersonPhoto(_Credited, Base):
     """ A photo of a person, with the credit its license asks for; the first (by position) is their default one, which their card shows. """
     __tablename__ = "person_photos"
 
@@ -716,9 +720,6 @@ class PersonPhoto(Base):
     person_id: Mapped[int] = mapped_column(ForeignKey("people.id", ondelete="CASCADE"), nullable=False, index=True)
     image_id: Mapped[int] = mapped_column(ForeignKey("images.id", ondelete="CASCADE"), nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    image_source: Mapped[str] = mapped_column(String(1000), nullable=False, default="", server_default="")
-    image_license: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="")
-    image_author: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
 
 
 class OrganizationType(Base):
@@ -898,16 +899,13 @@ class City(_Pictured, _Located, Base):
     headquarters_of: Mapped[list[Organization]] = relationship(back_populates="headquarters", foreign_keys=lambda: Organization.headquarters_id)
 
 
-class CityPhoto(Base):
+class CityPhoto(_Credited, Base):
     """ A photo of a city after its first (cities.image_id), with the credit its license asks for. """
     __tablename__ = "city_photos"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     city_id: Mapped[int] = mapped_column(ForeignKey("cities.id", ondelete="CASCADE"), nullable=False, index=True)
     image_id: Mapped[int] = mapped_column(ForeignKey("images.id", ondelete="CASCADE"), nullable=False)
-    image_source: Mapped[str] = mapped_column(String(1000), nullable=False, default="", server_default="")
-    image_license: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="")
-    image_author: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
 
 
 class Organization(_Addressed, _Located, Base):
@@ -986,7 +984,7 @@ class Place(_Pictured, _Addressed, Base):
     concerts: Mapped[list[Concert]] = relationship(back_populates="place")
 
 
-class Concert(_Dated, Base):
+class Concert(_Pictured, _Dated, Base):
     __tablename__ = "concert_visits"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -1004,12 +1002,7 @@ class Concert(_Dated, Base):
     alone: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     review: Mapped[str] = mapped_column(Text, nullable=False, default="")
     remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     image: Mapped[Image | None] = relationship()
-    # the credit the image license asks for
-    image_source: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    image_license: Mapped[str] = mapped_column(String(100), nullable=False, default="")
-    image_author: Mapped[str] = mapped_column(String(300), nullable=False, default="")
 
     # who the user went with
     people: Mapped[list[Person]] = relationship(secondary=concert_companions, back_populates="concerts")

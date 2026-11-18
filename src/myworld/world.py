@@ -1,47 +1,50 @@
 """
-JSON API for the concerts, museum visits, places, people and organizations of the
-signed-in user, and the images they point at: list, add, edit and delete. Every query is filtered by
-owner_id, so a user only ever sees, and only ever links to, their own rows.
+JSON API for what the signed-in user keeps: concerts, museums and their
+visits, audio courses, YouTube videos, people, organizations, places, groups,
+cities and countries. For each: what a row looks like as JSON, how a request
+body is applied to it, and the routes that list, add, edit and delete it.
+Every query is filtered by owner_id, so a user only ever sees, and only ever
+links to, their own rows.
 """
 
-import collections
+import dataclasses
 import datetime
-import hashlib
-import html
 import re
 import zoneinfo
+from collections.abc import Callable
 from typing import Any
 
 import flask
-import werkzeug
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from myworld import auth, languages, names
-from myworld.api import ApiError, coordinates, json_body, opt_int, text
+from myworld.api import (
+    ApiError,
+    coordinates,
+    json_body,
+    opt_int,
+    owned,
+    owned_list,
+    owned_ref,
+    text,
+)
 from myworld.models import (
     DEFAULT_LOCALE,
-    KINDS,
     RATING_MAX,
     RATING_MIN,
-    ROLE_ADMIN,
-    STATUSES,
     YOUTUBE_ID_LENGTH,
     AudioCourse,
     City,
     CityPhoto,
     Concert,
     Country,
-    Cover,
     Device,
     Group,
-    Image,
-    Locale,
     Museum,
     MuseumVisit,
     Organization,
     OrganizationType,
-    Owning,
     Person,
     PersonName,
     PersonOrganization,
@@ -51,33 +54,24 @@ from myworld.models import (
     PersonRelationType,
     PersonType,
     Place,
-    Read,
     RelationType,
-    User,
-    UserWork,
-    Work,
-    WorkTitle,
     YouTubeVideo,
-    concert_performers,
-    organization_relation_types,
-    person_type_links,
+)
+from myworld.pictures import (
+    apply_image,
+    apply_picture,
+    drop_unused_images,
+    image_url,
+    photo_json,
+    photo_rows,
+    picture_json,
+    sent_photos,
 )
 
 bp = flask.Blueprint("world", __name__)
 
-# images never change once imported (a new photo is a new row), so browsers may keep them
-IMAGE_MAX_AGE = 7 * 24 * 3600
-# uploads: what a browser can show, recognised by its first bytes, not by what the client claims
-IMAGE_MAX_BYTES = 8 * 1024 * 1024
-IMAGE_SIGNATURES: dict[str, tuple[bytes, ...]] = {
-    "image/jpeg": (b"\xff\xd8\xff",),
-    "image/png": (b"\x89PNG\r\n\x1a\n",),
-    "image/gif": (b"GIF87a", b"GIF89a"),
-}
-IMAGE_EXTENSIONS = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp"}
 
-
-def _date_json(row: Concert | MuseumVisit | AudioCourse | YouTubeVideo) -> dict[str, Any]:
+def date_json(row: Concert | MuseumVisit | AudioCourse | YouTubeVideo) -> dict[str, Any]:
     """ The date as precisely as it is known, and a sortable key for it. """
     if row.date_utcz is not None:
         utc = row.date_utcz.replace(tzinfo=datetime.UTC)
@@ -92,8 +86,6 @@ def _date_json(row: Concert | MuseumVisit | AudioCourse | YouTubeVideo) -> dict[
     return {"date": None, "date_precision": None, "date_sort": ""}
 
 
-def image_url(image_id: int | None) -> str | None:
-    return None if image_id is None else flask.url_for("world.api_image", image_id=image_id)
 
 
 def shown_name(person: Person) -> str:
@@ -126,7 +118,7 @@ def concert_json(concert: Concert) -> dict[str, Any]:
         "groups": _refs(concert.groups),
         "event": concert.event,
         "genre": concert.genre,
-        **_date_json(concert),
+        **date_json(concert),
         "date_timezone": concert.date_timezone,
         # where it was, a row of the Places page
         "place": None if concert.place is None else _place_ref(concert.place),
@@ -137,10 +129,7 @@ def concert_json(concert: Concert) -> dict[str, Any]:
         "remark": concert.remark,
         "with": _names(concert.people),
         "people": _refs(concert.people),
-        "image": image_url(concert.image_id),
-        "image_source": concert.image_source,
-        "image_license": concert.image_license,
-        "image_author": concert.image_author,
+        **picture_json(concert),
     }
 
 
@@ -153,15 +142,13 @@ def city_ref(city: City | None) -> dict[str, Any] | None:
     return None if city is None else {"id": city.id, "name": city.name, "region": city.region, "country": country_ref(city.country)}
 
 
-def _picture_json(row: City | Country | Group | Device | PersonType | Place) -> dict[str, Any]:
-    return {"image": image_url(row.image_id), "image_source": row.image_source, "image_license": row.image_license, "image_author": row.image_author}
 
 
 def country_json(country: Country) -> dict[str, Any]:
     return {
         "id": country.id,
         "name": country.name,
-        **_picture_json(country),
+        **picture_json(country),
         "latitude": country.latitude,
         "longitude": country.longitude,
         "remark": country.remark,
@@ -187,11 +174,8 @@ def city_json(city: City) -> dict[str, Any]:
     return {
         **(city_ref(city) or {}),
         # the photo its card shows, and all of its photos (that one first), each with its credit
-        **_picture_json(city),
-        "photos": ([{"id": city.image_id, **_picture_json(city)}] if city.image_id is not None else []) + [
-            {"id": photo.image_id, "image": image_url(photo.image_id), "image_source": photo.image_source, "image_license": photo.image_license, "image_author": photo.image_author}
-            for photo in city.more_photos
-        ],
+        **picture_json(city),
+        "photos": [photo_json(photo) for photo in ([city] if city.image_id is not None else []) + city.more_photos],
         "latitude": city.latitude,
         "longitude": city.longitude,
         "remark": city.remark,
@@ -204,7 +188,7 @@ def city_json(city: City) -> dict[str, Any]:
 
 def place_json(place: Place) -> dict[str, Any]:
     # the concerts that were there, newest first
-    concerts = _newest_first([{"id": c.id, "name": c.name, **_date_json(c)} for c in place.concerts])
+    concerts = _newest_first([{"id": c.id, "name": c.name, **date_json(c)} for c in place.concerts])
     return {
         **_place_ref(place),
         # the address in one line, and its parts (the city carries region and country)
@@ -214,7 +198,7 @@ def place_json(place: Place) -> dict[str, Any]:
         "longitude": place.longitude,
         "website": place.website,
         "remark": place.remark,
-        **_picture_json(place),
+        **picture_json(place),
         "concerts": [{"id": c["id"], "name": c["name"]} for c in concerts],
     }
 
@@ -225,17 +209,17 @@ def group_json(group: Group) -> dict[str, Any]:
         "name": group.name,
         "description": group.description,
         "website": group.website,
-        **_picture_json(group),
+        **picture_json(group),
         "members": _refs(group.members),
         # the concerts it performed at, newest first
-        "concerts": [{"id": c["id"], "name": c["name"]} for c in _newest_first([{"id": c.id, "name": c.name, **_date_json(c)} for c in group.concerts])],
+        "concerts": [{"id": c["id"], "name": c["name"]} for c in _newest_first([{"id": c.id, "name": c.name, **date_json(c)} for c in group.concerts])],
     }
 
 
 def _visit_json(visit: MuseumVisit) -> dict[str, Any]:
     return {
         "id": visit.id,
-        **_date_json(visit),
+        **date_json(visit),
         "date_timezone": visit.date_timezone,
         "rating": visit.rating,
         "review": visit.review,
@@ -282,10 +266,10 @@ def audio_course_json(course: AudioCourse) -> dict[str, Any]:
     return {
         "id": course.id,
         "name": course.name,
-        **_date_json(course),
+        **date_json(course),
         "date_timezone": course.date_timezone,
         # finished when it has a date, in progress when it was only started
-        "status": "done" if _date_json(course)["date"] else ("in_progress" if course.started_utcz else ""),
+        "status": "done" if date_json(course)["date"] else ("in_progress" if course.started_utcz else ""),
         "lecturers": _refs(course.lecturers),
         "rating": course.rating,
         "review": course.review,
@@ -316,7 +300,7 @@ def youtube_video_json(video: YouTubeVideo) -> dict[str, Any]:
     return {
         "id": video.id,
         "name": video.name,
-        **_date_json(video),
+        **date_json(video),
         "date_timezone": video.date_timezone,
         "youtube_id": video.youtube_id,
         "rating": video.rating,
@@ -353,10 +337,7 @@ def person_json(person: Person) -> dict[str, Any]:
         ],
         # their photos, each with its credit: the first is the default, the one their card shows
         "image": image_url(person.photos[0].image_id) if person.photos else None,
-        "photos": [
-            {"id": photo.image_id, "image": image_url(photo.image_id), "image_source": photo.image_source, "image_license": photo.image_license, "image_author": photo.image_author}
-            for photo in person.photos
-        ],
+        "photos": [photo_json(photo) for photo in person.photos],
         "types": _refs(person.types),
         # each organization they are linked to, once; and the links, each of a kind ("Worked at Schema")
         "organizations": _refs(person.organizations),
@@ -521,37 +502,17 @@ def api_countries() -> flask.Response:
     return flask.jsonify([country_json(c) for c in flask.g.db.execute(query).scalars().all()])
 
 
-@bp.route("/api/images/<int:image_id>", methods=["GET"])
-@auth.login_required
-def api_image(image_id: int) -> werkzeug.Response:
-    image = flask.g.db.get(Image, image_id)
-    if image is None or image.owner_id != flask.g.user.id:
-        return flask.Response(status=404)
-    response = flask.Response(image.data, mimetype=image.content_type)
-    response.headers["Cache-Control"] = f"private, max-age={IMAGE_MAX_AGE}"
-    # the imported logos are SVG: opened on their own they must not run scripts on this origin
-    response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.set_etag(image.sha256)
-    return response.make_conditional(flask.request)
 
 
 # ─── adding ──────────────────────────────────────────────────────────────────
 
-def _sniff(data: bytes) -> str | None:
-    for content_type, signatures in IMAGE_SIGNATURES.items():
-        if data.startswith(signatures):
-            return content_type
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return "image/webp"
-    return None
 
 
-def _dates(body: dict[str, Any], current: Concert | MuseumVisit | AudioCourse | YouTubeVideo | None = None) -> dict[str, Any]:
+def _apply_dates(row: Concert | MuseumVisit | AudioCourse | YouTubeVideo, body: dict[str, Any]) -> None:
     """
     The date as typed: YYYY, YYYY-MM or YYYY-MM-DD, stored at that precision,
-    or nothing. date_timezone is where it happened (an IANA name). On an edit
-    a date sent back exactly as it was shown leaves it as it is, so a stored
+    or nothing. date_timezone is where it happened (an IANA name). A date
+    sent back exactly as the row shows it leaves it as it is, so a stored
     timestamp keeps its time.
     """
     value = text(body, "date")
@@ -561,165 +522,65 @@ def _dates(body: dict[str, Any], current: Concert | MuseumVisit | AudioCourse | 
             zoneinfo.ZoneInfo(zone)
         except (zoneinfo.ZoneInfoNotFoundError, ValueError) as e:
             raise ApiError(400, f"date_timezone: unknown time zone {zone!r}") from e
-    out: dict[str, Any] = {"date_timezone": zone}
-    if current is not None and value == (_date_json(current)["date"] or ""):
-        return out
-    out.update({"date_utcz": None, "date_ymd": None, "date_my": "", "date_y": None})
-    if not value:
-        return out
+    row.date_timezone = zone
+    if value == (date_json(row)["date"] or ""):
+        return
+    utcz, ymd, my, y = None, None, "", None
+    month = re.fullmatch(r"(\d{4})-(\d{2})", value)
     if re.fullmatch(r"\d{4}", value):
-        out["date_y"] = int(value)
-        return out
-    match = re.fullmatch(r"(\d{4})-(\d{2})", value)
-    if match:
-        if not 1 <= int(match.group(2)) <= 12:
+        y = int(value)
+    elif month:
+        if not 1 <= int(month.group(2)) <= 12:
             raise ApiError(400, "date: no such month")
-        out["date_my"] = f"{match.group(2)}-{match.group(1)}"
-        return out
-    try:
-        out["date_ymd"] = datetime.date.fromisoformat(value)
-    except ValueError as e:
-        raise ApiError(400, "date: expected YYYY, YYYY-MM or YYYY-MM-DD") from e
-    return out
+        my = f"{month.group(2)}-{month.group(1)}"
+    elif value:
+        try:
+            ymd = datetime.date.fromisoformat(value)
+        except ValueError as e:
+            raise ApiError(400, "date: expected YYYY, YYYY-MM or YYYY-MM-DD") from e
+    row.date_utcz, row.date_ymd, row.date_my, row.date_y = utcz, ymd, my, y
 
 
-def owned_list[T: (Person, Organization, PersonType, RelationType, Group)](body: dict[str, Any], key: str, model: type[T]) -> list[T]:
-    """ body[key], a list of ids of the user's own rows of model, as those rows. """
-    ids = body.get(key) or []
-    if not isinstance(ids, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
-        raise ApiError(400, f"{key}: expected a list of ids")
-    if not ids:
-        return []
-    rows = flask.g.db.execute(
-        select(model).where(model.owner_id == flask.g.user.id, model.id.in_(ids))
-    ).scalars().all()
-    if len(rows) != len(set(ids)):
-        raise ApiError(400, f"{key}: unknown {model.__name__.lower()}")
-    return list(rows)
 
 
 def _owned_people(body: dict[str, Any]) -> list[Person]:
     return owned_list(body, "people", Person)
 
 
-def owned_image(body: dict[str, Any]) -> int | None:
-    image_id = opt_int(body, "image_id", 1, 2**31 - 1)
-    if image_id is None:
-        return None
-    image = flask.g.db.get(Image, image_id)
-    if image is None or image.owner_id != flask.g.user.id:
-        raise ApiError(400, "image_id: unknown image")
-    return image_id
 
 
-def owned_images(key: str, values: list[Any]) -> list[int]:
-    """ Ids of the user's own images, as sent in a list (key names it in the error), each once and in the order sent. """
-    ids = [value for value in values if isinstance(value, int) and not isinstance(value, bool)]
-    if len(ids) != len(values) or len(set(ids)) != len(ids):
-        raise ApiError(400, f"{key}: expected a list of image ids, each once")
-    found = set(flask.g.db.scalars(select(Image.id).where(Image.owner_id == flask.g.user.id, Image.id.in_(ids)))) if ids else set()
-    if len(found) != len(ids):
-        raise ApiError(400, f"{key}: unknown image")
-    return ids
 
 
-def apply_image(row: Any, body: dict[str, Any]) -> None:
-    """
-    The one picture of a row: a new upload (image_id) replaces it, and
-    image_remove takes it away; sent neither, it stays as it is (a picture
-    is never blanked by omission).
-    """
-    image_id = owned_image(body)
-    if image_id is not None:
-        row.image_id = image_id
-    elif body.get("image_remove") is True:
-        row.image_id = None
 
 
-def _owned(model: type[Concert | Museum | AudioCourse | YouTubeVideo | Person | Organization | Place | Group | City | Country | OrganizationType | PersonType | RelationType | PersonRelationType | PersonOrganizationType | Device], row_id: int) -> Any:
-    row = flask.g.db.get(model, row_id)
-    if row is None or row.owner_id != flask.g.user.id:
-        raise ApiError(404, "no such entry")
-    return row
 
 
-def drop_unused_images() -> None:
-    """ Photos and logos nothing shows any more (replaced or deleted) go too. """
-    db = flask.g.db
-    used = select(Concert.image_id).where(Concert.image_id.is_not(None)).union(
-        select(Museum.image_id).where(Museum.image_id.is_not(None)),
-        select(Organization.image_id).where(Organization.image_id.is_not(None)),
-        select(AudioCourse.image_id).where(AudioCourse.image_id.is_not(None)),
-        select(UserWork.image_id).where(UserWork.image_id.is_not(None)),
-        select(Cover.image_id),
-        select(City.image_id).where(City.image_id.is_not(None)),
-        select(CityPhoto.image_id),
-        select(Country.image_id).where(Country.image_id.is_not(None)),
-        select(Group.image_id).where(Group.image_id.is_not(None)),
-        select(Place.image_id).where(Place.image_id.is_not(None)),
-        select(Device.image_id).where(Device.image_id.is_not(None)),
-        select(PersonType.image_id).where(PersonType.image_id.is_not(None)),
-        select(PersonPhoto.image_id),
-    )
-    for image in db.execute(select(Image).where(Image.owner_id == flask.g.user.id, Image.id.not_in(used))).scalars():
-        db.delete(image)
 
 
-def _apply_concert(concert: Concert, body: dict[str, Any], current: Concert | None) -> None:
+def _apply_concert(concert: Concert, body: dict[str, Any]) -> None:
     concert.name = text(body, "name", required=True)
     concert.performers = owned_list(body, "performers", Person)
     concert.groups = owned_list(body, "groups", Group)
     concert.event = text(body, "event")
     concert.genre = text(body, "genre")
-    concert.place = _owned_place(body)
+    concert.place = owned_ref(body, "place_id", Place, "place")
     concert.tickets = opt_int(body, "tickets", 0, 1000)
     concert.broadcast = body.get("broadcast") is True
     concert.review = text(body, "review")
     concert.remark = text(body, "remark")
     # a photo is only ever replaced by a new upload, never blanked by omission
-    apply_image(concert, body)
-    concert.image_source = text(body, "image_source")
-    concert.image_license = text(body, "image_license")
-    concert.image_author = text(body, "image_author")
+    apply_picture(concert, body)
     concert.people = _owned_people(body)
     concert.alone = body.get("alone") is True
     if concert.alone and concert.people:
         raise ApiError(400, "a concert gone to alone has no one in With")
-    for key, value in _dates(body, current).items():
-        setattr(concert, key, value)
+    _apply_dates(concert, body)
 
 
-def _owned_place(body: dict[str, Any]) -> Place | None:
-    """ body's place_id, one of the user's own places, or None for no place. """
-    place_id = opt_int(body, "place_id", 1, 2**31 - 1)
-    if place_id is None:
-        return None
-    place = flask.g.db.get(Place, place_id)
-    if place is None or place.owner_id != flask.g.user.id:
-        raise ApiError(400, "place_id: unknown place")
-    return place
 
 
-def _owned_city(body: dict[str, Any], key: str = "city_id") -> City | None:
-    """ body's city_id (or key), one of the user's own cities, or None for no city. """
-    city_id = opt_int(body, key, 1, 2**31 - 1)
-    if city_id is None:
-        return None
-    city = flask.g.db.get(City, city_id)
-    if city is None or city.owner_id != flask.g.user.id:
-        raise ApiError(400, f"{key}: unknown city")
-    return city
 
 
-def _owned_country(body: dict[str, Any]) -> Country | None:
-    """ body's country_id, one of the user's own countries, or None for no country. """
-    country_id = opt_int(body, "country_id", 1, 2**31 - 1)
-    if country_id is None:
-        return None
-    country = flask.g.db.get(Country, country_id)
-    if country is None or country.owner_id != flask.g.user.id:
-        raise ApiError(400, "country_id: unknown country")
-    return country
 
 
 def _apply_country(country: Country, body: dict[str, Any]) -> None:
@@ -730,40 +591,16 @@ def _apply_country(country: Country, body: dict[str, Any]) -> None:
     country.name = name
     country.latitude, country.longitude = coordinates(body)
     country.remark = text(body, "remark")
-    _apply_picture(country, body)
+    apply_picture(country, body)
 
 
-def _apply_picture(row: City | Country | Group | Device | PersonType | Place, body: dict[str, Any]) -> None:
-    apply_image(row, body)
-    row.image_source = text(body, "image_source")
-    row.image_license = text(body, "image_license")
-    row.image_author = text(body, "image_author")
 
 
-def _apply_city_photos(city: City, value: Any) -> None:
-    """
-    All the photos of a city, [{image_id, image_source, image_license,
-    image_author}, ...], replacing those it had: the first is the one its
-    card shows (cities.image_id and its credit), the others follow it.
-    """
-    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
-        raise ApiError(400, "photos: expected a list of {image_id, image_source, image_license, image_author}")
-    ids = owned_images("photos", [item.get("image_id") for item in value])
-    credits = [(text(item, "image_source"), text(item, "image_license"), text(item, "image_author")) for item in value]
-    city.image_id = ids[0] if ids else None
-    city.image_source, city.image_license, city.image_author = credits[0] if credits else ("", "", "")
-    kept = {photo.image_id: photo for photo in city.more_photos}
-    rows = []
-    for image_id, (source, license_, author) in zip(ids[1:], credits[1:], strict=True):
-        row = kept.get(image_id) or CityPhoto(image_id=image_id)
-        row.image_source, row.image_license, row.image_author = source, license_, author
-        rows.append(row)
-    city.more_photos = rows
 
 
 def _apply_city(city: City, body: dict[str, Any]) -> None:
     name = text(body, "name", required=True)
-    region, country = text(body, "region"), _owned_country(body)
+    region, country = text(body, "region"), owned_ref(body, "country_id", Country, "country")
     clash = flask.g.db.execute(
         select(City.id).where(
             City.owner_id == flask.g.user.id, City.name == name, City.region == region,
@@ -776,14 +613,18 @@ def _apply_city(city: City, body: dict[str, Any]) -> None:
     city.latitude, city.longitude = coordinates(body)
     city.remark = text(body, "remark")
     if "photos" in body:
-        _apply_city_photos(city, body["photos"])
+        # all its photos, replacing those it had: the first is the one its card shows
+        # (cities.image_id and its credit), the others follow it
+        photos = sent_photos(body["photos"])
+        city.image_id, (city.image_source, city.image_license, city.image_author) = photos[0] if photos else (None, ("", "", ""))
+        city.more_photos = photo_rows(city.more_photos, CityPhoto, photos[1:])
     else:
-        _apply_picture(city, body)
+        apply_picture(city, body)
 
 
 def _apply_place(place: Place, body: dict[str, Any]) -> None:
     name = text(body, "name", required=True)
-    city = _owned_city(body)
+    city = owned_ref(body, "city_id", City, "city")
     clash = flask.g.db.execute(
         select(Place.id).where(
             Place.owner_id == flask.g.user.id, Place.name == name, Place.city_id == city.id if city else Place.city_id.is_(None), Place.id != place.id,
@@ -797,7 +638,7 @@ def _apply_place(place: Place, body: dict[str, Any]) -> None:
     place.latitude, place.longitude = coordinates(body)
     place.website = text(body, "website")
     place.remark = text(body, "remark")
-    _apply_picture(place, body)
+    apply_picture(place, body)
 
 
 def _apply_group(group: Group, body: dict[str, Any]) -> None:
@@ -811,10 +652,10 @@ def _apply_group(group: Group, body: dict[str, Any]) -> None:
     group.members = members
     group.description = text(body, "description")
     group.website = text(body, "website")
-    _apply_picture(group, body)
+    apply_picture(group, body)
 
 
-def _apply_visit(visit: MuseumVisit, body: dict[str, Any], current: MuseumVisit | None) -> None:
+def _apply_visit(visit: MuseumVisit, body: dict[str, Any]) -> None:
     visit.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
     visit.review = text(body, "review")
     visit.remark = text(body, "remark")
@@ -823,13 +664,12 @@ def _apply_visit(visit: MuseumVisit, body: dict[str, Any], current: MuseumVisit 
     visit.alone = body.get("alone") is True
     if visit.alone and visit.people:
         raise ApiError(400, "a visit made alone has no one in With")
-    for key, value in _dates(body, current).items():
-        setattr(visit, key, value)
+    _apply_dates(visit, body)
 
 
 def _apply_museum(museum: Museum, body: dict[str, Any]) -> None:
     name = text(body, "name", required=True)
-    city = _owned_city(body)
+    city = owned_ref(body, "city_id", City, "city")
     clash = flask.g.db.execute(
         select(Museum.id).where(
             Museum.owner_id == flask.g.user.id, Museum.name == name, Museum.city_id == city.id if city else Museum.city_id.is_(None), Museum.id != museum.id,
@@ -858,7 +698,7 @@ def _apply_museum(museum: Museum, body: dict[str, Any]) -> None:
         if visit_id is not None and (visit_id not in had or visit_id in {visit.id for visit in visits}):
             raise ApiError(400, "visits: unknown visit")
         visit = had[visit_id] if visit_id is not None else MuseumVisit()
-        _apply_visit(visit, item, visit if visit_id is not None else None)
+        _apply_visit(visit, item)
         visits.append(visit)
     museum.visits = visits
 
@@ -878,15 +718,15 @@ def _stamp(body: dict[str, Any], key: str, current: datetime.datetime | None) ->
         raise ApiError(400, f"{key}: expected YYYY-MM-DD") from e
 
 
-def _apply_audio_course(course: AudioCourse, body: dict[str, Any], current: AudioCourse | None) -> None:
+def _apply_audio_course(course: AudioCourse, body: dict[str, Any]) -> None:
     course.name = text(body, "name", required=True)
     course.lecturers = owned_list(body, "lecturers", Person)
     course.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
     course.review = text(body, "review")
-    course.device = _owned_type(Device, opt_int(body, "device_id", 1, 2**31 - 1))
+    course.device = owned_ref(body, "device_id", Device, "device")
     course.listened_at = text(body, "listened_at")
-    course.started_utcz = _stamp(body, "started", current.started_utcz if current else None)
-    course.ended_utcz = _stamp(body, "ended", current.ended_utcz if current else None)
+    course.started_utcz = _stamp(body, "started", course.started_utcz)
+    course.ended_utcz = _stamp(body, "ended", course.ended_utcz)
     course.progress = text(body, "progress")
     course.great_courses_id = opt_int(body, "great_courses_id", 1, 2**31 - 1)
     course.great_courses_slug = text(body, "great_courses_slug")
@@ -895,8 +735,7 @@ def _apply_audio_course(course: AudioCourse, body: dict[str, Any], current: Audi
     if course.link and not course.link.startswith(("https://", "http://")):
         raise ApiError(400, "link: expected an http(s) URL")
     apply_image(course, body)
-    for key, value in _dates(body, current).items():
-        setattr(course, key, value)
+    _apply_dates(course, body)
 
 
 YOUTUBE_ID = re.compile(rf"[A-Za-z0-9_-]{{{YOUTUBE_ID_LENGTH}}}")
@@ -914,7 +753,7 @@ def youtube_id(value: str) -> str:
     return value
 
 
-def _apply_youtube_video(video: YouTubeVideo, body: dict[str, Any], current: YouTubeVideo | None) -> None:
+def _apply_youtube_video(video: YouTubeVideo, body: dict[str, Any]) -> None:
     video.youtube_id = youtube_id(text(body, "youtube_id", required=True))
     clash = flask.g.db.execute(select(YouTubeVideo.id).where(
         YouTubeVideo.owner_id == flask.g.user.id, YouTubeVideo.youtube_id == video.youtube_id, YouTubeVideo.id != video.id,
@@ -925,10 +764,9 @@ def _apply_youtube_video(video: YouTubeVideo, body: dict[str, Any], current: You
     video.name = text(body, "name", required=not video.unavailable)
     video.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
     video.review = text(body, "review")
-    video.device = _owned_type(Device, opt_int(body, "device_id", 1, 2**31 - 1))
+    video.device = owned_ref(body, "device_id", Device, "device")
     video.watched_at = text(body, "watched_at")
-    for key, value in _dates(body, current).items():
-        setattr(video, key, value)
+    _apply_dates(video, body)
 
 
 def _apply_person(person: Person, body: dict[str, Any]) -> None:
@@ -955,7 +793,10 @@ def _apply_person(person: Person, body: dict[str, Any]) -> None:
     if "names" in body:
         _apply_person_names(person, body["names"])
     if "photos" in body:
-        _apply_person_photos(person, body["photos"])
+        # all their photos, replacing those they had, in this order: the first is the default
+        person.photos = photo_rows(person.photos, PersonPhoto, sent_photos(body["photos"]))
+        for position, photo in enumerate(person.photos):
+            photo.position = position
     if "relations" in body:
         person.relations = _person_relations(person, body["relations"])
 
@@ -1028,23 +869,6 @@ def _apply_person_names(person: Person, value: Any) -> None:
     person.names = list(rows.values())
 
 
-def _apply_person_photos(person: Person, value: Any) -> None:
-    """
-    All the photos of a person, [{image_id, image_source, image_license,
-    image_author}, ...], replacing those they had, in this order: the first
-    is the default, the one their card shows.
-    """
-    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
-        raise ApiError(400, "photos: expected a list of {image_id, image_source, image_license, image_author}")
-    ids = owned_images("photos", [item.get("image_id") for item in value])
-    kept = {photo.image_id: photo for photo in person.photos}
-    rows = []
-    for position, (image_id, item) in enumerate(zip(ids, value, strict=True)):
-        row = kept.get(image_id) or PersonPhoto(image_id=image_id)
-        row.position = position
-        row.image_source, row.image_license, row.image_author = text(item, "image_source"), text(item, "image_license"), text(item, "image_author")
-        rows.append(row)
-    person.photos = rows
 
 
 def _organization_links(person: Person, value: Any) -> list[PersonOrganization]:
@@ -1124,16 +948,15 @@ def _apply_organization(organization: Organization, body: dict[str, Any]) -> Non
     if clash is not None:
         raise ApiError(409, f"{name} is already in Organizations")
     organization.name = name
-    type_id = opt_int(body, "type_id", 1, 2**31 - 1)
-    organization.type = _owned_type(OrganizationType, type_id)
+    organization.type = owned_ref(body, "type_id", OrganizationType, "type")
     # looked up before anything is set on a new organization, which is not in the session yet
     relations = owned_list(body, "relation_ids", RelationType)
     organization.relations = relations
     organization.status = text(body, "status")
     organization.website = text(body, "website")
     organization.location = text(body, "location")
-    organization.city = _owned_city(body)
-    organization.headquarters = _owned_city(body, "headquarters_id")
+    organization.city = owned_ref(body, "city_id", City, "city")
+    organization.headquarters = owned_ref(body, "headquarters_id", City, "city")
     _apply_address(organization, body)
     organization.latitude, organization.longitude = coordinates(body)
     organization.what_happened = text(body, "what_happened")
@@ -1141,619 +964,65 @@ def _apply_organization(organization: Organization, body: dict[str, Any]) -> Non
     apply_image(organization, body)
 
 
-@bp.route("/api/concert-visits", methods=["POST"])
+# ─── the routes that add, edit and delete ───────────────────────────────────
+
+@dataclasses.dataclass(frozen=True)
+class _View:
+    """ What the routes below need of a view: its rows, how a request body is applied to one, and what one looks like as JSON. """
+    model: type[Any]
+    apply: Callable[[Any, dict[str, Any]], None]
+    json: Callable[[Any], dict[str, Any]]
+
+
+# the path of a view (/api/<path>) -> the view
+VIEWS: dict[str, _View] = {
+    "concert-visits": _View(Concert, _apply_concert, concert_json),
+    # a museum, with its visits
+    "museum-visits": _View(Museum, _apply_museum, museum_json),
+    "audio-courses": _View(AudioCourse, _apply_audio_course, audio_course_json),
+    "youtube-videos": _View(YouTubeVideo, _apply_youtube_video, youtube_video_json),
+    "people": _View(Person, _apply_person, person_json),
+    "organizations": _View(Organization, _apply_organization, organization_json),
+    "places": _View(Place, _apply_place, place_json),
+    "groups": _View(Group, _apply_group, group_json),
+    "cities": _View(City, _apply_city, city_json),
+    "countries": _View(Country, _apply_country, country_json),
+}
+# the paths, as the part of a route that takes any of them
+WHAT = f"<any({', '.join(repr(path) for path in VIEWS)}):what>"
+
+
+@bp.route(f"/api/{WHAT}", methods=["POST"])
 @auth.login_required
-def api_concerts_add() -> tuple[flask.Response, int]:
-    concert = Concert(owner_id=flask.g.user.id)
-    _apply_concert(concert, json_body(), None)
-    flask.g.db.add(concert)
+def api_world_add(what: str) -> tuple[flask.Response, int]:
+    view = VIEWS[what]
+    row = view.model(owner_id=flask.g.user.id)
+    view.apply(row, json_body())
+    flask.g.db.add(row)
     flask.g.db.commit()
-    return flask.jsonify(concert_json(concert)), 201
+    return flask.jsonify(view.json(row)), 201
 
 
-@bp.route("/api/concert-visits/<int:row_id>", methods=["PUT"])
+@bp.route(f"/api/{WHAT}/<int:row_id>", methods=["PUT"])
 @auth.login_required
-def api_concerts_update(row_id: int) -> flask.Response:
-    concert = _owned(Concert, row_id)
-    _apply_concert(concert, json_body(), concert)
+def api_world_update(what: str, row_id: int) -> flask.Response:
+    view = VIEWS[what]
+    row = owned(view.model, row_id)
+    view.apply(row, json_body())
+    # a picture taken away or replaced goes, with its image
     flask.g.db.flush()
     drop_unused_images()
     flask.g.db.commit()
-    return flask.jsonify(concert_json(concert))
+    return flask.jsonify(view.json(row))
 
 
-@bp.route("/api/museum-visits", methods=["POST"])
-@auth.login_required
-def api_museums_add() -> tuple[flask.Response, int]:
-    museum = Museum(owner_id=flask.g.user.id)
-    _apply_museum(museum, json_body())
-    flask.g.db.add(museum)
-    flask.g.db.commit()
-    return flask.jsonify(museum_json(museum)), 201
-
-
-@bp.route("/api/museum-visits/<int:row_id>", methods=["PUT"])
-@auth.login_required
-def api_museums_update(row_id: int) -> flask.Response:
-    museum = _owned(Museum, row_id)
-    _apply_museum(museum, json_body())
-    flask.g.db.flush()
-    drop_unused_images()
-    flask.g.db.commit()
-    return flask.jsonify(museum_json(museum))
-
-
-@bp.route("/api/audio-courses", methods=["POST"])
-@auth.login_required
-def api_audio_courses_add() -> tuple[flask.Response, int]:
-    course = AudioCourse(owner_id=flask.g.user.id)
-    _apply_audio_course(course, json_body(), None)
-    flask.g.db.add(course)
-    flask.g.db.commit()
-    return flask.jsonify(audio_course_json(course)), 201
-
-
-@bp.route("/api/audio-courses/<int:row_id>", methods=["PUT"])
-@auth.login_required
-def api_audio_courses_update(row_id: int) -> flask.Response:
-    course = _owned(AudioCourse, row_id)
-    _apply_audio_course(course, json_body(), course)
-    flask.g.db.flush()
-    drop_unused_images()
-    flask.g.db.commit()
-    return flask.jsonify(audio_course_json(course))
-
-
-@bp.route("/api/youtube-videos", methods=["POST"])
-@auth.login_required
-def api_youtube_add() -> tuple[flask.Response, int]:
-    video = YouTubeVideo(owner_id=flask.g.user.id)
-    _apply_youtube_video(video, json_body(), None)
-    flask.g.db.add(video)
-    flask.g.db.commit()
-    return flask.jsonify(youtube_video_json(video)), 201
-
-
-@bp.route("/api/youtube-videos/<int:row_id>", methods=["PUT"])
-@auth.login_required
-def api_youtube_update(row_id: int) -> flask.Response:
-    video = _owned(YouTubeVideo, row_id)
-    _apply_youtube_video(video, json_body(), video)
-    flask.g.db.commit()
-    return flask.jsonify(youtube_video_json(video))
-
-
-@bp.route("/api/people", methods=["POST"])
-@auth.login_required
-def api_people_add() -> tuple[flask.Response, int]:
-    person = Person(owner_id=flask.g.user.id)
-    _apply_person(person, json_body())
-    flask.g.db.add(person)
-    flask.g.db.commit()
-    return flask.jsonify(person_json(person)), 201
-
-
-@bp.route("/api/people/<int:row_id>", methods=["PUT"])
-@auth.login_required
-def api_people_update(row_id: int) -> flask.Response:
-    person = _owned(Person, row_id)
-    _apply_person(person, json_body())
-    # a photo taken away goes, with its image
-    flask.g.db.flush()
-    drop_unused_images()
-    flask.g.db.commit()
-    return flask.jsonify(person_json(person))
-
-
-@bp.route("/api/organizations", methods=["POST"])
-@auth.login_required
-def api_organizations_add() -> tuple[flask.Response, int]:
-    organization = Organization(owner_id=flask.g.user.id)
-    _apply_organization(organization, json_body())
-    flask.g.db.add(organization)
-    flask.g.db.commit()
-    return flask.jsonify(organization_json(organization)), 201
-
-
-@bp.route("/api/organizations/<int:row_id>", methods=["PUT"])
-@auth.login_required
-def api_organizations_update(row_id: int) -> flask.Response:
-    organization = _owned(Organization, row_id)
-    _apply_organization(organization, json_body())
-    flask.g.db.flush()
-    drop_unused_images()
-    flask.g.db.commit()
-    return flask.jsonify(organization_json(organization))
-
-
-@bp.route("/api/cities", methods=["POST"])
-@auth.login_required
-def api_cities_add() -> tuple[flask.Response, int]:
-    city = City(owner_id=flask.g.user.id)
-    _apply_city(city, json_body())
-    flask.g.db.add(city)
-    flask.g.db.commit()
-    return flask.jsonify(city_json(city)), 201
-
-
-@bp.route("/api/cities/<int:row_id>", methods=["PUT"])
-@auth.login_required
-def api_cities_update(row_id: int) -> flask.Response:
-    city = _owned(City, row_id)
-    _apply_city(city, json_body())
-    flask.g.db.commit()
-    return flask.jsonify(city_json(city))
-
-
-@bp.route("/api/countries", methods=["POST"])
-@auth.login_required
-def api_countries_add() -> tuple[flask.Response, int]:
-    country = Country(owner_id=flask.g.user.id)
-    _apply_country(country, json_body())
-    flask.g.db.add(country)
-    flask.g.db.commit()
-    return flask.jsonify(country_json(country)), 201
-
-
-@bp.route("/api/countries/<int:row_id>", methods=["PUT"])
-@auth.login_required
-def api_countries_update(row_id: int) -> flask.Response:
-    country = _owned(Country, row_id)
-    _apply_country(country, json_body())
-    flask.g.db.commit()
-    return flask.jsonify(country_json(country))
-
-
-@bp.route("/api/places", methods=["POST"])
-@auth.login_required
-def api_places_add() -> tuple[flask.Response, int]:
-    place = Place(owner_id=flask.g.user.id)
-    _apply_place(place, json_body())
-    flask.g.db.add(place)
-    flask.g.db.commit()
-    return flask.jsonify(place_json(place)), 201
-
-
-@bp.route("/api/places/<int:row_id>", methods=["PUT"])
-@auth.login_required
-def api_places_update(row_id: int) -> flask.Response:
-    place = _owned(Place, row_id)
-    _apply_place(place, json_body())
-    flask.g.db.commit()
-    return flask.jsonify(place_json(place))
-
-
-@bp.route("/api/groups", methods=["POST"])
-@auth.login_required
-def api_groups_add() -> tuple[flask.Response, int]:
-    group = Group(owner_id=flask.g.user.id)
-    _apply_group(group, json_body())
-    flask.g.db.add(group)
-    flask.g.db.commit()
-    return flask.jsonify(group_json(group)), 201
-
-
-@bp.route("/api/groups/<int:row_id>", methods=["PUT"])
-@auth.login_required
-def api_groups_update(row_id: int) -> flask.Response:
-    group = _owned(Group, row_id)
-    _apply_group(group, json_body())
-    flask.g.db.commit()
-    return flask.jsonify(group_json(group))
-
-
-@bp.route("/api/<any('concert-visits', 'museum-visits', 'audio-courses', 'youtube-videos', people, organizations, places, groups, cities, countries):what>/<int:row_id>", methods=["DELETE"])
+@bp.route(f"/api/{WHAT}/<int:row_id>", methods=["DELETE"])
 @auth.login_required
 def api_world_delete(what: str, row_id: int) -> flask.Response:
-    model = {"concert-visits": Concert, "museum-visits": Museum, "audio-courses": AudioCourse, "youtube-videos": YouTubeVideo, "people": Person, "organizations": Organization, "places": Place, "groups": Group, "cities": City, "countries": Country}[what]
     # the ORM also removes the row's links (to people, to organizations, to concerts and museums);
     # the concerts at a deleted place are kept, with no place
-    flask.g.db.delete(_owned(model, row_id))
+    flask.g.db.delete(owned(VIEWS[what].model, row_id))
     flask.g.db.flush()
     drop_unused_images()
     flask.g.db.commit()
     return flask.Response(status=204)
-
-
-# ─── stats ──────────────────────────────────────────────────────────────────
-
-def _per_year(rows: list[Concert] | list[MuseumVisit]) -> list[dict[str, int]]:
-    """ How many rows fall in each year that has any, oldest first; undated rows are left out. """
-    years: dict[int, int] = {}
-    for row in rows:
-        key = _date_json(row)["date_sort"][:4]
-        if key:
-            years[int(key)] = years.get(int(key), 0) + 1
-    return [{"year": year, "count": years[year]} for year in sorted(years)]
-
-
-def _by_type(counts: dict[str, int]) -> list[dict[str, Any]]:
-    return [{"name": name, "count": count} for name, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
-
-
-# the YouTube channels on the Stats page: the ones watched most
-TOP_CHANNELS = 15
-
-
-def _youtube_by(column: Any, limit: int | None = None) -> list[dict[str, Any]]:
-    """ The user's YouTube videos counted by column (channel, category), most first; those without one are left out. """
-    rows = flask.g.db.execute(
-        select(column, func.count()).where(YouTubeVideo.owner_id == flask.g.user.id, column != "")
-        .group_by(column).order_by(func.count().desc(), column).limit(limit),
-    ).all()
-    return [{"name": name, "count": count} for name, count in rows]
-
-
-@bp.route("/api/stats", methods=["GET"])
-@auth.login_required
-def api_stats() -> flask.Response:
-    """ How many of everything the user has, and a few breakdowns. """
-    db = flask.g.db
-    me = flask.g.user.id
-
-    def count(model: Any) -> int:
-        return db.scalar(select(func.count()).select_from(model).where(model.owner_id == me)) or 0
-
-    library = []
-    # where the user is with each: the status of the reading it goes by
-    entries = db.scalars(select(UserWork).where(UserWork.user_id == me)).all()
-    for kind, (_, plural, _) in KINDS.items():
-        counts = collections.Counter(entry.status for entry in entries if entry.work.kind == kind)
-        by_status = {label: counts[status] for status, label in STATUSES.items() if counts[status]}
-        library.append({"kind": kind, "label": plural, "total": sum(by_status.values()), "by_status": by_status})
-    concerts = db.execute(select(Concert).where(Concert.owner_id == me)).scalars().all()
-    museums = db.execute(select(Museum).where(Museum.owner_id == me).options(selectinload(Museum.visits))).scalars().all()
-    visits = [visit for museum in museums for visit in museum.visits]
-    people = db.execute(select(Person).where(Person.owner_id == me).options(selectinload(Person.types))).scalars().all()
-    organizations = db.execute(
-        select(Organization).where(Organization.owner_id == me).options(selectinload(Organization.type), selectinload(Organization.relations))
-    ).scalars().all()
-    people_by_type: dict[str, int] = {}
-    for person in people:
-        for kind in person.types or [None]:
-            name = kind.name if kind else "No profession"
-            people_by_type[name] = people_by_type.get(name, 0) + 1
-    organizations_by_relation: dict[str, int] = {}
-    for organization in organizations:
-        for relation in organization.relations or [None]:
-            name = relation.name if relation else "No relation"
-            organizations_by_relation[name] = organizations_by_relation.get(name, 0) + 1
-    organizations_by_type: dict[str, int] = {}
-    for organization in organizations:
-        name = organization.type.name if organization.type else "No type"
-        organizations_by_type[name] = organizations_by_type.get(name, 0) + 1
-    performers = db.scalar(
-        select(func.count(func.distinct(concert_performers.c.person_id)))
-        .join(Concert, Concert.id == concert_performers.c.concert_id)
-        .where(Concert.owner_id == me)
-    ) or 0
-    return flask.jsonify({
-        "library": library,
-        "concerts": len(concerts),
-        "performers": performers,
-        "museum_visits": len(visits),
-        "museums": len(museums),
-        "audio_courses": count(AudioCourse),
-        "youtube_videos": count(YouTubeVideo),
-        "people": len(people),
-        "organizations": len(organizations),
-        "places": count(Place),
-        "cities": count(City),
-        "countries": count(Country),
-        "groups": count(Group),
-        "organization_types": count(OrganizationType),
-        "person_types": count(PersonType),
-        "relation_types": count(RelationType),
-        "person_relation_types": count(PersonRelationType),
-        "person_organization_types": count(PersonOrganizationType),
-        "devices": count(Device),
-        "locales": db.scalar(select(func.count()).select_from(Locale)) or 0,
-        "images": count(Image),
-        "people_by_type": _by_type(people_by_type),
-        "organizations_by_type": _by_type(organizations_by_type),
-        "organizations_by_relation": _by_type(organizations_by_relation),
-        "concerts_by_year": _per_year(list(concerts)),
-        "museums_by_year": _per_year(visits),
-        "youtube_by_channel": _youtube_by(YouTubeVideo.channel, TOP_CHANNELS),
-        "youtube_by_category": _youtube_by(YouTubeVideo.category),
-    })
-
-
-# ─── the enumerations: organization, person and relation types ────────────
-
-# ─── languages (the locales table) ───────────────────────────────────────────
-# The same for every account, as the works are: everyone sees them, an admin
-# keeps them. A language is known by its code, which what is said in it points
-# at, so the code never changes; the app's rows have a number, its place in the list.
-
-# everything that says a language: the columns that point at locales.code
-LOCALE_USES = (
-    Work.title_locale, Work.original_locale, WorkTitle.locale, Read.locale, Owning.locale, PersonName.locale, User.locale,
-)
-
-
-def _locale_uses(code: str) -> int:
-    return sum(flask.g.db.scalar(select(func.count()).where(column == code)) or 0 for column in LOCALE_USES)
-
-
-def locale_json(locale: Locale) -> dict[str, Any]:
-    return {
-        "id": locale.position, "code": locale.code, "name": locale.name, "script": locale.script, "native": locale.native,
-        # its picture: its own name in its own script, drawn (the address changes with what it shows)
-        "image": f"/api/locales/{locale.position}/picture.svg?v={hashlib.sha256(_locale_picture(locale).encode()).hexdigest()[:12]}",
-        "description": f"{locale.code}, written in {locale.script} letters", "count": _locale_uses(locale.code),
-    }
-
-
-def _locale(row_id: int) -> Locale:
-    locale = flask.g.db.scalars(select(Locale).where(Locale.position == row_id)).first()
-    if locale is None:
-        raise ApiError(404, "no such language")
-    return locale
-
-
-def _admin_only() -> None:
-    if flask.g.user.role != ROLE_ADMIN:
-        raise ApiError(403, "the languages are the same for every account: only an admin changes them")
-
-
-def _apply_locale(locale: Locale, body: dict[str, Any]) -> None:
-    name = text(body, "name", required=True)
-    if flask.g.db.execute(select(Locale.code).where(Locale.name == name, Locale.code != locale.code)).first() is not None:
-        raise ApiError(409, f"{name} is already one of the languages")
-    script = text(body, "script", required=True).title()
-    if script not in languages.scripts():
-        raise ApiError(400, f"script: {script} is not a script letters are written in (Latin, Hebrew, Cyrillic, Arabic, Greek, ...)")
-    native = text(body, "native")
-    if languages.script_of(native) not in ("", script):
-        raise ApiError(400, f"native: {native} is not written in {script} letters: it is what the language is called in itself")
-    locale.name, locale.script, locale.native = name, script, native
-
-
-# the ground of a language's picture, by its script: languages of one script look alike
-PICTURE_GROUNDS = ("#1d4ed8", "#b45309", "#047857", "#7c3aed", "#be123c", "#0e7490", "#4d7c0f", "#a21caf")
-
-
-def _locale_picture(locale: Locale) -> str:
-    """ The picture of a language, as SVG: what it is called in itself, in its own script, on the colour of that script. """
-    shown = locale.native or locale.name
-    ground = PICTURE_GROUNDS[int(hashlib.sha256(locale.script.encode()).hexdigest(), 16) % len(PICTURE_GROUNDS)]
-    size = max(34, min(96, 560 // max(len(shown), 1)))
-    return (
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img">'
-        f"<title>{html.escape(locale.name)}</title>"
-        f'<rect width="400" height="300" fill="{ground}"/>'
-        f'<text x="200" y="150" text-anchor="middle" dominant-baseline="central" fill="#fff" font-family="serif" font-size="{size}">{html.escape(shown)}</text>'
-        f'<text x="200" y="270" text-anchor="middle" fill="#fff" fill-opacity="0.75" font-family="sans-serif" font-size="20">{html.escape(locale.script)}</text>'
-        "</svg>"
-    )
-
-
-@bp.route("/api/locales/<int:row_id>/picture.svg", methods=["GET"])
-@auth.login_required
-def api_locale_picture(row_id: int) -> flask.Response:
-    response = flask.Response(_locale_picture(_locale(row_id)), mimetype="image/svg+xml")
-    # the address says what it shows (v), so it can be kept; a drawing runs nothing
-    response.headers["Cache-Control"] = "private, max-age=31536000, immutable"
-    response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
-    return response
-
-
-@bp.route("/api/locales", methods=["GET"])
-@auth.login_required
-def api_locales() -> flask.Response:
-    """ The languages, in the order the forms list them, each with how much is said in it. """
-    return flask.jsonify([locale_json(locale) for locale in languages.known(flask.g.db).values()])
-
-
-@bp.route("/api/locales", methods=["POST"])
-@auth.login_required
-def api_locales_add() -> tuple[flask.Response, int]:
-    _admin_only()
-    body = json_body()
-    code = text(body, "code", required=True).lower()
-    if not re.fullmatch(r"[a-z]{2,3}(-[a-z0-9]{2,6})?", code):
-        raise ApiError(400, "code: a language code is two or three letters (he, en, yi), as ISO 639 names it")
-    if flask.g.db.get(Locale, code) is not None:
-        raise ApiError(409, f"{code} is already one of the languages")
-    locale = Locale(code=code, position=(flask.g.db.scalar(select(func.max(Locale.position))) or 0) + 1)
-    _apply_locale(locale, body)
-    flask.g.db.add(locale)
-    flask.g.db.commit()
-    return flask.jsonify(locale_json(locale)), 201
-
-
-@bp.route("/api/locales/<int:row_id>", methods=["PUT"])
-@auth.login_required
-def api_locales_update(row_id: int) -> flask.Response:
-    _admin_only()
-    locale = _locale(row_id)
-    body = json_body()
-    if text(body, "code").lower() not in ("", locale.code):
-        raise ApiError(400, "code: the code of a language does not change: everything said in it points at it")
-    _apply_locale(locale, body)
-    flask.g.db.commit()
-    return flask.jsonify(locale_json(locale))
-
-
-@bp.route("/api/locales/<int:row_id>", methods=["DELETE"])
-@auth.login_required
-def api_locales_delete(row_id: int) -> flask.Response:
-    """ Only a language nothing is said in, and never the one everything starts in. """
-    _admin_only()
-    locale = _locale(row_id)
-    if locale.code == DEFAULT_LOCALE:
-        raise ApiError(409, f"{locale.name} is the language everything starts in: it stays")
-    used = _locale_uses(locale.code)
-    if used:
-        raise ApiError(409, f"{used} title{'s, names or readings are' if used > 1 else ', name or reading is'} in {locale.name}: change them first")
-    flask.g.db.delete(locale)
-    flask.g.db.commit()
-    return flask.Response(status=204)
-
-
-type TypeModel = OrganizationType | PersonType | RelationType | PersonRelationType | PersonOrganizationType | Device
-
-# path -> (type model, what the typed rows are called); an organization has one
-# type (organizations.type_id) and any number of relation types
-# (organization_relation_types), a person any number of types (person_type_links)
-TYPES: dict[str, tuple[type[TypeModel], str]] = {
-    "organization-types": (OrganizationType, "organization"),
-    "person-types": (PersonType, "person"),
-    "relation-types": (RelationType, "organization"),
-    # how people are related to each other ("Mother of"): used by relations between two people
-    "person-relation-types": (PersonRelationType, "relation"),
-    # how a person is linked to an organization ("Worked at")
-    "person-organization-types": (PersonOrganizationType, "link"),
-    # not a type of a thing, but kept the same way: a list of the user's own, each used by some rows
-    "devices": (Device, "recording"),
-}
-
-
-def _type_links(what: str) -> Any:
-    """ One row per typed row of the user and one of its types: (type_id). """
-    if what == "organization-types":
-        return select(Organization.type_id.label("type_id")).where(Organization.owner_id == flask.g.user.id)
-    if what == "devices":
-        # audio courses and YouTube videos both point to a device
-        return select(AudioCourse.device_id.label("type_id")).where(AudioCourse.owner_id == flask.g.user.id).union_all(
-            select(YouTubeVideo.device_id.label("type_id")).where(YouTubeVideo.owner_id == flask.g.user.id),
-        )
-    if what == "person-organization-types":
-        return (
-            select(PersonOrganization.relation_type_id.label("type_id"))
-            .join(Person, Person.id == PersonOrganization.person_id)
-            .where(Person.owner_id == flask.g.user.id)
-        )
-    if what == "person-relation-types":
-        return (
-            select(PersonRelation.relation_type_id.label("type_id"))
-            .join(Person, Person.id == PersonRelation.person_id)
-            .where(Person.owner_id == flask.g.user.id)
-        )
-    if what == "relation-types":
-        return (
-            select(organization_relation_types.c.relation_type_id.label("type_id"))
-            .join(Organization, Organization.id == organization_relation_types.c.organization_id)
-            .where(Organization.owner_id == flask.g.user.id)
-        )
-    return (
-        select(person_type_links.c.person_type_id.label("type_id"))
-        .join(Person, Person.id == person_type_links.c.person_id)
-        .where(Person.owner_id == flask.g.user.id)
-    )
-
-
-def type_json(kind: TypeModel, count: int) -> dict[str, Any]:
-    out = {"id": kind.id, "name": kind.name, "description": kind.description, "count": count}
-    if isinstance(kind, PersonRelationType):
-        out["inverse"] = kind.inverse
-    if isinstance(kind, (Device, PersonType)):
-        out.update(_picture_json(kind))
-    return out
-
-
-def _type_uses(what: str, kind: TypeModel) -> int:
-    links = _type_links(what).subquery()
-    return flask.g.db.scalar(select(func.count()).select_from(links).where(links.c.type_id == kind.id)) or 0
-
-
-def _owned_type[T: (OrganizationType, PersonType, Device)](model: type[T], type_id: int | None) -> T | None:
-    """ The user's own type type_id of model, or None for no type. """
-    if type_id is None:
-        return None
-    kind = flask.g.db.get(model, type_id)
-    if kind is None or kind.owner_id != flask.g.user.id:
-        raise ApiError(400, "type_id: unknown type")
-    return kind
-
-
-def _apply_type(model: type[TypeModel], kind: TypeModel, body: dict[str, Any]) -> None:
-    name = text(body, "name", required=True)
-    clash = flask.g.db.execute(
-        select(model.id).where(model.owner_id == flask.g.user.id, model.name == name, model.id != kind.id)
-    ).first()
-    if clash is not None:
-        raise ApiError(409, f"{name} is already one of the types")
-    kind.name = name
-    kind.description = text(body, "description")
-    if isinstance(kind, PersonRelationType):
-        kind.inverse = text(body, "inverse")
-    if isinstance(kind, (Device, PersonType)):
-        _apply_picture(kind, body)
-
-
-@bp.route("/api/<any('organization-types', 'person-types', 'relation-types', 'person-relation-types', 'person-organization-types', devices):what>", methods=["GET"])
-@auth.login_required
-def api_types(what: str) -> flask.Response:
-    """ The user's enumeration, with how many rows are of each type. """
-    model = TYPES[what][0]
-    links = _type_links(what).subquery()
-    used = select(links.c.type_id, func.count().label("n")).group_by(links.c.type_id).subquery()
-    rows = flask.g.db.execute(
-        select(model, func.coalesce(used.c.n, 0))
-        .outerjoin(used, used.c.type_id == model.id)
-        .where(model.owner_id == flask.g.user.id)
-        .order_by(model.name)
-    ).all()
-    return flask.jsonify([type_json(kind, n) for kind, n in rows])
-
-
-@bp.route("/api/<any('organization-types', 'person-types', 'relation-types', 'person-relation-types', 'person-organization-types', devices):what>", methods=["POST"])
-@auth.login_required
-def api_types_add(what: str) -> tuple[flask.Response, int]:
-    model = TYPES[what][0]
-    kind = model(owner_id=flask.g.user.id)
-    _apply_type(model, kind, json_body())
-    flask.g.db.add(kind)
-    flask.g.db.commit()
-    return flask.jsonify(type_json(kind, 0)), 201
-
-
-@bp.route("/api/<any('organization-types', 'person-types', 'relation-types', 'person-relation-types', 'person-organization-types', devices):what>/<int:row_id>", methods=["PUT"])
-@auth.login_required
-def api_types_update(what: str, row_id: int) -> flask.Response:
-    model = TYPES[what][0]
-    kind = _owned(model, row_id)
-    _apply_type(model, kind, json_body())
-    flask.g.db.commit()
-    return flask.jsonify(type_json(kind, _type_uses(what, kind)))
-
-
-@bp.route("/api/<any('organization-types', 'person-types', 'relation-types', 'person-relation-types', 'person-organization-types', devices):what>/<int:row_id>", methods=["DELETE"])
-@auth.login_required
-def api_types_delete(what: str, row_id: int) -> flask.Response:
-    """ Only a type nothing is: a row never silently loses its type. """
-    model, noun = TYPES[what]
-    kind = _owned(model, row_id)
-    used = _type_uses(what, kind)
-    if used:
-        raise ApiError(409, f"{used} {noun}{'s are' if used > 1 else ' is'} {kind.name}: change them first")
-    flask.g.db.delete(kind)
-    flask.g.db.commit()
-    return flask.Response(status=204)
-
-
-@bp.route("/api/images", methods=["POST"])
-@auth.login_required
-def api_images_add() -> tuple[flask.Response, int]:
-    """ Upload a photo (multipart, field "file"); the answer's id goes into image_id. """
-    upload = flask.request.files.get("file")
-    if upload is None:
-        raise ApiError(400, "file: required")
-    data = upload.read(IMAGE_MAX_BYTES + 1)
-    if len(data) > IMAGE_MAX_BYTES:
-        raise ApiError(413, f"file: larger than {IMAGE_MAX_BYTES // (1024 * 1024)} MB")
-    content_type = _sniff(data)
-    if content_type is None:
-        raise ApiError(400, "file: not a JPEG, PNG, GIF or WebP image")
-    sha256 = hashlib.sha256(data).hexdigest()
-    filename = f"upload-{sha256[:16]}{IMAGE_EXTENSIONS[content_type]}"
-    db = flask.g.db
-    image = db.execute(select(Image).where(Image.owner_id == flask.g.user.id, Image.filename == filename)).scalar_one_or_none()
-    created = image is None
-    if image is None:
-        image = Image(owner_id=flask.g.user.id, filename=filename, content_type=content_type, sha256=sha256, data=data)
-        db.add(image)
-        db.commit()
-    return flask.jsonify({"id": image.id, "url": image_url(image.id)}), 201 if created else 200
