@@ -98,12 +98,12 @@ def check_book_original_titles(session: Session) -> Result:
     first written in has a title in that language: the title it was given by
     its author, whatever language it was read in.
     """
-    books = [b for b in entries_of(session, "book") if b.work.original_locale]
+    books = [(b, b.work.original_locale) for b in entries_of(session, "book") if b.work.original_locale]
     known = languages.known(session)
     problems = [
-        problem(b, f"was written in {known[b.work.original_locale].name} but has no title in it")
-        for b in books
-        if b.work.original_locale not in {b.work.title_locale, *(title.locale for title in b.work.titles)}
+        problem(b, f"was written in {known[original].name} but has no title in it")
+        for b, original in books
+        if original not in {b.work.title_locale, *(title.locale for title in b.work.titles)}
     ]
     return Result(checked=len(books), problems=problems)
 
