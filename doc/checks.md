@@ -95,6 +95,7 @@ By dataset: the key is the page's name in the app (`#book`) and what
 
 ### Museums (`museums`)
 
+- `museum-visits`: every museum has at least one visit.
 - `museum-dates`: every museum visit has a date (a day, a month, a year
   or a full time).
 - `museum-addresses`: every museum has an address.

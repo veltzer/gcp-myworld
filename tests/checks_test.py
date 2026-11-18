@@ -82,7 +82,7 @@ def test_bad_logo(data: bytes, wanted: str) -> None:
 
 
 def test_every_check_describes_itself() -> None:
-    assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "people-known", "museum-dates", "organization-locations", "museum-addresses", "museum-locations", "museum-company",
+    assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "people-known", "museum-dates", "museum-visits", "organization-locations", "museum-addresses", "museum-locations", "museum-company",
         "audio-course-lecturers", "audio-course-devices", "audio-course-status", "audio-course-reviews",
         "audio-course-covers", "audio-course-links", "audio-course-stalled", "audio-course-duplicates"} <= set(checks.CHECKS)
     for chosen in checks.CHECKS.values():
@@ -206,6 +206,9 @@ def test_museum_dates(engine: Engine) -> None:
         ])
         session.commit()
         result = checks.CHECKS["museum-dates"].run(session)
+        visited = checks.CHECKS["museum-visits"].run(session)
+    # every museum has a visit
+    assert (visited.checked, [(p.subject, p.message) for p in visited.problems]) == (5, [("Prado (museum 5, account 1)", "has no visit")])
     assert result.checked == 5
     assert [(p.subject.split(" (")[0], p.message, p.link) for p in result.problems] == [("Uffizi", "has no date", "museums/4")]
 

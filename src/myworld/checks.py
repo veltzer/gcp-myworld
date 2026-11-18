@@ -414,6 +414,13 @@ def _museum_problem(museum: Museum, message: str) -> Problem:
     return Problem(f"{museum.name} (museum {museum.id}, account {museum.owner_id})", message, f"museums/{museum.id}", museum.owner_id)
 
 
+@check("museum-visits", "Every museum has a visit", "museums", "museums")
+def check_museum_visits(session: Session) -> Result:
+    """ Every museum, of every account, has at least one visit: when you went, what you thought of it and who you went with. """
+    museums = _museums(session)
+    return Result(checked=len(museums), problems=[_museum_problem(museum, "has no visit") for museum in museums if not museum.visits])
+
+
 @check("museum-dates", "Every museum visit has a date", "museum visits", "museums")
 def check_museum_dates(session: Session) -> Result:
     """ Every museum visit, of every account, has a date: a day, a month, a year or a full time, whichever is known. """
