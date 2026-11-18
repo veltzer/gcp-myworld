@@ -185,12 +185,13 @@ def test_one_of() -> None:
     (("", "", ""), []),
     (("  ", "\t", ""), []),
     (("https://example.com/a", "CC0", "Ann"), []),
-    (("https://example.com/a", "", ""), ["license", "author"]),
-    (("", "CC0", ""), ["source", "author"]),
+    (("https://example.com/a", "", ""), ["license"]),
+    (("", "CC0", ""), ["source"]),
     (("", "", "Ann"), ["source", "license"]),
-    (("https://example.com/a", "CC0", " "), ["author"]),
+    # who made it is not asked for
+    (("https://example.com/a", "CC0", " "), []),
 ])
-def test_a_credit_is_whole_or_absent(credit: tuple[str, str, str], gaps: list[str]) -> None:
+def test_a_credit_says_its_source_and_license_or_is_absent(credit: tuple[str, str, str], gaps: list[str]) -> None:
     assert common._credit_gaps(*credit) == gaps  # pylint: disable=protected-access
 
 

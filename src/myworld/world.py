@@ -54,8 +54,10 @@ from myworld.models import (
     PersonRelationType,
     PersonType,
     Place,
+    Region,
     RelationType,
     YouTubeVideo,
+    region_for,
 )
 from myworld.pictures import (
     apply_image,
@@ -495,6 +497,17 @@ def api_cities() -> flask.Response:
     return flask.jsonify([city_json(c) for c in flask.g.db.execute(query).scalars().all()])
 
 
+@bp.route("/api/regions", methods=["GET"])
+@auth.login_required
+def api_regions() -> flask.Response:
+    """ The regions the user's cities say, each with its country and its cities: what the city form offers. """
+    query = select(Region).where(Region.owner_id == flask.g.user.id).options(selectinload(Region.cities), selectinload(Region.country)).order_by(Region.name, Region.id)
+    return flask.jsonify([
+        {"id": region.id, "name": region.name, "country": country_ref(region.country), "cities": _refs(region.cities)}
+        for region in flask.g.db.execute(query).scalars().all()
+    ])
+
+
 @bp.route("/api/countries", methods=["GET"])
 @auth.login_required
 def api_countries() -> flask.Response:
@@ -600,16 +613,20 @@ def _apply_country(country: Country, body: dict[str, Any]) -> None:
 
 def _apply_city(city: City, body: dict[str, Any]) -> None:
     name = text(body, "name", required=True)
-    region, country = text(body, "region"), owned_ref(body, "country_id", Country, "country")
+    country = owned_ref(body, "country_id", Country, "country")
+    # its region, by name: the row of that name in that country, made when a city first says it
+    region = region_for(flask.g.db, flask.g.user.id, text(body, "region"), country)
     clash = flask.g.db.execute(
         select(City.id).where(
-            City.owner_id == flask.g.user.id, City.name == name, City.region == region,
+            City.owner_id == flask.g.user.id, City.name == name,
+            City.region_id == region.id if region is not None and region.id is not None else City.region_id.is_(None),
             City.country_id == country.id if country else City.country_id.is_(None), City.id != city.id,
         )
     ).first()
-    if clash is not None:
+    # (a region made just now has no city in it yet)
+    if clash is not None and (region is None or region.id is not None):
         raise ApiError(409, f"{name}{', ' + country.name if country else ''} is already in Cities")
-    city.name, city.region, city.country = name, region, country
+    city.name, city.region_row, city.country = name, region, country
     city.latitude, city.longitude = coordinates(body)
     city.remark = text(body, "remark")
     if "photos" in body:
@@ -988,6 +1005,13 @@ VIEWS: dict[str, _View] = {
     "cities": _View(City, _apply_city, city_json),
     "countries": _View(Country, _apply_country, country_json),
 }
+def drop_unused_regions() -> None:
+    """ A region no city says any more (its last city moved, or was deleted) goes too. """
+    used = select(City.region_id).where(City.region_id.is_not(None))
+    for region in flask.g.db.scalars(select(Region).where(Region.owner_id == flask.g.user.id, Region.id.not_in(used))):
+        flask.g.db.delete(region)
+
+
 # the paths, as the part of a route that takes any of them
 WHAT = f"<any({', '.join(repr(path) for path in VIEWS)}):what>"
 
@@ -1009,9 +1033,10 @@ def api_world_update(what: str, row_id: int) -> flask.Response:
     view = VIEWS[what]
     row = owned(view.model, row_id)
     view.apply(row, json_body())
-    # a picture taken away or replaced goes, with its image
+    # a picture taken away or replaced goes, with its image; so does a region no city says any more
     flask.g.db.flush()
     drop_unused_images()
+    drop_unused_regions()
     flask.g.db.commit()
     return flask.jsonify(view.json(row))
 
@@ -1024,5 +1049,6 @@ def api_world_delete(what: str, row_id: int) -> flask.Response:
     flask.g.db.delete(owned(VIEWS[what].model, row_id))
     flask.g.db.flush()
     drop_unused_images()
+    drop_unused_regions()
     flask.g.db.commit()
     return flask.Response(status=204)

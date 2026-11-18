@@ -871,22 +871,60 @@ class Country(_Pictured, _Located, Base):
     cities: Mapped[list[City]] = relationship(back_populates="country")
 
 
-class City(_Pictured, _Located, Base):
+class Region(Base):
     """
-    A city (or a town, a village, a kibbutz): name, region (a state or
-    province, where addresses name one) and the country it is in (the
-    Countries page). Places, museum visits and organizations point to the
-    city they are in. A name is a city once in each region of a country.
+    A region of a country: a state, a province, a district ("California",
+    "Ontario", "Tel Aviv District"). The cities in it point to it; it is a
+    name once in a country, made when a city first says it and gone with
+    the last city that does.
     """
-    __tablename__ = "cities"
-    __table_args__ = (UniqueConstraint("owner_id", "name", "region", "country_id", name="uq_city_name"),)
+    __tablename__ = "regions"
+    __table_args__ = (UniqueConstraint("owner_id", "name", "country_id", name="uq_region_name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    region: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    country_id: Mapped[int | None] = mapped_column(ForeignKey("countries.id", ondelete="SET NULL"), nullable=True, index=True)
+    country: Mapped[Country | None] = relationship()
+    cities: Mapped[list[City]] = relationship(back_populates="region_row")
+
+
+def region_for(session: Session, owner_id: int, name: str, country: Country | None) -> Region | None:
+    """ The owner's region of that name in that country, made (and added to the session) when there is none yet; None for no name. """
+    name = name.strip()
+    if not name:
+        return None
+    for region in session.scalars(select(Region).where(Region.owner_id == owner_id, Region.name == name)):
+        if region.country is country:
+            return region
+    region = Region(owner_id=owner_id, name=name, country=country)
+    session.add(region)
+    return region
+
+
+class City(_Pictured, _Located, Base):
+    """
+    A city (or a town, a village, a kibbutz): name, region (a state or
+    province, where addresses name one: a row of regions) and the country
+    it is in (the Countries page). Places, museum visits and organizations
+    point to the city they are in. A name is a city once in each region of
+    a country.
+    """
+    __tablename__ = "cities"
+    __table_args__ = (UniqueConstraint("owner_id", "name", "region_id", "country_id", name="uq_city_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    region_id: Mapped[int | None] = mapped_column(ForeignKey("regions.id", ondelete="SET NULL"), nullable=True, index=True)
+    region_row: Mapped[Region | None] = relationship(back_populates="cities")
     country_id: Mapped[int | None] = mapped_column(ForeignKey("countries.id", ondelete="SET NULL"), nullable=True, index=True)
     country: Mapped[Country | None] = relationship(back_populates="cities")
+
+    @property
+    def region(self) -> str:
+        """ The name of its region, "" when it says none. """
+        return self.region_row.name if self.region_row is not None else ""
     remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     # its photos after the first (image_id and its credit), in the order they were added
@@ -1202,7 +1240,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0002"
+SCHEMA_REVISION = "0004"
 
 
 def prepare_schema(engine: Engine) -> None:

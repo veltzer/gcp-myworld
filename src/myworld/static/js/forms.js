@@ -430,9 +430,22 @@ const WORLD_BODIES = {
 	}),
 };
 
+// The regions there are, offered as the Region box of a city is typed in: one written as another is, is that one.
+async function offerRegions() {
+	const names = new Set((await api("/api/regions")).map((region) => region.name));
+	$("region-names").replaceChildren(...[...names].sort().map((name) => {
+		const option = document.createElement("option");
+		option.value = name;
+		return option;
+	}));
+}
+
 export function setupWorldForm(view) {
 	const path = WORLDS[view][1];
 	const form = $(`${slug(view)}-form`);
+	if (view === "cities") {
+		form.elements.region.addEventListener("focus", () => offerRegions().catch((e) => dialogError(e.message)));
+	}
 	form.onsubmit = async (event) => {
 		event.preventDefault();
 		dialogError("");

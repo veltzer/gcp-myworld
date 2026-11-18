@@ -5,8 +5,10 @@ local sqlite file), one step at a time:
 
   run.py state    where the database is: "empty", "legacy" (it has tables
                   from before the migrations kept count) or its revision
-  run.py upgrade  apply the migrations it lacks, make the oldest account an
-                  admin when no account is one, and say what was done
+  run.py upgrade [REVISION]
+                  apply the migrations it lacks (up to REVISION, when one is
+                  named), make the oldest account an admin when no account
+                  is one, and say what was done
   run.py baseline mark a database the legacy script has brought up to date
                   as being at the first migration, then upgrade
   run.py drift    how the database differs from what the models declare
@@ -62,11 +64,11 @@ def state() -> str:
         engine.dispose()
 
 
-def upgrade() -> None:
+def upgrade(target: str = "head") -> None:
     before = state()
     if before == "legacy":
         sys.exit("run.py upgrade: this database is from before the migrations kept count: scripts/migrate.sh brings it up to date first")
-    command.upgrade(config(), "head")
+    command.upgrade(config(), target)
     after = state()
     made = first_admin()
     said = f"nothing to migrate: the database is at {after}" if before == after else f"migrated from {before} to {after}"
@@ -109,8 +111,9 @@ def drift() -> None:
 
 
 def main() -> None:
-    step = sys.argv[1] if len(sys.argv) == 2 else ""
-    if step not in STEPS:
+    step = sys.argv[1] if len(sys.argv) >= 2 else ""
+    # upgrade may name the step to stop at: what is added goes in before a deploy, what is dropped after
+    if step not in STEPS or len(sys.argv) > (3 if step == "upgrade" else 2):
         print("run.py: say which step:", file=sys.stderr)
         for name, what in STEPS.items():
             print(f"  {name:9} {what}", file=sys.stderr)
@@ -118,7 +121,7 @@ def main() -> None:
     if step == "state":
         print(state())
     else:
-        {"upgrade": upgrade, "baseline": baseline, "drift": drift}[step]()
+        {"upgrade": lambda: upgrade(*sys.argv[2:]), "baseline": baseline, "drift": drift}[step]()
 
 
 if __name__ == "__main__":

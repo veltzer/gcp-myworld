@@ -18,6 +18,7 @@ from myworld.models import (
     ROLE_ADMIN,
     SCHEMA_REVISION,
     Base,
+    City,
     User,
     UserWork,
     Work,
@@ -125,7 +126,7 @@ def test_a_database_from_before_the_migrations(url: str) -> None:
 
 
 def test_a_step_is_named() -> None:
-    for arguments in ((), ("sideways",), ("upgrade", "twice")):
+    for arguments in ((), ("sideways",), ("upgrade", "0001", "twice"), ("drift", "0001")):
         bare = run("sqlite://", *arguments)
         assert bare.returncode == 2
         assert [line.split()[0] for line in bare.stderr.splitlines()[1:]] == ["state", "upgrade", "baseline", "drift"]
@@ -138,6 +139,8 @@ def test_migrate_sh(url: str) -> None:
     assert first.stdout.strip() == f"migrated from empty to {SCHEMA_REVISION}"
     assert run(url, "--local", script=script).stdout.strip() == f"nothing to migrate: the database is at {SCHEMA_REVISION}"
     assert run(url, "--local", "--drift", script=script).stdout.strip() == "0 differences between the database and the models"
+    # stopped at a step on the way, then taken to the end
+    assert run(url, "--local", "--to", "0002", script=script).stdout.strip() == f"nothing to migrate: the database is at {SCHEMA_REVISION}"
     wrong = run(url, "--sideways", script=script)
     assert wrong.returncode == 2 and "usage:" in wrong.stderr
 
@@ -187,11 +190,61 @@ def test_a_column_the_code_dropped_goes(url: str) -> None:
     with engine.begin() as connection:
         connection.execute(text("UPDATE library_entries SET not_owned = 1"))
     engine.dispose()
-    assert run(url, "upgrade").stdout.strip() == "migrated from 0001 to 0002"
+    assert run(url, "upgrade").stdout.strip() == f"migrated from 0001 to {SCHEMA_REVISION}"
     engine = create_engine(url)
     assert "not_owned" not in {column["name"] for column in inspect(engine).get_columns("library_entries")}
     # the row is as it was
     with engine.connect() as connection:
         assert connection.execute(text("SELECT user_id, work_id, notes FROM library_entries")).all() == [(1, 1, "kept")]
+    engine.dispose()
+    assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"
+
+
+def alembic(url: str, *arguments: str) -> None:
+    """ Alembic itself, to stop at a step on the way: what run.py never does. """
+    done = subprocess.run(
+        [sys.executable, "-m", "alembic", "-c", str(ROOT / "scripts" / "migrations" / "alembic.ini"), *arguments],
+        cwd=ROOT, env={**os.environ, "DATABASE_URL": url}, capture_output=True, text=True, check=False,
+    )
+    assert done.returncode == 0, done.stderr
+
+
+def test_regions_become_rows(url: str) -> None:
+    """ 0003 and 0004: the text a city named its region by becomes a row it points at. """
+    alembic(url, "upgrade", "0002")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(text("INSERT INTO locales (code, name, script, position) VALUES ('en', 'English', 'Latin', 0)"))
+        for user in (1, 2):
+            connection.execute(text("INSERT INTO users (id, email, name, picture, created_at) VALUES (:id, :email, '', '', '2026-01-01')"), {"id": user, "email": f"{user}@example.com"})
+        for country, owner, name in ((1, 1, "USA"), (2, 1, "Israel"), (3, 2, "USA")):
+            connection.execute(text("INSERT INTO countries (id, owner_id, name, remark) VALUES (:id, :owner, :name, '')"), {"id": country, "owner": owner, "name": name})
+        for city, owner, name, region, country in (
+            (1, 1, "Austin", "Texas", 1), (2, 1, "Dallas", " Texas ", 1), (3, 1, "Portland", "Oregon", 1), (4, 1, "Tel Aviv", "", 2),
+            # another account's Texas is its own, and a region with no country is one too
+            (5, 2, "Houston", "Texas", 3), (6, 1, "Atlantis", "The Deep", None),
+        ):
+            connection.execute(
+                text("INSERT INTO cities (id, owner_id, name, region, country_id, remark) VALUES (:id, :owner, :name, :region, :country, '')"),
+                {"id": city, "owner": owner, "name": name, "region": region, "country": country},
+            )
+    # 0003, before the deploy: the rows are there, and the text still is, for the code still running
+    assert run(url, "--local", "--to", "0003", script=ROOT / "scripts" / "migrate.sh").stdout.strip() == "migrated from 0002 to 0003; user 1 made the first admin"
+    with engine.begin() as connection:
+        regions = connection.execute(text("SELECT owner_id, name, country_id FROM regions ORDER BY owner_id, name")).all()
+        assert regions == [(1, "Oregon", 1), (1, "Texas", 1), (1, "The Deep", None), (2, "Texas", 3)]
+        linked = connection.execute(text("SELECT cities.name, regions.name, regions.owner_id FROM cities LEFT JOIN regions ON regions.id = cities.region_id ORDER BY cities.id")).all()
+        assert linked == [("Austin", "Texas", 1), ("Dallas", "Texas", 1), ("Portland", "Oregon", 1), ("Tel Aviv", None, None), ("Houston", "Texas", 2), ("Atlantis", "The Deep", 1)]
+        # the old code can still add a city, without the new column and without the text
+        connection.execute(text("INSERT INTO cities (id, owner_id, name, country_id, remark) VALUES (7, 1, 'Haifa', 2, '')"))
+    engine.dispose()
+    # 0004, after it: the text goes
+    assert run(url, "upgrade").stdout.strip() == f"migrated from 0003 to {SCHEMA_REVISION}"
+    engine = create_engine(url)
+    assert "region" not in {column["name"] for column in inspect(engine).get_columns("cities")}
+    with Session(engine) as session:
+        assert [(city.name, city.region) for city in session.scalars(select(City).order_by(City.id))] == [
+            ("Austin", "Texas"), ("Dallas", "Texas"), ("Portland", "Oregon"), ("Tel Aviv", ""), ("Houston", "Texas"), ("Atlantis", "The Deep"), ("Haifa", ""),
+        ]
     engine.dispose()
     assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"

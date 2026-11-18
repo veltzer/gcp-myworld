@@ -699,6 +699,11 @@ for the local sqlite file) and ends with one line saying what it did;
 `scripts/migrate.sh --drift` only lists how the database differs from
 what the models declare.
 
+A city's region is a row of `regions` (one per name and country of an
+account), which its cities point at: a city says it by name, the row is
+made when a city first says it and goes with the last city that does;
+`GET /api/regions` lists them with their cities.
+
 An empty database is given every table when the app starts, and marked
 as being at the newest step (`SCHEMA_REVISION` in `models.py`). A
 database that has a step is never changed by the app: a version of the
@@ -708,7 +713,10 @@ the order is:
 - adding (a table, a column with a default): `scripts/migrate.sh`, then
   deploy;
 - dropping what the new code no longer uses: deploy, then
-  `scripts/migrate.sh` right after.
+  `scripts/migrate.sh` right after;
+- a change that does both (regions: a table and a column added, the old
+  text column dropped) is two steps: `scripts/migrate.sh --to 0003`,
+  deploy, then `scripts/migrate.sh`.
 
 A new step: change the models, run
 `alembic -c scripts/migrations/alembic.ini revision --autogenerate -m "what changed"`

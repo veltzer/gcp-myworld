@@ -126,6 +126,7 @@ from myworld.models import (
     organization_relation_types,
     person_organizations,
     person_type_links,
+    region_for,
 )
 
 DATE_FIELDS = {"date_utcz", "date_ymd", "date_my", "date_y", "date_timezone"}
@@ -1263,7 +1264,8 @@ class Cities:
                 return same[0]
         key = city_key(name, country)
         if key not in self.cities:
-            self.cities[key] = City(owner_id=self.owner.id, name=name, region=region, country=self.country(country), remark="")
+            land = self.country(country)
+            self.cities[key] = City(owner_id=self.owner.id, name=name, region_row=region_for(self.session, self.owner.id, region, land), country=land, remark="")
             self.session.add(self.cities[key])
         return self.cities[key]
 

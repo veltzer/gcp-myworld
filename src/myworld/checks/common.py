@@ -1,5 +1,5 @@
 """
-Checks several pages have, made once for each: a credit that is whole, a pin near its city, a website that is an address.
+Checks several pages have, made once for each: a credit that says its source and its license, a pin near its city, a website that is an address.
 """
 
 import dataclasses
@@ -46,15 +46,19 @@ _CREDITED: dict[str, tuple[Any, str]] = {
 
 
 def _credit_gaps(source: str, license_: str, author: str) -> list[str]:
-    """ What the credit of a picture taken from elsewhere lacks: a picture with any of it has all of it. """
-    said = {"source": source.strip(), "license": license_.strip(), "author": author.strip()}
-    return [what for what, value in said.items() if not value] if any(said.values()) else []
+    """
+    What the credit of a picture taken from elsewhere lacks: a picture with
+    any of it says where it is from and its license. Who made it is said
+    when it is known, and not asked for: many a picture names no author.
+    """
+    needed = {"source": source.strip(), "license": license_.strip()}
+    return [what for what, value in needed.items() if not value] if any((*needed.values(), author.strip())) else []
 
 
 def _credit_checks(dataset: str, model: Any, what: str) -> None:
     page = DATASETS[dataset].lower()
 
-    @check(f"{dataset}-credits", f"Every credited {what} of {page} has its whole credit", f"{what}s with a credit", dataset)
+    @check(f"{dataset}-credits", f"Every credited {what} of {page} says its source and license", f"{what}s with a credit", dataset)
     def run(session: Session) -> Result:
         rows = session.scalars(select(model).where(model.image_id.is_not(None)).order_by(model.owner_id, model.name, model.id)).all()
         pictures = [(row, row.image_source, row.image_license, row.image_author) for row in rows]
@@ -72,7 +76,7 @@ def _credit_checks(dataset: str, model: Any, what: str) -> None:
 
     run.__doc__ = (
         f"Every {what} of {page}, of every account, that has a credit (it was taken from elsewhere, as scripts/fetch_pictures.py does from Wikipedia)"
-        " has all of it: the page it comes from, its license and its author."
+        " says the page it comes from and its license; its author only when one is known."
     )
     CHECKS[f"{dataset}-credits"] = dataclasses.replace(CHECKS[f"{dataset}-credits"], description=" ".join(run.__doc__.split()))
 
@@ -81,12 +85,12 @@ for _dataset, (_model, _what) in _CREDITED.items():
     _credit_checks(_dataset, _model, _what)
 
 
-@check("people-credits", "Every credited photo of people has its whole credit", "photos with a credit", "people")
+@check("people-credits", "Every credited photo of people says its source and license", "photos with a credit", "people")
 def check_people_credits(session: Session) -> Result:
     """
     Every photo of a person, of every account, that has a credit (it was
     taken from elsewhere, as scripts/fetch_pictures.py does from Wikipedia)
-    has all of it: the page it comes from, its license and its author.
+    says the page it comes from and its license; its author only when one is known.
     """
     people = {person.id: person for person in rows(session, Person)}
     photos = [photo for photo in session.scalars(select(PersonPhoto).order_by(PersonPhoto.person_id, PersonPhoto.position)) if photo.image_source.strip() or photo.image_license.strip() or photo.image_author.strip()]

@@ -7,6 +7,9 @@
 #   scripts/migrate.sh          the Cloud SQL database from .gcp.conf
 #   scripts/migrate.sh --local  the local sqlite file (db.gi/myworld.sqlite or DATABASE_URL)
 #   scripts/migrate.sh [--local] --drift   only say how the database differs from the models
+#   scripts/migrate.sh [--local] --to 0003 stop at that step: when a change adds
+#                               before the deploy and drops after it, the steps
+#                               that add are run first, and the rest after the deploy
 #
 # A new step: change the models, then
 #   alembic -c scripts/migrations/alembic.ini revision --autogenerate -m "what changed"
@@ -24,9 +27,20 @@ cd "$(dirname "${0}")/.."
 run=(scripts/with_cloud_db.sh)
 legacy=()
 step="upgrade"
+target=()
+expect_target=""
 for argument in "$@"
 do
+	if [ -n "${expect_target}" ]
+	then
+		target=("${argument}")
+		expect_target=""
+		continue
+	fi
 	case "${argument}" in
+		--to)
+			expect_target="yes"
+			;;
 		--local)
 			run=()
 			legacy=(--local)
@@ -35,7 +49,7 @@ do
 			step="drift"
 			;;
 		*)
-			echo "usage: ${0} [--local] [--drift]" >&2
+			echo "usage: ${0} [--local] [--drift] [--to REVISION]" >&2
 			exit 2
 			;;
 	esac
@@ -50,5 +64,5 @@ then
 	scripts/history/migrate_legacy.sh "${legacy[@]}"
 	"${run[@]}" scripts/migrations/run.py baseline
 else
-	"${run[@]}" scripts/migrations/run.py upgrade
+	"${run[@]}" scripts/migrations/run.py upgrade "${target[@]}"
 fi

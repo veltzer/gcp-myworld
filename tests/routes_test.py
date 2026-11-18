@@ -178,3 +178,38 @@ def test_what_is_there_is_not_added_again(app: webtest.TestApp, path: str, body:
     # saved again as it is, a row does not clash with itself
     app.put_json(f"/api/{path}/{first['id']}", body, status=200)
     assert len(app.get(f"/api/{path}").json) == 1
+
+
+def test_a_region_is_a_row_its_cities_share(app: webtest.TestApp) -> None:
+    sign_in(app)
+    usa = app.post_json("/api/countries", {"name": "USA"}, status=201).json["id"]
+    canada = app.post_json("/api/countries", {"name": "Canada"}, status=201).json["id"]
+    assert app.get("/api/regions").json == []
+    austin = app.post_json("/api/cities", {"name": "Austin", "region": " Texas ", "country_id": usa}, status=201).json
+    dallas = app.post_json("/api/cities", {"name": "Dallas", "region": "Texas", "country_id": usa}, status=201).json
+    assert (austin["region"], dallas["region"]) == ("Texas", "Texas")
+    # one row for the two of them; the same name in another country is another region
+    london = app.post_json("/api/cities", {"name": "London", "region": "Ontario", "country_id": canada}, status=201).json
+    texas, = [region for region in app.get("/api/regions").json if region["name"] == "Texas"]
+    assert texas["country"] == {"id": usa, "name": "USA"} and [city["name"] for city in texas["cities"]] == ["Austin", "Dallas"]
+    assert [(region["name"], region["country"]["name"]) for region in app.get("/api/regions").json] == [("Ontario", "Canada"), ("Texas", "USA")]
+    # a city is a name once in a region of a country, and once more in another region
+    app.post_json("/api/cities", {"name": "Austin", "region": "Texas", "country_id": usa}, status=409)
+    app.post_json("/api/cities", {"name": "Austin", "region": "Minnesota", "country_id": usa}, status=201)
+    app.post_json("/api/cities", {"name": "Austin", "country_id": usa}, status=201)
+    app.post_json("/api/cities", {"name": "Austin", "country_id": usa}, status=409)
+    # a city that says no region any more leaves it; the last one out takes the region with it
+    assert app.put_json(f"/api/cities/{london['id']}", {"name": "London", "country_id": canada}).json["region"] == ""
+    assert "Ontario" not in [region["name"] for region in app.get("/api/regions").json]
+    app.delete(f"/api/cities/{dallas['id']}", status=204)
+    assert "Texas" in [region["name"] for region in app.get("/api/regions").json]
+    app.delete(f"/api/cities/{austin['id']}", status=204)
+    assert [region["name"] for region in app.get("/api/regions").json] == ["Minnesota"]
+    # each account has its own
+    sign_in(app, sub="someone-else")
+    assert app.get("/api/regions").json == []
+    app.get("/api/regions", status=200)
+
+
+def test_regions_need_a_session(app: webtest.TestApp) -> None:
+    app.get("/api/regions", status=401)

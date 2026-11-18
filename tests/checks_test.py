@@ -39,6 +39,7 @@ from myworld.models import (
     PersonType,
     Place,
     Read,
+    Region,
     RelationType,
     User,
     UserWork,
@@ -716,7 +717,7 @@ def test_more_checks(engine: Engine) -> None:
         session.add(photo)
         session.flush()
         france, israel = Country(owner_id=me, name="France"), Country(owner_id=me, name="Israel")
-        paris = City(owner_id=me, name="Paris", country=france, region="Île-de-France", latitude=48.86, longitude=2.35)
+        paris = City(owner_id=me, name="Paris", country=france, region_row=Region(owner_id=me, name="Île-de-France", country=france), latitude=48.86, longitude=2.35)
         lyon = City(owner_id=me, name="Lyon", country=france, latitude=45.76, longitude=4.84)
         haifa = City(owner_id=me, name="Haifa", country=israel)
         author = PersonType(owner_id=me, name="Book Author")
@@ -773,9 +774,9 @@ def test_more_checks(engine: Engine) -> None:
         assert who("organization-duplicates") == ["ACME", "Acme"]
         # Paris has a region, so Lyon lacks one; Israel's cities have none, which is as good
         assert who("city-regions") == ["Lyon, France"]
-        # a credit, once there, is whole
-        assert found("places-credits") == [("A lawn, Lyon", "has a photo credited with no source and no author")]
-        assert found("people-credits") == [("dana ", "has a photo credited with no license and no author")]
+        # a credit, once there, says its source and its license (its author need not be known)
+        assert found("places-credits") == [("A lawn, Lyon", "has a photo credited with no source")]
+        assert found("people-credits") == [("dana ", "has a photo credited with no license")]
         # the second Louvre is in Marseille by its pin
         assert [(subject, message.split(" km ")[1]) for subject, message in found("museum-near-city")] == [(" louvre", "from Paris, the city it is in")]
         assert who("place-near-city") == [] and who("organization-near-city") == []
