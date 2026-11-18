@@ -187,6 +187,9 @@
 #     table starts with get theirs. Adding a column: run before the deploy.
 #   - library_works.original_locale, the language a book was first written
 #     in (empty while not known). Adding a column: run before the deploy.
+#   - concert_visits.alone (the user went alone, as a museum visit says it)
+#     and library_entries.not_owned (the user owns no copy of the book).
+#     Adding columns: run before the deploy.
 #   - a museum is one row (museum_sites: its name, city, address, place on
 #     the map, website and photo) and the times it was visited hang on it
 #     (museum_visits.museum_id): the museums are made from the visits (one
@@ -867,6 +870,12 @@ if locale_columns and "native" not in locale_columns:
     for code, native in LOCALE_NATIVE.items():
         db.execute("UPDATE locales SET native = ? WHERE code = ? AND native = ''", (native, code))
     added.append("locales.native")
+# went alone, owns no copy (see the header)
+for table, column in (("concert_visits", "alone"), ("library_entries", "not_owned")):
+    existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+    if existing and column not in existing:
+        db.execute(f"ALTER TABLE {table} ADD COLUMN {column} BOOLEAN NOT NULL DEFAULT 0")
+        added.append(f"{table}.{column}")
 # a museum is one row and its visits hang on it (see the header)
 visit_columns = {row[1] for row in db.execute("PRAGMA table_info(museum_visits)")}
 if visit_columns and "museum_id" not in visit_columns:
@@ -969,6 +978,8 @@ present="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	   OR (table_name = 'locales' AND column_name IN ('code', 'native'))
 	   OR (table_name = 'person_names' AND column_name IN ('id', 'first_name'))
 	   OR (table_name = 'museum_visits' AND column_name IN ('id', 'museum_id', 'name'))
+	   OR (table_name = 'concert_visits' AND column_name IN ('id', 'alone'))
+	   OR (table_name = 'library_entries' AND column_name = 'not_owned')
 	   OR (table_name = 'people' AND column_name = 'company')
 	   OR (table_name IN ('companies', 'organizations') AND column_name = 'id')
 	   OR (table_name = 'organizations' AND column_name IN ('type_id', 'functions'))
@@ -1704,6 +1715,14 @@ fi
 # what a language is called in itself (see the header): adding a column, run before the deploy
 if has "locales.code:.*" && ! has "locales.native:.*"; then
 	need locales.native "ALTER TABLE locales ADD COLUMN native VARCHAR(100) NOT NULL DEFAULT ''; UPDATE locales SET native = 'English' WHERE code = 'en' AND native = ''; UPDATE locales SET native = 'עברית' WHERE code = 'he' AND native = ''; UPDATE locales SET native = 'العربية' WHERE code = 'ar' AND native = ''; UPDATE locales SET native = 'ייִדיש' WHERE code = 'yi' AND native = ''; UPDATE locales SET native = 'Français' WHERE code = 'fr' AND native = ''; UPDATE locales SET native = 'Deutsch' WHERE code = 'de' AND native = ''; UPDATE locales SET native = 'Español' WHERE code = 'es' AND native = ''; UPDATE locales SET native = 'Italiano' WHERE code = 'it' AND native = ''; UPDATE locales SET native = 'Português' WHERE code = 'pt' AND native = ''; UPDATE locales SET native = 'Русский' WHERE code = 'ru' AND native = ''; UPDATE locales SET native = 'Čeština' WHERE code = 'cs' AND native = ''; UPDATE locales SET native = 'Ελληνικά' WHERE code = 'el' AND native = ''"
+fi
+
+# went alone, owns no copy (see the header): adding columns, run before the deploy
+if has "concert_visits.id:.*" && ! has "concert_visits.alone:.*"; then
+	need concert_visits.alone "ALTER TABLE concert_visits ADD COLUMN alone BOOLEAN NOT NULL DEFAULT false"
+fi
+if has "library_entries.image_id:.*" && ! has "library_entries.not_owned:.*"; then
+	need library_entries.not_owned "ALTER TABLE library_entries ADD COLUMN not_owned BOOLEAN NOT NULL DEFAULT false"
 fi
 
 # a museum is one row and its visits hang on it (see the header): deploy first, run this right after

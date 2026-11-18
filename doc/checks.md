@@ -80,6 +80,15 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `book-ratings`: every book read (Done) has a rating.
 - `book-duplicates`: no account has two books of the same title and
   author.
+- `book-owned`: every book with a finished reading has the languages you
+  own it in or is marked "I don't own it", and none is both.
+- `book-notes`: no note of a book repeats what the book says elsewhere (the
+  language it was written in, a name it once had that is its title told a
+  little differently).
+- `book-translations`: every book read was read at least once in the
+  language it was written in. A book read only in translation is no
+  mistake: this lists them, and whoever does not want the list turns it
+  off.
 
 ### Concerts (`concerts`)
 
@@ -92,6 +101,11 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `concert-photos`: every concert, of every account, has a photo.
 - `concert-duplicates`: no account has two concerts of the same name on
   the same date (ignoring case and spaces at the ends).
+- `concert-company`: every concert has people in With or is marked "I went
+  alone", and none is both.
+- `concert-reviews`: every concert has a review.
+- `concerts-credits`: every photo of a concert that has a credit has all of
+  it: its source, its license and its author.
 
 ### Museums (`museums`)
 
@@ -102,6 +116,13 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `museum-locations`: every museum has a latitude and a longitude.
 - `museum-company`: every museum visit has people in With or is marked
   "I went alone", and none is both.
+- `museum-photos`: every museum has a photo.
+- `museum-cities`: every museum says which city it is in.
+- `museum-ratings`: every museum visit has a rating and a review.
+- `museum-duplicates`: no account has two museums of the same name in the
+  same city.
+- `museum-near-city`: every museum on the map is within 50 km of its city.
+- `museum-websites`: every museum's website is a web address.
 
 ### Audio courses (`audio-courses`)
 
@@ -134,6 +155,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `group-used`: every group performed at at least one concert.
 - `group-duplicates`: no account has two groups of the same name
   (ignoring case and spaces).
+- `groups-credits`: every photo of a group that has a credit has all of it.
+- `group-websites`: every group's website is a web address.
 
 ### Places (`places`)
 
@@ -143,6 +166,13 @@ By dataset: the key is the page's name in the app (`#book`) and what
   Map layout shows it.
 - `place-duplicates`: no account has two places of the same name in the
   same city (ignoring case and spaces).
+- `place-addresses`: every place has a street or a district.
+- `place-photos`: every place has a photo.
+- `place-exact-locations`: no place's remark says its location is
+  approximate.
+- `place-near-city`: every place on the map is within 50 km of its city.
+- `place-websites`: every place's website is a web address.
+- `places-credits`: every photo of a place that has a credit has all of it.
 
 ### Cities (`cities`)
 
@@ -153,6 +183,9 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `city-photos`: every city has a photo.
 - `city-duplicates`: no account has one city twice, however spaced,
   hyphenated or capitalized ("Tel-Aviv", "Tel Aviv").
+- `city-regions`: the cities of a country either all say their region or
+  none does.
+- `cities-credits`: every photo of a city that has a credit has all of it.
 
 ### Countries (`countries`)
 
@@ -161,6 +194,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `country-flags`: every country has its flag.
 - `country-duplicates`: no account has one country twice, however it is
   written ("USA", "United States of America").
+- `countries-credits`: every flag of a country that has a credit has all of
+  it.
 
 ### People (`people`)
 
@@ -178,6 +213,11 @@ By dataset: the key is the page's name in the app (`#book`) and what
   with in Hebrew.
 - `people-name-languages`: every name in another language is written in the
   script of that language; `scripts/fix_languages.py` repairs those too.
+- `people-photos`: every person with a profession has a photo.
+- `people-duplicates`: no account has two people of the same name.
+- `people-used`: every person is linked to something: a concert, a museum
+  visit, a book, a course, a group, an organization or another person.
+- `people-credits`: every photo of a person that has a credit has all of it.
 
 ### Organizations (`organizations`)
 
@@ -190,6 +230,12 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `organization-addresses`: every organization has an address.
 - `organization-locations`: every organization has a latitude and a
   longitude, so it is on the map.
+- `organization-cities`: every organization says which city it is in.
+- `organization-duplicates`: no account has two organizations of the same
+  name.
+- `organization-near-city`: every organization on the map is within 50 km
+  of its city.
+- `organization-websites`: every organization's website is a web address.
 
 ### Org types (`organization-types`)
 
@@ -210,6 +256,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
   name (ignoring case and spaces at the ends).
 - `person-type-photos`: every profession, of every account, has a photo
   (`scripts/fetch_pictures.py --only professions` takes Wikipedia's).
+- `person-types-credits`: every photo of a profession that has a credit has
+  all of it.
 
 ### Org relation types (`relation-types`)
 
@@ -239,6 +287,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
   (ignoring case and spaces at the ends).
 - `device-photos`: every device, of every account, has a photo
   (`scripts/fetch_pictures.py --only devices` takes Wikipedia's).
+- `devices-credits`: every photo of a device that has a credit has all of
+  it.
 
 ### Languages (`locales`)
 

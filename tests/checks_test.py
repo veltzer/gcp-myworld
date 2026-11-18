@@ -35,6 +35,7 @@ from myworld.models import (
     MuseumVisit,
     Organization,
     Person,
+    PersonPhoto,
     PersonType,
     Place,
     Read,
@@ -90,7 +91,7 @@ def test_every_check_describes_itself() -> None:
         assert chosen.dataset in checks.DATASETS
     # every dataset has checks to run from its page
     assert {c.dataset for c in checks.CHECKS.values()} == set(checks.DATASETS)
-    assert {name for name, c in checks.CHECKS.items() if c.dataset == "book"} == {"book-covers", "book-links", "book-authors", "book-years", "book-original-languages", "book-languages", "book-reads", "book-read-dates", "book-titles", "book-english-titles", "book-title-languages", "book-ratings", "book-duplicates"}
+    assert {name for name, c in checks.CHECKS.items() if c.dataset == "book"} == {"book-covers", "book-links", "book-authors", "book-years", "book-original-languages", "book-languages", "book-reads", "book-read-dates", "book-titles", "book-english-titles", "book-title-languages", "book-ratings", "book-duplicates", "book-owned", "book-notes", "book-translations"}
 
 
 def test_a_name_is_registered_once() -> None:
@@ -695,3 +696,82 @@ def test_script_skips_what_an_account_turned_off(tmp_path: Path) -> None:
     assert skipped.returncode == 0, skipped.stdout + skipped.stderr
     assert "off   logos: turned off by alice@example.com" in skipped.stdout
     assert run_script(url, "--email", "nobody@example.com").returncode == 2
+
+
+def test_more_checks(engine: Engine) -> None:
+    """ What is missing, what is said twice and what cannot be, of museums, places, people, books, concerts, organizations and cities. """
+    with Session(engine) as session:
+        alice = User(email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        me = alice.id
+        photo = Image(owner_id=me, filename="p.jpg", content_type="image/jpeg", sha256="1" * 64, data=b"\xff\xd8")
+        session.add(photo)
+        session.flush()
+        france, israel = Country(owner_id=me, name="France"), Country(owner_id=me, name="Israel")
+        paris = City(owner_id=me, name="Paris", country=france, region="Île-de-France", latitude=48.86, longitude=2.35)
+        lyon = City(owner_id=me, name="Lyon", country=france, latitude=45.76, longitude=4.84)
+        haifa = City(owner_id=me, name="Haifa", country=israel)
+        author = PersonType(owner_id=me, name="Book Author")
+        dana = Person(owner_id=me, first_name="Dana", types=[author], photos=[PersonPhoto(image_id=photo.id, image_source="https://commons.wikimedia.org/x", image_license="CC0", image_author="Ann")])
+        twin = Person(owner_id=me, first_name="dana ", types=[author], photos=[PersonPhoto(image_id=photo.id, image_source="https://commons.wikimedia.org/y")])
+        loner = Person(owner_id=me, first_name="Lone")
+        myself = Person(owner_id=me, first_name="Me", is_self=True)
+        session.add_all([france, israel, paris, lyon, haifa, author, dana, twin, loner, myself])
+        session.flush()
+        works = {title: Work(kind="book", title=title, creator="x", original_locale=original) for title, original in (("Dune", "en"), ("The Joke", "cs"), ("Esau", "he"), ("Wanted", "en"))}
+        session.add_all(works.values())
+        session.flush()
+        session.add_all([
+            Museum(owner_id=me, name="Louvre", city=paris, image_id=photo.id, url="https://louvre.fr", latitude=48.86, longitude=2.34, visits=[MuseumVisit(rating=9, review="grand")]),
+            Museum(owner_id=me, name=" louvre", city=paris, url="louvre", latitude=43.3, longitude=5.37, visits=[MuseumVisit(rating=8), MuseumVisit()]),
+            Museum(owner_id=me, name="Nowhere"),
+            Place(owner_id=me, name="Olympia", city=paris, street="28 Boulevard des Capucines", image_id=photo.id, image_source="https://x.org/o", image_license="CC BY", image_author="Bo", website="https://olympiahall.com/x"),
+            Place(owner_id=me, name="A lawn", city=lyon, remark="Location approximate: the town.", image_id=photo.id, image_license="CC BY", website="www.lawn.fr"),
+            Organization(owner_id=me, name="Acme", city=paris), Organization(owner_id=me, name="ACME"), Organization(owner_id=me, name="Solo", city=haifa),
+            Concert(owner_id=me, name="Alone", alone=True, review="fine"),
+            Concert(owner_id=me, name="Together", people=[dana]),
+            Concert(owner_id=me, name="Both", alone=True, people=[dana], review="odd"),
+            Concert(owner_id=me, name="Unsaid"),
+            UserWork(user_id=me, work_id=works["Dune"].id, owned=["en"], reads=[Read(locale="en")], authors=[dana]),
+            UserWork(user_id=me, work_id=works["The Joke"].id, not_owned=True, reads=[Read(locale="he")], notes="Written in Czech. was named: Zert"),
+            UserWork(user_id=me, work_id=works["Esau"].id, reads=[Read(locale="he")], notes="was named: Eisav"),
+            # not read yet: nothing is asked of it
+            UserWork(user_id=me, work_id=works["Wanted"].id, reads=[Read(status="wishlist")]),
+        ])
+        session.commit()
+
+        def found(name: str) -> list[tuple[str, str]]:
+            return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS[name].run(session).problems]
+
+        def who(name: str) -> list[str]:
+            return [subject for subject, _ in found(name)]
+
+        assert who("museum-photos") == [" louvre", "Nowhere"]
+        assert who("museum-cities") == ["Nowhere"]
+        assert found("museum-ratings") == [(" louvre", "has no review"), (" louvre", "has no rating and no review")]
+        assert who("museum-duplicates") == [" louvre", "Louvre"]
+        assert who("place-addresses") == ["A lawn, Lyon"]
+        assert who("place-photos") == []
+        assert who("place-exact-locations") == ["A lawn, Lyon"]
+        # Lone has no profession: no photo is asked of them; but they are linked to nothing (the user's own row may be)
+        assert who("people-photos") == []
+        assert who("people-duplicates") == ["Dana", "dana "]
+        assert who("people-used") == ["Lone", "dana "]
+        assert found("book-owned") == [("Esau", "does not say whether you own it")]
+        assert who("book-notes") == ["The Joke"]
+        assert found("book-translations") == [("The Joke", "was read only in translation: written in Czech, read in Hebrew")]
+        assert found("concert-company") == [("Both", "is marked alone but has people in With"), ("Unsaid", "has no one in With and is not marked alone")]
+        assert who("concert-reviews") == ["Together", "Unsaid"]
+        assert who("organization-cities") == ["ACME"]
+        assert who("organization-duplicates") == ["ACME", "Acme"]
+        # Paris has a region, so Lyon lacks one; Israel's cities have none, which is as good
+        assert who("city-regions") == ["Lyon, France"]
+        # a credit, once there, is whole
+        assert found("places-credits") == [("A lawn", "has a photo credited with no source and no author")]
+        assert found("people-credits") == [("dana ", "has a photo credited with no license and no author")]
+        # the second Louvre is in Marseille by its pin
+        assert [(subject, message.split(" km ")[1]) for subject, message in found("museum-near-city")] == [(" louvre", "from Paris, the city it is in")]
+        assert who("place-near-city") == [] and who("organization-near-city") == []
+        assert who("museum-websites") == [" louvre"] and who("place-websites") == ["A lawn"]
+        assert checks.CHECKS["museum-websites"].description and checks.CHECKS["places-credits"].description and checks.CHECKS["museum-near-city"].description

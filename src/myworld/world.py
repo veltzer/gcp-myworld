@@ -132,6 +132,7 @@ def concert_json(concert: Concert) -> dict[str, Any]:
         "place": None if concert.place is None else _place_ref(concert.place),
         "tickets": concert.tickets,
         "broadcast": concert.broadcast,
+        "alone": concert.alone,
         "review": concert.review,
         "remark": concert.remark,
         "with": _names(concert.people),
@@ -681,6 +682,9 @@ def _apply_concert(concert: Concert, body: dict[str, Any], current: Concert | No
     concert.image_license = text(body, "image_license")
     concert.image_author = text(body, "image_author")
     concert.people = _owned_people(body)
+    concert.alone = body.get("alone") is True
+    if concert.alone and concert.people:
+        raise ApiError(400, "a concert gone to alone has no one in With")
     for key, value in _dates(body, current).items():
         setattr(concert, key, value)
 

@@ -311,6 +311,8 @@ class UserWork(Base):
     # anything worth keeping about it (where they have it, ...); where the user is with it, their
     # rating and what they thought of it belong to each reading (reads)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # the user owns no copy of it: no language is missing from its ownings, there is none; never true with one
+    not_owned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     # the cover: an image of the user's own, as the works are shared. An entry
     # may have several: this is the first, the one its card shows, and the
     # others are in more_covers
@@ -998,6 +1000,8 @@ class Concert(_Dated, Base):
     tickets: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # seen on TV rather than in the hall
     broadcast: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # went alone: no one is missing from people, there was no one; never true with people
+    alone: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     review: Mapped[str] = mapped_column(Text, nullable=False, default="")
     remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
     image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)

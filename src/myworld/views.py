@@ -118,6 +118,8 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
         "reads": [_read_json(read) for read in entry.reads],
         # the languages the user owns it in
         "owned": entry.owned,
+        # true when the user says they own no copy of it (then owned is empty)
+        "not_owned": entry.not_owned,
         # what the user thought of it, and anything else they keep about it
         "review": entry.review,
         "notes": entry.notes,
@@ -241,6 +243,11 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any], new: bool = False
         if unknown:
             raise ApiError(400, f"owned: unknown language {unknown[0]!r}")
         entry.owned = owned
+    # not_owned says the user owns no copy: never with a language it is owned in
+    if "not_owned" in body:
+        entry.not_owned = body["not_owned"] is True
+    if entry.not_owned and entry.owned:
+        raise ApiError(400, "not_owned: a book owned in a language is not one you do not own")
     # an entry edited with its title sent says all the titles of its work; with only titles sent they are added
     if "title" in body and not new:
         _set_titles(entry.work, body)

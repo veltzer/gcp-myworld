@@ -12,6 +12,7 @@ script pick it up. A check only reads; it never changes anything.
 
 import dataclasses
 import datetime
+import math
 import re
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
@@ -20,7 +21,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from myworld import languages, names
+from myworld import languages, names, notes
 from myworld.cities import city_key, country_name
 from myworld.models import (
     DEFAULT_LOCALE,
@@ -28,6 +29,7 @@ from myworld.models import (
     YOUTUBE_ID_LENGTH,
     AudioCourse,
     City,
+    CityPhoto,
     Concert,
     Country,
     Device,
@@ -40,6 +42,7 @@ from myworld.models import (
     Person,
     PersonOrganization,
     PersonOrganizationType,
+    PersonPhoto,
     PersonRelation,
     PersonRelationType,
     PersonType,
@@ -50,6 +53,7 @@ from myworld.models import (
     Work,
     YouTubeVideo,
     audio_course_lecturers,
+    concert_companions,
     concert_groups,
     concert_performers,
     group_members,
@@ -1152,3 +1156,362 @@ def check_youtube_devices(session: Session) -> Result:
     """ Every YouTube video, of every account, has the device it was watched on. """
     videos = _videos(session)
     return Result(checked=len(videos), problems=[_video_problem(v, "has no device") for v in videos if v.device_id is None])
+
+
+# ─── more of them: what is missing, what is said twice, what cannot be ────────
+
+def _person_problem(person: Person, message: str) -> Problem:
+    return Problem(f"{person.name} (person {person.id}, account {person.owner_id})", message, f"people/{person.id}", person.owner_id)
+
+
+def _organization_problem(organization: Organization, message: str) -> Problem:
+    return Problem(f"{organization.name} (organization {organization.id}, account {organization.owner_id})", message, f"organizations/{organization.id}", organization.owner_id)
+
+
+def _people(session: Session) -> list[Person]:
+    return list(session.scalars(select(Person).order_by(Person.owner_id, Person.first_name, Person.surname, Person.id)))
+
+
+def _organizations(session: Session) -> list[Organization]:
+    return list(session.scalars(select(Organization).order_by(Organization.owner_id, Organization.name, Organization.id)))
+
+
+def _twice(rows: list[Any], key: Callable[[Any], Any], problem: Callable[[Any, str], Problem], what: str) -> list[Problem]:
+    """ A problem for every row that has the same key as another: "has the same name as 1 other museum of the account". """
+    seen: dict[Any, list[Any]] = {}
+    for row in rows:
+        seen.setdefault(key(row), []).append(row)
+    return [problem(row, f"has the same {what} as {len(same) - 1} other{'s' if len(same) > 2 else ''} of the account") for same in seen.values() if len(same) > 1 for row in same]
+
+
+def _squashed(name: str) -> str:
+    return " ".join(name.casefold().split())
+
+
+@check("museum-photos", "Every museum has a photo", "museums", "museums")
+def check_museum_photos(session: Session) -> Result:
+    """ Every museum, of every account, has a photo. """
+    museums = _museums(session)
+    return Result(checked=len(museums), problems=[_museum_problem(museum, "has no photo") for museum in museums if museum.image_id is None])
+
+
+@check("museum-cities", "Every museum is in a city", "museums", "museums")
+def check_museum_cities(session: Session) -> Result:
+    """ Every museum, of every account, says which city it is in (the Cities page). """
+    museums = _museums(session)
+    return Result(checked=len(museums), problems=[_museum_problem(museum, "has no city") for museum in museums if museum.city_id is None])
+
+
+@check("museum-ratings", "Every museum visit is rated and reviewed", "museum visits", "museums")
+def check_museum_ratings(session: Session) -> Result:
+    """ Every museum visit, of every account, has a rating and a review. """
+    visits = _visits(session)
+    problems = []
+    for visit in visits:
+        missing = [what for what, absent in (("rating", visit.rating is None), ("review", not visit.review.strip())) if absent]
+        if missing:
+            problems.append(_visit_problem(visit, f"has no {' and no '.join(missing)}"))
+    return Result(checked=len(visits), problems=problems)
+
+
+@check("museum-duplicates", "No museum is listed twice", "museums", "museums")
+def check_museum_duplicates(session: Session) -> Result:
+    """ No account has two museums of the same name in the same city (ignoring case and spaces): a second visit is a visit of the first. """
+    museums = _museums(session)
+    return Result(checked=len(museums), problems=_twice(museums, lambda m: (m.owner_id, _squashed(m.name), m.city_id or 0), _museum_problem, "name and city"))
+
+
+@check("place-addresses", "Every place has an address", "places", "places")
+def check_place_addresses(session: Session) -> Result:
+    """ Every place, of every account, has a street or a neighbourhood: more than the city it is in. """
+    places = _places(session)
+    problems = [_place_problem(place, "has no street and no neighbourhood") for place in places if not place.street.strip() and not place.neighbourhood.strip()]
+    return Result(checked=len(places), problems=problems)
+
+
+@check("place-photos", "Every place has a photo", "places", "places")
+def check_place_photos(session: Session) -> Result:
+    """ Every place, of every account, has a photo (scripts/fetch_pictures.py --only places takes Wikipedia's). """
+    places = _places(session)
+    return Result(checked=len(places), problems=[_place_problem(place, "has no photo") for place in places if place.image_id is None])
+
+
+@check("place-exact-locations", "Every place is where the map says", "places", "places")
+def check_place_exact_locations(session: Session) -> Result:
+    """ No place, of any account, has a remark saying its location is approximate: its pin is where the place is, not only its street or its town. """
+    places = _places(session)
+    problems = [_place_problem(place, "is only roughly where the map says (its remark says so)") for place in places if "location approximate" in place.remark.lower()]
+    return Result(checked=len(places), problems=problems)
+
+
+@check("people-photos", "Every person with a profession has a photo", "people with a profession", "people")
+def check_people_photos(session: Session) -> Result:
+    """
+    Every person with a profession (a performer, a book author, a lecturer:
+    someone an encyclopedia may show), of every account, has a photo
+    (scripts/fetch_pictures.py --only people takes Wikipedia's).
+    """
+    typed = set(session.scalars(select(person_type_links.c.person_id)))
+    pictured = set(session.scalars(select(PersonPhoto.person_id)))
+    people = [person for person in _people(session) if person.id in typed]
+    return Result(checked=len(people), problems=[_person_problem(person, "has no photo") for person in people if person.id not in pictured])
+
+
+@check("people-duplicates", "No person is listed twice", "people", "people")
+def check_people_duplicates(session: Session) -> Result:
+    """ No account has two people of the same name (ignoring case and spaces); one with no name is told by their description. """
+    people = _people(session)
+    return Result(checked=len(people), problems=_twice(people, lambda p: (p.owner_id, _squashed(p.name)), _person_problem, "name"))
+
+
+@check("people-used", "Every person is linked to something", "people", "people")
+def check_people_used(session: Session) -> Result:
+    """
+    Every person, of every account, is someone to something: went along to
+    a concert or a museum, performed, wrote a book, lectured a course, is in
+    a group or at an organization, or is related to someone. The user's own
+    row is theirs whatever it is linked to.
+    """
+    used = _ids(
+        session, concert_companions.c.person_id, concert_performers.c.person_id, museum_companions.c.person_id, library_entry_authors.c.person_id,
+        audio_course_lecturers.c.person_id, group_members.c.person_id, person_organizations.c.person_id, PersonRelation.person_id, PersonRelation.other_id,
+    )
+    people = _people(session)
+    return Result(checked=len(people), problems=[_person_problem(person, "is linked to nothing") for person in people if person.id not in used and not person.is_self])
+
+
+@check("book-owned", "Every book read says whether you own it", "books read", "book")
+def check_book_owned(session: Session) -> Result:
+    """ Every book with a finished reading, of every account, has the languages you own it in or is marked "I don't own it"; and none is both. """
+    books = [entry for entry in _entries(session, "book") if any(read.status == "done" for read in entry.reads)]
+    problems = []
+    for entry in books:
+        if entry.not_owned and entry.owned:
+            problems.append(_entry_problem(entry, "is marked not owned but is owned in a language"))
+        elif not entry.not_owned and not entry.owned:
+            problems.append(_entry_problem(entry, "does not say whether you own it"))
+    return Result(checked=len(books), problems=problems)
+
+
+@check("book-notes", "No book note repeats the book", "books", "book")
+def check_book_notes(session: Session) -> Result:
+    """
+    No note of a book, of any account, says what the book says elsewhere:
+    the language it was written in, or a name it once had that is its title
+    told a little differently (scripts/tidy_book_notes.py takes these out).
+    """
+    books = _entries(session, "book")
+    codes = {locale.name.lower(): code for code, locale in languages.known(session).items()}
+    problems = [_entry_problem(entry, "has a note that repeats what the book says elsewhere") for entry in books if notes.without_said_twice(entry, codes) != entry.notes.strip()]
+    return Result(checked=len(books), problems=problems)
+
+
+@check("book-translations", "Every book was read in the language it was written in", "books read", "book")
+def check_book_translations(session: Session) -> Result:
+    """
+    Every book with a finished reading that says its language, of every
+    account, was read at least once in the language it was first written
+    in. A book read only in translation is no mistake: this lists them, and
+    is turned off by whoever does not want the list.
+    """
+    names_of = {code: locale.name for code, locale in languages.known(session).items()}
+    books = []
+    problems = []
+    for entry in _entries(session, "book"):
+        read_in = list(dict.fromkeys(read.locale for read in entry.reads if read.status == "done" and read.locale))
+        original = entry.work.original_locale
+        if not read_in or not original:
+            continue
+        books.append(entry)
+        if original not in read_in:
+            problems.append(_entry_problem(
+                entry, f"was read only in translation: written in {names_of.get(original, original)}, read in {', '.join(names_of.get(code, code) for code in read_in)}",
+            ))
+    return Result(checked=len(books), problems=problems)
+
+
+@check("concert-company", "Every concert says who you were with", "concerts", "concerts")
+def check_concert_company(session: Session) -> Result:
+    """
+    Every concert, of every account, either has the people you went with or
+    is marked "I went alone", so an empty With is never a gap nobody filled
+    in; and none is both.
+    """
+    with_people = set(session.scalars(select(concert_companions.c.concert_id)))
+    concerts = _concerts(session)
+    problems = []
+    for concert in concerts:
+        if concert.alone and concert.id in with_people:
+            problems.append(_concert_problem(concert, "is marked alone but has people in With"))
+        elif not concert.alone and concert.id not in with_people:
+            problems.append(_concert_problem(concert, "has no one in With and is not marked alone"))
+    return Result(checked=len(concerts), problems=problems)
+
+
+@check("concert-reviews", "Every concert has a review", "concerts", "concerts")
+def check_concert_reviews(session: Session) -> Result:
+    """ Every concert, of every account, has a review: what you thought of it. """
+    concerts = _concerts(session)
+    return Result(checked=len(concerts), problems=[_concert_problem(concert, "has no review") for concert in concerts if not concert.review.strip()])
+
+
+@check("organization-cities", "Every organization is in a city", "organizations", "organizations")
+def check_organization_cities(session: Session) -> Result:
+    """ Every organization, of every account, says which city it is in (the Cities page). """
+    organizations = _organizations(session)
+    return Result(checked=len(organizations), problems=[_organization_problem(o, "has no city") for o in organizations if o.city_id is None])
+
+
+@check("organization-duplicates", "No organization is listed twice", "organizations", "organizations")
+def check_organization_duplicates(session: Session) -> Result:
+    """ No account has two organizations of the same name (ignoring case and spaces). """
+    organizations = _organizations(session)
+    return Result(checked=len(organizations), problems=_twice(organizations, lambda o: (o.owner_id, _squashed(o.name)), _organization_problem, "name"))
+
+
+@check("city-regions", "The cities of a country all have a region, or none has", "cities", "cities")
+def check_city_regions(session: Session) -> Result:
+    """
+    In every account, the cities of a country either all say their region
+    (a state, a district) or none does: where some do, those that do not
+    are the gap.
+    """
+    cities = [city for city in _cities(session) if city.country_id is not None]
+    with_region = {(city.owner_id, city.country_id) for city in cities if city.region.strip()}
+    problems = [
+        _city_problem(city, "has no region, where other cities of its country have one")
+        for city in cities
+        if not city.region.strip() and (city.owner_id, city.country_id) in with_region
+    ]
+    return Result(checked=len(cities), problems=problems)
+
+
+# what has a picture with a credit, by the page it is on: (model, what the picture is called, the link to a row)
+_CREDITED: dict[str, tuple[Any, str]] = {
+    "concerts": (Concert, "photo"),
+    "groups": (Group, "photo"),
+    "places": (Place, "photo"),
+    "cities": (City, "photo"),
+    "countries": (Country, "flag"),
+    "devices": (Device, "photo"),
+    "person-types": (PersonType, "photo"),
+}
+
+
+def _credit_gaps(source: str, license_: str, author: str) -> list[str]:
+    """ What the credit of a picture taken from elsewhere lacks: a picture with any of it has all of it. """
+    said = {"source": source.strip(), "license": license_.strip(), "author": author.strip()}
+    return [what for what, value in said.items() if not value] if any(said.values()) else []
+
+
+def _credit_checks(dataset: str, model: Any, what: str) -> None:
+    page = DATASETS[dataset].lower()
+
+    @check(f"{dataset}-credits", f"Every credited {what} of {page} has its whole credit", f"{what}s with a credit", dataset)
+    def run(session: Session) -> Result:
+        rows = session.scalars(select(model).where(model.image_id.is_not(None)).order_by(model.owner_id, model.name, model.id)).all()
+        pictures = [(row, row.image_source, row.image_license, row.image_author) for row in rows]
+        if model is City:
+            # a city's further photos, each with its own credit
+            cities = {city.id: city for city in session.scalars(select(City))}
+            pictures += [(cities[photo.city_id], photo.image_source, photo.image_license, photo.image_author) for photo in session.scalars(select(CityPhoto).order_by(CityPhoto.id))]
+        credited = [(row, _credit_gaps(source, license_, author)) for row, source, license_, author in pictures if source.strip() or license_.strip() or author.strip()]
+        problems = [
+            Problem(f"{row.name} ({dataset} {row.id}, account {row.owner_id})", f"has a {what} credited with no {' and no '.join(gaps)}", f"{dataset}/{row.id}", row.owner_id)
+            for row, gaps in credited
+            if gaps
+        ]
+        return Result(checked=len(credited), problems=problems)
+
+    run.__doc__ = (
+        f"Every {what} of {page}, of every account, that has a credit (it was taken from elsewhere, as scripts/fetch_pictures.py does from Wikipedia)"
+        " has all of it: the page it comes from, its license and its author."
+    )
+    CHECKS[f"{dataset}-credits"] = dataclasses.replace(CHECKS[f"{dataset}-credits"], description=" ".join(run.__doc__.split()))
+
+
+for _dataset, (_model, _what) in _CREDITED.items():
+    _credit_checks(_dataset, _model, _what)
+
+
+@check("people-credits", "Every credited photo of people has its whole credit", "photos with a credit", "people")
+def check_people_credits(session: Session) -> Result:
+    """
+    Every photo of a person, of every account, that has a credit (it was
+    taken from elsewhere, as scripts/fetch_pictures.py does from Wikipedia)
+    has all of it: the page it comes from, its license and its author.
+    """
+    people = {person.id: person for person in _people(session)}
+    photos = [photo for photo in session.scalars(select(PersonPhoto).order_by(PersonPhoto.person_id, PersonPhoto.position)) if photo.image_source.strip() or photo.image_license.strip() or photo.image_author.strip()]
+    problems = []
+    for photo in photos:
+        gaps = _credit_gaps(photo.image_source, photo.image_license, photo.image_author)
+        if gaps:
+            problems.append(_person_problem(people[photo.person_id], f"has a photo credited with no {' and no '.join(gaps)}"))
+    return Result(checked=len(photos), problems=problems)
+
+
+# how far from its city's pin something may be and still be in it (a city is wide, and its pin is its middle)
+NEAR_KM = 50
+
+
+def _km(a: tuple[float, float], b: tuple[float, float]) -> float:
+    """ The distance between two (latitude, longitude) points on the globe, in kilometers. """
+    lat1, lon1, lat2, lon2 = (math.radians(value) for value in (*a, *b))
+    h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+    return 6371 * 2 * math.asin(math.sqrt(h))
+
+
+def _near_city_check(dataset: str, model: Any, noun: str) -> None:
+    page = DATASETS[dataset].lower()
+
+    @check(f"{noun}-near-city", f"Every {noun} is where its city is", f"{page} on the map in a city on the map", dataset)
+    def run(session: Session) -> Result:
+        rows = [
+            row for row in session.scalars(select(model).order_by(model.owner_id, model.name, model.id))
+            if row.latitude is not None and row.longitude is not None and row.city is not None and row.city.latitude is not None and row.city.longitude is not None
+        ]
+        problems = []
+        for row in rows:
+            far = _km((row.latitude, row.longitude), (row.city.latitude, row.city.longitude))
+            if far > NEAR_KM:
+                problems.append(Problem(
+                    f"{row.name} ({noun} {row.id}, account {row.owner_id})", f"is {far:.0f} km from {row.city.name}, the city it is in", f"{dataset}/{row.id}", row.owner_id,
+                ))
+        return Result(checked=len(rows), problems=problems)
+
+    CHECKS[f"{noun}-near-city"] = dataclasses.replace(CHECKS[f"{noun}-near-city"], description=(
+        f"Every one of the {page}, of every account, that is on the map and in a city that is on the map is within {NEAR_KM} km of its city:"
+        " farther, its pin or its city is wrong."
+    ))
+
+
+_near_city_check("places", Place, "place")
+_near_city_check("museums", Museum, "museum")
+_near_city_check("organizations", Organization, "organization")
+
+WEBSITE = re.compile(r"https?://[^\s/.]+(\.[^\s/.]+)+(/\S*)?")
+
+
+def _website_check(dataset: str, model: Any, noun: str, column: str) -> None:
+    page = DATASETS[dataset].lower()
+
+    @check(f"{noun}-websites", f"Every website of {page} is an address", "websites", dataset)
+    def run(session: Session) -> Result:
+        rows = [row for row in session.scalars(select(model).order_by(model.owner_id, model.name, model.id)) if getattr(row, column).strip()]
+        problems = [
+            Problem(f"{row.name} ({noun} {row.id}, account {row.owner_id})", f"has a website that is no web address: {getattr(row, column)}", f"{dataset}/{row.id}", row.owner_id)
+            for row in rows
+            if not WEBSITE.fullmatch(getattr(row, column).strip())
+        ]
+        return Result(checked=len(rows), problems=problems)
+
+    CHECKS[f"{noun}-websites"] = dataclasses.replace(CHECKS[f"{noun}-websites"], description=(
+        f"Every website of the {page}, of every account, is a web address: http:// or https://, a host with a dot in it, and no spaces."
+    ))
+
+
+_website_check("places", Place, "place", "website")
+_website_check("museums", Museum, "museum", "url")
+_website_check("groups", Group, "group", "website")
+_website_check("organizations", Organization, "organization", "website")

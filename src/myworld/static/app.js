@@ -1104,6 +1104,7 @@ async function libraryPage() {
 			return;
 		}
 		body.owned = ownedValues();
+		body.not_owned = $("book-not-owned").checked;
 		try {
 			// all its covers: the first is the one its card shows
 			body.covers = (await pictures(form)).map((cover) => cover.id);
@@ -1669,6 +1670,9 @@ function concertCard(item) {
 	linksDetail(list, "Groups", "groups", item.groups);
 	linksDetail(list, "Performers", "people", performers);
 	detail(list, "Genre", item.genre);
+	if (item.alone) {
+		detail(list, "With", "alone");
+	}
 	linksDetail(list, "With", "people", item.people);
 	detail(list, "Tickets", item.tickets);
 	if (item.broadcast) {
@@ -3841,6 +3845,12 @@ function renderOwned() {
 		box.appendChild(chip);
 	});
 	box.appendChild(adderButton($("book-owned-row"), "Add a language you own it in"));
+	// owned in a language, it is not a book you do not own: the tick box is out of reach, unticked
+	const none = $("book-not-owned");
+	none.disabled = editingOwned.length > 0;
+	if (none.disabled) {
+		none.checked = false;
+	}
 }
 
 // the language chosen in the row joins the list (once), and the row goes
@@ -3853,8 +3863,9 @@ function addOwned() {
 	renderOwned();
 }
 
-function prepareOwned(owned) {
+function prepareOwned(owned, notOwned) {
 	editingOwned = [...owned];
+	$("book-not-owned").checked = Boolean(notOwned);
 	renderOwned();
 }
 
@@ -4105,6 +4116,7 @@ const WORLD_BODIES = {
 			people: chosen(form, "people"),
 			tickets: value("tickets"),
 			broadcast: form.elements.broadcast.checked,
+			alone: form.elements.alone.checked,
 			review: value("review"),
 			remark: value("remark"),
 			...(await pictureBody(form)),
@@ -4307,7 +4319,7 @@ async function prepareWorkForm(form, entry) {
 	}
 	// its reads, and every title it has, each in its language; a new book starts with the row to type its title in
 	prepareReads(entry?.reads || [], !entry);
-	prepareOwned(entry?.owned || []);
+	prepareOwned(entry?.owned || [], entry?.not_owned);
 	// the language it was first written in; it and the year released are locked like every box (lockFields)
 	$("book-original").value = entry?.original_locale || "";
 	prepareLocalized("titles", entry ? [{ locale: entry.title_locale, title: entry.main_title }, ...entry.titles] : [], false);
@@ -4573,6 +4585,7 @@ function setupAddDialog() {
 		}
 	}, true);
 	$("museum-form").elements.alone.onchange = () => syncAlone($("museum-form"));
+	$("concert-form").elements.alone.onchange = () => syncAlone($("concert-form"));
 	const { rating_min, rating_max } = state.config;
 	$("museum-visit-rating").min = rating_min;
 	$("museum-visit-rating").max = rating_max;

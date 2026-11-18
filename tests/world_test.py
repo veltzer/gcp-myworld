@@ -19,7 +19,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from myworld import addresses, checks, cities, languages, names
+from myworld import addresses, checks, cities, languages, names, notes
 from myworld.models import (
     SEED_LOCALES,
     AudioCourse,
@@ -1854,8 +1854,24 @@ def test_notes_lose_what_the_book_says_elsewhere(imported: webtest.TestApp, engi
     assert (books[other["work_id"]]["notes"], books[other["work_id"]]["reads"]) == ("was named: Kept Once. on the top shelf", [reading(locale="he")])
 
 
+def test_alone_and_not_owned(imported: webtest.TestApp) -> None:
+    # a concert gone to alone says so, never with people in With
+    person = imported.post_json("/api/people", {"first_name": "Carol"}, status=201).json
+    assert imported.post_json("/api/concert-visits", {"name": "Solo", "alone": True}, status=201).json["alone"] is True
+    assert imported.post_json("/api/concert-visits", {"name": "Duo", "people": [person["id"]]}, status=201).json["alone"] is False
+    imported.post_json("/api/concert-visits", {"name": "Odd", "alone": True, "people": [person["id"]]}, status=400)
+    # a book the user owns no copy of says so, never with a language it is owned in
+    book = imported.post_json("/api/library-entries", {"kind": "book", "title": "Borrowed", "not_owned": True}).json
+    assert (book["not_owned"], book["owned"]) == (True, [])
+    url = f"/api/library-entries/{book['work_id']}"
+    imported.put_json(url, {"owned": ["en"]}, status=400)
+    assert imported.put_json(url, {"owned": ["en"], "not_owned": False}).json["not_owned"] is False
+    imported.put_json(url, {"not_owned": True}, status=400)
+    assert imported.put_json(url, {"notes": "x"}).json["owned"] == ["en"]
+
+
 def test_a_name_that_is_the_title() -> None:
-    same = tidy_book_notes.same_title
+    same = notes.same_title
     # a part of the title, the title but for its spelling, its punctuation, a leading article or an & for an and
     assert same("The Blind Watchmaker", ["The Blind Watchmaker: Why the Evidence of Evolution Reveals a Universe Without Design"])
     assert same("The Strange Case of Dr. Jekyll and Mr. Hyde", ["Strange Case Of Dr. Jekyll & Mr. Hyde"])
