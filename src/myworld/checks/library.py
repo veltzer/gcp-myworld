@@ -91,6 +91,23 @@ def check_book_original_languages(session: Session) -> Result:
     return Result(checked=len(books), problems=[problem(b, "has no original language") for b in books if not b.work.original_locale])
 
 
+@check("book-original-titles", "Every book has a title in the language it was written in", "books with an original language", "book")
+def check_book_original_titles(session: Session) -> Result:
+    """
+    Every book in a library, of every account, that says the language it was
+    first written in has a title in that language: the title it was given by
+    its author, whatever language it was read in.
+    """
+    books = [b for b in entries_of(session, "book") if b.work.original_locale]
+    known = languages.known(session)
+    problems = [
+        problem(b, f"was written in {known[b.work.original_locale].name} but has no title in it")
+        for b in books
+        if b.work.original_locale not in {b.work.title_locale, *(title.locale for title in b.work.titles)}
+    ]
+    return Result(checked=len(books), problems=problems)
+
+
 @check("book-reads", "Every book has a reading", "books", "book")
 def check_book_reads(session: Session) -> Result:
     """ Every book in a library, of every account, has at least one reading: where its status, rating and review are, with its day and its language. """

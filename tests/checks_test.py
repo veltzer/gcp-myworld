@@ -43,6 +43,7 @@ from myworld.models import (
     User,
     UserWork,
     Work,
+    WorkTitle,
     YouTubeVideo,
 )
 from tests.conftest import sign_in
@@ -91,7 +92,7 @@ def test_every_check_describes_itself() -> None:
         assert chosen.dataset in checks.DATASETS
     # every dataset has checks to run from its page
     assert {c.dataset for c in checks.CHECKS.values()} == set(checks.DATASETS)
-    assert {name for name, c in checks.CHECKS.items() if c.dataset == "book"} == {"book-covers", "book-links", "book-authors", "book-years", "book-original-languages", "book-languages", "book-reads", "book-read-dates", "book-titles", "book-english-titles", "book-title-languages", "book-ratings", "book-duplicates", "book-owned", "book-notes", "book-translations"}
+    assert {name for name, c in checks.CHECKS.items() if c.dataset == "book"} == {"book-covers", "book-links", "book-authors", "book-years", "book-original-languages", "book-original-titles", "book-languages", "book-reads", "book-read-dates", "book-titles", "book-english-titles", "book-title-languages", "book-ratings", "book-duplicates", "book-owned", "book-notes", "book-translations"}
 
 
 def test_a_name_is_registered_once() -> None:
@@ -315,7 +316,8 @@ def test_books(engine: Engine) -> None:
         ann, bobs_ann = Person(owner_id=alice.id, first_name="Ann"), Person(owner_id=bob.id, first_name="Ann")
         works = {
             "Good": Work(kind="book", title="Good", creator="Ann", goodreads_id="1", year=1999, original_locale="en"),
-            "Hebrew": Work(kind="book", title="Hebrew", creator="Ben", simania_id="2", year=2001, original_locale="en"),
+            # written in Hebrew, but its only title is an English one
+            "Hebrew": Work(kind="book", title="Hebrew", creator="Ben", simania_id="2", year=2001, original_locale="he"),
             "Bare": Work(kind="book", title="Bare", creator=""),
             "Twice": Work(kind="book", title="Twice", creator="Cy", goodreads_id="3", year=1990, original_locale="en"),
             "twice ": Work(kind="book", title="twice ", creator="cy", goodreads_id="4", year=1990, original_locale="en"),
@@ -347,6 +349,11 @@ def test_books(engine: Engine) -> None:
         assert found("book-authors") == [("Bare", "has no author")]
         assert found("book-years") == [("Bare", "has no year it came out")]
         assert found("book-original-languages") == [("Bare", "has no original language")]
+        # a book has a title in the language it was written in; one that does not say its language is not asked
+        assert found("book-original-titles") == [("Hebrew", "was written in Hebrew but has no title in it")]
+        works["Hebrew"].titles.append(WorkTitle(locale="he", title="עברית"))
+        session.commit()
+        assert found("book-original-titles") == []
         # every book has a reading, where its status is; one finished says its language and its day
         assert found("book-reads") == [("Bare", "has no reading")]
         assert found("book-languages") == []

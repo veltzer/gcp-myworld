@@ -61,6 +61,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `book-years`: every book has the year it came out.
 - `book-original-languages`: every book says the language it was first
   written in.
+- `book-original-titles`: every book that says the language it was first
+  written in has a title in that language.
 - `book-reads`: every book has at least one reading: where its status, its
   rating and its review are, with its day and its language.
 - `book-languages`: every finished (Done) reading of a book says the
