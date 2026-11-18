@@ -177,17 +177,7 @@ def _apply_reads(entry: UserWork, body: dict[str, Any], new: bool = False) -> No
         value = body["reads"]
         if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
             raise ApiError(400, "reads: expected a list of {date, locale, status, rating, review, started_on}")
-        entry.reads = [
-            Read(
-                read_on=opt_date(item, "date"),
-                locale=_read_locale("reads", item.get("locale")),
-                status=_status(item),
-                rating=opt_int(item, "rating", RATING_MIN, RATING_MAX),
-                review=text(item, "review"),
-                started_on=opt_date(item, "started_on"),
-            )
-            for item in value
-        ]
+        entry.reads = [_read_fields(Read(review=""), {**dict.fromkeys(READ_FIELDS), **item, "finished_on": item.get("date")}, "reads") for item in value]
         return
     if not new and not any(key in body for key in READ_FIELDS):
         return
@@ -195,10 +185,15 @@ def _apply_reads(entry: UserWork, body: dict[str, Any], new: bool = False) -> No
     if read is None:
         read = Read(status="done", review="")
         entry.reads.append(read)
+    _read_fields(read, body, "locale")
+
+
+def _read_fields(read: Read, body: dict[str, Any], locale_key: str) -> Read:
+    """ The fields of a reading that body has, set on it (locale_key names the language in an error). """
     if "finished_on" in body:
         read.read_on = opt_date(body, "finished_on")
     if "locale" in body:
-        read.locale = _read_locale("locale", body["locale"])
+        read.locale = _read_locale(locale_key, body["locale"])
     if "status" in body:
         read.status = _status(body)
     if "rating" in body:
@@ -207,6 +202,7 @@ def _apply_reads(entry: UserWork, body: dict[str, Any], new: bool = False) -> No
         read.review = text(body, "review")
     if "started_on" in body:
         read.started_on = opt_date(body, "started_on")
+    return read
 
 
 def _set_year(work: Work, year: int) -> None:
@@ -223,17 +219,35 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any], new: bool = False
     # where the user is with it, their rating and review are those of its readings (_apply_reads)
     if "notes" in body or new:
         entry.notes = text(body, "notes")
-    # the year it came out, on the shared work: filled in or put right when sent, never emptied
+    _apply_work_facts(entry.work, body)
+    _apply_reads(entry, body, new)
+    _apply_owned(entry, body)
+    # an entry edited with its title sent says all the titles of its work; with only titles sent they are added
+    if "title" in body and not new:
+        _set_titles(entry.work, body)
+    elif "titles" in body:
+        _add_titles(entry.work, body["titles"])
+    _apply_covers(entry, body)
+    if "authors" in body:
+        _apply_authors(entry, body)
+
+
+def _apply_work_facts(work: Work, body: dict[str, Any]) -> None:
+    """ What an entry says of the shared work: filled in or put right when sent, never emptied. """
+    # the year it came out
     year = opt_int(body, "year", -3000, 3000)
-    if year is not None and year != entry.work.year:
-        _set_year(entry.work, year)
-    # the language it was first written in, on the shared work as the year is: set when sent, never emptied
+    if year is not None and year != work.year:
+        _set_year(work, year)
+    # the language it was first written in
     original = text(body, "original_locale")
     if original:
         if original not in languages.known(flask.g.db):
             raise ApiError(400, f"original_locale: unknown language {original!r}")
-        entry.work.original_locale = original
-    _apply_reads(entry, body, new)
+        work.original_locale = original
+
+
+def _apply_owned(entry: UserWork, body: dict[str, Any]) -> None:
+    """ The languages the user owns it in, or that they own no copy: never both. """
     # owned, a list of languages, is every language the user owns it in; not sent, they stay
     if "owned" in body:
         owned = body["owned"]
@@ -243,36 +257,38 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any], new: bool = False
         if unknown:
             raise ApiError(400, f"owned: unknown language {unknown[0]!r}")
         entry.owned = owned
-    # not_owned says the user owns no copy: never with a language it is owned in
+    # not_owned says the user owns no copy
     if "not_owned" in body:
         entry.not_owned = body["not_owned"] is True
     if entry.not_owned and entry.owned:
         raise ApiError(400, "not_owned: a book owned in a language is not one you do not own")
-    # an entry edited with its title sent says all the titles of its work; with only titles sent they are added
-    if "title" in body and not new:
-        _set_titles(entry.work, body)
-    elif "titles" in body:
-        _add_titles(entry.work, body["titles"])
-    # covers, a list of image ids, are all the entry's covers (the first is the one its card shows);
-    # without it image_id is a new first cover, and a cover is never blanked by omission
+
+
+def _apply_covers(entry: UserWork, body: dict[str, Any]) -> None:
+    """
+    covers, a list of image ids, are all the entry's covers (the first is the
+    one its card shows); without it image_id is a new first cover, and a
+    cover is never blanked by omission.
+    """
     if "covers" in body:
         if not isinstance(body["covers"], list):
             raise ApiError(400, "covers: expected a list of image ids")
         entry.cover_ids = pictures.owned_images("covers", body["covers"])
-    else:
-        image_id = pictures.owned_image(body)
-        if image_id is not None:
-            entry.image_id = image_id
-    # the authors, ids of the user's people (any number), are set only when sent;
-    # each is a Book Author, when the user keeps that profession
-    if "authors" in body:
-        entry.authors = owned_list(body, "authors", Person)
-        # the shared work's author text, only filled in (another account may have it too)
-        entry.work.creator = entry.work.creator or ", ".join(p.name for p in entry.authors)
-        book_author = flask.g.db.scalars(select(PersonType).where(PersonType.owner_id == flask.g.user.id, PersonType.name == "Book Author")).first()
-        for author in entry.authors if book_author else []:
-            if book_author not in author.types:
-                author.types.append(book_author)
+        return
+    image_id = pictures.owned_image(body)
+    if image_id is not None:
+        entry.image_id = image_id
+
+
+def _apply_authors(entry: UserWork, body: dict[str, Any]) -> None:
+    """ The authors, ids of the user's people (any number); each is a Book Author, when the user keeps that profession. """
+    entry.authors = owned_list(body, "authors", Person)
+    # the shared work's author text, only filled in (another account may have it too)
+    entry.work.creator = entry.work.creator or ", ".join(p.name for p in entry.authors)
+    book_author = flask.g.db.scalars(select(PersonType).where(PersonType.owner_id == flask.g.user.id, PersonType.name == "Book Author")).first()
+    for author in entry.authors if book_author else []:
+        if book_author not in author.types:
+            author.types.append(book_author)
 
 
 def _add_titles(work: Work, value: Any) -> None:
