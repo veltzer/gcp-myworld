@@ -768,10 +768,10 @@ def test_more_checks(engine: Engine) -> None:
         # Paris has a region, so Lyon lacks one; Israel's cities have none, which is as good
         assert who("city-regions") == ["Lyon, France"]
         # a credit, once there, is whole
-        assert found("places-credits") == [("A lawn", "has a photo credited with no source and no author")]
+        assert found("places-credits") == [("A lawn, Lyon", "has a photo credited with no source and no author")]
         assert found("people-credits") == [("dana ", "has a photo credited with no license and no author")]
         # the second Louvre is in Marseille by its pin
         assert [(subject, message.split(" km ")[1]) for subject, message in found("museum-near-city")] == [(" louvre", "from Paris, the city it is in")]
         assert who("place-near-city") == [] and who("organization-near-city") == []
-        assert who("museum-websites") == [" louvre"] and who("place-websites") == ["A lawn"]
+        assert who("museum-websites") == [" louvre"] and who("place-websites") == ["A lawn, Lyon"]
         assert checks.CHECKS["museum-websites"].description and checks.CHECKS["places-credits"].description and checks.CHECKS["museum-near-city"].description
