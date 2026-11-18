@@ -176,19 +176,6 @@ def check_book_title_languages(session: Session) -> Result:
     return Result(checked=checked, problems=problems)
 
 
-@check("book-owned", "Every book read says whether you own it", "books read", "book")
-def check_book_owned(session: Session) -> Result:
-    """ Every book with a finished reading, of every account, has the languages you own it in or is marked "I don't own it"; and none is both. """
-    books = [entry for entry in entries_of(session, "book") if any(read.status == "done" for read in entry.reads)]
-    problems = []
-    for entry in books:
-        if entry.not_owned and entry.owned:
-            problems.append(problem(entry, "is marked not owned but is owned in a language"))
-        elif not entry.not_owned and not entry.owned:
-            problems.append(problem(entry, "does not say whether you own it"))
-    return Result(checked=len(books), problems=problems)
-
-
 @check("book-notes", "No book note repeats the book", "books", "book")
 def check_book_notes(session: Session) -> Result:
     """

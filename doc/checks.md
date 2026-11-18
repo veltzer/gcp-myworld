@@ -82,8 +82,6 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `book-ratings`: every book read (Done) has a rating.
 - `book-duplicates`: no account has two books of the same title and
   author.
-- `book-owned`: every book with a finished reading has the languages you
-  own it in or is marked "I don't own it", and none is both.
 - `book-notes`: no note of a book repeats what the book says elsewhere (the
   language it was written in, a name it once had that is its title told a
   little differently).

@@ -119,7 +119,6 @@ def _entry_json(entry: UserWork) -> dict[str, Any]:
         # the languages the user owns it in
         "owned": entry.owned,
         # true when the user says they own no copy of it (then owned is empty)
-        "not_owned": entry.not_owned,
         # what the user thought of it, and anything else they keep about it
         "review": entry.review,
         "notes": entry.notes,
@@ -247,7 +246,7 @@ def _apply_work_facts(work: Work, body: dict[str, Any]) -> None:
 
 
 def _apply_owned(entry: UserWork, body: dict[str, Any]) -> None:
-    """ The languages the user owns it in, or that they own no copy: never both. """
+    """ The languages the user owns it in; with none, they own no copy. """
     # owned, a list of languages, is every language the user owns it in; not sent, they stay
     if "owned" in body:
         owned = body["owned"]
@@ -257,11 +256,6 @@ def _apply_owned(entry: UserWork, body: dict[str, Any]) -> None:
         if unknown:
             raise ApiError(400, f"owned: unknown language {unknown[0]!r}")
         entry.owned = owned
-    # not_owned says the user owns no copy
-    if "not_owned" in body:
-        entry.not_owned = body["not_owned"] is True
-    if entry.not_owned and entry.owned:
-        raise ApiError(400, "not_owned: a book owned in a language is not one you do not own")
 
 
 def _apply_covers(entry: UserWork, body: dict[str, Any]) -> None:

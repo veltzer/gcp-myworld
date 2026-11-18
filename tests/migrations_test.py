@@ -14,7 +14,15 @@ from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.orm import Session
 
 from myworld import admin
-from myworld.models import ROLE_ADMIN, SCHEMA_REVISION, Base, User, make_engine
+from myworld.models import (
+    ROLE_ADMIN,
+    SCHEMA_REVISION,
+    Base,
+    User,
+    UserWork,
+    Work,
+    make_engine,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 RUN = ROOT / "scripts" / "migrations" / "run.py"
@@ -160,3 +168,30 @@ def test_the_table_the_migrations_keep_is_no_drift(url: str) -> None:
         connection.execute(text("CREATE TABLE leftovers (id INTEGER PRIMARY KEY)"))
     assert admin.table_json(inspect(engine), "leftovers", 0)["in_model"] is False
     engine.dispose()
+
+
+def test_a_column_the_code_dropped_goes(url: str) -> None:
+    """ 0002: library_entries.not_owned, which a database at the baseline has. """
+    engine = create_engine(url)
+    Base.metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE library_entries ADD COLUMN not_owned BOOLEAN DEFAULT 0 NOT NULL"))
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0001')"))
+    with Session(engine) as session:
+        user, work = User(email="a@example.com", role=ROLE_ADMIN), Work(kind="book", title="Dune", creator="Frank Herbert")
+        session.add_all([user, work])
+        session.flush()
+        session.add(UserWork(user_id=user.id, work_id=work.id, notes="kept"))
+        session.commit()
+    with engine.begin() as connection:
+        connection.execute(text("UPDATE library_entries SET not_owned = 1"))
+    engine.dispose()
+    assert run(url, "upgrade").stdout.strip() == "migrated from 0001 to 0002"
+    engine = create_engine(url)
+    assert "not_owned" not in {column["name"] for column in inspect(engine).get_columns("library_entries")}
+    # the row is as it was
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT user_id, work_id, notes FROM library_entries")).all() == [(1, 1, "kept")]
+    engine.dispose()
+    assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"

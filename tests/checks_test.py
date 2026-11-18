@@ -92,7 +92,7 @@ def test_every_check_describes_itself() -> None:
         assert chosen.dataset in checks.DATASETS
     # every dataset has checks to run from its page
     assert {c.dataset for c in checks.CHECKS.values()} == set(checks.DATASETS)
-    assert {name for name, c in checks.CHECKS.items() if c.dataset == "book"} == {"book-covers", "book-links", "book-authors", "book-years", "book-original-languages", "book-original-titles", "book-languages", "book-reads", "book-read-dates", "book-titles", "book-english-titles", "book-title-languages", "book-ratings", "book-duplicates", "book-owned", "book-notes", "book-translations"}
+    assert {name for name, c in checks.CHECKS.items() if c.dataset == "book"} == {"book-covers", "book-links", "book-authors", "book-years", "book-original-languages", "book-original-titles", "book-languages", "book-reads", "book-read-dates", "book-titles", "book-english-titles", "book-title-languages", "book-ratings", "book-duplicates", "book-notes", "book-translations"}
 
 
 def test_a_name_is_registered_once() -> None:
@@ -741,7 +741,7 @@ def test_more_checks(engine: Engine) -> None:
             Concert(owner_id=me, name="Both", alone=True, people=[dana], review="odd"),
             Concert(owner_id=me, name="Unsaid"),
             UserWork(user_id=me, work_id=works["Dune"].id, owned=["en"], reads=[Read(locale="en")], authors=[dana]),
-            UserWork(user_id=me, work_id=works["The Joke"].id, not_owned=True, reads=[Read(locale="he")], notes="Written in Czech. was named: Zert"),
+            UserWork(user_id=me, work_id=works["The Joke"].id, reads=[Read(locale="he")], notes="Written in Czech. was named: Zert"),
             UserWork(user_id=me, work_id=works["Esau"].id, reads=[Read(locale="he")], notes="was named: Eisav"),
             # not read yet: nothing is asked of it
             UserWork(user_id=me, work_id=works["Wanted"].id, reads=[Read(status="wishlist")]),
@@ -765,7 +765,6 @@ def test_more_checks(engine: Engine) -> None:
         assert who("people-photos") == []
         assert who("people-duplicates") == ["Dana", "dana "]
         assert who("people-used") == ["Lone", "dana "]
-        assert found("book-owned") == [("Esau", "does not say whether you own it")]
         assert who("book-notes") == ["The Joke"]
         assert found("book-translations") == [("The Joke", "was read only in translation: written in Czech, read in Hebrew")]
         assert found("concert-company") == [("Both", "is marked alone but has people in With"), ("Unsaid", "has no one in With and is not marked alone")]

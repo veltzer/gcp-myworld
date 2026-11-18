@@ -313,8 +313,6 @@ class UserWork(Base):
     # anything worth keeping about it (where they have it, ...); where the user is with it, their
     # rating and what they thought of it belong to each reading (reads)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    # the user owns no copy of it: no language is missing from its ownings, there is none; never true with one
-    not_owned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     # the cover: an image of the user's own, as the works are shared. An entry
     # may have several: this is the first, the one its card shows, and the
     # others are in more_covers
@@ -1204,7 +1202,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0001"
+SCHEMA_REVISION = "0002"
 
 
 def prepare_schema(engine: Engine) -> None:

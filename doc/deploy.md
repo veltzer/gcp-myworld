@@ -611,9 +611,8 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   entry has none; a new entry always has one. In the dialog the Readings
   box lists them, each with a red pencil that brings it into the row to
   edit, a red − and one red + to add another. An entry's `owned`
-  is the list of languages (locale codes) the user owns it in, and
-  `not_owned` true says they own no copy (never with a language: 400) (rows of
-  `library_ownings`): sent, it is all of them; not sent, they stay.
+  is the list of languages (locale codes) the user owns it in (rows of
+  `library_ownings`); an entry with none is a book they own no copy of: sent, it is all of them; not sent, they stay.
   `scripts/owned_from_notes.py` moves what the notes of imported books
   say of it ("Owned in Hebrew") into the list. The book dialog goes
   titles, authors and year released, covers, readings, owned in, notes;

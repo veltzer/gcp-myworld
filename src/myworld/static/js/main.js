@@ -71,7 +71,6 @@ export async function libraryPage() {
 			return;
 		}
 		body.owned = ownedValues();
-		body.not_owned = $("book-not-owned").checked;
 		try {
 			// all its covers: the first is the one its card shows
 			body.covers = (await pictures(form)).map((cover) => cover.id);

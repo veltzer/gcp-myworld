@@ -28,12 +28,6 @@ function renderOwned() {
 		box.appendChild(chip);
 	});
 	box.appendChild(adderButton($("book-owned-row"), "Add a language you own it in"));
-	// owned in a language, it is not a book you do not own: the tick box is out of reach, unticked
-	const none = $("book-not-owned");
-	none.disabled = editingOwned.length > 0;
-	if (none.disabled) {
-		none.checked = false;
-	}
 }
 
 // the language chosen in the row joins the list (once), and the row goes
@@ -46,9 +40,8 @@ function addOwned() {
 	renderOwned();
 }
 
-function prepareOwned(owned, notOwned) {
+function prepareOwned(owned) {
 	editingOwned = [...owned];
-	$("book-not-owned").checked = Boolean(notOwned);
 	renderOwned();
 }
 
@@ -502,7 +495,7 @@ export async function prepareWorkForm(form, entry) {
 	}
 	// its reads, and every title it has, each in its language; a new book starts with the row to type its title in
 	prepareReads(entry?.reads || [], !entry);
-	prepareOwned(entry?.owned || [], entry?.not_owned);
+	prepareOwned(entry?.owned || []);
 	// the language it was first written in; it and the year released are locked like every box (lockFields)
 	$("book-original").value = entry?.original_locale || "";
 	prepareLocalized("titles", entry ? [{ locale: entry.title_locale, title: entry.main_title }, ...entry.titles] : [], false);
