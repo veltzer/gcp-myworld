@@ -2663,3 +2663,23 @@ body.sidebar-folded .sidebar {
 	border-color: transparent;
 	color: var(--muted);
 }
+
+/* a YouTube video's dialog: what YouTube says of it, read only */
+.youtube-facts {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem 1.25rem;
+	padding: 0.5rem 0.75rem;
+	border-radius: 6px;
+	background: #eef0f3;
+	font-size: 0.9rem;
+}
+
+.youtube-facts .label {
+	margin-right: 0.35rem;
+	color: var(--muted);
+}
+
+.youtube-facts .value {
+	white-space: nowrap;
+}

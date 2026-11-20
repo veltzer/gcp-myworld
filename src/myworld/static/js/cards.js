@@ -231,6 +231,26 @@ function formatDuration(seconds) {
 	return h ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
 }
 
+// What YouTube says of a video, in its dialog: only read, never typed (the
+// YouTube importers refresh it). A new video, or one YouTube says nothing of,
+// shows each with a dash, so the dialog is the same shape every time.
+export function showYouTubeFacts(item) {
+	const dash = (value) => (value === null || value === undefined || value === "" ? "\u2014" : String(value));
+	const facts = [
+		["Channel", item?.channel],
+		["Category", item?.category],
+		["Length", item?.duration == null ? null : formatDuration(item.duration)],
+		["Uploaded", item?.uploaded],
+		["Views", item?.views == null ? null : item.views.toLocaleString()],
+		["On YouTube", item ? (item.unavailable ? "No longer" : "Yes") : null],
+	];
+	$("youtube-facts").replaceChildren(...facts.map(([label, value]) => {
+		const fact = el("span", "fact");
+		fact.append(el("span", "label", label), el("span", "value", dash(value)));
+		return fact;
+	}));
+}
+
 function youtubeCard(item) {
 	// YouTube's own thumbnail (a grey one when the video is gone); one YouTube
 	// no longer has may have no name: it goes by its id
