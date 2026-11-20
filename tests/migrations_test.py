@@ -307,3 +307,15 @@ def test_a_work_is_its_accounts_own(url: str) -> None:
     assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"
     # run again, it finds nothing to do
     assert run(url, "upgrade").stdout.strip() == f"nothing to migrate: the database is at {SCHEMA_REVISION}"
+
+
+def test_a_default_is_written_for_every_database() -> None:
+    """
+    The tests run the migrations on sqlite, which takes 0 for false; PostgreSQL,
+    which the site runs on, does not: a column of true and false says its
+    default as sa.false() or sa.true(), which each database writes its own way.
+    """
+    for path in sorted((ROOT / "scripts" / "migrations" / "versions").glob("*.py")):
+        for number, line in enumerate(path.read_text(encoding="UTF8").splitlines(), 1):
+            if "sa.Boolean()" in line and "server_default" in line:
+                assert "server_default=sa.false()" in line or "server_default=sa.true()" in line, f"{path.name}:{number}: {line.strip()}"

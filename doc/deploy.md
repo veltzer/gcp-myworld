@@ -759,7 +759,9 @@ A new step: change the models, run
 `alembic -c scripts/migrations/alembic.ini revision --autogenerate -m "what changed"`
 against a database that is at the head, read what it wrote, and put its
 number in `SCHEMA_REVISION`. `tests/migrations_test.py` fails while the
-models and the migrations disagree. Try a step on a copy of the database
+models and the migrations disagree. It runs them on sqlite, which lets
+through what PostgreSQL refuses (a column of true and false whose default
+is written `0`: it is `sa.false()`), so a step is tried on PostgreSQL too. Try a step on a copy of the database
 before running it on the real one.
 
 The steps before Alembic are `scripts/history/migrate_legacy.sh`, kept
