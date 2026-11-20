@@ -210,8 +210,9 @@ const PICKER_OPEN_ON_FOCUS = 15;
 
 // A picker on a select: only rows that exist can be picked, the best few
 // matches of what is typed are offered (a name before a note), and a
-// multiple select gives removable chips.
-export function makePicker(select, onChange) {
+// multiple select gives removable chips. shown: how many matches are offered
+// at once (null: all, for a short list where every choice should be seen).
+export function makePicker(select, onChange, shown = 8) {
 	const multiple = select.multiple;
 	// a chosen row of a view (a person, a group, a profession) is a link to it, see dialogLink
 	const view = select.dataset.chips;
@@ -221,7 +222,7 @@ export function makePicker(select, onChange) {
 	const picker = new TomSelect(select, {
 		maxItems: multiple ? null : 1,
 		placeholder: select.dataset.placeholder,
-		maxOptions: 8,
+		maxOptions: shown,
 		// the rows are all in memory: filter on every key, so Enter right after typing picks from what was typed
 		refreshThrottle: 0,
 		create: false,

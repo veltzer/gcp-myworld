@@ -99,7 +99,8 @@ function importerCard(importer) {
 		if (param.error) {
 			card.appendChild(el("p", "warning", param.error));
 		}
-		const picker = makePicker(select);
+		// a short list (a user's playlists): every choice is offered, not the best few
+		const picker = makePicker(select, undefined, null);
 		if (importer.unavailable || param.error) {
 			picker.disable();
 		}
