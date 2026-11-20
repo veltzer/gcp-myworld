@@ -15,7 +15,15 @@ from typing import Any
 
 RESULTS = ("1-0", "0-1", "1/2-1/2", "*")
 WHITE, BLACK = "white", "black"
-COLORS = (WHITE, BLACK)
+# the side the user played; "" where it is not known (a game recorded only by how it ended)
+COLORS = (WHITE, BLACK, "")
+# how a game ended for the user; "" where that is not known
+WON, LOST, DRAWN = "won", "lost", "drawn"
+OUTCOMES = (WON, LOST, DRAWN, "")
+_OUTCOME = {
+    (WHITE, "1-0"): WON, (BLACK, "0-1"): WON, (WHITE, "0-1"): LOST, (BLACK, "1-0"): LOST,
+    (WHITE, "1/2-1/2"): DRAWN, (BLACK, "1/2-1/2"): DRAWN,
+}
 
 # what is not text: control characters (a tab and a line end are), and what a decoder could not read
 _NOT_TEXT = re.compile("[\x00-\x08\x0b-\x1f\x7f�]")
@@ -120,6 +128,21 @@ def parse(text: str) -> Game:
         elif depth == 0 and token not in RESULTS and not _NOT_A_MOVE.fullmatch(token):
             moves.append(Move(_san(token)))
     return Game(text=text, tags=tags, moves=moves, said=_NO_MATERIAL.sub(r"\1te", said))
+
+
+def outcome(color: str, result: str) -> str:
+    """ How a game ended for the user, from the side they played and its result: "" when either is not known. """
+    return _OUTCOME.get((color, result), "")
+
+
+def opponent(color: str, white: str, black: str) -> str:
+    """ Whom the user played: the other side's name ("" when the side the user played is not known). """
+    return black if color == WHITE else white if color == BLACK else ""
+
+
+def name(white: str, black: str, opponent: str) -> str:
+    """ What a game is called: its two sides, or, recorded without them, whom the user played. """
+    return f"{white} vs {black}" if white or black else f"against {opponent}"
 
 
 def _number(value: str) -> int | None:

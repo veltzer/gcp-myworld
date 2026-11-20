@@ -324,7 +324,7 @@ def youtube_video_json(video: YouTubeVideo) -> dict[str, Any]:
 # what the list of games says of each: every column but the game's text, which only one game opened needs
 CHESS_LISTED = (
     ChessGame.id, ChessGame.date_utcz, ChessGame.date_ymd, ChessGame.date_my, ChessGame.date_y, ChessGame.date_timezone,
-    ChessGame.color, ChessGame.white, ChessGame.black, ChessGame.white_elo, ChessGame.black_elo, ChessGame.result,
+    ChessGame.color, ChessGame.white, ChessGame.black, ChessGame.opponent, ChessGame.outcome, ChessGame.white_elo, ChessGame.black_elo, ChessGame.result,
     ChessGame.termination, ChessGame.time_control, ChessGame.eco, ChessGame.opening, ChessGame.event, ChessGame.site,
     ChessGame.link, ChessGame.plies, ChessGame.final_position, ChessGame.remark,
 )
@@ -334,13 +334,16 @@ def chess_game_json(game: Any) -> dict[str, Any]:
     """ A game as the list has it: of a ChessGame, or of a row of CHESS_LISTED (60,000 games are read as rows, not as objects). """
     return {
         "id": game.id,
-        "name": f"{game.white} vs {game.black}",
+        "name": pgn.name(game.white, game.black, game.opponent),
         **date_json(game),
         "date_timezone": game.date_timezone,
-        # the side the user played
+        # the side the user played ("" where it is not known)
         "color": game.color,
         "white": game.white,
         "black": game.black,
+        # whom they played, and how it ended for them ("won", "lost", "drawn"; "" where not known)
+        "opponent": game.opponent,
+        "outcome": game.outcome,
         "white_elo": game.white_elo,
         "black_elo": game.black_elo,
         "result": game.result,
@@ -479,9 +482,13 @@ def api_chess_games() -> flask.Response:
 @bp.route("/api/chess-games/<int:row_id>", methods=["GET"])
 @auth.login_required
 def api_chess_game(row_id: int) -> flask.Response:
-    """ One game, with what only a game opened needs: its text, and its moves to play through (each with the clock after it, where one was written). """
+    """
+    One game, with what only a game opened needs: its text, and its moves to
+    play through (each with the clock after it, where one was written). One
+    recorded without its moves has neither.
+    """
     game = owned(ChessGame, row_id)
-    moves = pgn.parse(game.pgn).moves
+    moves = pgn.parse(game.pgn).moves if game.pgn else []
     return flask.jsonify({
         **chess_game_json(game),
         "pgn": game.pgn,
@@ -862,6 +869,11 @@ def _apply_chess_game(game: ChessGame, body: dict[str, Any]) -> None:
     is read again) or left out. final_position is where the pieces ended,
     worked out by the page, which plays the moves: the server only reads
     them. It is the picture of the user's own card, so it is taken as said.
+    A game recorded without its moves (scripts/import_chess_xml.py) has no
+    text, and may not know the side the user played; its opponent and how it
+    ended stay as recorded. One with its text says both sides, so the user
+    says which they played, and whom they played and how it ended are read
+    out of it.
     """
     written = body.get("pgn")
     if written is not None and not isinstance(written, str):
@@ -885,18 +897,23 @@ def _apply_chess_game(game: ChessGame, body: dict[str, Any]) -> None:
         for column, value in fields.items():
             setattr(game, column, value)
         game.date_timezone = "UTC" if game.date_utcz is not None else ""
-        # where it ended, as the site wrote it; with no move made, where it started
-        game.final_position = read.tags.get("CurrentPosition", "").split(" ")[0] or ("" if read.moves else pgn.START_POSITION)
+        # where it ended, as the site wrote it; with no move there is no position to show
+        game.final_position = read.tags.get("CurrentPosition", "").split(" ")[0] if read.moves else ""
     # else as the page says, which played the moves (it sends it once the game is added)
     position = text(body, "final_position")
     if position:
         game.final_position = position
     if game.final_position and not pgn.POSITION.fullmatch(game.final_position):
         raise ApiError(400, "final_position: expected where the pieces stand, as the first field of a FEN")
-    color = text(body, "color", required=True)
+    color = text(body, "color")
     if color not in pgn.COLORS:
-        raise ApiError(400, "color: white or black, the side you played")
+        raise ApiError(400, "color: white or black, the side you played, or empty where it is not known")
+    if not color and game.pgn:
+        raise ApiError(400, "color: white or black, the side you played (the game's text says both sides)")
     game.color = color
+    if game.pgn:
+        game.opponent = pgn.opponent(game.color, game.white, game.black)
+        game.outcome = pgn.outcome(game.color, game.result)
     game.remark = text(body, "remark")
 
 

@@ -1220,19 +1220,30 @@ class ChessGame(_Dated, Base):
     searched by, read out of it (myworld.pgn). A game is told from every
     other by source_key (its address at the site it was played on, else a
     hash of its players, day and moves), so one imported twice is one.
+
+    A game may be recorded without its moves: only whom the user played and
+    how it ended (scripts/import_chess_xml.py, the games played over the
+    board). Such a game has no pgn, no plies and no final position, and the
+    side the user played may not be known (color ""): then white and black
+    are empty, and opponent and outcome are what it says.
     """
     __tablename__ = "chess_games"
     __table_args__ = (
         UniqueConstraint("owner_id", "source_key", name="uq_chess_game_source"),
-        CheckConstraint("color IN ('white', 'black')", name="ck_chess_game_color"),
+        CheckConstraint("color IN ('white', 'black', '')", name="ck_chess_game_color"),
         CheckConstraint("result IN ('1-0', '0-1', '1/2-1/2', '*')", name="ck_chess_game_result"),
+        CheckConstraint("outcome IN ('won', 'lost', 'drawn', '')", name="ck_chess_game_outcome"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     source_key: Mapped[str] = mapped_column(String(100), nullable=False)
-    # the side the user played
+    # the side the user played; "" where it is not known
     color: Mapped[str] = mapped_column(String(5), nullable=False)
+    # whom the user played, and how it ended for them ("won", "lost", "drawn"; "" where not known):
+    # for a game with both sides, read out of them (myworld.pgn); for one without, as it was recorded
+    opponent: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
+    outcome: Mapped[str] = mapped_column(String(5), nullable=False, default="", server_default="")
     # the players, by the names they went by where it was played, and their ratings then
     white: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     black: Mapped[str] = mapped_column(String(100), nullable=False, default="")
@@ -1290,7 +1301,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0006"
+SCHEMA_REVISION = "0007"
 
 
 def prepare_schema(engine: Engine) -> None:

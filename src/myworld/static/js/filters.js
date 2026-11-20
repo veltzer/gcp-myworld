@@ -4,7 +4,7 @@ import { $ } from "./core.js";
 import { worldList } from "./dialog.js";
 import { state } from "./library.js";
 import { rerender } from "./sorting.js";
-import { TYPED, el, formatDate } from "./worlds.js";
+import { SIDES, TYPED, el, formatDate } from "./worlds.js";
 
 // The filter next to the search, in groups. On a view whose rows have a
 // type (people, organizations) one group picks types; on a library kind
@@ -43,7 +43,7 @@ async function filterSpec(view) {
 		};
 		return {
 			all: "All games",
-			groups: [group("outcome", "Result", (g) => g.outcome), group("color", "Played as", (g) => (g.color === "white" ? "White" : "Black")), group("site", "Site", (g) => g.site)],
+			groups: [group("outcome", "Result", (g) => g.outcome), group("color", "Played as", (g) => SIDES[g.color]), group("site", "Site", (g) => g.site)],
 		};
 	}
 	if (state.config.kinds[view]) {
@@ -73,7 +73,7 @@ function filterValues(group, item) {
 		return [item.outcome];
 	}
 	if (group === "color") {
-		return [item.color === "white" ? "White" : "Black"];
+		return [SIDES[item.color]];
 	}
 	if (group === "site") {
 		return [item.site];

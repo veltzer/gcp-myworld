@@ -153,10 +153,11 @@ By dataset: the key is the page's name in the app (`#book`) and what
 
 - `chess-dates`: every chess game has the date it was played.
 - `chess-players`: every chess game names its two players, and they are
-  not the same name.
-- `chess-positions`: every chess game says where its pieces stood when it
-  ended, as eight ranks of pieces; one added while the page could not
-  play its moves has none.
+  not the same name; one recorded without its sides names the opponent.
+- `chess-positions`: every chess game with moves says where its pieces
+  stood when it ended, as eight ranks of pieces; one added while the page
+  could not play its moves has none. A game with no move (none made, or
+  none recorded) has no position to show and is not asked for one.
 
 ### Groups (`groups`)
 

@@ -13,7 +13,7 @@ from myworld.models import ChessGame
 
 # what a check reads of each game: never its text, there may be 60,000 of them
 READ = (
-    ChessGame.id, ChessGame.owner_id, ChessGame.white, ChessGame.black, ChessGame.final_position,
+    ChessGame.id, ChessGame.owner_id, ChessGame.color, ChessGame.white, ChessGame.black, ChessGame.opponent, ChessGame.plies, ChessGame.final_position,
     ChessGame.date_utcz, ChessGame.date_ymd, ChessGame.date_my, ChessGame.date_y,
 )
 
@@ -24,7 +24,7 @@ def games(session: Session) -> list[Any]:
 
 
 def problem(game: Any, message: str) -> Problem:
-    return Problem(f"{game.white} vs {game.black} (chess game {game.id}, account {game.owner_id})", message, f"chess/{game.id}", game.owner_id)
+    return Problem(f"{pgn.name(game.white, game.black, game.opponent)} (chess game {game.id}, account {game.owner_id})", message, f"chess/{game.id}", game.owner_id)
 
 
 @check("chess-dates", "Every chess game has a date", "chess games", "chess")
@@ -35,15 +35,25 @@ def check_chess_dates(session: Session) -> Result:
     return Result(checked=len(found), problems=[problem(g, "has no date") for g in undated])
 
 
+def players_problem(game: Any) -> str | None:
+    """ What is wrong with who played a game, if anything. """
+    if not (game.white or game.black):
+        # recorded without its sides: whom the user played is all it says
+        return None if game.opponent else "does not name the opponent"
+    if not (game.white and game.black):
+        return "does not name both players"
+    return "has the same player on both sides" if game.white == game.black else None
+
+
 @check("chess-players", "Every chess game names its two players", "chess games", "chess")
 def check_chess_players(session: Session) -> Result:
-    """ Every chess game, of every account, says who played White and who played Black, and they are not the same name. """
+    """
+    Every chess game, of every account, says who played White and who played
+    Black, and they are not the same name. One recorded without its sides
+    (only how it ended) names the opponent.
+    """
     found = games(session)
-    problems = [
-        problem(g, "does not name both players" if not (g.white and g.black) else "has the same player on both sides")
-        for g in found
-        if not (g.white and g.black) or g.white == g.black
-    ]
+    problems = [problem(g, said) for g in found if (said := players_problem(g)) is not None]
     return Result(checked=len(found), problems=problems)
 
 
@@ -53,12 +63,13 @@ def check_chess_positions(session: Session) -> Result:
     Every chess game, of every account, has where its pieces stood when it
     ended, the picture of its card: eight ranks of pieces, as the first
     field of a FEN writes them. One added in the app while the page could
-    not play its moves has none.
+    not play its moves has none. One with no move (none made, or none
+    recorded) has no position to show, and is not asked for one.
     """
     found = games(session)
     problems = [
         problem(g, "has no final position" if not g.final_position else f"has the final position {g.final_position!r}, which is not eight ranks of pieces")
         for g in found
-        if not pgn.POSITION.fullmatch(g.final_position)
+        if g.plies and not pgn.POSITION.fullmatch(g.final_position)
     ]
     return Result(checked=len(found), problems=problems)

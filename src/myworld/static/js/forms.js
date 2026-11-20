@@ -452,7 +452,8 @@ async function offerRegions() {
 // ended: the picture of its card. A game whose site said so already has it.
 const AFTER_SAVE = {
 	chess: async (saved, path) => {
-		if (saved.position) {
+		// (a game with no move has no position to show)
+		if (saved.position || !saved.plies) {
 			return;
 		}
 		const game = await api(`${path}/${saved.id}`);

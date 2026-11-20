@@ -434,14 +434,18 @@ first `companies` tables to `organizations`, then making
   30,000 videos, `static/data/youtube.json.gz`) by `--youtube-history`,
   which can run again.
 - `GET /api/chess-games`: the games of chess played, newest first, each
-  with `name` (its players, "White vs Black"), the date, `color` (the
-  side the user played), `white`, `black`, `white_elo`, `black_elo`,
+  with `name` (its players, "White vs Black", or "against Opponent" for
+  one recorded without its sides), the date, `color` (the side the user
+  played, `""` where it is not known), `white`, `black`, `opponent`,
+  `outcome` (how it ended for the user: `won`, `lost`, `drawn`, or `""`),
+  `white_elo`, `black_elo`,
   `result` (`1-0`, `0-1`, `1/2-1/2`, or `*` for none), `termination` (how
   it ended, in the words of where it was played), `time_control`, `eco`,
   `opening`, `event`, `site`, `link` (its page at the site), `plies` (the
   moves made, counting each side's), `position` (where the pieces stood
   when it ended, the first field of a FEN: the page draws the card's
-  picture from it, seen from the user's side) and `remark`. With
+  picture from it, seen from the user's side; `""` for a game with no
+  move) and `remark`. With
   `?compact=1` the answer is `{columns, rows}`, the names of the fields
   once and each game as its values, which is what the page asks for (60,000
   games are 17 MB so, 3.6 MB on the wire). `GET /api/chess-games/<id>` is
@@ -454,7 +458,16 @@ first `companies` tables to `organizations`, then making
   the page, which does (with `chess.js`), sends `final_position` once a game is
   added, unless its site said where it ended (`CurrentPosition`). An edit
   changes `color` and `remark`, and reads the game again when `pgn` is
-  sent. Files of games are imported by
+  sent; `opponent` and `outcome` are read out of the game's sides. A game
+  may be recorded without its moves: it has no `pgn` (`""`, and no
+  `moves`), may not know `color`, and keeps `opponent` and `outcome` as
+  recorded. Those are the games played over the board, imported by
+  `scripts/import_chess_xml.py --email ADDRESS` from
+  `../data/raw/topics/games/chess/chess.xml` (or the file named): it says
+  of each game only the opponent, how it ended, and sometimes the day and
+  time control. Games alike in all that are told apart by their place in
+  the file (`chess.xml:1` is the first), so it can run again, and games
+  are only ever added at its end. Files of games are imported by
   `scripts/import_chess.py --email ADDRESS`, from
   `../data/raw/topics/games/chess` (`.pgn` and `.pgn.gz`)
   or from the files named: it adds the games the account does not have
@@ -706,7 +719,8 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
     - `concert_visits`, `museum_visits`, `audio_courses`, `youtube_videos`,
   `chess_games`: one row per thing done (see "Concerts, museums, people and
   organizations"). A chess game keeps its text whole (`pgn`), and beside it
-  what is listed and sorted by, read out of that text.
+  what is listed and sorted by, read out of that text; one recorded
+  without its moves has no text, only `opponent` and `outcome`.
     - `places` (where things happened: a concert's `place_id` points to
   one), `cities` (places, museum visits and organizations point to the one
   they are in) and `countries` (a city points to its own), `groups` (named groups of people: a band), `people`,

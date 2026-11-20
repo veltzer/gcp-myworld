@@ -42,19 +42,21 @@ export function slug(view) {
 
 export const worldCache = {};
 
-// how a game ended for the user, from the side they played and its result
-const OUTCOMES = { "1-0": ["Won", "Lost"], "0-1": ["Lost", "Won"], "1/2-1/2": ["Drawn", "Drawn"] };
+// how a game ended for the user, as the server keeps it, in words
+const OUTCOMES = { won: "Won", lost: "Lost", drawn: "Drawn" };
+// the side the user played, in words ("" where it is not known: a game recorded only by how it ended)
+export const SIDES = { white: "White", black: "Black", "": "Not known" };
 
-// A chess game as the page uses it: with its name, the opponent, both ratings by whose they are, and how it ended for the user
+// A chess game as the page uses it: with its name, both ratings by whose they are, and how it ended for the user in words
 export function chessGame(game) {
 	const white = game.color === "white";
+	const known = game.color !== "";
 	return {
 		...game,
-		name: `${game.white} vs ${game.black}`,
-		opponent: white ? game.black : game.white,
-		rating: white ? game.white_elo : game.black_elo,
-		opponent_rating: white ? game.black_elo : game.white_elo,
-		outcome: (OUTCOMES[game.result] || [])[white ? 0 : 1] || "No result",
+		name: game.white || game.black ? `${game.white} vs ${game.black}` : `against ${game.opponent}`,
+		rating: known ? (white ? game.white_elo : game.black_elo) : null,
+		opponent_rating: known ? (white ? game.black_elo : game.white_elo) : null,
+		outcome: OUTCOMES[game.outcome] || "No result",
 	};
 }
 

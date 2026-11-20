@@ -67,23 +67,16 @@ def _youtube_by(column: Any, limit: int | None = None) -> list[dict[str, Any]]:
     return [{"name": name, "count": count} for name, count in rows]
 
 
-# how a game ended for the one who played it, from the side they played and its result
-CHESS_OUTCOMES = {
-    ("white", "1-0"): "Won", ("black", "0-1"): "Won", ("white", "0-1"): "Lost", ("black", "1-0"): "Lost",
-    ("white", "1/2-1/2"): "Drawn", ("black", "1/2-1/2"): "Drawn",
-}
+# how a game ended for the one who played it, as the page says it
+CHESS_OUTCOMES = {"won": "Won", "lost": "Lost", "drawn": "Drawn", "": "No result"}
 
 
 def _chess_by_outcome() -> list[dict[str, Any]]:
     """ The user's games counted by how they ended for them: won, lost, drawn, or with no result. """
-    counts: dict[str, int] = {}
     rows = flask.g.db.execute(
-        select(ChessGame.color, ChessGame.result, func.count()).where(ChessGame.owner_id == flask.g.user.id).group_by(ChessGame.color, ChessGame.result),
+        select(ChessGame.outcome, func.count()).where(ChessGame.owner_id == flask.g.user.id).group_by(ChessGame.outcome),
     ).all()
-    for color, result, count in rows:
-        outcome = CHESS_OUTCOMES.get((color, result), "No result")
-        counts[outcome] = counts.get(outcome, 0) + count
-    return _by_type(counts)
+    return _by_type({CHESS_OUTCOMES[outcome]: count for outcome, count in rows})
 
 
 @bp.route("/api/stats", methods=["GET"])

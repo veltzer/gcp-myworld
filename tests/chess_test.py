@@ -1,6 +1,8 @@
 """
 The chess games: reading PGN (myworld/pgn.py), the page's routes
-(myworld/world.py), the import (scripts/import_chess.py) and the checks.
+(myworld/world.py), the imports (scripts/import_chess.py, and
+scripts/import_chess_xml.py of the games recorded without their moves) and
+the checks.
 """
 
 import datetime
@@ -8,6 +10,7 @@ import gzip
 from pathlib import Path
 
 import import_chess
+import import_chess_xml
 import pytest
 import webtest
 from sqlalchemy import Engine, select
@@ -118,6 +121,8 @@ def test_the_page_of_games(app: webtest.TestApp) -> None:
     sign_in(app)
     added = app.post_json("/api/chess-games", {"pgn": LIVE, "color": "white", "remark": "ouch"}, status=201).json
     assert (added["name"], added["color"], added["result"], added["plies"], added["remark"]) == ("mark_veltzer vs nfloz84", "white", "0-1", 4, "ouch")
+    # whom the user played and how it ended for them, read out of its sides
+    assert (added["opponent"], added["outcome"]) == ("nfloz84", "lost")
     # the moment it was played, and where its site says it ended
     assert (added["date"], added["date_precision"], added["date_timezone"]) == ("2016-06-18T07:26:42Z", "time", "UTC")
     assert added["position"] == FOOLS_MATE
@@ -138,9 +143,15 @@ def test_the_page_of_games(app: webtest.TestApp) -> None:
     edited = app.put_json(f"/api/chess-games/{old['id']}", {"color": "white", "remark": "quick", "final_position": SCHOLARS_MATE}).json
     # an edit without the text keeps the game as it is
     assert (edited["position"], edited["remark"], edited["name"], edited["plies"]) == (SCHOLARS_MATE, "quick", "veltzer vs AreaFiftyOne", 7)
-    # one with no move made ended where it started
+    # played as the other side, it is the other way round
+    turned = app.put_json(f"/api/chess-games/{old['id']}", {"color": "black", "remark": "quick"}).json
+    assert (turned["opponent"], turned["outcome"]) == ("veltzer", "lost")
+    app.put_json(f"/api/chess-games/{old['id']}", {"color": "white", "remark": "quick"})
+    # a game with its text says both sides: which one the user played is known
+    assert "the game's text says both sides" in app.put_json(f"/api/chess-games/{old['id']}", {"color": ""}, status=400).json["error"]
+    # one with no move has no position to show, and no result is no outcome
     unplayed = app.post_json("/api/chess-games", {"pgn": '[White "a"]\n[Black "b"]\n\n*', "color": "black"}, status=201).json
-    assert (unplayed["position"], unplayed["result"], unplayed["date"]) == (pgn.START_POSITION, "*", None)
+    assert (unplayed["position"], unplayed["result"], unplayed["outcome"], unplayed["date"]) == ("", "*", "", None)
     # the list, newest first; compact, it says the fields once and each game as its values
     listed = app.get("/api/chess-games").json
     assert [game["name"] for game in listed] == ["mark_veltzer vs nfloz84", "veltzer vs AreaFiftyOne", "a vs b"]
@@ -182,6 +193,7 @@ def test_the_import(engine: Engine, tmp_path: Path) -> None:
         assert (games["mark_veltzer"].color, games["mark_veltzer"].final_position, games["mark_veltzer"].date_timezone) == ("white", FOOLS_MATE, "UTC")
         assert (games["veltzer"].color, games["veltzer"].final_position, games["veltzer"].date_timezone) == ("white", SCHOLARS_MATE, "")
         assert games["veltzer"].pgn == OLD
+        assert [(g.opponent, g.outcome) for g in (games["mark_veltzer"], games["veltzer"])] == [("nfloz84", "lost"), ("AreaFiftyOne", "won")]
         # run again, nothing is added, and a remark written since stays
         games["veltzer"].remark = "mine"
         again = import_chess.import_chess(session, me, paths, handles)
@@ -224,7 +236,7 @@ def test_what_the_import_refuses(engine: Engine, tmp_path: Path) -> None:
 def test_the_checks(engine: Engine) -> None:
     with Session(engine) as session:
         me = owner(session)
-        good = {"owner_id": me.id, "color": "white", "pgn": OLD, "date_y": 2001, "final_position": SCHOLARS_MATE}
+        good = {"owner_id": me.id, "color": "white", "pgn": OLD, "plies": 7, "date_y": 2001, "final_position": SCHOLARS_MATE}
         session.add_all([
             ChessGame(source_key="1", white="veltzer", black="AreaFiftyOne", **good),
             ChessGame(source_key="2", white="veltzer", black="Undated", **{**good, "date_y": None}),
@@ -232,15 +244,90 @@ def test_the_checks(engine: Engine) -> None:
             ChessGame(source_key="4", white="twin", black="twin", **good),
             ChessGame(source_key="5", white="veltzer", black="Unplayed", **{**good, "final_position": ""}),
             ChessGame(source_key="6", white="veltzer", black="Odd", **{**good, "final_position": "8/8"}),
+            # recorded without its moves or sides: the opponent is all it names, and it has no position to show
+            ChessGame(source_key="7", owner_id=me.id, color="", white="", black="", opponent="Yaron", outcome="won", pgn="", date_y=2001),
+            ChessGame(source_key="8", owner_id=me.id, color="", white="", black="", opponent="", outcome="won", pgn="", date_y=2001),
         ])
         session.commit()
 
         def found(name: str) -> list[tuple[str, str]]:
             result = checks.CHECKS[name].run(session)
-            assert result.checked == 6
+            assert result.checked == 8
             return [(problem.subject.split(" (")[0], problem.message) for problem in result.problems]
 
         assert found("chess-dates") == [("veltzer vs Undated", "has no date")]
-        assert found("chess-players") == [("veltzer vs ", "does not name both players"), ("twin vs twin", "has the same player on both sides")]
+        assert found("chess-players") == [
+            ("veltzer vs ", "does not name both players"), ("twin vs twin", "has the same player on both sides"), ("against ", "does not name the opponent"),
+        ]
         assert found("chess-positions") == [("veltzer vs Unplayed", "has no final position"), ("veltzer vs Odd", "has the final position '8/8', which is not eight ranks of pieces")]
         assert checks.CHECKS["chess-dates"].run(session).problems[0].link == "chess/2"
+
+
+# the games played over the board, as chess.xml records them: no moves, no sides
+CHESS_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE chess PUBLIC "-//META//DTD XML CHESS V1.0//EN" "http://www.veltzer.org/xml/dtd/chess.dtd">
+<!-- notes -->
+<chess>
+	<opponents>
+		<opponent><id>0</id><firstname>Doron</firstname><surname>Veltzer</surname><category>familty</category><description>brother</description></opponent>
+		<opponent><id>1</id><category>pub</category><description>met in Rosh Pinah</description></opponent>
+	</opponents>
+	<games>
+		<game><opponentid>0</opponentid><result>won</result><date>16.6.01</date><length>unknown</length><timecontrol>1:50:1:50</timecontrol></game>
+		<game><opponentid>0</opponentid><result>won</result><date>unknown</date><length>unknown</length><timecontrol>unknown</timecontrol></game>
+		<game><opponentid>0</opponentid><result>won</result><date>unknown</date><length>unknown</length><timecontrol>unknown</timecontrol></game>
+		<game><opponentid>1</opponentid><result>pat</result><date>19.8.99</date><length>unlimited</length><timecontrol>unknown</timecontrol></game>
+		<game><opponentid>1</opponentid><result>tie</result><date>Fri Dec 13 14:56:44 IST 2002</date><length>unknown</length><timecontrol>unknown</timecontrol><remark>on the beach</remark></game>
+		<game><opponentid>0</opponentid><result>lost</result><date>unknown</date><length>unknown</length><timecontrol>unknown</timecontrol></game>
+	</games>
+</chess>
+"""
+
+
+def test_the_games_recorded_without_their_moves(engine: Engine, tmp_path: Path, app: webtest.TestApp) -> None:
+    path = tmp_path / "chess.xml"
+    path.write_text(CHESS_XML, encoding="UTF8")
+    with Session(engine) as session:
+        me = owner(session)
+        counts = import_chess_xml.import_chess_xml(session, me, path)
+        # games alike in all the file says are each a game: they are told apart by their place in it
+        assert counts == {"games read": 6, "added": 6, "already there": 0, "dated only by their year": 0, "with no date": 3}
+        games = session.scalars(select(ChessGame).order_by(ChessGame.id)).all()
+        assert [(g.source_key, g.opponent, g.outcome, g.color, g.result, g.plies, g.final_position, g.pgn) for g in games[:2]] == [
+            ("chess.xml:1", "Doron Veltzer", "won", "", "*", 0, "", ""), ("chess.xml:2", "Doron Veltzer", "won", "", "*", 0, "", ""),
+        ]
+        # the day, as either way the file writes it; the time control, else how long it was; a stalemate is a draw
+        assert [(g.date_ymd, g.time_control, g.termination, g.remark) for g in games[3:5]] == [
+            (datetime.date(1999, 8, 19), "unlimited", "stalemate", ""), (datetime.date(2002, 12, 13), "", "", "on the beach"),
+        ]
+        assert (games[0].date_ymd, games[0].time_control, games[3].opponent, games[4].outcome) == (datetime.date(2001, 6, 16), "1:50:1:50", "met in Rosh Pinah", "drawn")
+        # run again, nothing is added; a game added to the file's end is
+        assert import_chess_xml.import_chess_xml(session, me, path)["added"] == 0
+        path.write_text(CHESS_XML.replace("\t</games>", "\t\t<game><opponentid>1</opponentid><result>won</result><date>unknown</date><length>unknown</length><timecontrol>unknown</timecontrol></game>\n\t</games>"), encoding="UTF8")
+        assert import_chess_xml.import_chess_xml(session, me, path) == {"games read": 7, "added": 1, "already there": 6, "dated only by their year": 0, "with no date": 1}
+        session.commit()
+        # a day no calendar has: the year is sure, and the day is kept as the file wrote it
+        path.write_text(CHESS_XML.replace("<date>16.6.01</date>", "<date>31.11.01</date>"), encoding="UTF8")
+        first = import_chess_xml.games(path)[0]
+        assert (first["date_ymd"], first["date_y"], first["remark"]) == (None, 2001, "dated 31.11.01 in chess.xml, a day its month does not have")
+        # what the import refuses: an opponent it does not have, a result it does not know, a date it cannot read
+        for wrong, replaced, error in (
+            ("<opponentid>0</opponentid><result>lost", "<opponentid>9</opponentid><result>lost", "no opponent"),
+            ("<result>lost</result>", "<result>resigned</result>", "is none of"),
+            ("<date>16.6.01</date>", "<date>June 2001</date>", "written in no way"),
+        ):
+            path.write_text(CHESS_XML.replace(wrong, replaced), encoding="UTF8")
+            with pytest.raises(import_chess_xml.ChessXmlError, match=error):
+                import_chess_xml.games(path)
+    # the page: such a game is named by whom the user played, has no text and no moves, and counts by how it ended
+    sign_in(app, sub="me")
+    listed = app.get("/api/chess-games").json
+    assert len(listed) == 7
+    first = next(g for g in listed if g["date"] == "2001-06-16")
+    assert (first["name"], first["color"], first["outcome"], first["position"]) == ("against Doron Veltzer", "", "won", "")
+    one = app.get(f"/api/chess-games/{first['id']}").json
+    assert (one["pgn"], one["moves"], one["clocks"]) == ("", [], [])
+    # edited, its side may stay not known, and how it ended stays as it was recorded
+    edited = app.put_json(f"/api/chess-games/{first['id']}", {"color": "", "remark": "at home"}).json
+    assert (edited["color"], edited["outcome"], edited["opponent"], edited["remark"]) == ("", "won", "Doron Veltzer", "at home")
+    assert app.get("/api/stats").json["chess_by_outcome"] == [{"name": "Won", "count": 4}, {"name": "Drawn", "count": 2}, {"name": "Lost", "count": 1}]

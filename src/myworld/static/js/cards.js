@@ -8,7 +8,7 @@ import { placeButton } from "./map.js";
 import { localeName } from "./names.js";
 import { showRow } from "./views.js";
 import { visitText } from "./visits.js";
-import { detail, el, formatDate, linksDetail, slug, websiteDetail } from "./worlds.js";
+import { SIDES, detail, el, formatDate, linksDetail, slug, websiteDetail } from "./worlds.js";
 
 // what the picture of the rows of the view shown is called ("photo", "logo", "flag": its dialog's
 // picture box says), "" for rows that never have one
@@ -263,9 +263,10 @@ function youtubeCard(item) {
 }
 
 function chessCard(item) {
-	// its picture is where the pieces ended, seen from the side the user played
-	const shown = { ...item, image: item.position ? boardImage(item.position, item.color === "black") : null };
-	const { card, list } = cardShell(shown, `${item.outcome} as ${item.color === "white" ? "White" : "Black"} against ${item.opponent}`, "logo");
+	// its picture is where the pieces ended, seen from the side the user played; one with no move has none
+	const shown = { ...item, image: item.plies && item.position ? boardImage(item.position, item.color === "black") : null };
+	const side = item.color ? ` as ${SIDES[item.color]}` : "";
+	const { card, list } = cardShell(shown, `${item.outcome}${side} against ${item.opponent}`, "logo");
 	card.classList.add("is-board");
 	editable(card, item);
 	detail(list, "Played", formatDate(item));
@@ -275,7 +276,7 @@ function chessCard(item) {
 	if (item.rating !== null || item.opponent_rating !== null) {
 		detail(list, "Ratings", `${rated(item.rating)} (me), ${rated(item.opponent_rating)} (${item.opponent})`);
 	}
-	detail(list, "Moves", item.plies ? String(Math.ceil(item.plies / 2)) : "None");
+	detail(list, "Moves", item.plies ? String(Math.ceil(item.plies / 2)) : "Not recorded");
 	detail(list, "Time control", item.time_control);
 	detail(list, "Opening", [item.eco, item.opening].filter(Boolean).join(" "));
 	detail(list, "Event", item.event);

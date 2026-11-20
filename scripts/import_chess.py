@@ -117,7 +117,10 @@ def import_chess(session: Session, owner: User, paths: list[Path], handles: froz
             if said and whole and said != position:
                 raise ChessImportError(f"{who}: the moves end at {position}, not at the {said} it says")
             rows.append({
-                **fields, "owner_id": owner.id, "color": color, "final_position": position, "remark": "",
+                **fields, "owner_id": owner.id, "color": color, "remark": "",
+                "opponent": pgn.opponent(color, fields["white"], fields["black"]), "outcome": pgn.outcome(color, fields["result"]),
+                # with no move there is no position to show
+                "final_position": position if game.moves else "",
                 "date_timezone": "UTC" if fields["date_utcz"] is not None else "",
             })
             counts["added"] += 1

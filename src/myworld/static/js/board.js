@@ -84,7 +84,7 @@ function showMove(at) {
 	const side = shown % 2 === 1 ? "White" : "Black";
 	const clock = clocks[shown - 1] ? `, ${clocks[shown - 1].replace(/^0:/, "")} left on the clock` : "";
 	$("chess-board").alt = shown === 0 ? "The board before the first move" : `The board after ${side}'s move ${number}, ${moves[shown - 1]}`;
-	let status = moves.length === 0 ? "No move was made." : shown === 0 ? `Before the first move of ${Math.ceil(moves.length / 2)}.` : `Move ${number} of ${Math.ceil(moves.length / 2)}: ${side} played ${moves[shown - 1]}${clock}.`;
+	let status = moves.length === 0 ? "The moves of this game were not recorded." : shown === 0 ? `Before the first move of ${Math.ceil(moves.length / 2)}.` : `Move ${number} of ${Math.ceil(moves.length / 2)}: ${side} played ${moves[shown - 1]}${clock}.`;
 	if (positions.length - 1 < moves.length && shown === positions.length - 1) {
 		status += ` The next move as written, ${moves[shown]}, cannot be played: the game is shown up to here.`;
 	}
@@ -129,7 +129,7 @@ export function prepareBoard(game) {
 		list.appendChild(button);
 	});
 	if (viewer.moves.length === 0) {
-		list.appendChild(el("span", "empty", game ? "No moves" : "The moves show here once the game is added"));
+		list.appendChild(el("span", "empty", game ? "No moves recorded" : "The moves show here once the game is added"));
 	}
 	showMove(positions.length - 1);
 	if (!game) {
