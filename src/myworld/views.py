@@ -62,6 +62,12 @@ def verify() -> werkzeug.Response:
     return flask.send_from_directory(HTML_DIR, "verify.html")
 
 
+@bp.route("/privacy", methods=["GET"])
+def privacy() -> werkzeug.Response:
+    """ The privacy policy: what is kept and what is done with it (the OAuth consent screen links to it). """
+    return flask.send_from_directory(HTML_DIR, "privacy.html")
+
+
 @bp.route("/app/version", methods=["GET"])
 def version() -> flask.Response:
     info = dict(flask.current_app.config["build_info"])

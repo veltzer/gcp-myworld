@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Privacy · My World</title>
+		<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+		<link rel="stylesheet" href="/static/style.css">
+		<script type="module" src="/static/app.js"></script>
+	</head>
+	<body data-page="privacy" class="landing">
+		<div class="landing-grid">
+			<aside class="scene">
+				<img class="scene-art" src="/static/scene.svg" alt="">
+				<div class="scene-copy">
+					<p class="scene-kicker">Books · Concerts · Museums · Courses · YouTube</p>
+					<h2>Everything you read, watch, hear and play, in one place.</h2>
+				</div>
+			</aside>
+			<main class="panel">
+				<div class="card privacy">
+					<a class="brand brand-lg" href="/">
+						<img class="brand-mark" src="/static/favicon.svg" alt="">
+						My World
+					</a>
+					<h1>Privacy</h1>
+					<p class="lede">What My World keeps about you, and what it does with it.</p>
+
+					<h2>What is kept</h2>
+					<p>
+						Your account: your email address, your name and picture as the way you sign in gives
+						them (Google or GitHub), and how you sign in. Your data: what you add to My World or
+						import into it (books, concerts, museums, courses, YouTube videos, games, people,
+						places and the rest). It is kept in a database on Google Cloud and is yours: no other
+						account can see it.
+					</p>
+
+					<h2>YouTube</h2>
+					<p>
+						If you connect your YouTube account on the Imports page, My World asks Google for
+						read-only access to it (the <code>youtube.readonly</code> scope) and keeps the token
+						Google gives, encrypted. It is used only when you run an importer, to read the
+						playlists you choose and the details of their videos (title, channel, category,
+						length, upload day, views), which are added to your own YouTube videos in My World.
+						Nothing is ever written to your YouTube account. Disconnecting on the Imports page
+						revokes the token at Google and deletes it; so does revoking My World's access in your
+						Google account's settings.
+					</p>
+					<p>
+						My World's use of information received from Google APIs adheres to the
+						<a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
+						including the Limited Use requirements.
+					</p>
+
+					<h2>What is not done with it</h2>
+					<p>
+						Nothing you keep in My World is sold, shared with anyone, used for advertising, or used
+						to train any model. It is used only to show it back to you.
+					</p>
+
+					<h2>Deleting it</h2>
+					<p>
+						You can delete anything you added from within the app. To have your whole account and
+						everything in it deleted, write to the address below.
+					</p>
+
+					<h2>Contact</h2>
+					<p>Mark Veltzer &lt;<a href="mailto:mark.veltzer@gmail.com">mark.veltzer@gmail.com</a>&gt;</p>
+				</div>
+				<footer class="footer">
+					<p>&copy; <span class="copyright-year">2026</span> Mark Veltzer &middot; <a href="https://veltzer.org">veltzer.org</a></p>
+					<p class="inscription">My World is a system written by Mark Veltzer &lt;<a href="mailto:mark.veltzer@gmail.com">mark.veltzer@gmail.com</a>&gt;</p>
+					<p class="inscription" id="build"></p>
+				</footer>
+			</main>
+		</div>
+	</body>
+</html>

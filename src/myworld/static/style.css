@@ -366,6 +366,16 @@ button.with-icon .login-icon,
 	color: var(--muted);
 }
 
+/* the privacy page: a longer text than the sign-in card holds */
+.card.privacy {
+	max-width: 640px;
+}
+
+.card.privacy h2 {
+	margin: 1.25rem 0 0.25rem;
+	font-size: 1.1rem;
+}
+
 /* the three ways in, one tile each: Google, GitHub, Email */
 .methods {
 	display: grid;

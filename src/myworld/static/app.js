@@ -9,5 +9,8 @@ document.addEventListener("DOMContentLoaded", () => {
 	showBuild();
 	const page = document.body.dataset.page;
 	const run = { index: indexPage, verify: verifyPage, library: libraryPage }[page];
-	run().catch((e) => showError(e.message));
+	// a page with nothing to run (the privacy page) only has its footer filled
+	if (run) {
+		run().catch((e) => showError(e.message));
+	}
 });

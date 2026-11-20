@@ -69,10 +69,13 @@ not set up and the importer stays, disabled.
 1. In the Cloud Console of the project: enable the YouTube Data API v3
    (`APIs & Services -> Library`).
 2. On the OAuth consent screen (`Google Auth Platform -> Data access`) add
-   the scope `https://www.googleapis.com/auth/youtube.readonly`. Keep the
-   app's publishing status "In production": in "Testing" Google lets a
-   refresh token live seven days only. Until Google verifies the app,
-   Google's consent screen warns that the app is unverified.
+   the scope `https://www.googleapis.com/auth/youtube.readonly`. Under
+   `Branding` give the home page `https://myworld.stream`, the privacy
+   policy `https://myworld.stream/privacy` (`html/privacy.html`, linked
+   from the landing page's footer) and the authorized domains, then publish
+   the app (`Audience`): in "Testing" Google lets a refresh token live
+   seven days only. Until Google verifies the app, Google's consent screen
+   warns that the app is unverified, and at most 100 users may connect.
 3. On the web client (`Google Auth Platform -> Clients`) add the authorized
    redirect URIs `https://myworld.stream/youtube/callback` and
    `http://localhost:8080/youtube/callback`. Connecting on the alias host

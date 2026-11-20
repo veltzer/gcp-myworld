@@ -374,3 +374,11 @@ def test_every_importer_adds_to_a_page_there_is() -> None:
     for importer in importers.IMPORTERS.values():
         assert importer.dataset in DATASETS, importer.name
         assert importer.title and importer.description
+
+
+def test_the_privacy_page_says_what_youtube_access_is_for(app: webtest.TestApp) -> None:
+    """ The OAuth consent screen links to it: it is open to anyone, signed in or not, and the landing page links to it. """
+    page = app.get("/privacy")
+    assert page.status_int == 200
+    assert "youtube.readonly" in page.text and "Limited Use" in page.text
+    assert 'href="/privacy"' in app.get("/").text
