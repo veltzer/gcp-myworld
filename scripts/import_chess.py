@@ -3,9 +3,12 @@
 """
 Add the chess games of PGN files to the database, for one user.
 
-  scripts/import_chess.py --email me@example.com            the files of ../data/raw/topics/games/chess
-  scripts/import_chess.py --email me@example.com FILE ...   these files (.pgn, or .pgn.gz)
-  scripts/import_chess.py --email me@example.com --dry-run  do it all and say what was done, then roll it back
+  scripts/import_chess.py --email me@example.com FILE ...           these files (.pgn, or .pgn.gz)
+  scripts/import_chess.py --email me@example.com --source DIR       the .pgn and .pgn.gz files of this directory
+  scripts/import_chess.py --email me@example.com --dry-run FILE ... do it all and say what was done, then roll it back
+
+The files the games were first imported from, kept in the data repository,
+were removed from it once imported (its git history has them).
 
 Only the games the account does not have yet are added, so it is safe to
 run again, on the same files or on newer ones: a game is told from every
@@ -40,8 +43,6 @@ from sqlalchemy.orm import Session
 from myworld import pgn
 from myworld.models import ChessGame, User, make_engine
 
-# where the files are kept, next to this repository
-SOURCE = Path(__file__).resolve().parent.parent.parent / "data" / "raw" / "topics" / "games" / "chess"
 # the names the owner of these files went by: on the chess servers, at Chess.com, and on two machines against GNU Chess
 HANDLES = ("veltzer", "mark_veltzer", "Administrator", "mark")
 # rows sent to the database at a time (a statement holds 65,535 values at most, and a row is some 26)
@@ -134,11 +135,13 @@ def import_chess(session: Session, owner: User, paths: list[Path], handles: froz
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[1] if __doc__ else None)
     parser.add_argument("--email", required=True, help="email of the account that will own the games")
-    parser.add_argument("--source", type=Path, default=SOURCE, help="the directory whose .pgn and .pgn.gz files are read, when no file is named")
+    parser.add_argument("--source", type=Path, help="the directory whose .pgn and .pgn.gz files are read, when no file is named")
     parser.add_argument("--handle", action="append", help=f"a name the user played under, exactly as written; may be given several times (default: {', '.join(HANDLES)})")
     parser.add_argument("--dry-run", action="store_true", help="do it all and print what was done, then roll it back")
     parser.add_argument("files", nargs="*", type=Path, help="PGN files to read, instead of those of --source")
     args = parser.parse_args()
+    if not args.files and args.source is None:
+        parser.error("name the files to read, or the directory of them with --source")
     engine = make_engine()
     with Session(engine) as session:
         try:

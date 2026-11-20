@@ -4,9 +4,11 @@
 Add the chess games of chess.xml, the record of the games played over the
 board, to the database, for one user.
 
-  scripts/import_chess_xml.py --email me@example.com            ../data/raw/topics/games/chess/chess.xml
-  scripts/import_chess_xml.py --email me@example.com FILE       this file
-  scripts/import_chess_xml.py --email me@example.com --dry-run  do it all and say what was done, then roll it back
+  scripts/import_chess_xml.py --email me@example.com FILE            add the games of this file
+  scripts/import_chess_xml.py --email me@example.com --dry-run FILE  do it all and say what was done, then roll it back
+
+chess.xml, kept in the data repository, was imported and then removed from
+it (its git history has it): this is for a file of the same form.
 
 The file says of each game whom the user played (one of its opponents) and
 how it ended for them (won, lost, tie, pat), and sometimes the day, the
@@ -44,7 +46,6 @@ from sqlalchemy.orm import Session
 from myworld import pgn
 from myworld.models import ChessGame, User, make_engine
 
-SOURCE = Path(__file__).resolve().parent.parent.parent / "data" / "raw" / "topics" / "games" / "chess" / "chess.xml"
 # how a game ended for the user, in the file's words: a pat is a stalemate, which is a draw
 OUTCOMES = {"won": pgn.WON, "lost": pgn.LOST, "tie": pgn.DRAWN, "pat": pgn.DRAWN}
 UNKNOWN = "unknown"
@@ -146,7 +147,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[1] if __doc__ else None)
     parser.add_argument("--email", required=True, help="email of the account that will own the games")
     parser.add_argument("--dry-run", action="store_true", help="do it all and print what was done, then roll it back")
-    parser.add_argument("file", nargs="?", type=Path, default=SOURCE, help=f"the file to read (default: {SOURCE})")
+    parser.add_argument("file", type=Path, help="the file to read")
     args = parser.parse_args()
     engine = make_engine()
     with Session(engine) as session:

@@ -462,15 +462,14 @@ first `companies` tables to `organizations`, then making
   may be recorded without its moves: it has no `pgn` (`""`, and no
   `moves`), may not know `color`, and keeps `opponent` and `outcome` as
   recorded. Those are the games played over the board, imported by
-  `scripts/import_chess_xml.py --email ADDRESS` from
-  `../data/raw/topics/games/chess/chess.xml` (or the file named): it says
-  of each game only the opponent, how it ended, and sometimes the day and
-  time control. Games alike in all that are told apart by their place in
+  `scripts/import_chess_xml.py --email ADDRESS FILE` from `chess.xml`
+  (removed from the data repository once imported; its git history has
+  it): it says of each game only the opponent, how it ended, and
+  sometimes the day and time control. Games alike in all that are told apart by their place in
   the file (`chess.xml:1` is the first), so it can run again, and games
   are only ever added at its end. Files of games are imported by
-  `scripts/import_chess.py --email ADDRESS`, from
-  `../data/raw/topics/games/chess` (`.pgn` and `.pgn.gz`)
-  or from the files named: it adds the games the account does not have
+  `scripts/import_chess.py --email ADDRESS`, from the files named
+  (`.pgn` and `.pgn.gz`) or those of the directory `--source` names: it adds the games the account does not have
   yet, so it can run again, on newer files too. A game is told from every
   other by its address at Chess.com, else by its players, day and moves.
   The user is whoever is called by one of `--handle`, written exactly; a
