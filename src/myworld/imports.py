@@ -20,11 +20,19 @@ bp = flask.Blueprint("imports", __name__)
 RUNS_SHOWN = 20
 
 
-def _param_json(param: importers.Param, unavailable: str) -> dict[str, Any]:
+def _last_params(importer: importers.Importer) -> dict[str, Any]:
+    """ The parameters of the user's last run of importer (dry or not): what the page starts from. """
+    last = flask.g.db.scalars(
+        select(ImportRun).where(ImportRun.owner_id == flask.g.user.id, ImportRun.importer == importer.name).order_by(ImportRun.id.desc()).limit(1)
+    ).first()
+    return last.params if last is not None and isinstance(last.params, dict) else {}
+
+
+def _param_json(param: importers.Param, unavailable: str, last: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {
         "name": param.name, "title": param.title, "kind": param.kind,
         "description": param.description, "required": param.required,
-        "choices": [], "error": "",
+        "choices": [], "chosen": [], "error": "",
     }
     # the choices are asked of the source only when the importer can run
     if param.choices is not None and not unavailable:
@@ -32,6 +40,11 @@ def _param_json(param: importers.Param, unavailable: str) -> dict[str, Any]:
             out["choices"] = [{"value": value, "label": label} for value, label in param.choices(flask.g.db, flask.g.user)]
         except importers.ImporterError as e:
             out["error"] = str(e)
+    # what was chosen the last time, of what may be chosen now (a playlist deleted since is not)
+    values = {choice["value"] for choice in out["choices"]}
+    remembered = last.get(param.name)
+    if isinstance(remembered, list):
+        out["chosen"] = [value for value in remembered if value in values]
     return out
 
 
@@ -48,7 +61,7 @@ def api_importers() -> flask.Response:
             "dataset": importer.dataset,
             "dataset_name": DATASETS[importer.dataset],
             "unavailable": unavailable,
-            "params": [_param_json(param, unavailable) for param in importer.params],
+            "params": [_param_json(param, unavailable, _last_params(importer)) for param in importer.params],
         })
     return flask.jsonify({"importers": out, "youtube": youtube.status_json(flask.g.db, flask.g.user)})
 

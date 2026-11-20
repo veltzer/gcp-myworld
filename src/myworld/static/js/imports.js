@@ -80,7 +80,7 @@ function importerCard(importer) {
 	const card = el("section", "importer");
 	const heading = el("h2", "schema-heading", importer.title);
 	heading.appendChild(el("span", "importer-dataset", ` into ${importer.dataset_name}`));
-	card.append(heading, el("p", "checks-intro", importer.description));
+	card.append(heading, el("p", "checks-intro", `${importer.description} Pick as many as you like; the ones of your last run are picked to start with.`));
 	const fields = [];
 	for (const param of importer.params) {
 		const row = el("label", "importer-param");
@@ -101,6 +101,8 @@ function importerCard(importer) {
 		}
 		// a short list (a user's playlists): every choice is offered, not the best few
 		const picker = makePicker(select, undefined, null);
+		// it starts from what was chosen the last time it was run
+		picker.setValue(param.chosen, true);
 		if (importer.unavailable || param.error) {
 			picker.disable();
 		}

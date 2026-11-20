@@ -31,8 +31,9 @@ said.
 
 `youtube-playlists` adds the videos of playlists of the user's own YouTube
 account to their YouTube videos, as videos they watched. Its parameter is
-the playlists, picked from the account's own (their liked videos first,
-then every playlist by title). A video they do not have is added with what
+the playlists, any number of them, picked from the account's own (their
+liked videos first, then every playlist by title); the page starts with
+those of the user's last run picked, but for any deleted on YouTube since. A video they do not have is added with what
 YouTube says of it; one they have gets YouTube's details as they are now. A
 video YouTube no longer has (deleted, private) is added with its id only,
 marked unavailable; one the user has keeps what was known of it and is
@@ -99,7 +100,8 @@ GOOGLE_CLIENT_ID=<gcp_oauth_client_id> GOOGLE_CLIENT_SECRET="$(pass show keys/go
 - `GET /api/importers`: the importers, each with its parameters and, for a
   parameter of choices, what may be chosen (asked of the source only when
   the importer can run; `error` says why they could not be read), and
-  `unavailable`, why the user cannot run it now ("Connect YouTube first"),
+  `chosen`, what the user's last run of it chose of those (the page starts
+  with them), and `unavailable`, why the user cannot run it now ("Connect YouTube first"),
   `""` when they can; and `youtube`, the state of the connection.
 - `POST /api/importers/<name>/runs` with
   `{"params": {...}, "dry_run": false}`: runs it and answers the run (`status` `done` or `failed`,

@@ -382,3 +382,27 @@ def test_the_privacy_page_says_what_youtube_access_is_for(app: webtest.TestApp) 
     assert page.status_int == 200
     assert "youtube.readonly" in page.text and "Limited Use" in page.text
     assert 'href="/privacy"' in app.get("/").text
+
+
+def test_the_playlists_of_the_last_run_are_picked_to_start_with(app: webtest.TestApp, fake: FakeYouTube) -> None:
+    sign_in(app)
+    connect(app)
+
+    def chosen() -> list[str]:
+        return app.get("/api/importers").json["importers"][0]["params"][0]["chosen"]
+
+    assert chosen() == []
+    # any number of them, dry run or not, in the order picked
+    run(app, ["PLtalks", "LLalice", "PLmusic"], dry_run=True)
+    assert chosen() == ["PLtalks", "LLalice", "PLmusic"]
+    run(app, ["PLmusic", "PLtalks"])
+    assert chosen() == ["PLmusic", "PLtalks"]
+    # a run refused for its parameters is no run, and changes nothing
+    run(app, ["PLsomeone"], status=400)
+    assert chosen() == ["PLmusic", "PLtalks"]
+    # one deleted on YouTube since is no longer picked
+    del fake.playlists["PLmusic"]
+    assert chosen() == ["PLtalks"]
+    # each user's own
+    sign_in(app, "bob")
+    assert chosen() == []
