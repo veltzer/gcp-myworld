@@ -2,7 +2,7 @@
 
 Taken from the Claude doc "My World — Feature Ideas" on 2026-11-20
 (<https://claude.ai/artifact/BQW4TvZ4iN5n6MsyoXXr9v>). Suggestions only,
-like `ides_datamodel.md`. Where part of an idea is already built, a
+like `ideas_datamodel.md`. Where part of an idea is already built, a
 **Today:** line says what exists, so the idea is only what is left.
 
 ## More categories
