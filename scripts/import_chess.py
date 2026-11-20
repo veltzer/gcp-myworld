@@ -44,7 +44,7 @@ from myworld.models import ChessGame, User, make_engine
 SOURCE = Path(__file__).resolve().parent.parent.parent / "data" / "raw" / "topics" / "games" / "chess"
 # the names the owner of these files went by: on the chess servers, at Chess.com, and on two machines against GNU Chess
 HANDLES = ("veltzer", "mark_veltzer", "Administrator", "mark")
-# rows sent to the database at a time
+# rows sent to the database at a time (a statement holds 65,535 values at most, and a row is some 26)
 BATCH = 500
 
 
@@ -121,8 +121,9 @@ def import_chess(session: Session, owner: User, paths: list[Path], handles: froz
                 "date_timezone": "UTC" if fields["date_utcz"] is not None else "",
             })
             counts["added"] += 1
+    # each batch one statement of many rows: a row a statement is a trip to the database each, an hour of them
     for start in range(0, len(rows), BATCH):
-        session.execute(insert(ChessGame), rows[start:start + BATCH])
+        session.execute(insert(ChessGame).values(rows[start:start + BATCH]))
     session.flush()
     return counts
 
