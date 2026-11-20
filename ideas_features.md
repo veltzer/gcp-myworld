@@ -67,8 +67,9 @@ Importers for these sources:
 - YouTube playlists
 - Google Photos (images)
 
-**Today:** `scripts/import_chess.py` imports PGN files and can run again
-safely; `scripts/import_world.py` imports the world JSON, including a
+**Today:** `scripts/import_chess.py` imports PGN files and
+`scripts/import_chess_xml.py` the over-the-board games of `chess.xml`
+(no moves), both safe to run again; `scripts/import_world.py` imports the world JSON, including a
 YouTube history snapshot.
 
 ## Bookmarks
