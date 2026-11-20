@@ -99,7 +99,7 @@ def fixture_world(engine: Engine) -> Any:
         paris = City(owner_id=alice.id, name="Paris", country=france)
         nowhere = City(owner_id=alice.id, name="Nowhere")
         louvre = Museum(owner_id=alice.id, name="Louvre", city=paris, visits=[MuseumVisit()])
-        book = Work(kind="book", title="Dune", creator="Frank Herbert")
+        book = Work(owner_id=alice.id, kind="book", title="Dune", creator="Frank Herbert")
         session.add_all([
             france, paris, nowhere, louvre, book,
             Place(owner_id=alice.id, name="Olympia", city=paris), Place(owner_id=alice.id, name="A field"),
@@ -110,7 +110,7 @@ def fixture_world(engine: Engine) -> Any:
             Device(owner_id=alice.id, name="Phone"), PersonType(owner_id=alice.id, name="Pianist"),
         ])
         session.flush()
-        session.add(UserWork(user_id=alice.id, work_id=book.id, reads=[Read()]))
+        session.add(UserWork(owner_id=alice.id, work_id=book.id, reads=[Read()]))
         session.commit()
         yield session
 

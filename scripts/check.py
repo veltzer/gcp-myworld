@@ -71,7 +71,7 @@ def main() -> int:
             if not users:
                 print(f"check: no account for {args.email}", file=sys.stderr)
                 return 2
-            disabled = set(session.scalars(select(DisabledCheck.check_name).where(DisabledCheck.user_id.in_([u.id for u in users]))))
+            disabled = set(session.scalars(select(DisabledCheck.check_name).where(DisabledCheck.owner_id.in_([u.id for u in users]))))
         for name in args.names or CHECKS:
             chosen = CHECKS[name]
             if name in disabled:

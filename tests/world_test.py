@@ -880,7 +880,7 @@ def test_names_in_languages(imported: webtest.TestApp) -> None:
     assert plain["creator"] == ""
     filled = imported.put_json(f"/api/library-entries/{plain['work_id']}", {"authors": [bob["id"]]}).json
     assert filled["creator"] == "Haim Shapira"
-    # titles are only added (the work is shared), never twice: the ones it has may be sent again
+    # titles are only added, never twice: the ones it has may be sent again
     sent = [{"locale": "en", "title": "Thinking About Thinking"}, {"locale": "he", "title": "לחשוב על חשיבה"}, {"locale": "fr", "title": "Penser"}]
     again = imported.put_json(f"/api/library-entries/{book['work_id']}", {"locale": "en", "titles": sent}).json
     assert (again["title"], [a["name"] for a in again["authors"]]) == ("Thinking About Thinking", ["Haim Shapira"])
@@ -893,7 +893,7 @@ def test_names_in_languages(imported: webtest.TestApp) -> None:
 
 
 def test_book_year_and_ids(imported: webtest.TestApp) -> None:
-    # the year it came out is filled in or put right on the shared work; the ISBN and the Open Library work are only filled in
+    # the year it came out is filled in or put right on the work; the ISBN and the Open Library work are only filled in
     book = imported.post_json("/api/library-entries", {"kind": "book", "title": "The Republic", "isbn": "9780140455113", "openlibrary_id": "OL123W"}).json
     assert (book["year"], book["isbn"], book["openlibrary_id"]) == (None, "9780140455113", "OL123W")
     dated = imported.put_json(f"/api/library-entries/{book['work_id']}", {"year": -375}).json
@@ -911,7 +911,7 @@ def test_book_year_and_ids(imported: webtest.TestApp) -> None:
 
 
 def test_book_original_language(imported: webtest.TestApp) -> None:
-    # the language a book was first written in is on the shared work: not known at first, set when sent, never emptied
+    # the language a book was first written in is on the work: not known at first, set when sent, never emptied
     book = imported.post_json("/api/library-entries", {"kind": "book", "title": "The Joke"}).json
     assert book["original_locale"] == ""
     url = f"/api/library-entries/{book['work_id']}"

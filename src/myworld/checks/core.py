@@ -172,7 +172,7 @@ def problem(row: Any, message: str) -> Problem:
         return Problem(f"{museum.name} (museum visit {row.id}, account {museum.owner_id})", message, f"museums/{museum.id}", museum.owner_id)
     if isinstance(row, UserWork):
         kind = row.work.kind
-        return Problem(f"{row.work.title} ({KINDS[kind][0].lower()} {row.work_id}, account {row.user_id})", message, f"{kind}/{row.work_id}", row.user_id)
+        return Problem(f"{row.work.title} ({KINDS[kind][0].lower()} {row.work_id}, account {row.owner_id})", message, f"{kind}/{row.work_id}", row.owner_id)
     noun, view = SUBJECTS[type(row)]
     name = row.name
     # a place is told with its city and a city with its country: two may share a name
@@ -220,5 +220,5 @@ def ids(session: Session, *columns: Any) -> set[int]:
 
 def entries_of(session: Session, kind: str) -> list[UserWork]:
     """ Every account's library entries of a kind, with their works. """
-    query = select(UserWork).join(Work).where(Work.kind == kind).order_by(UserWork.user_id, Work.title, Work.id)
+    query = select(UserWork).join(Work).where(Work.kind == kind).order_by(UserWork.owner_id, Work.title, Work.id)
     return list(session.scalars(query))

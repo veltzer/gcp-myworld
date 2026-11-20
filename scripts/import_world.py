@@ -484,7 +484,7 @@ def existing_rows(session: Session, owner: User) -> dict[str, int]:
         for model in REPLACED_MODELS
     }
     counts["books"] = session.scalar(select(func.count()).select_from(UserWork).where(
-        UserWork.user_id == owner.id, UserWork.work_id.in_(select(Work.id).where(Work.kind == "book")),
+        UserWork.owner_id == owner.id, UserWork.work_id.in_(select(Work.id).where(Work.kind == "book")),
     )) or 0
     return {table: count for table, count in counts.items() if count}
 
@@ -527,16 +527,16 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
         organization_relation_types.c.organization_id.in_(select(Organization.id).where(Organization.owner_id == owner.id)),
     ))
     # every person goes, so every author link of owner's library entries does too
-    session.execute(delete(library_entry_authors).where(library_entry_authors.c.user_id == owner.id))
+    session.execute(delete(library_entry_authors).where(library_entry_authors.c.owner_id == owner.id))
     # the books are added again below, and what hangs on them goes with them (said here, as not
     # every database deletes it by itself); other library entries lose their cover, as every image goes
     books = select(Work.id).where(Work.kind == "book")
     for model in (Read, Cover, Owning):
-        session.execute(delete(model).where(model.user_id == owner.id, model.work_id.in_(books)))
+        session.execute(delete(model).where(model.owner_id == owner.id, model.work_id.in_(books)))
     session.execute(delete(UserWork).where(
-        UserWork.user_id == owner.id, UserWork.work_id.in_(select(Work.id).where(Work.kind == "book")),
+        UserWork.owner_id == owner.id, UserWork.work_id.in_(select(Work.id).where(Work.kind == "book")),
     ))
-    for entry in session.scalars(select(UserWork).where(UserWork.user_id == owner.id, UserWork.image_id.is_not(None))):
+    for entry in session.scalars(select(UserWork).where(UserWork.owner_id == owner.id, UserWork.image_id.is_not(None))):
         entry.image_id = None
     session.flush()
     for model in REPLACED_MODELS:
@@ -908,8 +908,8 @@ def _book_items(source: Path) -> list[dict[str, Any]]:
 def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
     """
     Add owner's books from source, with their covers: a library entry for
-    each book owner does not have yet (the work, which is shared, is reused
-    when there is one), so it can run again. An entry owner has already only
+    each book owner does not have yet (a work of owner's left without one is
+    reused), so it can run again. An entry owner has already only
     gets its cover, when it has none and source has one now, its authors,
     when it has none, and the language it was read in, when it has none.
     Each author is owner's person of that name, or a new person, and is a
@@ -1031,13 +1031,13 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
         work = None
         for column, value in ((Work.goodreads_id, goodreads_id), (Work.simania_id, simania_id)):
             if work is None and value:
-                work = session.scalars(select(Work).where(Work.kind == "book", column == str(value))).first()
+                work = session.scalars(select(Work).where(Work.owner_id == owner.id, Work.kind == "book", column == str(value))).first()
         if work is None:
             work = session.scalars(select(Work).where(
-                Work.kind == "book", Work.title == title, Work.creator == creator, Work.year.is_(None),
+                Work.owner_id == owner.id, Work.kind == "book", Work.title == title, Work.creator == creator, Work.year.is_(None),
             )).one_or_none()
         if work is None:
-            work = Work(kind="book", title=title, creator=creator, year=None, title_locale=_locale(main_name["language"]) or languages.locale_of(locales, title) or DEFAULT_LOCALE)
+            work = Work(owner_id=owner.id, kind="book", title=title, creator=creator, year=None, title_locale=_locale(main_name["language"]) or languages.locale_of(locales, title) or DEFAULT_LOCALE)
             session.add(work)
         # the author and the catalog ids are only filled in, never overwritten
         work.creator = work.creator or creator
@@ -1075,7 +1075,7 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
             continue
         cover = book_cover(goodreads_id, simania_id)
         session.add(UserWork(
-            user_id=owner.id,
+            owner_id=owner.id,
             work_id=work.id,
             notes=_book_notes(item),
             image_id=cover.id if cover else None,

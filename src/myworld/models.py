@@ -1,8 +1,10 @@
 """
 Database schema.
 
-Works (books, films, ...) are shared rows; what a user thinks about a work
-(status, rating, dates, notes) lives in the per-user UserWork join row.
+Works (books, films, ...) are rows of the account that has them, as
+everything is: nothing is shared between accounts. What a user thinks about a
+work (status, rating, dates, notes) lives in its UserWork row, apart from what
+the work is, so that works can be shared later.
 Adding a new kind of work is a matter of adding it to KINDS.
 
 Concerts, museum visits, the people they were shared with and the
@@ -160,7 +162,7 @@ class Login(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     subject: Mapped[str] = mapped_column(String(400), unique=True, nullable=False)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     # what the provider last reported
     email: Mapped[str] = mapped_column(String(320), nullable=False, default="")
     name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
@@ -230,10 +232,12 @@ def _fill_locales(target: Table, connection: Connection, **_: Any) -> None:
 class Work(Base):
     __tablename__ = "library_works"
     __table_args__ = (
-        UniqueConstraint("kind", "title", "creator", "year", name="uq_work_identity"),
+        UniqueConstraint("owner_id", "kind", "title", "creator", "year", name="uq_work_identity"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # the account whose work it is: another account that has the same book has a row of its own
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     creator: Mapped[str] = mapped_column(String(500), nullable=False, default="")
@@ -278,8 +282,7 @@ class WorkTitle(Base):
     """
     The title of a work in another language than its main title's:
     "אינטליגנציה מלאכותית" (he) of "Artificial Intelligence". One per
-    language: a work's titles are told apart by their language. The work is
-    shared, so its titles are only ever added to, never taken away.
+    language: a work's titles are told apart by their language.
     """
     __tablename__ = "library_work_titles"
     __table_args__ = (UniqueConstraint("work_id", "locale", name="uq_work_title_locale"),)
@@ -301,19 +304,19 @@ class DisabledCheck(Base):
     """
     __tablename__ = "disabled_checks"
 
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     check_name: Mapped[str] = mapped_column(String(100), primary_key=True)
 
 
 class UserWork(Base):
     __tablename__ = "library_entries"
 
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     work_id: Mapped[int] = mapped_column(ForeignKey("library_works.id", ondelete="CASCADE"), primary_key=True)
     # anything worth keeping about it (where they have it, ...); where the user is with it, their
     # rating and what they thought of it belong to each reading (reads)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    # the cover: an image of the user's own, as the works are shared. An entry
+    # the cover: an image of the user's own. An entry
     # may have several: this is the first, the one its card shows, and the
     # others are in more_covers
     image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
@@ -321,7 +324,7 @@ class UserWork(Base):
 
     user: Mapped[User] = relationship(back_populates="works")
     work: Mapped[Work] = relationship(back_populates="users", lazy="joined")
-    # who wrote it (a book's authors): the user's own people, as the works are shared
+    # who wrote it (a book's authors): the user's own people
     authors: Mapped[list[Person]] = relationship(
         secondary=lambda: library_entry_authors, back_populates="wrote", order_by=lambda: Person.id,
     )
@@ -431,14 +434,14 @@ class Read(Base):
     __table_args__ = (
         CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_read_rating_range"),
         ForeignKeyConstraint(
-            ["user_id", "work_id"], ["library_entries.user_id", "library_entries.work_id"],
+            ["owner_id", "work_id"], ["library_entries.owner_id", "library_entries.work_id"],
             ondelete="CASCADE", name="fk_library_reads_entry",
         ),
-        Index("ix_library_reads_entry", "user_id", "work_id"),
+        Index("ix_library_reads_entry", "owner_id", "work_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    owner_id: Mapped[int] = mapped_column(Integer, nullable=False)
     work_id: Mapped[int] = mapped_column(Integer, nullable=False)
     read_on: Mapped[datetime.date | None] = mapped_column(nullable=True)
     locale: Mapped[str | None] = mapped_column(ForeignKey("locales.code"), nullable=True)
@@ -458,14 +461,14 @@ class Cover(Base):
     __tablename__ = "library_covers"
     __table_args__ = (
         ForeignKeyConstraint(
-            ["user_id", "work_id"], ["library_entries.user_id", "library_entries.work_id"],
+            ["owner_id", "work_id"], ["library_entries.owner_id", "library_entries.work_id"],
             ondelete="CASCADE", name="fk_library_covers_entry",
         ),
-        Index("ix_library_covers_entry", "user_id", "work_id"),
+        Index("ix_library_covers_entry", "owner_id", "work_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    owner_id: Mapped[int] = mapped_column(Integer, nullable=False)
     work_id: Mapped[int] = mapped_column(Integer, nullable=False)
     image_id: Mapped[int] = mapped_column(ForeignKey("images.id", ondelete="CASCADE"), nullable=False)
 
@@ -478,14 +481,14 @@ class Owning(Base):
     __tablename__ = "library_ownings"
     __table_args__ = (
         ForeignKeyConstraint(
-            ["user_id", "work_id"], ["library_entries.user_id", "library_entries.work_id"],
+            ["owner_id", "work_id"], ["library_entries.owner_id", "library_entries.work_id"],
             ondelete="CASCADE", name="fk_library_ownings_entry",
         ),
-        UniqueConstraint("user_id", "work_id", "locale", name="uq_library_owning_locale"),
+        UniqueConstraint("owner_id", "work_id", "locale", name="uq_library_owning_locale"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    owner_id: Mapped[int] = mapped_column(Integer, nullable=False)
     work_id: Mapped[int] = mapped_column(Integer, nullable=False)
     locale: Mapped[str] = mapped_column(ForeignKey("locales.code"), nullable=False)
 
@@ -496,11 +499,11 @@ class Owning(Base):
 library_entry_authors = Table(
     "library_entry_authors",
     Base.metadata,
-    Column("user_id", Integer, primary_key=True),
+    Column("owner_id", Integer, primary_key=True),
     Column("work_id", Integer, primary_key=True),
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
     ForeignKeyConstraint(
-        ["user_id", "work_id"], ["library_entries.user_id", "library_entries.work_id"],
+        ["owner_id", "work_id"], ["library_entries.owner_id", "library_entries.work_id"],
         ondelete="CASCADE", name="fk_library_entry_authors_entry",
     ),
 )
@@ -1240,7 +1243,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0004"
+SCHEMA_REVISION = "0005"
 
 
 def prepare_schema(engine: Engine) -> None:

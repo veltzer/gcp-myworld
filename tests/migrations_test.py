@@ -182,10 +182,13 @@ def test_a_column_the_code_dropped_goes(url: str) -> None:
         connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)"))
         connection.execute(text("INSERT INTO alembic_version VALUES ('0001')"))
     with Session(engine) as session:
-        user, work = User(email="a@example.com", role=ROLE_ADMIN), Work(kind="book", title="Dune", creator="Frank Herbert")
-        session.add_all([user, work])
+        user = User(email="a@example.com", role=ROLE_ADMIN)
+        session.add(user)
         session.flush()
-        session.add(UserWork(user_id=user.id, work_id=work.id, notes="kept"))
+        work = Work(owner_id=user.id, kind="book", title="Dune", creator="Frank Herbert")
+        session.add(work)
+        session.flush()
+        session.add(UserWork(owner_id=user.id, work_id=work.id, notes="kept"))
         session.commit()
     with engine.begin() as connection:
         connection.execute(text("UPDATE library_entries SET not_owned = 1"))
@@ -195,7 +198,7 @@ def test_a_column_the_code_dropped_goes(url: str) -> None:
     assert "not_owned" not in {column["name"] for column in inspect(engine).get_columns("library_entries")}
     # the row is as it was
     with engine.connect() as connection:
-        assert connection.execute(text("SELECT user_id, work_id, notes FROM library_entries")).all() == [(1, 1, "kept")]
+        assert connection.execute(text("SELECT owner_id, work_id, notes FROM library_entries")).all() == [(1, 1, "kept")]
     engine.dispose()
     assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"
 
@@ -248,3 +251,59 @@ def test_regions_become_rows(url: str) -> None:
         ]
     engine.dispose()
     assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"
+
+
+def test_a_work_is_its_accounts_own(url: str) -> None:
+    """ 0005: user_id is owner_id everywhere, and a work two accounts have becomes one for each, with all that hangs on its entry. """
+    alembic(url, "upgrade", "0004")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(text("INSERT INTO locales (code, name, script, position) VALUES ('en', 'English', 'Latin', 0), ('he', 'Hebrew', 'Hebrew', 1)"))
+        for user in (1, 2):
+            connection.execute(text("INSERT INTO users (id, email, name, picture, created_at) VALUES (:id, :email, '', '', '2026-01-01')"), {"id": user, "email": f"{user}@example.com"})
+            connection.execute(text("INSERT INTO logins (subject, user_id, email, name, picture, created_at) VALUES (:subject, :id, '', '', '', '2026-01-01')"), {"id": user, "subject": f"google:{user}"})
+            connection.execute(text("INSERT INTO people (id, owner_id, first_name, surname, description) VALUES (:id, :id, 'Frank', 'Herbert', '')"), {"id": user})
+            connection.execute(text("INSERT INTO images (id, owner_id, filename, content_type, sha256, data) VALUES (:id, :id, 'cover.jpg', 'image/jpeg', 'abc', x'00')"), {"id": user})
+        connection.execute(text("INSERT INTO disabled_checks (user_id, check_name) VALUES (1, 'logos')"))
+        # Dune is in both libraries, Emma in the first only, Solaris in the second only, and nobody has Ubik any more
+        for work, title, isbn in ((1, "Dune", "9780441013593"), (2, "Emma", ""), (3, "Solaris", ""), (4, "Ubik", "")):
+            connection.execute(
+                text("INSERT INTO library_works (id, kind, title, creator, year, isbn, imdb_id, rotten_tomatoes_id, goodreads_id, simania_id) VALUES (:id, 'book', :title, 'Someone', 1965, :isbn, '', '', '', '')"),
+                {"id": work, "title": title, "isbn": isbn},
+            )
+        connection.execute(text("INSERT INTO library_work_titles (work_id, locale, title) VALUES (1, 'he', 'חולית')"))
+        for user, work, notes in ((1, 1, "mine"), (2, 1, "theirs"), (1, 2, ""), (2, 3, "")):
+            connection.execute(text("INSERT INTO library_entries (user_id, work_id, notes, image_id, updated_at) VALUES (:user, :work, :notes, :user, '2026-01-01')"), {"user": user, "work": work, "notes": notes})
+        for user, rating in ((1, 9), (2, 4)):
+            ids = {"user": user, "rating": rating}
+            connection.execute(text("INSERT INTO library_reads (user_id, work_id, locale, rating) VALUES (:user, 1, 'en', :rating)"), ids)
+            connection.execute(text("INSERT INTO library_covers (user_id, work_id, image_id) VALUES (:user, 1, :user)"), ids)
+            connection.execute(text("INSERT INTO library_ownings (user_id, work_id, locale) VALUES (:user, 1, 'he')"), ids)
+            connection.execute(text("INSERT INTO library_entry_authors (user_id, work_id, person_id) VALUES (:user, 1, :user)"), ids)
+    engine.dispose()
+    assert run(url, "upgrade").stdout.strip() == f"migrated from 0004 to {SCHEMA_REVISION}; user 1 made the first admin"
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        for table in ("logins", "disabled_checks", "library_entries", "library_reads", "library_covers", "library_ownings", "library_entry_authors", "library_works"):
+            names = {column["name"] for column in inspect(engine).get_columns(table)}
+            assert "owner_id" in names and "user_id" not in names, table
+        assert connection.execute(text("SELECT subject, owner_id FROM logins ORDER BY id")).all() == [("google:1", 1), ("google:2", 2)]
+        assert connection.execute(text("SELECT owner_id, check_name FROM disabled_checks")).all() == [(1, "logos")]
+        # the second account's Dune is a row of its own (5), as the first's is, and the work nobody had is the oldest account's
+        works = connection.execute(text("SELECT id, owner_id, title, isbn FROM library_works ORDER BY id")).all()
+        assert works == [(1, 1, "Dune", "9780441013593"), (2, 1, "Emma", ""), (3, 2, "Solaris", ""), (4, 1, "Ubik", ""), (5, 2, "Dune", "9780441013593")]
+        assert connection.execute(text("SELECT work_id, locale, title FROM library_work_titles ORDER BY work_id")).all() == [(1, "he", "חולית"), (5, "he", "חולית")]
+        # each entry, and all that hangs on it, is at its own account's work
+        assert connection.execute(text("SELECT owner_id, work_id, notes, image_id FROM library_entries ORDER BY owner_id, work_id")).all() == [(1, 1, "mine", 1), (1, 2, "", 1), (2, 3, "", 2), (2, 5, "theirs", 2)]
+        assert connection.execute(text("SELECT owner_id, work_id, rating FROM library_reads ORDER BY owner_id")).all() == [(1, 1, 9), (2, 5, 4)]
+        assert connection.execute(text("SELECT owner_id, work_id, image_id FROM library_covers ORDER BY owner_id")).all() == [(1, 1, 1), (2, 5, 2)]
+        assert connection.execute(text("SELECT owner_id, work_id, locale FROM library_ownings ORDER BY owner_id")).all() == [(1, 1, "he"), (2, 5, "he")]
+        assert connection.execute(text("SELECT owner_id, work_id, person_id FROM library_entry_authors ORDER BY owner_id")).all() == [(1, 1, 1), (2, 5, 2)]
+    # as the models read it
+    with Session(engine) as session:
+        entry = session.get(UserWork, (2, 5))
+        assert entry is not None and (entry.work.owner_id, entry.work.title, entry.rating, entry.owned, entry.cover_ids) == (2, "Dune", 4, ["he"], [2, 2])
+    engine.dispose()
+    assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"
+    # run again, it finds nothing to do
+    assert run(url, "upgrade").stdout.strip() == f"nothing to migrate: the database is at {SCHEMA_REVISION}"

@@ -79,7 +79,7 @@ def api_stats() -> flask.Response:
 
     library = []
     # where the user is with each: the status of the reading it goes by
-    entries = db.scalars(select(UserWork).where(UserWork.user_id == me)).all()
+    entries = db.scalars(select(UserWork).where(UserWork.owner_id == me)).all()
     for kind, (_, plural, _) in KINDS.items():
         counts = collections.Counter(entry.status for entry in entries if entry.work.kind == kind)
         by_status = {label: counts[status] for status, label in STATUSES.items() if counts[status]}

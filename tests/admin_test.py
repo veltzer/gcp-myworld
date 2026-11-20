@@ -14,7 +14,7 @@ from tests.conftest import sign_in
 def make_admin(engine: Engine, sub: str) -> None:
     """ What scripts/migrate.sh does for the first admin. """
     with engine.begin() as connection:
-        connection.execute(update(User).where(User.id.in_(select(Login.user_id).where(Login.subject == "google:" + sub))).values(role=ROLE_ADMIN))
+        connection.execute(update(User).where(User.id.in_(select(Login.owner_id).where(Login.subject == "google:" + sub))).values(role=ROLE_ADMIN))
 
 
 def test_new_accounts_are_users(app: webtest.TestApp) -> None:

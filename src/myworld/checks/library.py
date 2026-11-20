@@ -42,7 +42,7 @@ def _library_checks(kind: str) -> None:
     def duplicates(session: Session) -> Result:
         entries = entries_of(session, kind)
         def key(entry: UserWork) -> tuple[int, str, str]:
-            return entry.user_id, entry.work.title.strip().lower(), entry.work.creator.strip().lower()
+            return entry.owner_id, entry.work.title.strip().lower(), entry.work.creator.strip().lower()
         return Result(checked=len(entries), problems=twice(entries, key, f"title and {creator.lower()}", one))
 
     covers.__doc__ = f"Every {one} in a library, of every account, has at least one cover image (it may have several)."
@@ -73,8 +73,8 @@ def check_book_links(session: Session) -> Result:
 def check_book_authors(session: Session) -> Result:
     """ Every book in a library, of every account, has an author: one of the account's people (a Book Author), linked to it. """
     books = entries_of(session, "book")
-    written = set(session.execute(select(library_entry_authors.c.user_id, library_entry_authors.c.work_id)).tuples())
-    return Result(checked=len(books), problems=[problem(b, "has no author") for b in books if (b.user_id, b.work_id) not in written])
+    written = set(session.execute(select(library_entry_authors.c.owner_id, library_entry_authors.c.work_id)).tuples())
+    return Result(checked=len(books), problems=[problem(b, "has no author") for b in books if (b.owner_id, b.work_id) not in written])
 
 
 @check("book-years", "Every book has the year it came out", "books", "book")

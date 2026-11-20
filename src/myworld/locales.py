@@ -1,8 +1,8 @@
 """
-The languages (the locales table): the same for every account, as the works
-are: everyone sees them, an admin keeps them. A language is known by its
-code, which what is said in it points at, so the code never changes; the
-app's rows have a number, its place in the list.
+The languages (the locales table): the one list every account has, which
+everyone sees and an admin keeps; what an account says in them is its own. A
+language is known by its code, which what is said in it points at, so the
+code never changes; the app's rows have a number, its place in the list.
 """
 
 import hashlib
@@ -20,6 +20,7 @@ from myworld.models import (
     ROLE_ADMIN,
     Locale,
     Owning,
+    Person,
     PersonName,
     Read,
     User,
@@ -29,14 +30,23 @@ from myworld.models import (
 
 bp = flask.Blueprint("locales", __name__)
 
-# everything that says a language: the columns that point at locales.code
-LOCALE_USES = (
-    Work.title_locale, Work.original_locale, WorkTitle.locale, Read.locale, Owning.locale, PersonName.locale, User.locale,
-)
-
-
-def _locale_uses(code: str) -> int:
-    return sum(flask.g.db.scalar(select(func.count()).where(column == code)) or 0 for column in LOCALE_USES)
+def _locale_uses(code: str, owner_id: int | None = None) -> int:
+    """
+    How much is said in a language, counting every column that points at
+    locales.code: by the account owner_id, or by every account (what
+    decides whether a language may go).
+    """
+    # each column, and how its row says whose it is
+    uses = (
+        (select(func.count()).select_from(Work).where(Work.title_locale == code), Work.owner_id),
+        (select(func.count()).select_from(Work).where(Work.original_locale == code), Work.owner_id),
+        (select(func.count()).select_from(WorkTitle).join(Work).where(WorkTitle.locale == code), Work.owner_id),
+        (select(func.count()).select_from(Read).where(Read.locale == code), Read.owner_id),
+        (select(func.count()).select_from(Owning).where(Owning.locale == code), Owning.owner_id),
+        (select(func.count()).select_from(PersonName).join(Person).where(PersonName.locale == code), Person.owner_id),
+        (select(func.count()).select_from(User).where(User.locale == code), User.id),
+    )
+    return sum(flask.g.db.scalar(query if owner_id is None else query.where(owner == owner_id)) or 0 for query, owner in uses)
 
 
 def locale_json(locale: Locale) -> dict[str, Any]:
@@ -44,7 +54,8 @@ def locale_json(locale: Locale) -> dict[str, Any]:
         "id": locale.position, "code": locale.code, "name": locale.name, "script": locale.script, "native": locale.native,
         # its picture: its own name in its own script, drawn (the address changes with what it shows)
         "image": f"/api/locales/{locale.position}/picture.svg?v={hashlib.sha256(_locale_picture(locale).encode()).hexdigest()[:12]}",
-        "description": f"{locale.code}, written in {locale.script} letters", "count": _locale_uses(locale.code),
+        # how much the signed-in account says in it: what the others say is theirs
+        "description": f"{locale.code}, written in {locale.script} letters", "count": _locale_uses(locale.code, flask.g.user.id),
     }
 
 

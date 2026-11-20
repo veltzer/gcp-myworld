@@ -143,7 +143,7 @@ def test_checks_api_is_for_admins(app: webtest.TestApp, engine: Engine) -> None:
     app.get("/api/checks", status=403)
     app.get("/api/checks/logos", status=403)
     with engine.begin() as connection:
-        connection.execute(update(User).where(User.id.in_(select(Login.user_id).where(Login.subject == "google:" + "carol"))).values(role=ROLE_ADMIN))
+        connection.execute(update(User).where(User.id.in_(select(Login.owner_id).where(Login.subject == "google:" + "carol"))).values(role=ROLE_ADMIN))
     listed = app.get("/api/checks").json
     assert sorted(c["name"] for c in listed) == sorted(checks.CHECKS)
     # grouped by dataset, in the order of DATASETS
@@ -316,29 +316,31 @@ def test_books(engine: Engine) -> None:
         # the authors are each account's own people
         ann, bobs_ann = Person(owner_id=alice.id, first_name="Ann"), Person(owner_id=bob.id, first_name="Ann")
         works = {
-            "Good": Work(kind="book", title="Good", creator="Ann", goodreads_id="1", year=1999, original_locale="en"),
+            "Good": Work(owner_id=alice.id, kind="book", title="Good", creator="Ann", goodreads_id="1", year=1999, original_locale="en"),
             # written in Hebrew, but its only title is an English one
-            "Hebrew": Work(kind="book", title="Hebrew", creator="Ben", simania_id="2", year=2001, original_locale="he"),
-            "Bare": Work(kind="book", title="Bare", creator=""),
-            "Twice": Work(kind="book", title="Twice", creator="Cy", goodreads_id="3", year=1990, original_locale="en"),
-            "twice ": Work(kind="book", title="twice ", creator="cy", goodreads_id="4", year=1990, original_locale="en"),
+            "Hebrew": Work(owner_id=alice.id, kind="book", title="Hebrew", creator="Ben", simania_id="2", year=2001, original_locale="he"),
+            "Bare": Work(owner_id=alice.id, kind="book", title="Bare", creator=""),
+            "Twice": Work(owner_id=alice.id, kind="book", title="Twice", creator="Cy", goodreads_id="3", year=1990, original_locale="en"),
+            "twice ": Work(owner_id=alice.id, kind="book", title="twice ", creator="cy", goodreads_id="4", year=1990, original_locale="en"),
             # a film is not a book: none of the book checks look at it
-            "Film": Work(kind="film", title="Film", creator=""),
+            "Film": Work(owner_id=alice.id, kind="film", title="Film", creator=""),
+            # bob has the same book as alice: his own row of it
+            "Bob's": Work(owner_id=bob.id, kind="book", title="Good", creator="Ann", goodreads_id="1", year=1999, original_locale="en"),
         }
         session.add_all([cover, ann, bobs_ann, *works.values()])
         session.flush()
         session.add_all([
             # every rule kept: read, rated, with a cover and a link
-            UserWork(user_id=alice.id, work_id=works["Good"].id, image_id=cover.id, authors=[ann], reads=[Read(locale="en", rating=8)]),
+            UserWork(owner_id=alice.id, work_id=works["Good"].id, image_id=cover.id, authors=[ann], reads=[Read(locale="en", rating=8)]),
             # not read yet: no rating asked for, nor the language and the day of a reading that was not
-            UserWork(user_id=alice.id, work_id=works["Hebrew"].id, image_id=cover.id, authors=[ann], reads=[Read(status="wishlist")]),
+            UserWork(owner_id=alice.id, work_id=works["Hebrew"].id, image_id=cover.id, authors=[ann], reads=[Read(status="wishlist")]),
             # each of these breaks rules
-            UserWork(user_id=alice.id, work_id=works["Bare"].id),
-            UserWork(user_id=alice.id, work_id=works["Twice"].id, image_id=cover.id, authors=[ann], reads=[Read(locale="he", rating=6)]),
-            UserWork(user_id=alice.id, work_id=works["twice "].id, image_id=cover.id, authors=[ann], reads=[Read(locale="he", rating=6)]),
-            UserWork(user_id=alice.id, work_id=works["Film"].id, reads=[Read()]),
+            UserWork(owner_id=alice.id, work_id=works["Bare"].id),
+            UserWork(owner_id=alice.id, work_id=works["Twice"].id, image_id=cover.id, authors=[ann], reads=[Read(locale="he", rating=6)]),
+            UserWork(owner_id=alice.id, work_id=works["twice "].id, image_id=cover.id, authors=[ann], reads=[Read(locale="he", rating=6)]),
+            UserWork(owner_id=alice.id, work_id=works["Film"].id, reads=[Read()]),
             # bob has the same book as alice: two accounts, no duplicate
-            UserWork(user_id=bob.id, work_id=works["Good"].id, image_id=cover.id, authors=[bobs_ann], reads=[Read(locale="en", rating=5)]),
+            UserWork(owner_id=bob.id, work_id=works["Bob's"].id, image_id=cover.id, authors=[bobs_ann], reads=[Read(locale="en", rating=5)]),
         ])
         session.commit()
 
@@ -666,7 +668,7 @@ def test_checks_can_be_turned_off(app: webtest.TestApp, engine: Engine) -> None:
     sign_in(app, "carol")
     app.put("/api/disabled-checks/logos", status=403)
     with engine.begin() as connection:
-        connection.execute(update(User).where(User.id.in_(select(Login.user_id).where(Login.subject == "google:" + "carol"))).values(role=ROLE_ADMIN))
+        connection.execute(update(User).where(User.id.in_(select(Login.owner_id).where(Login.subject == "google:" + "carol"))).values(role=ROLE_ADMIN))
     assert all(c["enabled"] for c in app.get("/api/checks").json)
     app.put("/api/disabled-checks/logos", status=204)
     # turning it off again is fine
@@ -678,7 +680,7 @@ def test_checks_can_be_turned_off(app: webtest.TestApp, engine: Engine) -> None:
     app.post("/auth/logout")
     sign_in(app, "dave")
     with engine.begin() as connection:
-        connection.execute(update(User).where(User.id.in_(select(Login.user_id).where(Login.subject == "google:" + "dave"))).values(role=ROLE_ADMIN))
+        connection.execute(update(User).where(User.id.in_(select(Login.owner_id).where(Login.subject == "google:" + "dave"))).values(role=ROLE_ADMIN))
     assert app.get("/api/disabled-checks").json == []
     app.post("/auth/logout")
     sign_in(app, "carol")
@@ -695,7 +697,7 @@ def test_script_skips_what_an_account_turned_off(tmp_path: Path) -> None:
     fill(engine)
     with Session(engine) as session:
         alice = session.scalars(select(User).where(User.email == "alice@example.com")).one()
-        session.add(DisabledCheck(user_id=alice.id, check_name="logos"))
+        session.add(DisabledCheck(owner_id=alice.id, check_name="logos"))
         session.commit()
     engine.dispose()
     # the bad logo fails logos, unless the account that turned it off is named
@@ -727,7 +729,7 @@ def test_more_checks(engine: Engine) -> None:
         myself = Person(owner_id=me, first_name="Me", is_self=True)
         session.add_all([france, israel, paris, lyon, haifa, author, dana, twin, loner, myself])
         session.flush()
-        works = {title: Work(kind="book", title=title, creator="x", original_locale=original) for title, original in (("Dune", "en"), ("The Joke", "cs"), ("Esau", "he"), ("Wanted", "en"))}
+        works = {title: Work(owner_id=me, kind="book", title=title, creator="x", original_locale=original) for title, original in (("Dune", "en"), ("The Joke", "cs"), ("Esau", "he"), ("Wanted", "en"))}
         session.add_all(works.values())
         session.flush()
         session.add_all([
@@ -741,11 +743,11 @@ def test_more_checks(engine: Engine) -> None:
             Concert(owner_id=me, name="Together", people=[dana]),
             Concert(owner_id=me, name="Both", alone=True, people=[dana], review="odd"),
             Concert(owner_id=me, name="Unsaid"),
-            UserWork(user_id=me, work_id=works["Dune"].id, owned=["en"], reads=[Read(locale="en")], authors=[dana]),
-            UserWork(user_id=me, work_id=works["The Joke"].id, reads=[Read(locale="he")], notes="Written in Czech. was named: Zert"),
-            UserWork(user_id=me, work_id=works["Esau"].id, reads=[Read(locale="he")], notes="was named: Eisav"),
+            UserWork(owner_id=me, work_id=works["Dune"].id, owned=["en"], reads=[Read(locale="en")], authors=[dana]),
+            UserWork(owner_id=me, work_id=works["The Joke"].id, reads=[Read(locale="he")], notes="Written in Czech. was named: Zert"),
+            UserWork(owner_id=me, work_id=works["Esau"].id, reads=[Read(locale="he")], notes="was named: Eisav"),
             # not read yet: nothing is asked of it
-            UserWork(user_id=me, work_id=works["Wanted"].id, reads=[Read(status="wishlist")]),
+            UserWork(owner_id=me, work_id=works["Wanted"].id, reads=[Read(status="wishlist")]),
         ])
         session.commit()
 

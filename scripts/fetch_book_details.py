@@ -2,8 +2,7 @@
 
 """
 Fill in every book's year it came out, its ISBN and its Open Library work,
-where the book has none of them yet (a work is shared by every account that
-has it, so nothing it has is ever replaced).
+where the book has none of them yet (nothing it has is ever replaced).
 
   scripts/fetch_book_details.py            fill them in
   scripts/fetch_book_details.py --dry-run  only print what it would take

@@ -84,7 +84,7 @@ def api_checks() -> flask.Response:
 
 def _disabled() -> set[str]:
     """ The checks the signed-in admin turned off. """
-    return set(flask.g.db.scalars(select(DisabledCheck.check_name).where(DisabledCheck.user_id == flask.g.user.id)))
+    return set(flask.g.db.scalars(select(DisabledCheck.check_name).where(DisabledCheck.owner_id == flask.g.user.id)))
 
 
 def _known_check(name: str) -> str:
@@ -106,7 +106,7 @@ def api_disable_check(name: str) -> tuple[str, int]:
     """ Turn a check off for the signed-in admin (again is fine). """
     db = flask.g.db
     if db.get(DisabledCheck, (flask.g.user.id, _known_check(name))) is None:
-        db.add(DisabledCheck(user_id=flask.g.user.id, check_name=name))
+        db.add(DisabledCheck(owner_id=flask.g.user.id, check_name=name))
         db.commit()
     return "", 204
 

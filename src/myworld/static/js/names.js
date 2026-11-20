@@ -244,7 +244,7 @@ export function addLocalized(key) {
 		return;
 	}
 	const list = editingLocalized[key];
-	// one per language: what is kept (a shared work's title) is not replaced
+	// one per language: what is kept (a work's title) is not replaced
 	if (list.some((item) => item.kept && item.locale === locale)) {
 		dialogError(`There is already a ${field} in ${localeName(locale)}: one per language`);
 		return;

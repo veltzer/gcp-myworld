@@ -207,7 +207,7 @@ def _read_fields(read: Read, body: dict[str, Any], locale_key: str) -> Read:
 def _set_year(work: Work, year: int) -> None:
     """ The year a work came out, changed: no other work may be the same one by then. """
     clash = flask.g.db.execute(
-        select(Work.id).where(Work.kind == work.kind, Work.title == work.title, Work.creator == work.creator, Work.year == year, Work.id != work.id)
+        select(Work.id).where(Work.owner_id == work.owner_id, Work.kind == work.kind, Work.title == work.title, Work.creator == work.creator, Work.year == year, Work.id != work.id)
     ).first()
     if clash is not None:
         raise ApiError(409, f"year: there is already another {KINDS[work.kind][0].lower()} called {work.title} of the same {KINDS[work.kind][2].lower()} and year")
@@ -232,7 +232,7 @@ def _apply_entry_fields(entry: UserWork, body: dict[str, Any], new: bool = False
 
 
 def _apply_work_facts(work: Work, body: dict[str, Any]) -> None:
-    """ What an entry says of the shared work: filled in or put right when sent, never emptied. """
+    """ What an entry says of its work: filled in or put right when sent, never emptied. """
     # the year it came out
     year = opt_int(body, "year", -3000, 3000)
     if year is not None and year != work.year:
@@ -277,7 +277,7 @@ def _apply_covers(entry: UserWork, body: dict[str, Any]) -> None:
 def _apply_authors(entry: UserWork, body: dict[str, Any]) -> None:
     """ The authors, ids of the user's people (any number); each is a Book Author, when the user keeps that profession. """
     entry.authors = owned_list(body, "authors", Person)
-    # the shared work's author text, only filled in (another account may have it too)
+    # the work's author text, only filled in
     entry.work.creator = entry.work.creator or ", ".join(p.name for p in entry.authors)
     book_author = flask.g.db.scalars(select(PersonType).where(PersonType.owner_id == flask.g.user.id, PersonType.name == "Book Author")).first()
     for author in entry.authors if book_author else []:
@@ -288,8 +288,9 @@ def _apply_authors(entry: UserWork, body: dict[str, Any]) -> None:
 def _add_titles(work: Work, value: Any) -> None:
     """
     The titles sent, one per language, added to the work's in the languages
-    it has none in. The work is shared, so none is taken away or changed: a
-    different title in a language it has one in is refused.
+    it has none in. None is taken away or changed here (the dialog, which
+    sends them all, does that: _set_titles): a different title in a language
+    it has one in is refused.
     """
     have = {work.title_locale: work.title, **{t.locale: t.title for t in work.titles}}
     for locale, title in world.localized("titles", value, "title", one_per_locale=True):
@@ -320,7 +321,7 @@ def _set_titles(work: Work, body: dict[str, Any]) -> None:
         raise ApiError(400, f"titles: two titles in {locales[locale].name}: one title per language")
     if title != work.title:
         clash = flask.g.db.execute(
-            select(Work.id).where(Work.kind == work.kind, Work.title == title, Work.creator == work.creator, Work.year == work.year, Work.id != work.id)
+            select(Work.id).where(Work.owner_id == work.owner_id, Work.kind == work.kind, Work.title == title, Work.creator == work.creator, Work.year == work.year, Work.id != work.id)
         ).first()
         if clash is not None:
             raise ApiError(409, f"{title} is already the title of another {KINDS[work.kind][0].lower()} of the same {KINDS[work.kind][2].lower()} and year")
@@ -337,8 +338,7 @@ def _set_titles(work: Work, body: dict[str, Any]) -> None:
 def _apply_work_ids(work: Work, body: dict[str, Any]) -> None:
     """ Catalog ids from the film search, filled in only where the work has none yet.
 
-    A work is shared by every user who has it, so one user's request must not
-    change the links every other user sees: an id once set is never replaced.
+    An id once set is never replaced.
     """
     tmdb_id = opt_int(body, "tmdb_id", 1, 2**31 - 1)
     if tmdb_id is not None and work.tmdb_id is None:
@@ -447,7 +447,7 @@ def api_config() -> flask.Response:
 @auth.login_required
 def api_library_list() -> flask.Response:
     """ The signed-in user's entries, optionally only those of one kind. """
-    query = select(UserWork).join(Work).where(UserWork.user_id == flask.g.user.id)
+    query = select(UserWork).join(Work).where(UserWork.owner_id == flask.g.user.id)
     kind = flask.request.args.get("kind")
     if kind is not None:
         query = query.where(Work.kind == _kind(kind))
@@ -469,7 +469,7 @@ def api_library_add() -> tuple[flask.Response, int]:
     year = opt_int(body, "year", -3000, 3000)
     db = flask.g.db
     work = db.execute(
-        select(Work).where(Work.kind == kind, Work.title == title, Work.creator == creator, Work.year == year)
+        select(Work).where(Work.owner_id == flask.g.user.id, Work.kind == kind, Work.title == title, Work.creator == creator, Work.year == year)
     ).scalar_one_or_none()
     if work is None:
         # the language sent, else the one the title's letters say, else English
@@ -479,14 +479,14 @@ def api_library_add() -> tuple[flask.Response, int]:
             raise ApiError(400, f"title_locale: unknown language {title_locale!r}")
         if not languages.fits(locales[title_locale], title):
             raise ApiError(400, f"title_locale: the title is not written in {locales[title_locale].name}: choose the language it is in")
-        work = Work(kind=kind, title=title, creator=creator, year=year, title_locale=title_locale)
+        work = Work(owner_id=flask.g.user.id, kind=kind, title=title, creator=creator, year=year, title_locale=title_locale)
         db.add(work)
     _apply_work_ids(work, body)
     db.flush()
     entry = db.get(UserWork, (flask.g.user.id, work.id))
     created = entry is None
     if entry is None:
-        entry = UserWork(user_id=flask.g.user.id, work_id=work.id, work=work)
+        entry = UserWork(owner_id=flask.g.user.id, work_id=work.id, work=work)
         db.add(entry)
     _apply_entry_fields(entry, body, new=True)
     db.commit()
@@ -506,7 +506,11 @@ def api_library_update(work_id: int) -> flask.Response:
 @auth.login_required
 def api_library_delete(work_id: int) -> flask.Response:
     entry = _own_entry(work_id)
+    work = entry.work
     flask.g.db.delete(entry)
+    flask.g.db.flush()
+    # the work is the account's own, and it has it no more
+    flask.g.db.delete(work)
     flask.g.db.flush()
     pictures.drop_unused_images()
     flask.g.db.commit()

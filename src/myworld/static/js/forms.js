@@ -491,7 +491,7 @@ export function fillWorldForm(form, item) {
 }
 
 // The work form: a new entry starts empty (with the film search for films); an
-// existing one shows its work, which is shared with other users and so read only.
+// existing one shows its work.
 export async function prepareWorkForm(form, entry) {
 	const film = state.config.tmdb && state.kind === "film" && !entry;
 	if (state.config.tmdb) {

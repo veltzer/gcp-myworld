@@ -190,34 +190,43 @@ def test_users_are_isolated(app: webtest.TestApp) -> None:
     app.post("/auth/logout")
     sign_in(app, sub="bob")
     assert app.get("/api/library-entries").json == []
-    # bob cannot touch alice's entry, even though the work row is shared
+    # bob cannot touch alice's entry
     app.put_json(f"/api/library-entries/{work_id}", {"status": "done"}, status=404)
     app.delete(f"/api/library-entries/{work_id}", status=404)
 
-    # bob adding the same book reuses the shared work row and gets his own entry
+    # bob adding the same book gets a work of his own: nothing is shared, and what he says of it is his
     entry = app.post_json("/api/library-entries", {"kind": "book", "title": "Alien", "creator": "Alan Dean Foster", "year": 1979, "rating": 7}).json
-    assert entry["work_id"] == work_id
+    assert entry["work_id"] != work_id
     assert entry["rating"] == 7
+    entry = app.put_json(f"/api/library-entries/{entry['work_id']}", {"title": "Aliens", "year": 1986, "titles": [{"locale": "he", "title": "הנוסע השמיני"}]}).json
+    assert (entry["title"], entry["year"]) == ("Aliens", 1986)
     app.post("/auth/logout")
     sign_in(app, sub="alice")
     [entry] = app.get("/api/library-entries").json
-    assert entry["rating"] is None
+    assert (entry["work_id"], entry["title"], entry["year"], entry["titles"], entry["rating"]) == (work_id, "Alien", 1979, [], None)
+    # and the languages count what alice says in them, not what bob does
+    assert next(row for row in app.get("/api/locales").json if row["code"] == "he")["count"] == 0
+    # an entry deleted takes its work with it: added again, it is a new one
+    app.delete(f"/api/library-entries/{work_id}", status=204)
+    again = app.post_json("/api/library-entries", {"kind": "book", "title": "Alien", "creator": "Alan Dean Foster", "year": 1979}).json
+    assert again["work_id"] not in (work_id, entry["work_id"])
 
 
-def test_shared_work_ids_are_only_filled(app: webtest.TestApp) -> None:
-    """ A work is shared: one user can give it a missing id, never change the one every user sees. """
+def test_work_ids_are_only_filled(app: webtest.TestApp) -> None:
+    """ A work's catalog ids: a missing one is given, one it has is never changed; and another account's work is another row. """
     book = {"kind": "book", "title": "Solaris", "creator": "Stanislaw Lem", "year": 1961}
     sign_in(app, sub="alice")
     entry = app.post_json("/api/library-entries", {**book, "goodreads_id": "95558"}).json
     assert (entry["goodreads_id"], entry["simania_id"]) == ("95558", "")
+    # added again: the empty id is filled in, the set one stays
+    entry = app.post_json("/api/library-entries", {**book, "goodreads_id": "666", "simania_id": "1234"}, status=200).json
+    assert (entry["goodreads_id"], entry["simania_id"]) == ("95558", "1234")
 
     app.post("/auth/logout")
     sign_in(app, sub="bob")
-    entry = app.post_json("/api/library-entries", {**book, "goodreads_id": "666", "simania_id": "1234"}).json
-    # the empty id is filled in, the set one stays
-    assert (entry["goodreads_id"], entry["simania_id"]) == ("95558", "1234")
-    entry = app.put_json(f"/api/library-entries/{entry['work_id']}", {"goodreads_id": "777", "simania_id": "9"}).json
-    assert (entry["goodreads_id"], entry["simania_id"]) == ("95558", "1234")
+    # bob's Solaris is his own: it has the ids he gives it, not alice's
+    entry = app.post_json("/api/library-entries", {**book, "goodreads_id": "666"}, status=201).json
+    assert (entry["goodreads_id"], entry["simania_id"]) == ("666", "")
 
     app.post("/auth/logout")
     sign_in(app, sub="alice")

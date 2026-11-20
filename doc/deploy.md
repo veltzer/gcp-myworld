@@ -231,7 +231,7 @@ Films are not a collection for now (their data model will follow the data
 they are imported from), but the search stays for that import. The add
 dialog for a film can search The Movie Database (TMDB) and fill in
 the title, director and year, together with the film's ids on IMDb, TMDB
-and Rotten Tomatoes, which are stored on the shared `library_works` row and shown
+and Rotten Tomatoes, which are stored on the `library_works` row and shown
 as links in the library. TMDB knows the IMDb id and the Wikidata item of a
 film; the Rotten Tomatoes id comes from that Wikidata item (property
 P1258), best effort.
@@ -262,11 +262,11 @@ filters on it, and another account sees nothing, images included.
 Everything is added and edited in the same dialog: the + button at the
 lower right adds to whatever tab is open, and clicking any card or row
 opens it for editing, with a Delete that asks twice. A library entry's
-title, creator and year belong to the shared work row: the dialog rewords
+title, creator and year belong to its work row: the dialog rewords
 the titles and puts the year released right (`year` sent changes it, unless
 another work of the same title and creator already has that year: 409; a
 year is never emptied). A book's `original_locale` is the language it was
-first written in (Dune: English, whatever it was read in), on the shared
+first written in (Dune: English, whatever it was read in), on the
 work too: sent, it is set (an unknown language: 400); empty or not sent,
 it stays.
 
@@ -593,8 +593,7 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   is added), `titles` its titles in other languages, `{locale, title}`: a
   work has one title per language, the main title's included. `titles` sent
   are added to the work's in the languages it has none in, never taken away
-  or changed, as the work is shared; a different title in a language it has
-  one in is refused.
+  or changed; a different title in a language it has one in is refused.
 - Readings: an entry's `reads` are the times the user read it or means
   to, each `{date, locale, status, rating, review, started_on}`: the day
   it was finished, the language it was read in, where the user is with it
@@ -658,19 +657,22 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   address, a hash of the link's token, when it was sent.
 - `library_works`: books, for now (films, series, albums and games were
   taken out until their data is imported, which will shape them); one
-  shared row per work, identified by kind, title, creator and year, plus
+  row per work of an account (`owner_id`: two accounts that have the same
+  book have a row each), identified by kind, title, creator and year, plus
   the catalog ids of books (`goodreads_id`, `simania_id`) and of films
   (`imdb_id`, `tmdb_id`, `rotten_tomatoes_id`, kept for the film search
   and for the one film row from before). New kinds are added to `KINDS`
   in `src/myworld/models.py`.
 - `library_entries`: a work in a user's library: its notes and its cover
   (`image_id`); where the user is with it, their rating, review and dates
-  are in its readings (`library_reads`). All per-user queries go through this table, so users never
-  see each other's entries even though the work rows are shared. Its
+  are in its readings (`library_reads`). It is apart from its work, which
+  says what the book is, so that works can be shared later; for now
+  nothing is, and an entry deleted takes its work with it. Its
   authors are the user's people, in `library_entry_authors` (by the
-  entry's `user_id` and `work_id`, and `person_id`).
-- Every other table holds one user's rows (by `owner_id`, or through the
-  rows it links), never shared:
+  entry's `owner_id` and `work_id`, and `person_id`).
+- Every table that holds an account's rows says whose they are in
+  `owner_id` (or through the rows it links), and none is shared; only
+  `locales`, the list of languages an admin keeps, is the same for all:
     - `concert_visits`, `museum_visits`, `audio_courses`, `youtube_videos`:
   one row per thing done (see "Concerts, museums, people and
   organizations").
@@ -716,7 +718,11 @@ the order is:
   `scripts/migrate.sh` right after;
 - a change that does both (regions: a table and a column added, the old
   text column dropped) is two steps: `scripts/migrate.sh --to 0003`,
-  deploy, then `scripts/migrate.sh`.
+  deploy, then `scripts/migrate.sh`;
+- a rename (0005: `user_id` became `owner_id`) serves neither the old code
+  nor the new in both orders: deploy, then `scripts/migrate.sh` at once.
+  The site fails in between, so it is best split into an add and a drop
+  where that moment matters.
 
 A new step: change the models, run
 `alembic -c scripts/migrations/alembic.ini revision --autogenerate -m "what changed"`

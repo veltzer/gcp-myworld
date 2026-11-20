@@ -54,12 +54,12 @@ def main() -> int:
     with Session(engine) as session:
         entries = session.scalars(
             select(UserWork).join(Work).where(Work.kind == "book", ~UserWork.authors.any())
-            .order_by(UserWork.user_id, Work.title).options(selectinload(UserWork.work))
+            .order_by(UserWork.owner_id, Work.title).options(selectinload(UserWork.work))
         ).all()
         people: dict[int, dict[str, list[Person]]] = {}
         book_authors: dict[int, PersonType] = {}
         for entry in entries:
-            owner = entry.user_id
+            owner = entry.owner_id
             if owner not in people:
                 people[owner] = {}
                 for person in session.scalars(select(Person).where(Person.owner_id == owner).options(selectinload(Person.types))):
