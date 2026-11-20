@@ -1269,6 +1269,49 @@ class ChessGame(_Dated, Base):
     pgn: Mapped[str] = mapped_column(Text, nullable=False, deferred=True)
 
 
+class YouTubeConnection(Base):
+    """
+    The user's YouTube account, connected from the Imports page so its
+    importers can read it (myworld.youtube): Google's refresh token for the
+    youtube.readonly scope, encrypted with a key derived from SECRET_KEY (a
+    new SECRET_KEY makes it unreadable, and the user connects again), and
+    the name of the channel it is, to show which account is connected.
+    """
+    __tablename__ = "youtube_connections"
+
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    refresh_token: Mapped[str] = mapped_column(Text, nullable=False)
+    channel: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    connected_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+
+
+IMPORT_STATUSES = ("done", "failed")
+
+
+class ImportRun(Base):
+    """
+    One run of an importer (myworld.importers) by a user: which one, with
+    what parameters, whether it was a dry run (done and rolled back), how it
+    ended, what it counted ({"YouTube videos added": 3, ...}) and what it
+    said. The Imports page lists a user's last runs.
+    """
+    __tablename__ = "import_runs"
+    __table_args__ = (
+        CheckConstraint(f"status IN ({', '.join(repr(s) for s in IMPORT_STATUSES)})", name="ck_import_run_status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    importer: Mapped[str] = mapped_column(String(100), nullable=False)
+    params: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    dry_run: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False)
+    counts: Mapped[dict[str, int]] = mapped_column(JSON, nullable=False, default=dict)
+    log: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    started_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 def database_url() -> str:
     """
     Where the data lives.
@@ -1301,7 +1344,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0007"
+SCHEMA_REVISION = "0008"
 
 
 def prepare_schema(engine: Engine) -> None:

@@ -318,6 +318,7 @@ name = "gcp-myworld"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "flask" },
     { name = "google-auth" },
     { name = "gunicorn" },
@@ -342,6 +343,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography" },
     { name = "flask" },
     { name = "google-auth" },
     { name = "gunicorn" },

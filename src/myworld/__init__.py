@@ -22,12 +22,14 @@ from myworld import (
     admin,
     auth,
     enumerations,
+    imports,
     locales,
     pictures,
     stats,
     verification,
     views,
     world,
+    youtube,
 )
 from myworld.api import ApiError, handle_api_error
 from myworld.models import make_engine
@@ -133,4 +135,6 @@ def create_app(engine: Engine | None = None, mail: verification.Mailer | None = 
     app.register_blueprint(locales.bp)
     app.register_blueprint(pictures.bp)
     app.register_blueprint(stats.bp)
+    app.register_blueprint(imports.bp)
+    app.register_blueprint(youtube.bp)
     return app

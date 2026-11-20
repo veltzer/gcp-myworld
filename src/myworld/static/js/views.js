@@ -4,6 +4,7 @@ import { runChecks, selectChecks } from "./checks.js";
 import { $, api, showError } from "./core.js";
 import { fillTypeFilter } from "./filters.js";
 import { navigate } from "./history.js";
+import { selectImports } from "./imports.js";
 import { renderEntries, selectKind, state } from "./library.js";
 import { fillLocales } from "./names.js";
 import { markActive, paging, renderWorld, showSection } from "./paging.js";
@@ -125,6 +126,11 @@ export function setupWorlds() {
 		event.preventDefault();
 		closeSidebarOnPhone();
 		selectStats().catch((e) => showError(e.message));
+	};
+	$("imports-link").onclick = (event) => {
+		event.preventDefault();
+		closeSidebarOnPhone();
+		selectImports().catch((e) => showError(e.message));
 	};
 	// the admin pages: for everyone else the links stay, disabled
 	for (const [id, select, title] of [

@@ -118,14 +118,15 @@ export function markActive() {
 		a.classList.toggle("active", active);
 	}
 	$("stats-link").classList.toggle("active", state.view === "stats");
+	$("imports-link").classList.toggle("active", state.view === "imports");
 	$("users-link").classList.toggle("active", state.view === "users");
 	$("checks-link").classList.toggle("active", state.view === "checks");
 	$("schema-link").classList.toggle("active", state.view === "schema");
 }
 
-// One of the page bodies: the library table, the cards and tables, the stats, the users, the checks.
+// One of the page bodies: the library table, the cards and tables, the stats, the imports, the users, the checks.
 export function showSection(id) {
-	for (const section of ["library-view", "world-view", "stats-view", "users-view", "checks-view", "schema-view"]) {
+	for (const section of ["library-view", "world-view", "stats-view", "imports-view", "users-view", "checks-view", "schema-view"]) {
 		$(section).hidden = section !== id;
 	}
 }

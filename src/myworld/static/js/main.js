@@ -10,6 +10,7 @@ import { nav, setupFreshness, startHistory } from "./history.js";
 import { fillStatuses, loadEntries, selectKind, state } from "./library.js";
 import { setupAddDialog } from "./locks.js";
 import { localizedValues } from "./names.js";
+import { selectImports } from "./imports.js";
 import { setupPager } from "./paging.js";
 import { readsValues } from "./readings.js";
 import { selectSchema } from "./schema.js";
@@ -118,6 +119,8 @@ async function route(requested) {
 		await showRow(linked[1], Number(linked[2]));
 	} else if (requested === "stats") {
 		await selectStats();
+	} else if (requested === "imports") {
+		await selectImports();
 	} else if (requested === "users" && isAdmin()) {
 		await selectUsers();
 	} else if (requested === "checks" && isAdmin()) {

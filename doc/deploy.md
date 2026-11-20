@@ -551,6 +551,10 @@ a person is written with `type_ids`, a list.
   `checks.md`.
 - `GET /api/schema` (admins only): every table as the database reports
   it, with row counts and drift from the code's models; see `schema.md`.
+- `GET /api/importers`, `POST /api/importers/<name>/runs`,
+  `GET /api/import-runs`: the importers and running them, the user's own
+  runs; and `/youtube/connect`, `/youtube/disconnect`, `/youtube/status`,
+  the YouTube account they read; see `imports.md`.
 - `GET /api/stats`: how many of everything the user has (library entries
   per kind and status, concerts, performers, museum visits and museums,
   people, organizations, both kinds of types, images), people and
@@ -594,7 +598,8 @@ writes `/api/library-entries` as JSON. The API is what a future mobile client or
 script would use as well. A path for rows is named after their table,
 with hyphens for underscores (`library_entries` is
 `/api/library-entries`, `concert_visits` is `/api/concert-visits`); the
-others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
+others (`config`, `stats`, `checks`, `schema`, `movies`, `importers`) are not tables.
+The Imports page and its API are in `imports.md`.
 
 - `GET /api/library-entries[?kind=book]`: the user's entries, each with
   `image`, its cover (the user's own image, the picture on its card),
@@ -726,6 +731,9 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
   `organizations`, `images`.
     - `disabled_checks`: the database checks an admin turned off for
   themselves (see `checks.md`).
+    - `youtube_connections`: the YouTube account a user connected for the
+  importers (a sealed refresh token), and `import_runs`, each run of an
+  importer (see `imports.md`).
     - the user's own enumerations: `organization_types`, `person_types`,
   `relation_types`, `person_relation_types`, `devices`.
     - `person_relations`: one person's relation to another (`person_id`

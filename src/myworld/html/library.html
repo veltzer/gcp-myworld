@@ -59,6 +59,11 @@
 					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
 					Stats
 				</a>
+				<!-- bring data in from elsewhere: YouTube playlists, ... -->
+				<a id="imports-link" class="stats-link side-link" href="/library#imports" title="Bring your data in from elsewhere: YouTube playlists, ...">
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+					Imports
+				</a>
 				<!-- only an admin can open these; for everyone else they stay here, disabled -->
 				<a id="users-link" class="stats-link side-link" href="/library#users" title="Every account and its role">
 					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm0 1.5c-3.3 0-6 1.8-6 4v2h12v-2c0-2.2-2.7-4-6-4zm7.5-1.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm.5 1.5c-.6 0-1.2.1-1.7.2 1.1.9 1.7 2.1 1.7 3.3v2h5v-2c0-1.9-2.2-3.5-5-3.5z"/></svg>
@@ -125,6 +130,23 @@
 				</p>
 				<!-- a group per dataset: its heading, its own Run all, its checks -->
 				<div id="checks-list"></div>
+			</section>
+			<section id="imports-view" hidden>
+				<p class="checks-intro">
+					Bring your data in from elsewhere. Any importer can run again whenever: it adds only what you do not
+					have, and never changes what you wrote. Dry run does it all and keeps nothing, to see what a run would do.
+				</p>
+				<!-- the YouTube account the importers read: Connect or Disconnect, always here -->
+				<p id="youtube-connection" class="youtube-connection"></p>
+				<div id="importers-list"></div>
+				<h2 class="schema-heading">Your last runs</h2>
+				<p id="import-runs-none" class="empty">No run yet.</p>
+				<table id="import-runs" class="entries" hidden>
+					<thead>
+						<tr><th>When (UTC)</th><th>Importer</th><th>Kind</th><th>Status</th><th>What it did</th></tr>
+					</thead>
+					<tbody id="import-runs-rows"></tbody>
+				</table>
 			</section>
 			<section id="schema-view" class="schema" hidden>
 				<p id="schema-summary" class="checks-intro"></p>

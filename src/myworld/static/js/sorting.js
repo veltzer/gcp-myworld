@@ -136,7 +136,7 @@ const SORTS = {
 const SORT_KEY = "myworld.sort";
 
 // views that are a page of their own, outside the tabs: nothing to search, sort or add
-const PAGES = new Set(["stats", "users", "checks", "schema"]);
+const PAGES = new Set(["stats", "imports", "users", "checks", "schema"]);
 
 function sortFields() {
 	if (PAGES.has(state.view)) {
@@ -218,7 +218,7 @@ export function updateTools() {
 	button.innerHTML = ARROWS[direction];
 	button.title = direction === "asc" ? "Ascending: click for descending" : "Descending: click for ascending";
 	button.setAttribute("aria-label", button.title);
-	// the stats, users and checks pages have nothing to search or add: both stay, disabled
+	// the stats, imports, users and checks pages have nothing to search or add: both stay, disabled
 	$("world-search").disabled = PAGES.has(state.view);
 	$("fab").disabled = PAGES.has(state.view);
 	const cards = state.view in CARDS || state.view in state.config.kinds;

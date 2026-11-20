@@ -2188,6 +2188,75 @@ button.text.check-toggle {
 	color: var(--muted);
 }
 
+/* ─── imports ───────────────────────────────────────────────────────────── */
+
+.youtube-connection {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem 1rem;
+}
+
+.importer {
+	margin-bottom: 1.5rem;
+	padding: 0.25rem 1rem 0.75rem;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: #fff;
+}
+
+.importer-dataset {
+	color: var(--muted);
+	font-weight: normal;
+	font-size: 0.9rem;
+}
+
+.importer-param {
+	display: grid;
+	gap: 0.25rem;
+	max-width: 40rem;
+}
+
+.importer-param-title {
+	font-weight: 600;
+}
+
+.importer-buttons {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.importer-unavailable {
+	color: var(--muted);
+}
+
+.importer-result.pass .importer-counts {
+	color: #1a7f37;
+}
+
+.importer-result.fail {
+	color: #b42318;
+}
+
+.importer-log {
+	max-height: 12rem;
+	overflow: auto;
+	margin: 0.25rem 0 0;
+	color: var(--ink);
+	font-size: 0.85rem;
+	white-space: pre-wrap;
+}
+
+#import-runs td.pass {
+	color: #1a7f37;
+}
+
+#import-runs td.fail {
+	color: #b42318;
+}
+
 /* ─── the map layout ─────────────────────────────────────────────────────── */
 
 .world-map {
