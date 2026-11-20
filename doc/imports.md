@@ -41,7 +41,21 @@ marked unavailable. It only ever adds: a video taken out of a playlist
 since stays. A playlist does not say when a video was watched, only when
 it was put in the playlist, so a video it adds has no date.
 
-It reads YouTube as the user, through the YouTube Data API: the user
+## YouTube details
+
+`youtube-details` gives YouTube's details (channel, category, length,
+upload day, views) to the user's YouTube videos that have none: no channel,
+or no length. Those are videos that came with a name only (a watch history
+that had no details for them), and the ones YouTube no longer had, asked
+about again in case it has them back. It takes no parameters and adds
+nothing; a video YouTube does not have is marked unavailable and keeps what
+was known of it, and what the user wrote is never changed. It reads YouTube
+through the same connection as the playlists, so a run again asks only
+about the videos still without details.
+
+## Connecting YouTube
+
+The YouTube importers read YouTube as the user, through the YouTube Data API: the user
 connects their YouTube account on the page once ("Connect YouTube"), which
 asks Google's consent for the `youtube.readonly` scope, read only. Signing
 in with Google asks nothing of the kind: it only says who the user is.

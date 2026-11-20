@@ -28,7 +28,7 @@ UNAVAILABLE = "of them YouTube no longer has"
 DETAILS = ("channel", "category", "duration", "uploaded", "views")
 
 
-def _client(session: Session, owner: User) -> youtube.Client:
+def client_of(session: Session, owner: User) -> youtube.Client:
     try:
         return youtube.client_for(session, owner)
     except youtube.YouTubeError as e:
@@ -37,7 +37,7 @@ def _client(session: Session, owner: User) -> youtube.Client:
 
 def playlists(session: Session, owner: User) -> list[tuple[str, str]]:
     try:
-        return youtube.my_playlists(_client(session, owner))
+        return youtube.my_playlists(client_of(session, owner))
     except youtube.YouTubeError as e:
         raise ImporterError(str(e)) from e
 
@@ -51,7 +51,7 @@ def unavailable(session: Session, owner: User) -> str:
 
 
 def run(session: Session, owner: User, params: dict[str, Any], report: Report) -> None:
-    client = _client(session, owner)
+    client = client_of(session, owner)
     try:
         titles = dict(youtube.my_playlists(client))
         ids: dict[str, None] = {}
@@ -62,9 +62,19 @@ def run(session: Session, owner: User, params: dict[str, Any], report: Report) -
         details = youtube.video_details(client, list(ids))
     except youtube.YouTubeError as e:
         raise ImporterError(str(e)) from e
+    store(session, owner, list(ids), details, report)
+
+
+def store(session: Session, owner: User, ids: list[str], details: dict[str, dict[str, Any]], report: Report) -> None:
+    """
+    The videos of ids, with what YouTube says of each (details, by id: one
+    it no longer has is not there): one the user does not have is added, one
+    they have is given YouTube's details and keeps what they wrote. Counted
+    in report.
+    """
     have = {
         v.youtube_id: v
-        for v in session.scalars(select(YouTubeVideo).where(YouTubeVideo.owner_id == owner.id, YouTubeVideo.youtube_id.in_(list(ids))))
+        for v in session.scalars(select(YouTubeVideo).where(YouTubeVideo.owner_id == owner.id, YouTubeVideo.youtube_id.in_(ids)))
     } if ids else {}
     counted: Counter[str] = Counter()
     for video_id in ids:

@@ -26,7 +26,7 @@ from myworld.importers.core import (
 )
 
 # a module registers its importer as it is imported; the page lists them in this order
-for _module in ("youtube_playlists",):
+for _module in ("youtube_playlists", "youtube_details"):
     importlib.import_module(f"myworld.importers.{_module}")
 
 __all__ = ["IMPORTERS", "Importer", "ImporterError", "Param", "ParamError", "Report", "parse_params", "register", "run", "run_json"]

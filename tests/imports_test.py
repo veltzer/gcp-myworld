@@ -406,3 +406,36 @@ def test_the_playlists_of_the_last_run_are_picked_to_start_with(app: webtest.Tes
     # each user's own
     sign_in(app, "bob")
     assert chosen() == []
+
+
+def test_youtube_details_fills_in_the_videos_that_have_none(app: webtest.TestApp, engine: Engine, fake: FakeYouTube) -> None:
+    sign_in(app)
+    connect(app)
+    owner = alice(engine).id
+    with Session(engine) as session:
+        session.add_all([
+            # came with a name only: gets YouTube's details, keeps the user's name and rating
+            YouTubeVideo(owner_id=owner, youtube_id="vidMusic001", name="My name", rating=7, review="", watched_at=""),
+            # had them already: not asked for
+            YouTubeVideo(owner_id=owner, youtube_id="vidTalks001", name="A talk", review="", watched_at="", channel="Mine", duration=60),
+            # YouTube has it no more: marked so, its name stays
+            YouTubeVideo(owner_id=owner, youtube_id="vidGone0001", name="Gone", review="", watched_at=""),
+        ])
+        session.commit()
+
+    def post(dry_run: bool) -> Any:
+        return app.post_json("/api/importers/youtube-details/runs", {"params": {}, "dry_run": dry_run}).json
+
+    assert post(True)["counts"] == {"YouTube videos given YouTube's details": 2}
+    assert videos(engine)["vidMusic001"].duration is None
+    done = post(False)
+    assert done["status"] == "done"
+    assert done["counts"] == {"YouTube videos given YouTube's details": 2}
+    assert done["log"] == "2 videos without YouTube's details"
+    have = videos(engine)
+    assert (have["vidMusic001"].name, have["vidMusic001"].rating, have["vidMusic001"].channel, have["vidMusic001"].duration) == ("My name", 7, "Band", 3723)
+    assert (have["vidTalks001"].channel, have["vidTalks001"].duration) == ("Mine", 60)
+    assert (have["vidGone0001"].name, have["vidGone0001"].unavailable) == ("Gone", True)
+    # again: only the gone one is asked about, and nothing changes
+    assert post(False)["counts"] == {"YouTube videos unchanged": 1}
+    assert len(videos(engine)) == 3

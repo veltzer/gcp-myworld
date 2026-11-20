@@ -80,7 +80,9 @@ function importerCard(importer) {
 	const card = el("section", "importer");
 	const heading = el("h2", "schema-heading", importer.title);
 	heading.appendChild(el("span", "importer-dataset", ` into ${importer.dataset_name}`));
-	card.append(heading, el("p", "checks-intro", `${importer.description} Pick as many as you like; the ones of your last run are picked to start with.`));
+	// one with choices to make says how they are picked
+	const picking = importer.params.length ? " Pick as many as you like; the ones of your last run are picked to start with." : "";
+	card.append(heading, el("p", "checks-intro", `${importer.description}${picking}`));
 	const fields = [];
 	for (const param of importer.params) {
 		const row = el("label", "importer-param");
