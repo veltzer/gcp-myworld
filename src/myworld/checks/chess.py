@@ -15,6 +15,8 @@ from myworld.models import ChessGame
 READ = (
     ChessGame.id, ChessGame.owner_id, ChessGame.color, ChessGame.white, ChessGame.black, ChessGame.opponent, ChessGame.plies, ChessGame.final_position,
     ChessGame.date_utcz, ChessGame.date_ymd, ChessGame.date_my, ChessGame.date_y,
+    # whether it has its text, asked of the database, which reads the text itself
+    (ChessGame.pgn != "").label("has_text"),
 )
 
 
@@ -27,11 +29,17 @@ def problem(game: Any, message: str) -> Problem:
     return Problem(f"{pgn.name(game.white, game.black, game.opponent)} (chess game {game.id}, account {game.owner_id})", message, f"chess/{game.id}", game.owner_id)
 
 
-@check("chess-dates", "Every chess game has a date", "chess games", "chess")
+@check("chess-dates", "Every chess game with its text has a date", "chess games", "chess")
 def check_chess_dates(session: Session) -> Result:
-    """ Every chess game, of every account, has the date it was played (a day, a month, a year or a full time). """
+    """
+    Every chess game of every account that has its text has the date it was
+    played (a day, a month, a year or a full time): a game's text says its
+    date, so one without is a text read wrong. A game recorded without its
+    moves (only whom the user played and how it ended) is not asked for one:
+    many were never dated, and that is how they are kept.
+    """
     found = games(session)
-    undated = [g for g in found if g.date_utcz is None and g.date_ymd is None and not g.date_my and g.date_y is None]
+    undated = [g for g in found if g.has_text and g.date_utcz is None and g.date_ymd is None and not g.date_my and g.date_y is None]
     return Result(checked=len(found), problems=[problem(g, "has no date") for g in undated])
 
 

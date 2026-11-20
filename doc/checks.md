@@ -151,7 +151,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
 
 ### Chess (`chess`)
 
-- `chess-dates`: every chess game has the date it was played.
+- `chess-dates`: every chess game with its text has the date it was
+  played; one recorded without its moves need not.
 - `chess-players`: every chess game names its two players, and they are
   not the same name; one recorded without its sides names the opponent.
 - `chess-positions`: every chess game with moves says where its pieces

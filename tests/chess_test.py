@@ -246,7 +246,8 @@ def test_the_checks(engine: Engine) -> None:
             ChessGame(source_key="6", white="veltzer", black="Odd", **{**good, "final_position": "8/8"}),
             # recorded without its moves or sides: the opponent is all it names, and it has no position to show
             ChessGame(source_key="7", owner_id=me.id, color="", white="", black="", opponent="Yaron", outcome="won", pgn="", date_y=2001),
-            ChessGame(source_key="8", owner_id=me.id, color="", white="", black="", opponent="", outcome="won", pgn="", date_y=2001),
+            # and undated: a game without its text is not asked for a date
+            ChessGame(source_key="8", owner_id=me.id, color="", white="", black="", opponent="", outcome="won", pgn=""),
         ])
         session.commit()
 
