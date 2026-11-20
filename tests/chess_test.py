@@ -274,7 +274,7 @@ CHESS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 		<opponent><id>1</id><category>pub</category><description>met in Rosh Pinah</description></opponent>
 	</opponents>
 	<games>
-		<game><opponentid>0</opponentid><result>won</result><date>16.6.01</date><length>unknown</length><timecontrol>1:50:1:50</timecontrol></game>
+		<game><opponentid>0</opponentid><result>won</result><date>16.6.01</date><length>unlimited</length><timecontrol>1:50:1:50</timecontrol></game>
 		<game><opponentid>0</opponentid><result>won</result><date>unknown</date><length>unknown</length><timecontrol>unknown</timecontrol></game>
 		<game><opponentid>0</opponentid><result>won</result><date>unknown</date><length>unknown</length><timecontrol>unknown</timecontrol></game>
 		<game><opponentid>1</opponentid><result>pat</result><date>19.8.99</date><length>unlimited</length><timecontrol>unknown</timecontrol></game>
@@ -302,7 +302,8 @@ def test_the_games_recorded_without_their_moves(engine: Engine, tmp_path: Path, 
             (datetime.date(1999, 8, 19), "unlimited", "stalemate", "opponent's category: pub"), (datetime.date(2002, 12, 13), "", "", "on the beach; opponent's category: pub"),
         ]
         # what the file says of the opponent besides their name is in the remark; one without a name goes by their description
-        assert games[0].remark == "opponent: brother; opponent's category: family"
+        # a game the file gives both a time control and a length: the time control is its time control, the length a remark
+        assert games[0].remark == "length: unlimited; opponent: brother; opponent's category: family"
         assert (games[0].date_ymd, games[0].time_control, games[3].opponent, games[4].outcome) == (datetime.date(2001, 6, 16), "1:50:1:50", "met in Rosh Pinah", "drawn")
         # run again, nothing is added; a game added to the file's end is
         assert import_chess_xml.import_chess_xml(session, me, path)["added"] == 0
@@ -312,7 +313,7 @@ def test_the_games_recorded_without_their_moves(engine: Engine, tmp_path: Path, 
         # a day no calendar has: the year is sure, and the day is kept as the file wrote it
         path.write_text(CHESS_XML.replace("<date>16.6.01</date>", "<date>31.11.01</date>"), encoding="UTF8")
         first = import_chess_xml.games(path)[0]
-        assert (first["date_ymd"], first["date_y"], first["remark"]) == (None, 2001, "dated 31.11.01 in chess.xml, a day its month does not have; opponent: brother; opponent's category: family")
+        assert (first["date_ymd"], first["date_y"], first["remark"]) == (None, 2001, "dated 31.11.01 in chess.xml, a day its month does not have; length: unlimited; opponent: brother; opponent's category: family")
         # what the import refuses: an opponent it does not have, a result it does not know, a date it cannot read
         for wrong, replaced, error in (
             ("<opponentid>0</opponentid><result>lost", "<opponentid>9</opponentid><result>lost", "no opponent"),

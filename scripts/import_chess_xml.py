@@ -123,12 +123,14 @@ def games(path: Path) -> list[dict[str, Any]]:
             raise ChessXmlError(f"game {place}: no opponent {field.get('opponentid')!r}")
         if field.get("result") not in OUTCOMES:
             raise ChessXmlError(f"game {place}: the result {field.get('result')!r} is none of {', '.join(OUTCOMES)}")
-        # the time control, else how long it was ("unlimited", "long")
-        time_control = known(field.get("timecontrol", UNKNOWN)) or known(field.get("length", UNKNOWN))
+        # the time control, else how long it was ("unlimited", "long"); where the file says both, how long it was is a remark
+        length = known(field.get("length", UNKNOWN))
+        time_control = known(field.get("timecontrol", UNKNOWN)) or length
         date_ymd, date_y = when(field.get("date", UNKNOWN))
         # a day no calendar has is kept as the file wrote it
         name, about = names[field["opponentid"]]
-        remarks = [field.get("remark", ""), f"dated {field['date']} in chess.xml, a day its month does not have" if date_y else "", about]
+        remarks = [field.get("remark", ""), f"dated {field['date']} in chess.xml, a day its month does not have" if date_y else "",
+                   f"length: {length}" if length and length != time_control else "", about]
         rows.append({
             "source_key": KEY.format(place),
             "color": "", "white": "", "black": "", "white_elo": None, "black_elo": None,
