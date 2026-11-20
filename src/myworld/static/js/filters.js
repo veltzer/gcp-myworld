@@ -8,7 +8,8 @@ import { TYPED, el, formatDate } from "./worlds.js";
 
 // The filter next to the search, in groups. On a view whose rows have a
 // type (people, organizations) one group picks types; on a library kind
-// one picks statuses (Done, Want to, ...) and one whether it has a cover.
+// one picks statuses (Done, Want to, ...) and one whether it has a cover; on
+// the chess games one picks how they ended, one the side played, one the site.
 // Kept per view as a set of "group:value" ("type:none" for the rows without
 // a type), empty for everything. A row matches when, in every group with
 // something picked, it has one of the picked values.
@@ -28,6 +29,22 @@ async function filterSpec(view) {
 		const types = await worldList(TYPED[view]);
 		const options = types.map((t) => ({ value: String(t.id), name: t.name, count: t.count }));
 		return { all: "All types", groups: [{ key: "type", heading: "", options: [...options, { value: "none", name: "No type", count: null }] }] };
+	}
+	if (view === "chess") {
+		// how it ended, the side played and where it was played, each value with how many games have it
+		const games = await worldList(view);
+		const group = (key, heading, value) => {
+			const counts = new Map();
+			for (const game of games) {
+				counts.set(value(game), (counts.get(value(game)) || 0) + 1);
+			}
+			const options = [...counts].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ value: name, name: name || "(none)", count }));
+			return { key, heading, options };
+		};
+		return {
+			all: "All games",
+			groups: [group("outcome", "Result", (g) => g.outcome), group("color", "Played as", (g) => (g.color === "white" ? "White" : "Black")), group("site", "Site", (g) => g.site)],
+		};
 	}
 	if (state.config.kinds[view]) {
 		const count = (test) => state.entries.filter(test).length;
@@ -51,6 +68,15 @@ function filterValues(group, item) {
 	}
 	if (group === "cover") {
 		return [item.image ? "yes" : "no"];
+	}
+	if (group === "outcome") {
+		return [item.outcome];
+	}
+	if (group === "color") {
+		return [item.color === "white" ? "White" : "Black"];
+	}
+	if (group === "site") {
+		return [item.site];
 	}
 	// a person has a list of types, an organization one
 	const types = item.types || (item.type ? [item.type] : []);
@@ -124,7 +150,14 @@ export async function fillTypeFilter(view) {
 }
 
 // the filter groups a view has, by key
-const FILTER_GROUPS = { type: (view) => Boolean(TYPED[view]), status: (view) => view in state.config.kinds, cover: (view) => view in state.config.kinds };
+const FILTER_GROUPS = {
+	type: (view) => Boolean(TYPED[view]),
+	status: (view) => view in state.config.kinds,
+	cover: (view) => view in state.config.kinds,
+	outcome: (view) => view === "chess",
+	color: (view) => view === "chess",
+	site: (view) => view === "chess",
+};
 
 export function typeMatches(item) {
 	const view = state.view;

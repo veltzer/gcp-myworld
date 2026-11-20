@@ -105,6 +105,7 @@ function renderStats(stats) {
 		statTile("Museum visits", stats.museum_visits, `${stats.museums} museums`, "museums"),
 		statTile("Audio courses", stats.audio_courses, "", "audio-courses"),
 		statTile("YouTube videos", stats.youtube_videos, "", "youtube"),
+		statTile("Chess games", stats.chess_games, stats.chess_by_outcome.map((o) => `${o.count.toLocaleString()} ${o.name.toLowerCase()}`).join(" · "), "chess"),
 		statTile("Places", stats.places, "", "places"),
 		statTile("Cities", stats.cities, "", "cities"),
 		statTile("Countries", stats.countries, "", "countries"),
@@ -128,6 +129,7 @@ function renderStats(stats) {
 		yearChart("Museum visits per year", stats.museums_by_year, "visits"),
 		barChart("YouTube videos by channel (the most watched)", stats.youtube_by_channel),
 		barChart("YouTube videos by category", stats.youtube_by_category),
+		yearChart("Chess games per year", stats.chess_by_year, "games"),
 	);
 	$("stats-view").replaceChildren(tiles, charts);
 }

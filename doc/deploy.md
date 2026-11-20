@@ -433,6 +433,36 @@ first `companies` tables to `organizations`, then making
   `scripts/import_world.py --youtube`, and the watch history (about
   30,000 videos, `static/data/youtube.json.gz`) by `--youtube-history`,
   which can run again.
+- `GET /api/chess-games`: the games of chess played, newest first, each
+  with `name` (its players, "White vs Black"), the date, `color` (the
+  side the user played), `white`, `black`, `white_elo`, `black_elo`,
+  `result` (`1-0`, `0-1`, `1/2-1/2`, or `*` for none), `termination` (how
+  it ended, in the words of where it was played), `time_control`, `eco`,
+  `opening`, `event`, `site`, `link` (its page at the site), `plies` (the
+  moves made, counting each side's), `position` (where the pieces stood
+  when it ended, the first field of a FEN: the page draws the card's
+  picture from it, seen from the user's side) and `remark`. With
+  `?compact=1` the answer is `{columns, rows}`, the names of the fields
+  once and each game as its values, which is what the page asks for (60,000
+  games are 17 MB so, 3.6 MB on the wire). `GET /api/chess-games/<id>` is
+  one game with what only a game opened needs: `pgn` (the game as it was
+  written), `moves` (each as it is written: `e4`, `Nxf7+`) and `clocks` (the clock after each move, where
+  the site wrote them). Its dialog plays it through on a board, with the
+  arrow keys or a click on a move.
+  A game is added by `pgn`, one game's text, with `color`; the same game
+  twice is a 409. The server reads the moves and does not play them, so
+  the page, which does (with `chess.js`), sends `final_position` once a game is
+  added, unless its site said where it ended (`CurrentPosition`). An edit
+  changes `color` and `remark`, and reads the game again when `pgn` is
+  sent. Files of games are imported by
+  `scripts/import_chess.py --email ADDRESS`, from
+  `../data/raw/topics/games/chess` (`.pgn` and `.pgn.gz`)
+  or from the files named: it adds the games the account does not have
+  yet, so it can run again, on newer files too. A game is told from every
+  other by its address at Chess.com, else by its players, day and moves.
+  The user is whoever is called by one of `--handle`, written exactly; a
+  game neither of whose players is the user is left out. It plays every
+  game (with `python-chess`, a tool of the import only) to find where it ended.
 - Books are imported from `books_read.yaml` in `veltzer.github.io` (with
   the rating and review of `text_books.yaml`) by
   `scripts/import_world.py --books`, which adds the books the account does
@@ -492,7 +522,7 @@ a person is written with `type_ids`, a list.
   (how it is related to the user: ids and names of relation types), status, website, location, address, `latitude` and `longitude`, the logo as
   `image`, and `people` (ids and names).
 - `POST` to the same paths adds,
-  `PUT /api/<concert-visits|museum-visits|audio-courses|youtube-videos|places|groups|people|organizations>/<id>` replaces the fields,
+  `PUT /api/<concert-visits|museum-visits|audio-courses|youtube-videos|chess-games|places|groups|people|organizations>/<id>` replaces the fields,
   `DELETE` removes. The date is sent as `YYYY`, `YYYY-MM` or
   `YYYY-MM-DD` (the add and edit forms pick it with a date picker and a Day, Month
   only or Year only choice, so it is always a real date); a date sent back exactly as it came keeps its stored
@@ -673,9 +703,10 @@ others (`config`, `stats`, `checks`, `schema`, `movies`) are not tables.
 - Every table that holds an account's rows says whose they are in
   `owner_id` (or through the rows it links), and none is shared; only
   `locales`, the list of languages an admin keeps, is the same for all:
-    - `concert_visits`, `museum_visits`, `audio_courses`, `youtube_videos`:
-  one row per thing done (see "Concerts, museums, people and
-  organizations").
+    - `concert_visits`, `museum_visits`, `audio_courses`, `youtube_videos`,
+  `chess_games`: one row per thing done (see "Concerts, museums, people and
+  organizations"). A chess game keeps its text whole (`pgn`), and beside it
+  what is listed and sorted by, read out of that text.
     - `places` (where things happened: a concert's `place_id` points to
   one), `cities` (places, museum visits and organizations point to the one
   they are in) and `countries` (a city points to its own), `groups` (named groups of people: a band), `people`,

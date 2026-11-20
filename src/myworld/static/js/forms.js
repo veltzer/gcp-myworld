@@ -1,5 +1,6 @@
 // The forms of the dialog: what each page's form shows and what it sends.
 
+import { play } from "./board.js";
 import { $, api } from "./core.js";
 import { PHOTO_MAX_BYTES, adderButton, dialogError, dialogLink, pictureBody, pictures, removeButton, setPickerRows, setPickerValue, syncAlone, worldList } from "./dialog.js";
 import { movieIdsReset } from "./films.js";
@@ -278,6 +279,12 @@ const WORLD_BODIES = {
 			watched_at: value("watched_at"),
 		};
 	},
+	chess: async (form) => ({
+		// the game's text is what it is added by; one that exists keeps its own
+		...(state.editing ? {} : { pgn: form.elements.pgn.value }),
+		color: form.elements.color.value,
+		remark: form.elements.remark.value,
+	}),
 	concerts: async (form) => {
 		const value = (name) => form.elements[name].value;
 		return {
@@ -440,6 +447,20 @@ async function offerRegions() {
 	}));
 }
 
+// What follows a row saved, for the views that have something: a chess game added has
+// its moves played here (the server only reads them), which says where its pieces
+// ended: the picture of its card. A game whose site said so already has it.
+const AFTER_SAVE = {
+	chess: async (saved, path) => {
+		if (saved.position) {
+			return;
+		}
+		const game = await api(`${path}/${saved.id}`);
+		const { positions } = play(game.moves);
+		await api(`${path}/${saved.id}`, { method: "PUT", body: { color: saved.color, remark: saved.remark, final_position: positions[positions.length - 1] } });
+	},
+};
+
 export function setupWorldForm(view) {
 	const path = WORLDS[view][1];
 	const form = $(`${slug(view)}-form`);
@@ -453,11 +474,8 @@ export function setupWorldForm(view) {
 		submit.disabled = true;
 		try {
 			const body = await WORLD_BODIES[view](form);
-			if (state.editing) {
-				await api(`${path}/${state.editing.id}`, { method: "PUT", body });
-			} else {
-				await api(path, { method: "POST", body });
-			}
+			const saved = state.editing ? await api(`${path}/${state.editing.id}`, { method: "PUT", body }) : await api(path, { method: "POST", body });
+			await AFTER_SAVE[view]?.(saved, path);
 			$("add-dialog").close();
 			await refreshWorld();
 		} catch (e) {

@@ -9,7 +9,7 @@ import { WORLDS, el } from "./worlds.js";
 // the sidebar's groups of views (the library's kinds come first, from the config)
 // The library kinds (books) come first in Datasets, ahead of these
 const NAV_GROUPS = [
-	["Datasets", ["concerts", "museums", "audio-courses", "youtube", "places", "cities", "countries"]],
+	["Datasets", ["concerts", "museums", "audio-courses", "youtube", "chess", "places", "cities", "countries"]],
 	["People", ["people", "groups", "organizations"]],
 	["Types", ["organization-types", "person-types", "relation-types", "person-relation-types", "person-organization-types", "devices", "locales"]],
 ];
@@ -66,7 +66,7 @@ export async function loadCounts() {
 		setCount(kind.kind, kind.total);
 	}
 	const keys = {
-		concerts: "concerts", museums: "museums", "audio-courses": "audio_courses", youtube: "youtube_videos",
+		concerts: "concerts", museums: "museums", "audio-courses": "audio_courses", youtube: "youtube_videos", chess: "chess_games",
 		places: "places", cities: "cities", countries: "countries", people: "people", groups: "groups", organizations: "organizations", "organization-types": "organization_types",
 		"person-types": "person_types", "relation-types": "relation_types", "person-relation-types": "person_relation_types",
 		"person-organization-types": "person_organization_types", devices: "devices", locales: "locales",

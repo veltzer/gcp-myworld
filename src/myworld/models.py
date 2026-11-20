@@ -1211,6 +1211,53 @@ class YouTubeVideo(_Dated, Base):
     unavailable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
 
 
+class ChessGame(_Dated, Base):
+    """
+    A game of chess the user played; the date (_Dated) is when. Imported by
+    scripts/import_chess.py from PGN files, or added by pasting one game's
+    PGN. pgn is the game as it was written, tags and moves, so nothing a
+    file said is lost; the other columns are what is listed, sorted and
+    searched by, read out of it (myworld.pgn). A game is told from every
+    other by source_key (its address at the site it was played on, else a
+    hash of its players, day and moves), so one imported twice is one.
+    """
+    __tablename__ = "chess_games"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "source_key", name="uq_chess_game_source"),
+        CheckConstraint("color IN ('white', 'black')", name="ck_chess_game_color"),
+        CheckConstraint("result IN ('1-0', '0-1', '1/2-1/2', '*')", name="ck_chess_game_result"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    # the side the user played
+    color: Mapped[str] = mapped_column(String(5), nullable=False)
+    # the players, by the names they went by where it was played, and their ratings then
+    white: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    black: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    white_elo: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    black_elo: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # "1-0" (White won), "0-1", "1/2-1/2", or "*" for a game with no result
+    result: Mapped[str] = mapped_column(String(7), nullable=False, default="*")
+    # how it ended, in the words of where it was played ("veltzer resigns", "nfloz84 won on time")
+    termination: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    time_control: Mapped[str] = mapped_column(String(50), nullable=False, default="")
+    eco: Mapped[str] = mapped_column(String(10), nullable=False, default="")
+    opening: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    event: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    site: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    # its page at the site it was played on, when it has one
+    link: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    # how many moves were made, counting each side's
+    plies: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # where the pieces stood when it ended (the first field of a FEN): the picture of its card
+    final_position: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # read only when one game is opened: the list never needs it
+    pgn: Mapped[str] = mapped_column(Text, nullable=False, deferred=True)
+
+
 def database_url() -> str:
     """
     Where the data lives.
@@ -1243,7 +1290,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0005"
+SCHEMA_REVISION = "0006"
 
 
 def prepare_schema(engine: Engine) -> None:

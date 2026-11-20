@@ -1,6 +1,6 @@
 // The pages of the world: concerts, museums, people, organizations and the rest.
 
-import { $, showError } from "./core.js";
+import { $, api, showError } from "./core.js";
 import { state } from "./library.js";
 import { rerender } from "./sorting.js";
 import { showRow } from "./views.js";
@@ -11,6 +11,7 @@ export const WORLDS = {
 	museums: ["My Museums", "/api/museum-visits", "museum", "Museums"],
 	"audio-courses": ["Audio courses", "/api/audio-courses", "audio course", "Audio courses"],
 	youtube: ["YouTube videos", "/api/youtube-videos", "YouTube video", "YouTube"],
+	chess: ["Chess games", "/api/chess-games", "chess game", "Chess"],
 	places: ["Places", "/api/places", "place", "Places"],
 	cities: ["Cities", "/api/cities", "city", "Cities"],
 	countries: ["Countries", "/api/countries", "country", "Countries"],
@@ -40,6 +41,33 @@ export function slug(view) {
 }
 
 export const worldCache = {};
+
+// how a game ended for the user, from the side they played and its result
+const OUTCOMES = { "1-0": ["Won", "Lost"], "0-1": ["Lost", "Won"], "1/2-1/2": ["Drawn", "Drawn"] };
+
+// A chess game as the page uses it: with its name, the opponent, both ratings by whose they are, and how it ended for the user
+export function chessGame(game) {
+	const white = game.color === "white";
+	return {
+		...game,
+		name: `${game.white} vs ${game.black}`,
+		opponent: white ? game.black : game.white,
+		rating: white ? game.white_elo : game.black_elo,
+		opponent_rating: white ? game.black_elo : game.white_elo,
+		outcome: (OUTCOMES[game.result] || [])[white ? 0 : 1] || "No result",
+	};
+}
+
+// The rows of a view, fetched. The chess games, 60,000 of them, come with the names of
+// their fields said once and each game as its values, and are made rows here.
+export async function fetchWorld(view) {
+	const path = WORLDS[view][1];
+	if (view !== "chess") {
+		return api(path);
+	}
+	const { columns, rows } = await api(`${path}?compact=1`);
+	return rows.map((values) => chessGame(Object.fromEntries(columns.map((column, index) => [column, values[index]]))));
+}
 
 export function el(tag, className, text) {
 	const node = document.createElement(tag);

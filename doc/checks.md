@@ -8,7 +8,7 @@ checks read the whole database, every account's rows, and change nothing.
 
 - **In the app:** the Checks page (sidebar, Overview, admins only; see
   `accounts.md`) lists the checks by dataset, a dataset for every page of
-  data in the sidebar (Books, Concerts to YouTube, People,
+  data in the sidebar (Books, Concerts to Chess, People,
   Organizations, and the four Types pages), each dataset under a heading
   with its own Run all. Every check is one row of the same height: a box
   that turns it on or off, its title (the description is the tooltip),
@@ -148,6 +148,15 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `youtube-dates`: every YouTube video has the date it was watched.
 - `youtube-reviews`: every YouTube video has a rating and a review.
 - `youtube-devices`: every YouTube video has the device it was watched on.
+
+### Chess (`chess`)
+
+- `chess-dates`: every chess game has the date it was played.
+- `chess-players`: every chess game names its two players, and they are
+  not the same name.
+- `chess-positions`: every chess game says where its pieces stood when it
+  ended, as eight ranks of pieces; one added while the page could not
+  play its moves has none.
 
 ### Groups (`groups`)
 

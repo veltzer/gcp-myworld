@@ -1,6 +1,6 @@
 """
 JSON API for what the signed-in user keeps: concerts, museums and their
-visits, audio courses, YouTube videos, people, organizations, places, groups,
+visits, audio courses, YouTube videos, chess games, people, organizations, places, groups,
 cities and countries. For each: what a row looks like as JSON, how a request
 body is applied to it, and the routes that list, add, edit and delete it.
 Every query is filtered by owner_id, so a user only ever sees, and only ever
@@ -18,7 +18,7 @@ import flask
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from myworld import auth, languages, names
+from myworld import auth, languages, names, pgn
 from myworld.api import (
     ApiError,
     coordinates,
@@ -35,6 +35,7 @@ from myworld.models import (
     RATING_MIN,
     YOUTUBE_ID_LENGTH,
     AudioCourse,
+    ChessGame,
     City,
     CityPhoto,
     Concert,
@@ -73,7 +74,7 @@ from myworld.pictures import (
 bp = flask.Blueprint("world", __name__)
 
 
-def date_json(row: Concert | MuseumVisit | AudioCourse | YouTubeVideo) -> dict[str, Any]:
+def date_json(row: Any) -> dict[str, Any]:
     """ The date as precisely as it is known, and a sortable key for it. """
     if row.date_utcz is not None:
         utc = row.date_utcz.replace(tzinfo=datetime.UTC)
@@ -320,6 +321,43 @@ def youtube_video_json(video: YouTubeVideo) -> dict[str, Any]:
     }
 
 
+# what the list of games says of each: every column but the game's text, which only one game opened needs
+CHESS_LISTED = (
+    ChessGame.id, ChessGame.date_utcz, ChessGame.date_ymd, ChessGame.date_my, ChessGame.date_y, ChessGame.date_timezone,
+    ChessGame.color, ChessGame.white, ChessGame.black, ChessGame.white_elo, ChessGame.black_elo, ChessGame.result,
+    ChessGame.termination, ChessGame.time_control, ChessGame.eco, ChessGame.opening, ChessGame.event, ChessGame.site,
+    ChessGame.link, ChessGame.plies, ChessGame.final_position, ChessGame.remark,
+)
+
+
+def chess_game_json(game: Any) -> dict[str, Any]:
+    """ A game as the list has it: of a ChessGame, or of a row of CHESS_LISTED (60,000 games are read as rows, not as objects). """
+    return {
+        "id": game.id,
+        "name": f"{game.white} vs {game.black}",
+        **date_json(game),
+        "date_timezone": game.date_timezone,
+        # the side the user played
+        "color": game.color,
+        "white": game.white,
+        "black": game.black,
+        "white_elo": game.white_elo,
+        "black_elo": game.black_elo,
+        "result": game.result,
+        "termination": game.termination,
+        "time_control": game.time_control,
+        "eco": game.eco,
+        "opening": game.opening,
+        "event": game.event,
+        "site": game.site,
+        "link": game.link,
+        "plies": game.plies,
+        # where the pieces stood at the end: the page draws its card's picture from it
+        "position": game.final_position,
+        "remark": game.remark,
+    }
+
+
 def person_json(person: Person) -> dict[str, Any]:
     return {
         "id": person.id,
@@ -419,6 +457,37 @@ def api_youtube() -> flask.Response:
     query = select(YouTubeVideo).where(YouTubeVideo.owner_id == flask.g.user.id).options(selectinload(YouTubeVideo.device))
     videos = flask.g.db.execute(query).scalars().all()
     return flask.jsonify(_newest_first([youtube_video_json(v) for v in videos]))
+
+
+@bp.route("/api/chess-games", methods=["GET"])
+@auth.login_required
+def api_chess_games() -> flask.Response:
+    """
+    The user's games, newest first. ?compact=1 says the names of the fields
+    once ("columns") and each game as its values in that order ("rows"),
+    which is what the page asks for: 60,000 games are half the size so.
+    """
+    games = flask.g.db.execute(select(*CHESS_LISTED).where(ChessGame.owner_id == flask.g.user.id)).all()
+    listed = _newest_first([chess_game_json(game) for game in games])
+    if flask.request.args.get("compact") != "1":
+        return flask.jsonify(listed)
+    # (a game's name is its players': the page puts it together)
+    columns = [column for column in (listed[0] if listed else chess_game_json(ChessGame(white="", black=""))) if column != "name"]
+    return flask.jsonify({"columns": columns, "rows": [[game[column] for column in columns] for game in listed]})
+
+
+@bp.route("/api/chess-games/<int:row_id>", methods=["GET"])
+@auth.login_required
+def api_chess_game(row_id: int) -> flask.Response:
+    """ One game, with what only a game opened needs: its text, and its moves to play through (each with the clock after it, where one was written). """
+    game = owned(ChessGame, row_id)
+    moves = pgn.parse(game.pgn).moves
+    return flask.jsonify({
+        **chess_game_json(game),
+        "pgn": game.pgn,
+        "moves": [move.san for move in moves],
+        "clocks": [move.clock for move in moves] if any(move.clock for move in moves) else [],
+    })
 
 
 @bp.route("/api/museum-visits", methods=["GET"])
@@ -786,6 +855,51 @@ def _apply_youtube_video(video: YouTubeVideo, body: dict[str, Any]) -> None:
     _apply_dates(video, body)
 
 
+def _apply_chess_game(game: ChessGame, body: dict[str, Any]) -> None:
+    """
+    A game is added by its PGN, one game's, and says what it is itself; the
+    user says which side they played. Edited, its PGN may be sent again (it
+    is read again) or left out. final_position is where the pieces ended,
+    worked out by the page, which plays the moves: the server only reads
+    them. It is the picture of the user's own card, so it is taken as said.
+    """
+    written = body.get("pgn")
+    if written is not None and not isinstance(written, str):
+        raise ApiError(400, "pgn: expected a string")
+    if not (written or "").strip():
+        if game.id is None:
+            raise ApiError(400, "pgn: required")
+    else:
+        if len(pgn.split(written or "")) > 1:
+            raise ApiError(400, "pgn: one game at a time (scripts/import_chess.py imports a file of them)")
+        try:
+            read = pgn.parse(written or "")
+        except pgn.PgnError as e:
+            raise ApiError(400, f"pgn: {e}") from e
+        fields = pgn.fields(read)
+        clash = flask.g.db.execute(select(ChessGame.id).where(
+            ChessGame.owner_id == flask.g.user.id, ChessGame.source_key == fields["source_key"], ChessGame.id != game.id,
+        )).first()
+        if clash is not None:
+            raise ApiError(409, "that game is in your list already")
+        for column, value in fields.items():
+            setattr(game, column, value)
+        game.date_timezone = "UTC" if game.date_utcz is not None else ""
+        # where it ended, as the site wrote it; with no move made, where it started
+        game.final_position = read.tags.get("CurrentPosition", "").split(" ")[0] or ("" if read.moves else pgn.START_POSITION)
+    # else as the page says, which played the moves (it sends it once the game is added)
+    position = text(body, "final_position")
+    if position:
+        game.final_position = position
+    if game.final_position and not pgn.POSITION.fullmatch(game.final_position):
+        raise ApiError(400, "final_position: expected where the pieces stand, as the first field of a FEN")
+    color = text(body, "color", required=True)
+    if color not in pgn.COLORS:
+        raise ApiError(400, "color: white or black, the side you played")
+    game.color = color
+    game.remark = text(body, "remark")
+
+
 def _apply_person(person: Person, body: dict[str, Any]) -> None:
     # two people may share a name, so there is no clash to look for
     # either name, or both, may be missing: someone with no name goes by the
@@ -998,6 +1112,7 @@ VIEWS: dict[str, _View] = {
     "museum-visits": _View(Museum, _apply_museum, museum_json),
     "audio-courses": _View(AudioCourse, _apply_audio_course, audio_course_json),
     "youtube-videos": _View(YouTubeVideo, _apply_youtube_video, youtube_video_json),
+    "chess-games": _View(ChessGame, _apply_chess_game, chess_game_json),
     "people": _View(Person, _apply_person, person_json),
     "organizations": _View(Organization, _apply_organization, organization_json),
     "places": _View(Place, _apply_place, place_json),

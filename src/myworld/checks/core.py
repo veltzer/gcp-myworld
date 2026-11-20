@@ -80,6 +80,7 @@ DATASETS: dict[str, str] = {
     "museums": "Museums",
     "audio-courses": "Audio courses",
     "youtube": "YouTube",
+    "chess": "Chess",
     "people": "People",
     "groups": "Groups",
     "places": "Places",

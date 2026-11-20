@@ -1,5 +1,6 @@
 // What a row looks like as a card, for every page.
 
+import { boardImage } from "./board.js";
 import { $, api, showError } from "./core.js";
 import { worldList } from "./dialog.js";
 import { editable, state } from "./library.js";
@@ -261,12 +262,36 @@ function youtubeCard(item) {
 	return card;
 }
 
+function chessCard(item) {
+	// its picture is where the pieces ended, seen from the side the user played
+	const shown = { ...item, image: item.position ? boardImage(item.position, item.color === "black") : null };
+	const { card, list } = cardShell(shown, `${item.outcome} as ${item.color === "white" ? "White" : "Black"} against ${item.opponent}`, "logo");
+	card.classList.add("is-board");
+	editable(card, item);
+	detail(list, "Played", formatDate(item));
+	detail(list, "Result", item.result === "*" ? "No result" : item.result);
+	detail(list, "Ended", item.termination);
+	const rated = (elo) => (elo === null ? "unrated" : String(elo));
+	if (item.rating !== null || item.opponent_rating !== null) {
+		detail(list, "Ratings", `${rated(item.rating)} (me), ${rated(item.opponent_rating)} (${item.opponent})`);
+	}
+	detail(list, "Moves", item.plies ? String(Math.ceil(item.plies / 2)) : "None");
+	detail(list, "Time control", item.time_control);
+	detail(list, "Opening", [item.eco, item.opening].filter(Boolean).join(" "));
+	detail(list, "Event", item.event);
+	detail(list, "Site", item.site);
+	detail(list, "Remark", item.remark);
+	websiteDetail(list, item.link);
+	return card;
+}
+
 // every view's card maker: each view has the List, Cards, Tiles and Gallery layouts
 export const CARDS = {
 	concerts: concertCard,
 	museums: museumCard,
 	"audio-courses": audioCourseCard,
 	youtube: youtubeCard,
+	chess: chessCard,
 	places: placeCard,
 	cities: cityCard,
 	countries: countryCard,

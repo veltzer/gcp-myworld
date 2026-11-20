@@ -12,12 +12,20 @@ import webtest
 from myworld.world import VIEWS
 from tests.conftest import sign_in
 
+# what a row is called after its edit, where the edit does not say a name
+NAMED = {"people": "Dana Levi", "chess-games": "me vs Deeper Blue"}
+
 # the least a row of each page can be added with, and what an edit changes it to
 MINIMAL: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
     "concert-visits": ({"name": "Jarrett"}, {"name": "Jarrett Trio"}),
     "museum-visits": ({"name": "Prado"}, {"name": "Museo del Prado"}),
     "audio-courses": ({"name": "Logic"}, {"name": "Logic 101"}),
     "youtube-videos": ({"youtube_id": "dQw4w9WgXcQ", "name": "A song"}, {"youtube_id": "dQw4w9WgXcQ", "name": "That song"}),
+    # a game is added by its text and named by its players: an edit that sends another text renames it
+    "chess-games": (
+        {"pgn": '[White "me"]\n[Black "Deep Blue"]\n[Result "1-0"]\n\n1. e4 e5 1-0', "color": "white"},
+        {"pgn": '[White "me"]\n[Black "Deeper Blue"]\n[Result "1-0"]\n\n1. e4 e5 1-0', "color": "white"},
+    ),
     "people": ({"first_name": "Dana"}, {"first_name": "Dana", "surname": "Levi"}),
     "organizations": ({"name": "ACME"}, {"name": "ACME Ltd"}),
     "places": ({"name": "Barby"}, {"name": "The Barby"}),
@@ -41,7 +49,7 @@ def test_add_edit_delete(app: webtest.TestApp, path: str) -> None:
     assert [row["id"] for row in app.get(f"/api/{path}").json] == [added["id"]]
     edited = app.put_json(f"/api/{path}/{added['id']}", changed).json
     assert edited["id"] == added["id"]
-    wanted = changed.get("name", "Dana Levi")
+    wanted = changed.get("name", NAMED.get(path))
     assert edited["name"] == wanted
     assert [row["name"] for row in app.get(f"/api/{path}").json] == [wanted]
     app.delete(f"/api/{path}/{added['id']}", status=204)

@@ -17,6 +17,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "alembic",
+    "chess",
     "pyrefly",
     "pytest",
     "pyyaml",

@@ -2481,3 +2481,106 @@ body.sidebar-folded .sidebar {
 		gap: 0.4rem;
 	}
 }
+
+/* a chess game's card: its picture is the board where the game ended, square and shown whole */
+.world-card.is-board .world-image {
+	padding: 0.5rem;
+	background: #fff;
+}
+
+/* a chess game in its dialog: the board, and beside it the moves to step through */
+.chess-viewer {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	gap: 1rem;
+	margin-bottom: 0.75rem;
+}
+
+.chess-board {
+	flex: 0 0 auto;
+	width: min(20rem, 100%);
+	height: auto;
+	aspect-ratio: 1;
+	border: 1px solid var(--line);
+}
+
+.chess-side {
+	display: flex;
+	flex: 1 1 14rem;
+	flex-direction: column;
+	gap: 0.5rem;
+	min-width: 0;
+}
+
+.chess-status {
+	min-height: 2.8em;
+	margin: 0;
+}
+
+.chess-controls {
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
+}
+
+/* the moves, each a button that shows the board after it; a long game scrolls inside its box */
+.chess-moves {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.15rem 0.3rem;
+	max-height: 11rem;
+	padding: 0.4rem;
+	overflow-y: auto;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+}
+
+.chess-move-number {
+	color: var(--muted);
+	white-space: nowrap;
+}
+
+.chess-move {
+	padding: 0.1rem 0.3rem;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--ink);
+	white-space: nowrap;
+}
+
+.chess-move:hover:not(:disabled) {
+	background: #eff6ff;
+}
+
+.chess-move.current {
+	background: var(--accent);
+	color: #fff;
+}
+
+.chess-move:disabled {
+	color: var(--muted);
+	cursor: default;
+}
+
+/* the game's text: as the boxes of a dialog are, in the letters PGN is written in */
+.dialog-form textarea {
+	display: block;
+	width: 100%;
+	padding: 0.4rem 0.6rem;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: #fff;
+	color: var(--ink);
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 0.85rem;
+	resize: vertical;
+}
+
+.dialog-form textarea[readonly] {
+	background: #eef0f3;
+	border-color: transparent;
+	color: var(--muted);
+}

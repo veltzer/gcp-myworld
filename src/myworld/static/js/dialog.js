@@ -1,12 +1,12 @@
 /* globals TomSelect */
 // The dialog a row is added and edited in: its adders, its pictures and its pickers.
 
-import { $, api } from "./core.js";
+import { $ } from "./core.js";
 import { uploadPhoto } from "./forms.js";
-import { WORLDS, el, worldCache } from "./worlds.js";
+import { el, fetchWorld, worldCache } from "./worlds.js";
 
 // One dialog, opened by the + button, showing the form of whatever is on screen.
-export const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "youtube-video-form", "place-form", "city-form", "country-form", "person-form", "group-form", "organization-form", "organization-type-form", "profession-form", "relation-type-form", "person-relation-type-form", "person-org-relation-type-form", "device-form", "language-form"];
+export const DIALOG_FORMS = ["add-form", "concert-form", "museum-form", "audio-course-form", "youtube-video-form", "chess-game-form", "place-form", "city-form", "country-form", "person-form", "group-form", "organization-form", "organization-type-form", "profession-form", "relation-type-form", "person-relation-type-form", "person-org-relation-type-form", "device-form", "language-form"];
 
 export const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 
@@ -18,7 +18,7 @@ export function dialogError(message) {
 
 export async function worldList(view) {
 	if (!worldCache[view]) {
-		worldCache[view] = await api(WORLDS[view][1]);
+		worldCache[view] = await fetchWorld(view);
 	}
 	return worldCache[view];
 }

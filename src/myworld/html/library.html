@@ -9,6 +9,7 @@
 		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tom-select/2.6.0/css/tom-select.default.min.css" integrity="sha512-9Ulg3D18qlDyBYsFiTipF+EJbYl1rCLAL766xaaxnCYkr2W9LU/t3AKKq523f3w3oOK5007rmsJcQ1HDnflIvw==" crossorigin="anonymous">
 		<link rel="stylesheet" href="/static/style.css">
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/tom-select/2.6.0/js/tom-select.complete.min.js" integrity="sha512-iYRFjWzVbUrSMW1pEM3z1uQlMBLr66Up/W6q/IFWb7PR1pvTz22ntvG5rQUSxH99kUsaafhb6qPbSm3j6AQvrQ==" crossorigin="anonymous" defer></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js" integrity="sha512-xRllwz2gdZciIB+AkEbeq+gVhX8VB8XsfqeFbUh+SzHlN96dEduwtTuVuc2u9EROlmW9+yhRlxjif66ORpsgVA==" crossorigin="anonymous" defer></script>
 		<script type="module" src="/static/app.js"></script>
 	</head>
 	<body data-page="library">
@@ -398,6 +399,38 @@
 				<div class="row">
 					<label title="What you watched on, one of Devices; add a new one on the Devices page">Device <select name="device_id"></select></label>
 					<label title="Where you watched it: at home, ...">Where <input name="watched_at" placeholder="e.g. Home"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<!-- a chess game: its board, to play it through, and the text it is added by -->
+			<form id="chess-game-form" class="dialog-form" hidden>
+				<div id="chess-viewer" class="chess-viewer">
+					<!-- (an empty picture until a game is shown: the page draws the board) -->
+					<img id="chess-board" class="chess-board" src="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2080%2080%22/%3E" alt="" width="320" height="320">
+					<div class="chess-side">
+						<p id="chess-status" class="chess-status"></p>
+						<div class="chess-controls" role="group" aria-label="Play through the game">
+							<button id="chess-first" type="button" class="icon-button" title="To the start" aria-label="To the start"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.41 16.59 13.82 12l4.59-4.59L17 6l-6 6 6 6zM6 6h2v12H6z"/></svg></button>
+							<button id="chess-previous" type="button" class="icon-button" title="One move back" aria-label="One move back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
+							<button id="chess-next" type="button" class="icon-button" title="One move on" aria-label="One move on"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
+							<button id="chess-last" type="button" class="icon-button" title="To the end" aria-label="To the end"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.59 7.41 10.18 12l-4.59 4.59L7 18l6-6-6-6zM16 6h2v12h-2z"/></svg></button>
+							<button id="chess-flip" type="button" class="text" title="See the board from the other side">Turn the board</button>
+						</div>
+						<div id="chess-moves" class="chess-moves"></div>
+					</div>
+				</div>
+				<div class="row">
+					<label title="One game as PGN, the text chess games are kept in: its tags ([White &quot;...&quot;]) and its moves. A file of many games is imported by scripts/import_chess.py" class="wide">PGN <textarea name="pgn" rows="6" spellcheck="false" placeholder="[White &quot;...&quot;]&#10;[Black &quot;...&quot;]&#10;&#10;1. e4 e5 2. Nf3 ..."></textarea></label>
+				</div>
+				<div class="row">
+					<label title="The side you played">You played <select name="color"><option value="white">White</option><option value="black">Black</option></select></label>
+				</div>
+				<div class="row">
+					<label title="Anything you want to remember about the game" class="wide">Remark <input name="remark"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>

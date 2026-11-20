@@ -12,13 +12,13 @@ import { closeSidebarOnPhone } from "./sidebar.js";
 import { rerender, setupSort, updateTools } from "./sorting.js";
 import { selectStats } from "./stats.js";
 import { isAdmin, selectUsers } from "./users.js";
-import { WORLDS, setupLayouts, slug, worldCache } from "./worlds.js";
+import { WORLDS, fetchWorld, setupLayouts, slug, worldCache } from "./worlds.js";
 
 // hash: where the address bar points, the view itself unless one of its rows is wanted
 export async function selectWorld(view, hash = view) {
 	state.view = view;
 	navigate(hash);
-	const [heading, path] = WORLDS[view];
+	const [heading] = WORLDS[view];
 	document.title = `${heading.replace(/^My /, "")} - My World`;
 	showSection("world-view");
 	markActive();
@@ -28,7 +28,7 @@ export async function selectWorld(view, hash = view) {
 	if (!worldCache[view]) {
 		$("world-count").textContent = "Loading...";
 		$("cards").replaceChildren();
-		worldCache[view] = await api(path);
+		worldCache[view] = await fetchWorld(view);
 		await fillTypeFilter(view);
 		if (state.view === view) {
 			renderWorld();
@@ -53,7 +53,7 @@ export async function reloadWorld(view) {
 			delete worldCache[key];
 		}
 	}
-	const rows = await api(WORLDS[view][1]);
+	const rows = await fetchWorld(view);
 	worldCache[view] = rows;
 	if (state.view === view && !$("add-dialog").open) {
 		await fillTypeFilter(view);
@@ -70,7 +70,7 @@ export async function refreshWorld() {
 		delete worldCache[key];
 	}
 	const view = state.view;
-	worldCache[view] = await api(WORLDS[view][1]);
+	worldCache[view] = await fetchWorld(view);
 	if (view === "locales") {
 		// the languages the forms offer are these: a change shows in them at once
 		state.config = await api("/api/config");

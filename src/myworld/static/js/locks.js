@@ -1,5 +1,6 @@
 // Read only until its pencil is pressed.
 
+import { prepareBoard, setupBoard } from "./board.js";
 import { PICKER_LABELS } from "./cards.js";
 import { $, api, showError } from "./core.js";
 import { DIALOG_FORMS, dialogError, makePicker, preparePictures, setPickerRows, setPickerValue, syncAlone, worldList } from "./dialog.js";
@@ -120,10 +121,12 @@ export function lockFields(form, existing) {
 }
 
 // The + button (item null) or a click on an item: the dialog with the form of the view on screen.
-export async function openDialog(item) {
+export async function openDialog(listed) {
 	// the view is fixed here: the lists below load before the dialog shows, and another view may be opened meanwhile
 	const view = state.view;
 	const world = WORLDS[view];
+	// the list has no chess game's text or moves: the one opened is fetched with them
+	const item = view === "chess" && listed ? { ...listed, ...(await api(`${world[1]}/${listed.id}`)) } : listed;
 	const form = world ? $(`${slug(view)}-form`) : $("add-form");
 	for (const id of DIALOG_FORMS) {
 		$(id).hidden = $(id) !== form;
@@ -174,6 +177,12 @@ export async function openDialog(item) {
 		}
 		if (form.id === "museum-form") {
 			prepareVisits(item?.visits || [], !item);
+		}
+		if (form.id === "chess-game-form") {
+			// a game is added by its text; the text of one that exists is only read
+			form.elements.pgn.readOnly = Boolean(item);
+			form.elements.pgn.required = !item;
+			prepareBoard(item);
 		}
 		if (form.id === "person-form") {
 			prepareNames(item);
@@ -251,6 +260,7 @@ export function setupAddDialog() {
 	$("audio-course-form").elements.rating.max = rating_max;
 	$("youtube-video-form").elements.rating.min = rating_min;
 	$("youtube-video-form").elements.rating.max = rating_max;
+	setupBoard();
 	for (const view of Object.keys(WORLDS)) {
 		setupWorldForm(view);
 	}

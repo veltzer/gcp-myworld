@@ -14,6 +14,7 @@ from myworld.models import (
     KINDS,
     STATUSES,
     AudioCourse,
+    ChessGame,
     City,
     Concert,
     Country,
@@ -22,7 +23,6 @@ from myworld.models import (
     Image,
     Locale,
     Museum,
-    MuseumVisit,
     Organization,
     OrganizationType,
     Person,
@@ -40,7 +40,7 @@ from myworld.world import date_json
 bp = flask.Blueprint("stats", __name__)
 
 
-def _per_year(rows: list[Concert] | list[MuseumVisit]) -> list[dict[str, int]]:
+def _per_year(rows: Any) -> list[dict[str, int]]:
     """ How many rows fall in each year that has any, oldest first; undated rows are left out. """
     years: dict[int, int] = {}
     for row in rows:
@@ -65,6 +65,25 @@ def _youtube_by(column: Any, limit: int | None = None) -> list[dict[str, Any]]:
         .group_by(column).order_by(func.count().desc(), column).limit(limit),
     ).all()
     return [{"name": name, "count": count} for name, count in rows]
+
+
+# how a game ended for the one who played it, from the side they played and its result
+CHESS_OUTCOMES = {
+    ("white", "1-0"): "Won", ("black", "0-1"): "Won", ("white", "0-1"): "Lost", ("black", "1-0"): "Lost",
+    ("white", "1/2-1/2"): "Drawn", ("black", "1/2-1/2"): "Drawn",
+}
+
+
+def _chess_by_outcome() -> list[dict[str, Any]]:
+    """ The user's games counted by how they ended for them: won, lost, drawn, or with no result. """
+    counts: dict[str, int] = {}
+    rows = flask.g.db.execute(
+        select(ChessGame.color, ChessGame.result, func.count()).where(ChessGame.owner_id == flask.g.user.id).group_by(ChessGame.color, ChessGame.result),
+    ).all()
+    for color, result, count in rows:
+        outcome = CHESS_OUTCOMES.get((color, result), "No result")
+        counts[outcome] = counts.get(outcome, 0) + count
+    return _by_type(counts)
 
 
 @bp.route("/api/stats", methods=["GET"])
@@ -110,6 +129,10 @@ def api_stats() -> flask.Response:
         .join(Concert, Concert.id == concert_performers.c.concert_id)
         .where(Concert.owner_id == me)
     ) or 0
+    # only when each was played: 60,000 games are counted by year without being read
+    chess_dates = db.execute(
+        select(ChessGame.date_utcz, ChessGame.date_ymd, ChessGame.date_my, ChessGame.date_y).where(ChessGame.owner_id == me),
+    ).all()
     return flask.jsonify({
         "library": library,
         "concerts": len(concerts),
@@ -118,6 +141,7 @@ def api_stats() -> flask.Response:
         "museums": len(museums),
         "audio_courses": count(AudioCourse),
         "youtube_videos": count(YouTubeVideo),
+        "chess_games": len(chess_dates),
         "people": len(people),
         "organizations": len(organizations),
         "places": count(Place),
@@ -139,4 +163,6 @@ def api_stats() -> flask.Response:
         "museums_by_year": _per_year(visits),
         "youtube_by_channel": _youtube_by(YouTubeVideo.channel, TOP_CHANNELS),
         "youtube_by_category": _youtube_by(YouTubeVideo.category),
+        "chess_by_outcome": _chess_by_outcome(),
+        "chess_by_year": _per_year(chess_dates),
     })

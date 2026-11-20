@@ -52,6 +52,18 @@ const SORTS = {
 		["duration", "Length", (v) => v.duration, "desc"],
 		["uploaded", "Uploaded", (v) => v.uploaded, "desc"],
 	],
+	chess: [
+		["date", "Played", (g) => g.date, "desc"],
+		["opponent", "Opponent", (g) => g.opponent, "asc"],
+		["outcome", "Result", (g) => g.outcome, "desc"],
+		["rating", "My rating", (g) => g.rating, "desc"],
+		["opponent_rating", "Opponent's rating", (g) => g.opponent_rating, "desc"],
+		["plies", "Moves", (g) => g.plies, "desc"],
+		["opening", "Opening", (g) => g.opening, "asc"],
+		["eco", "ECO", (g) => g.eco, "asc"],
+		["time_control", "Time control", (g) => g.time_control, "asc"],
+		["site", "Site", (g) => g.site, "asc"],
+	],
 	cities: [
 		["name", "Name", (c) => c.name, "asc"],
 		["country", "Country", (c) => c.country?.name, "asc"],
