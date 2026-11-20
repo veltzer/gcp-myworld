@@ -298,8 +298,10 @@ def test_the_games_recorded_without_their_moves(engine: Engine, tmp_path: Path, 
         ]
         # the day, as either way the file writes it; the time control, else how long it was; a stalemate is a draw
         assert [(g.date_ymd, g.time_control, g.termination, g.remark) for g in games[3:5]] == [
-            (datetime.date(1999, 8, 19), "unlimited", "stalemate", ""), (datetime.date(2002, 12, 13), "", "", "on the beach"),
+            (datetime.date(1999, 8, 19), "unlimited", "stalemate", "opponent's category: pub"), (datetime.date(2002, 12, 13), "", "", "on the beach; opponent's category: pub"),
         ]
+        # what the file says of the opponent besides their name is in the remark; one without a name goes by their description
+        assert games[0].remark == "opponent: brother; opponent's category: family"
         assert (games[0].date_ymd, games[0].time_control, games[3].opponent, games[4].outcome) == (datetime.date(2001, 6, 16), "1:50:1:50", "met in Rosh Pinah", "drawn")
         # run again, nothing is added; a game added to the file's end is
         assert import_chess_xml.import_chess_xml(session, me, path)["added"] == 0
@@ -309,7 +311,7 @@ def test_the_games_recorded_without_their_moves(engine: Engine, tmp_path: Path, 
         # a day no calendar has: the year is sure, and the day is kept as the file wrote it
         path.write_text(CHESS_XML.replace("<date>16.6.01</date>", "<date>31.11.01</date>"), encoding="UTF8")
         first = import_chess_xml.games(path)[0]
-        assert (first["date_ymd"], first["date_y"], first["remark"]) == (None, 2001, "dated 31.11.01 in chess.xml, a day its month does not have")
+        assert (first["date_ymd"], first["date_y"], first["remark"]) == (None, 2001, "dated 31.11.01 in chess.xml, a day its month does not have; opponent: brother; opponent's category: family")
         # what the import refuses: an opponent it does not have, a result it does not know, a date it cannot read
         for wrong, replaced, error in (
             ("<opponentid>0</opponentid><result>lost", "<opponentid>9</opponentid><result>lost", "no opponent"),

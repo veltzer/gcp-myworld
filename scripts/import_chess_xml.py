@@ -16,7 +16,9 @@ time control or how long it was, and a remark; never the moves, nor the side
 the user played. So each is a game without its moves (models.ChessGame):
 no text, the side not known, and its opponent and outcome as the file says.
 An opponent goes by their name, else by what the file says of them ("met in
-Rosh Pinah").
+Rosh Pinah"); what it says of them besides, their description and category,
+is in the remark of each game against them ("opponent: brother; opponent's
+category: family").
 
 Many games are alike in all the file says (the same opponent, the same
 result, no day), so a game is told from every other by its place in the
@@ -49,6 +51,8 @@ from myworld.models import ChessGame, User, make_engine
 # how a game ended for the user, in the file's words: a pat is a stalemate, which is a draw
 OUTCOMES = {"won": pgn.WON, "lost": pgn.LOST, "tie": pgn.DRAWN, "pat": pgn.DRAWN}
 UNKNOWN = "unknown"
+# the categories of opponents as the file spells them, where a remark spells them otherwise
+CATEGORIES = {"familty": "family"}
 # a day as the file writes it: "16.6.01", the year in two digits (99 is 1999, 01 is 2001)
 _DAY = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{2})")
 # or as date(1) does: "Fri Dec 13 14:56:44 IST 2002" (the time is when the line was written, not the game)
@@ -89,16 +93,23 @@ def known(said: str) -> str:
     return "" if said == UNKNOWN else said
 
 
-def opponents(root: ET.Element) -> dict[str, str]:
-    """ Each opponent's name by their id: first name and surname, else what the file says of them. """
-    names = {}
+def opponents(root: ET.Element) -> dict[str, tuple[str, str]]:
+    """
+    Each opponent by their id: their name (first name and surname, else what
+    the file says of them), and what it says of them besides, for a remark.
+    """
+    found = {}
     for opponent in root.iter("opponent"):
         field = {child.tag: (child.text or "").strip() for child in opponent}
-        name = " ".join(part for part in (field.get("firstname", ""), field.get("surname", "")) if part) or field.get("description", "")
-        if not name:
+        name = " ".join(part for part in (field.get("firstname", ""), field.get("surname", "")) if part)
+        description = field.get("description", "")
+        if not name and not description:
             raise ChessXmlError(f"opponent {field.get('id')} has no name and no description")
-        names[field["id"]] = name
-    return names
+        category = field.get("category", "")
+        category = CATEGORIES.get(category, category).replace("_", " ").replace("-", " ")
+        about = [f"opponent: {description}" if name and description else "", f"opponent's category: {category}" if category else ""]
+        found[field["id"]] = (name or description, "; ".join(part for part in about if part))
+    return found
 
 
 def games(path: Path) -> list[dict[str, Any]]:
@@ -116,11 +127,12 @@ def games(path: Path) -> list[dict[str, Any]]:
         time_control = known(field.get("timecontrol", UNKNOWN)) or known(field.get("length", UNKNOWN))
         date_ymd, date_y = when(field.get("date", UNKNOWN))
         # a day no calendar has is kept as the file wrote it
-        remarks = [field.get("remark", ""), f"dated {field['date']} in chess.xml, a day its month does not have" if date_y else ""]
+        name, about = names[field["opponentid"]]
+        remarks = [field.get("remark", ""), f"dated {field['date']} in chess.xml, a day its month does not have" if date_y else "", about]
         rows.append({
             "source_key": KEY.format(place),
             "color": "", "white": "", "black": "", "white_elo": None, "black_elo": None,
-            "opponent": names[field["opponentid"]], "outcome": OUTCOMES[field["result"]],
+            "opponent": name, "outcome": OUTCOMES[field["result"]],
             "result": "*", "termination": "stalemate" if field["result"] == "pat" else "",
             "time_control": time_control[:50], "eco": "", "opening": "", "event": "", "site": "Over the board", "link": "",
             "plies": 0, "final_position": "", "pgn": "", "remark": "; ".join(part for part in remarks if part),
