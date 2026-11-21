@@ -84,6 +84,8 @@ export function showWho(user) {
 	icon.src = `/static/${method.icon}.svg`;
 	icon.alt = method.name;
 	icon.title = `Signed in with ${method.name}`;
+	// an admin is told so, in the top bar
+	$("who-role").hidden = user.role !== "admin";
 }
 
 // The Settings button opens the settings dialog with the name ready to edit;
