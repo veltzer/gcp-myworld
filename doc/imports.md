@@ -215,6 +215,33 @@ lists them, each genre's path from its top genre down. It takes no
 parameters, adds only, and needs Audible connected. It shares its writing
 with `scripts/import_world.py --audio-books` (`audible.store_library`).
 
+## Podcast feeds
+
+`podcast-feeds` reads the RSS feeds of the user's podcasts
+(`myworld.podcasts`): the ones picked in its first parameter, Podcasts, or
+every one with a feed when none is picked. It needs a podcast with its feed
+(Podcasts, Edit), and nothing to connect: feeds are public. Of each feed:
+
+- An episode the user has, found by its feed's guid, is given what the feed
+  says of it (description, when published, number, length, type, explicit,
+  the audio's and the image's addresses, author) where it says nothing yet;
+  what is there, edited or not, is kept.
+- A podcast with no cover gets the feed's (its `itunes:image`, kept as
+  `podcast-feed-<id>.<ext>`), and one with no page gets the feed's `link`.
+- Its second parameter, Episodes to add (one of 1, 2, 3, 5, 10, 20, or none),
+  adds the next so many episodes of the feed after the last one the user
+  heard (by the feed's order, oldest first; from the first when none was
+  heard), as heard at the moment of the run, where, in what time zone and on
+  what device the last one heard was. This is what `veltzer.github.io`'s
+  `podcasts_add_chapters.py` did.
+
+An episode is added once (`uq_podcast_episode_guid`), so a run again adds
+nothing it added before, and one the feed no longer has stays. A feed that
+cannot be read is said in the log, counted, and skipped; the rest go on.
+Feeds are anyone's addresses, read by the server: only `http` and `https`, at
+most 30 MB, and parsed by `xml.etree`, which resolves no external entity
+(expat refuses entity expansion attacks).
+
 ## Connecting Audible
 
 Audible has no public API. Its apps use one of their own, and

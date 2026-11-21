@@ -30,6 +30,7 @@ Nominatim
 OpenStreetMap
 PKCE
 RSA
+RSS
 SHA
 SQLAlchemy
 SchemaCrawler
