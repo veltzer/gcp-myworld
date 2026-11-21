@@ -20,6 +20,7 @@ from myworld.models import (
     RATING_MAX,
     RATING_MIN,
     STATUSES,
+    THEMES,
     Login,
     Person,
     PersonType,
@@ -386,6 +387,8 @@ def _account_json(login: Login) -> dict[str, Any]:
         "role": user.role,
         # the language they prefer (Settings): what a book with several titles is shown by
         "locale": user.locale,
+        # how the pages look (Settings): "system", "light" or "dark"
+        "theme": user.theme,
         # the account panel: since when, how this session signed in, and every way they sign in
         "since": user.created_at.date().isoformat(),
         "method": login.method,
@@ -421,6 +424,20 @@ def api_account_locale() -> flask.Response:
     login = auth.current_login()
     assert login is not None
     login.user.locale = locale
+    flask.g.db.commit()
+    return flask.jsonify(_account_json(login))
+
+
+@bp.route("/api/account/theme", methods=["PUT"])
+@auth.login_required
+def api_account_theme() -> flask.Response:
+    """ The signed-in person chooses how the pages look: light, dark, or as their device does ("system"). """
+    theme = text(json_body(), "theme")
+    if theme not in THEMES:
+        raise ApiError(400, f"theme: one of {', '.join(THEMES)}")
+    login = auth.current_login()
+    assert login is not None
+    login.user.theme = theme
     flask.g.db.commit()
     return flask.jsonify(_account_json(login))
 

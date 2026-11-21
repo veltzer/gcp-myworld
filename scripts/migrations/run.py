@@ -26,7 +26,7 @@ from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, inspect, select
+from sqlalchemy import create_engine, inspect, select, update
 from sqlalchemy.orm import Session
 
 from myworld.models import ROLE_ADMIN, Base, User, database_url
@@ -82,12 +82,13 @@ def first_admin() -> int | None:
         with Session(engine) as session:
             if session.scalar(select(User.id).where(User.role == ROLE_ADMIN).limit(1)) is not None:
                 return None
-            oldest = session.scalars(select(User).order_by(User.id).limit(1)).first()
+            # by its id and role only: a database stopped at an earlier step lacks columns the model has since
+            oldest = session.scalar(select(User.id).order_by(User.id).limit(1))
             if oldest is None:
                 return None
-            oldest.role = ROLE_ADMIN
+            session.execute(update(User).where(User.id == oldest).values(role=ROLE_ADMIN))
             session.commit()
-            return oldest.id
+            return oldest
     finally:
         engine.dispose()
 

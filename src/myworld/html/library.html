@@ -3,6 +3,17 @@
 	<head>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<!-- the user's theme (Settings), as the last page they saw kept it, before anything is drawn: no flash of the other one -->
+		<script>
+			try {
+				const theme = localStorage.getItem("theme");
+				if (theme === "light" || theme === "dark") {
+					document.documentElement.dataset.theme = theme;
+				}
+			} catch {
+				// no storage here: the device's theme
+			}
+		</script>
 		<title>My World</title>
 		<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 		<!-- the pickers over long lists (people, places, ...): Tom Select, https://tom-select.js.org/ -->
@@ -830,7 +841,7 @@
 				</div>
 			</form>
 		</dialog>
-		<!-- the Settings button opens this; Save sends the name and the preferred language, Cancel and Escape leave them as they were -->
+		<!-- the Settings button opens this; Save sends the name, the preferred language and the theme, Cancel and Escape leave them as they were -->
 		<dialog id="settings-dialog" class="dialog settings" aria-labelledby="settings-title">
 			<form id="settings-form">
 				<h2 id="settings-title">Settings</h2>
@@ -843,6 +854,15 @@
 				<select id="settings-locale" name="locale" data-locales></select>
 				<p class="settings-hint">
 					A book with titles in several languages is shown by its title in this one, and a person with names in several by their name in it.
+				</p>
+				<label title="How the pages look: light, dark, or as your device is set" for="settings-theme">Theme</label>
+				<select id="settings-theme" name="theme">
+					<option value="system">As my device (light or dark)</option>
+					<option value="light">Light</option>
+					<option value="dark">Dark</option>
+				</select>
+				<p class="settings-hint">
+					Yours on every device you sign in on. "As my device" follows your device's light or dark setting.
 				</p>
 				<p id="settings-error" class="warning" hidden></p>
 				<div class="dialog-actions">

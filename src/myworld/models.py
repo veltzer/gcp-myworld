@@ -103,6 +103,10 @@ class Base(DeclarativeBase):
     pass
 
 
+# how the pages look, each user's own (Settings): "system" follows the device
+THEMES = ("system", "light", "dark")
+DEFAULT_THEME = "system"
+
 ROLE_USER = "user"
 ROLE_ADMIN = "admin"
 ROLES = (ROLE_USER, ROLE_ADMIN)
@@ -132,6 +136,8 @@ class User(Base):
     # the language they prefer (Settings): a book with titles in several languages is
     # shown by its title in this one, and its authors by their names in it
     locale: Mapped[str] = mapped_column(ForeignKey("locales.code"), nullable=False, default=DEFAULT_LOCALE, server_default=DEFAULT_LOCALE)
+    # light, dark, or the device's (THEMES)
+    theme: Mapped[str] = mapped_column(String(10), nullable=False, default=DEFAULT_THEME, server_default=DEFAULT_THEME)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     last_login: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -1353,7 +1359,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0009"
+SCHEMA_REVISION = "0010"
 
 
 def prepare_schema(engine: Engine) -> None:

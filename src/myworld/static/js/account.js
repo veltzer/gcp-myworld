@@ -1,6 +1,6 @@
 // The account menu and the settings.
 
-import { $, api } from "./core.js";
+import { $, api, applyTheme } from "./core.js";
 import { state } from "./library.js";
 import { lockFields, setupLocks } from "./locks.js";
 import { el } from "./worlds.js";
@@ -89,19 +89,22 @@ export function showWho(user) {
 }
 
 // The Settings button opens the settings dialog with the name ready to edit;
-// Cancel, Escape and the backdrop close it unsaved, Save sends the name and the preferred language
+// Cancel, Escape and the backdrop close it unsaved, Save sends the name, the preferred language and the theme
 export function setupSettings(user) {
 	const dialog = $("settings-dialog");
 	const name = $("settings-name");
 	const error = $("settings-error");
 	name.maxLength = state.config.name_max_length;
 	const locale = $("settings-locale");
+	const theme = $("settings-theme");
 	let saved = user.name;
 	let savedLocale = user.locale;
+	let savedTheme = user.theme;
 	setupLocks(dialog);
 	$("settings-button").onclick = () => {
 		name.value = saved;
 		locale.value = savedLocale;
+		theme.value = savedTheme;
 		error.hidden = true;
 		// both are there to read; the pencil of each lets it be changed
 		lockFields($("settings-form"), true);
@@ -119,6 +122,10 @@ export function setupSettings(user) {
 			const account = await api("/api/account/name", { method: "PUT", body: { name: name.value } });
 			saved = account.name;
 			showWho(account);
+			if (theme.value !== savedTheme) {
+				savedTheme = (await api("/api/account/theme", { method: "PUT", body: { theme: theme.value } })).theme;
+				applyTheme(savedTheme);
+			}
 			if (locale.value !== savedLocale) {
 				savedLocale = (await api("/api/account/locale", { method: "PUT", body: { locale: locale.value } })).locale;
 				// every book may be shown by another title now: load the page again

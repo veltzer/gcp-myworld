@@ -3,6 +3,17 @@
 	<head>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<!-- the user's theme (Settings), as the last page they saw kept it, before anything is drawn: no flash of the other one -->
+		<script>
+			try {
+				const theme = localStorage.getItem("theme");
+				if (theme === "light" || theme === "dark") {
+					document.documentElement.dataset.theme = theme;
+				}
+			} catch {
+				// no storage here: the device's theme
+			}
+		</script>
 		<title>Privacy · My World</title>
 		<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 		<link rel="stylesheet" href="/static/style.css">

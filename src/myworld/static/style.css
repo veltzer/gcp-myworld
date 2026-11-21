@@ -1,13 +1,85 @@
+/*
+ * Colors are tokens, light by default. The theme is the user's (Settings):
+ * "light", "dark", or "system", which follows the device. The page sets
+ * data-theme on <html> to "light" or "dark", and leaves it off for "system".
+ */
 :root {
+	color-scheme: light;
 	--ink: #1f2933;
 	--muted: #6b7280;
 	--line: #d9dee3;
 	--accent: #2563eb;
+	--accent-ink: #1e40af;
+	--accent-soft: #eef3fd;
 	--danger: #b91c1c;
+	--danger-soft: #fdeeee;
+	--danger-line: #fecaca;
+	--pass: #1a7f37;
+	--fail: #b42318;
 	--bg: #f9fafb;
+	/* cards, dialogs, the top bar, boxes */
+	--surface: #fff;
+	/* what is only read, empty picture slots */
+	--surface-2: #eef0f3;
+	/* behind text over a logo */
+	--veil: rgb(255 255 255 / 85%);
 	/* the top bar's height: the sidebar starts under it */
 	--topbar: 3.5rem;
 	--sidebar: 13rem;
+}
+
+/* dark: chosen, or "system" on a device that prefers it */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		color-scheme: dark;
+		--ink: #e5e7eb;
+		--muted: #9ca3af;
+		--line: #374151;
+		--accent: #3b82f6;
+		--accent-ink: #bfdbfe;
+		--accent-soft: #1e2a44;
+		--danger: #f87171;
+		--danger-soft: #3b1d1d;
+		--danger-line: #7f1d1d;
+		--pass: #4ade80;
+		--fail: #f87171;
+		--bg: #111827;
+		--surface: #1f2937;
+		--surface-2: #2b3544;
+		--veil: rgb(17 24 39 / 85%);
+	}
+}
+
+:root[data-theme="dark"] {
+	color-scheme: dark;
+	--ink: #e5e7eb;
+	--muted: #9ca3af;
+	--line: #374151;
+	--accent: #3b82f6;
+	--accent-ink: #bfdbfe;
+	--accent-soft: #1e2a44;
+	--danger: #f87171;
+	--danger-soft: #3b1d1d;
+	--danger-line: #7f1d1d;
+	--pass: #4ade80;
+	--fail: #f87171;
+	--bg: #111827;
+	--surface: #1f2937;
+	--surface-2: #2b3544;
+	--veil: rgb(17 24 39 / 85%);
+}
+
+/* the pickers (Tom Select) come with light colors of their own */
+.ts-dropdown,
+.ts-control,
+.ts-wrapper.single.input-active .ts-control {
+	color: var(--ink);
+	background: var(--surface);
+	border-color: var(--line);
+}
+
+.ts-control input {
+	color: var(--ink);
 }
 
 * {
@@ -30,7 +102,7 @@ body {
 	gap: 0.75rem;
 	height: var(--topbar);
 	padding: 0 1rem;
-	background: #fff;
+	background: var(--surface);
 	border-bottom: 1px solid var(--line);
 }
 
@@ -76,7 +148,7 @@ body {
 
 .account-button:hover,
 .account-button[aria-expanded="true"] {
-	background: #f3f4f6;
+	background: var(--surface-2);
 }
 
 .account-menu {
@@ -86,7 +158,7 @@ body {
 	z-index: 20;
 	min-width: 18rem;
 	padding: 0.75rem 1rem;
-	background: #fff;
+	background: var(--surface);
 	border: 1px solid var(--line);
 	border-radius: 8px;
 	box-shadow: 0 6px 20px rgb(0 0 0 / 12%);
@@ -171,7 +243,7 @@ body {
 .badge {
 	padding: 0.05rem 0.45rem;
 	border-radius: 999px;
-	background: #e8eefc;
+	background: var(--accent-soft);
 	color: var(--accent);
 	font-size: 0.7rem;
 	font-weight: 600;
@@ -214,7 +286,7 @@ button.with-icon {
 }
 
 .topbar button.with-icon:hover {
-	background: #f3f4f6;
+	background: var(--surface-2);
 }
 
 button.with-icon .login-icon,
@@ -335,7 +407,7 @@ button.with-icon .login-icon,
 	width: 100%;
 	max-width: 420px;
 	padding: 2rem 2rem 1.5rem;
-	background: #fff;
+	background: var(--surface);
 	border: 1px solid var(--line);
 	border-radius: 20px;
 	box-shadow: 0 20px 60px rgb(30 41 59 / 10%);
@@ -396,7 +468,7 @@ button.with-icon .login-icon,
 	font: inherit;
 	font-weight: 600;
 	text-decoration: none;
-	background: #fff;
+	background: var(--surface);
 	border: 1px solid var(--line);
 	border-radius: 14px;
 	cursor: pointer;
@@ -547,8 +619,8 @@ button:disabled {
 	margin: 0;
 	padding: 0.6rem 0.8rem;
 	border-radius: 10px;
-	background: #eff6ff;
-	color: #1e40af;
+	background: var(--accent-soft);
+	color: var(--accent-ink);
 	font-size: 0.9rem;
 }
 
@@ -597,8 +669,8 @@ button:disabled {
 	margin: 0 0 1rem;
 	padding: 0.6rem 0.8rem;
 	border-radius: 10px;
-	background: #fef2f2;
-	border: 1px solid #fecaca;
+	background: var(--danger-soft);
+	border: 1px solid var(--danger-line);
 	font-size: 0.9rem;
 }
 
@@ -668,7 +740,7 @@ button {
 	padding: 0.4rem 0.6rem;
 	border: 1px solid var(--line);
 	border-radius: 6px;
-	background: #fff;
+	background: var(--surface);
 	color: var(--ink);
 }
 
@@ -680,7 +752,7 @@ button {
 }
 
 button.danger {
-	background: #fff;
+	background: var(--surface);
 	color: var(--danger);
 	border-color: var(--danger);
 }
@@ -688,7 +760,7 @@ button.danger {
 .entries {
 	width: 100%;
 	border-collapse: collapse;
-	background: #fff;
+	background: var(--surface);
 	border: 1px solid var(--line);
 	border-radius: 8px;
 }
@@ -865,7 +937,7 @@ button.danger {
 .dialog-form .locked .ts-control,
 .settings .locked select,
 .settings input[readonly] {
-	background: #eef0f3;
+	background: var(--surface-2);
 	border-color: transparent;
 	color: var(--muted);
 }
@@ -891,7 +963,7 @@ button.danger {
 }
 
 .dialog-form input[readonly] {
-	background: #eef0f3;
+	background: var(--surface-2);
 	border-color: transparent;
 	color: var(--muted);
 	cursor: text;
@@ -949,7 +1021,7 @@ button.danger {
 	padding: 0.35rem 1.6rem 0.35rem 0.7rem;
 	border: 1px solid var(--line);
 	border-radius: 6px;
-	background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z' fill='%236b7280'/%3E%3C/svg%3E") right 0.3rem center / 18px no-repeat;
+	background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z' fill='%236b7280'/%3E%3C/svg%3E") right 0.3rem center / 18px no-repeat;
 	color: var(--ink);
 	text-align: left;
 	white-space: nowrap;
@@ -966,7 +1038,7 @@ button.danger {
 	gap: 0.15rem;
 	min-width: 12rem;
 	padding: 0.5rem 0.75rem;
-	background: #fff;
+	background: var(--surface);
 	border: 1px solid var(--line);
 	border-radius: 8px;
 	box-shadow: 0 4px 16px rgb(0 0 0 / 14%);
@@ -1062,7 +1134,7 @@ button.danger {
 	position: relative;
 	display: flex;
 	flex-direction: column;
-	background: #fff;
+	background: var(--surface);
 	border: 1px solid var(--line);
 	border-radius: 8px;
 	overflow: hidden;
@@ -1085,7 +1157,7 @@ button.danger {
 .layouts button {
 	border: 0;
 	border-radius: 0;
-	background: #fff;
+	background: var(--surface);
 	color: var(--muted);
 	padding: 0.3rem 0.8rem;
 	font-size: 0.85rem;
@@ -1112,7 +1184,7 @@ button.danger {
 	object-fit: contain;
 	padding: 1rem 2rem;
 	box-sizing: border-box;
-	background: #fff;
+	background: var(--surface);
 }
 
 /* a book, film or album cover: portrait, shown whole on a card */
@@ -1120,7 +1192,7 @@ button.danger {
 	aspect-ratio: 2 / 3;
 	max-height: 18rem;
 	object-fit: contain;
-	background: #f3f4f6;
+	background: var(--surface-2);
 }
 
 /* the blank cover of an entry without one: a book-shaped card saying "No cover" */
@@ -1242,7 +1314,7 @@ button.danger {
 
 .layout-list .world-image.no-image {
 	border-right: 1px solid var(--line);
-	background: #f3f4f6;
+	background: var(--surface-2);
 }
 
 .layout-list .world-title,
@@ -1339,7 +1411,7 @@ button.danger {
 }
 
 .layout-tiles .world-card.is-logo .world-body {
-	background: rgb(255 255 255 / 82%);
+	background: var(--veil);
 }
 
 /* gallery: the image alone, the name over its bottom edge; click for the rest */
@@ -1387,7 +1459,7 @@ button.danger {
 }
 
 .layout-gallery .world-card.is-logo .world-body {
-	background: linear-gradient(transparent, rgb(255 255 255 / 90%) 40%);
+	background: linear-gradient(transparent, var(--veil) 40%);
 }
 
 .layout-gallery .world-title {
@@ -1496,7 +1568,7 @@ button.danger {
 
 tr.clickable:hover td,
 tr.clickable:focus-visible td {
-	background: #f3f6fb;
+	background: var(--surface-2);
 	outline: none;
 }
 
@@ -1549,7 +1621,7 @@ tr.clickable:focus-visible td {
 	flex-direction: column;
 	gap: 0.1rem;
 	padding: 0.8rem 1rem;
-	background: #fff;
+	background: var(--surface);
 	border: 1px solid var(--line);
 	border-radius: 8px;
 	color: var(--ink);
@@ -1583,7 +1655,7 @@ a.stat-tile:hover {
 
 .chart-card {
 	padding: 1rem;
-	background: #fff;
+	background: var(--surface);
 	border: 1px solid var(--line);
 	border-radius: 8px;
 }
@@ -1693,7 +1765,7 @@ a.stat-tile:hover {
 
 .icon-button:hover,
 .icon-button:focus-visible {
-	background: #eff6ff;
+	background: var(--accent-soft);
 }
 
 .icon-button svg {
@@ -1770,7 +1842,7 @@ a.stat-tile:hover {
 	padding: 1.5rem;
 	border: none;
 	border-radius: 28px;
-	background: #fff;
+	background: var(--surface);
 	color: var(--ink);
 	box-shadow: 0 11px 15px -7px rgb(0 0 0 / 20%), 0 24px 38px 3px rgb(0 0 0 / 14%);
 }
@@ -1857,7 +1929,7 @@ button.text {
 }
 
 button.text:hover {
-	background: #eef3fd;
+	background: var(--accent-soft);
 }
 
 button.text.danger {
@@ -1865,7 +1937,7 @@ button.text.danger {
 }
 
 button.text.danger:hover {
-	background: #fdeeee;
+	background: var(--danger-soft);
 }
 
 .chips {
@@ -1876,7 +1948,7 @@ button.text.danger:hover {
 	padding: 0.25rem;
 	border: 1px solid var(--line);
 	border-radius: 6px;
-	background: #fff;
+	background: var(--surface);
 	color: var(--ink);
 }
 
@@ -1892,7 +1964,7 @@ button.text.danger:hover {
 	padding: 0.25rem 0.5rem;
 	border: 1px solid var(--line);
 	border-radius: 6px;
-	background: #fff;
+	background: var(--surface);
 	color: var(--ink);
 	box-shadow: none;
 }
@@ -1911,7 +1983,7 @@ button.text.danger:hover {
 .ts-wrapper.multi .ts-control > .item {
 	border: none;
 	border-radius: 999px;
-	background: #e8eefc;
+	background: var(--accent-soft);
 	color: var(--ink);
 	font-size: 0.85rem;
 	padding: 0.1rem 0.15rem 0.1rem 0.6rem;
@@ -1988,7 +2060,7 @@ button.text.danger:hover {
 }
 
 .ts-dropdown .active {
-	background: #e8eefc;
+	background: var(--accent-soft);
 	color: var(--ink);
 }
 
@@ -2010,7 +2082,7 @@ button.text.danger:hover {
 	gap: 0.15rem;
 	padding: 0.15rem 0.25rem 0.15rem 0.65rem;
 	border-radius: 999px;
-	background: #e8eefc;
+	background: var(--accent-soft);
 	font-size: 0.85rem;
 }
 
@@ -2027,7 +2099,7 @@ button.modify {
 	padding: 0;
 	border: 1px solid var(--danger);
 	border-radius: 999px;
-	background: #fff;
+	background: var(--surface);
 	color: var(--danger);
 	font-size: 1rem;
 	font-weight: 700;
@@ -2035,7 +2107,7 @@ button.modify {
 }
 
 button.modify:hover {
-	background: #fdeeee;
+	background: var(--danger-soft);
 }
 
 button.modify.chip-remove {
@@ -2100,7 +2172,7 @@ button.modify:disabled {
 .checks {
 	border: 1px solid var(--line);
 	border-radius: 8px;
-	background: #fff;
+	background: var(--surface);
 }
 
 .check {
@@ -2176,11 +2248,11 @@ button.text.check-toggle {
 }
 
 .check-result.pass {
-	color: #1a7f37;
+	color: var(--pass);
 }
 
 .check-result.fail {
-	color: #b42318;
+	color: var(--fail);
 }
 
 .check-problems {
@@ -2212,7 +2284,7 @@ button.text.check-toggle {
 	padding: 0.25rem 1rem 0.75rem;
 	border: 1px solid var(--line);
 	border-radius: 8px;
-	background: #fff;
+	background: var(--surface);
 }
 
 .importer-dataset {
@@ -2243,11 +2315,11 @@ button.text.check-toggle {
 }
 
 .importer-result.pass .importer-counts {
-	color: #1a7f37;
+	color: var(--pass);
 }
 
 .importer-result.fail {
-	color: #b42318;
+	color: var(--fail);
 }
 
 .importer-log {
@@ -2260,11 +2332,11 @@ button.text.check-toggle {
 }
 
 .import-runs td.pass {
-	color: #1a7f37;
+	color: var(--pass);
 }
 
 .import-runs td.fail {
-	color: #b42318;
+	color: var(--fail);
 }
 
 .import-runs td.going {
@@ -2316,7 +2388,7 @@ button.text.check-toggle {
 	position: absolute;
 	top: 0.35rem;
 	right: 0.35rem;
-	background: rgb(255 255 255 / 85%);
+	background: var(--veil);
 }
 
 .place-dialog {
@@ -2354,9 +2426,9 @@ button.text.check-toggle {
 .schema-drift {
 	margin: 0.5rem 0;
 	padding: 0.6rem 0.6rem 0.6rem 1.8rem;
-	border: 1px solid #b42318;
+	border: 1px solid var(--fail);
 	border-radius: 6px;
-	color: #b42318;
+	color: var(--fail);
 }
 
 .schema-drift[hidden] {
@@ -2403,7 +2475,7 @@ button.text.check-toggle {
 }
 
 .schema-columns tr.drift td {
-	color: #b42318;
+	color: var(--fail);
 }
 
 .schema-facts {
@@ -2428,7 +2500,7 @@ button.text.check-toggle {
 	overflow-y: auto;
 	overscroll-behavior: contain;
 	padding: 0.75rem 0.5rem 2rem;
-	background: #fff;
+	background: var(--surface);
 	border-right: 1px solid var(--line);
 }
 
@@ -2610,7 +2682,7 @@ body.sidebar-folded .sidebar {
 /* a chess game's card: its picture is the board where the game ended, square and shown whole */
 .world-card.is-board .world-image {
 	padding: 0.5rem;
-	background: #fff;
+	background: var(--surface);
 }
 
 /* a chess game in its dialog: the board, and beside it the moves to step through */
@@ -2677,7 +2749,7 @@ body.sidebar-folded .sidebar {
 }
 
 .chess-move:hover:not(:disabled) {
-	background: #eff6ff;
+	background: var(--accent-soft);
 }
 
 .chess-move.current {
@@ -2697,7 +2769,7 @@ body.sidebar-folded .sidebar {
 	padding: 0.4rem 0.6rem;
 	border: 1px solid var(--line);
 	border-radius: 6px;
-	background: #fff;
+	background: var(--surface);
 	color: var(--ink);
 	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	font-size: 0.85rem;
@@ -2705,7 +2777,7 @@ body.sidebar-folded .sidebar {
 }
 
 .dialog-form textarea[readonly] {
-	background: #eef0f3;
+	background: var(--surface-2);
 	border-color: transparent;
 	color: var(--muted);
 }
@@ -2717,7 +2789,7 @@ body.sidebar-folded .sidebar {
 	gap: 0.25rem 1.25rem;
 	padding: 0.5rem 0.75rem;
 	border-radius: 6px;
-	background: #eef0f3;
+	background: var(--surface-2);
 	font-size: 0.9rem;
 }
 

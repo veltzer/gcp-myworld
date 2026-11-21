@@ -4,6 +4,21 @@ import { el } from "./worlds.js";
 
 export const $ = (id) => document.getElementById(id);
 
+// The user's theme (Settings): "light" or "dark" on <html>, nothing for "system" (the
+// device's); kept in this browser too, so the next page is drawn in it from the start.
+export function applyTheme(theme) {
+	if (theme === "light" || theme === "dark") {
+		document.documentElement.dataset.theme = theme;
+	} else {
+		delete document.documentElement.dataset.theme;
+	}
+	try {
+		localStorage.setItem("theme", theme || "system");
+	} catch {
+		// no storage here: the server's choice is applied when each page loads
+	}
+}
+
 export async function api(path, options = {}) {
 	const init = { method: options.method || "GET", headers: {} };
 	if (options.body !== undefined) {

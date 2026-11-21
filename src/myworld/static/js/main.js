@@ -2,7 +2,7 @@
 
 import { setupAccountMenu, setupSettings, showWho } from "./account.js";
 import { selectChecks, setupViewChecks } from "./checks.js";
-import { $, api, showError } from "./core.js";
+import { $, api, applyTheme, showError } from "./core.js";
 import { dialogError, pictures, setupPictures } from "./dialog.js";
 import { setupMovieSearch } from "./films.js";
 import { chosen, ownedValues, setupDatePicks, setupLocalized } from "./forms.js";
@@ -27,6 +27,7 @@ export async function libraryPage() {
 		return;
 	}
 	const { user, rating_min, rating_max } = state.config;
+	applyTheme(user.theme);
 	showWho(user);
 	if (user.picture) {
 		$("avatar").src = user.picture;
