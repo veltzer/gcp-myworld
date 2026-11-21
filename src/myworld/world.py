@@ -1,6 +1,6 @@
 """
 JSON API for what the signed-in user keeps: concerts, their museum visits,
-audio courses, audio books, YouTube videos, chess games, people, organizations and
+audio courses, audio books, podcasts and their episodes, YouTube videos, chess games, people, organizations and
 groups; and for what everyone shares: places (and their kinds), visit
 types, cities and countries. For each: what a row looks like as JSON, how a
 request body is applied to it, and the routes that list, add, edit and
@@ -63,6 +63,8 @@ from myworld.models import (
     PersonType,
     Place,
     PlaceKind,
+    Podcast,
+    PodcastEpisode,
     Region,
     RelationType,
     Visit,
@@ -389,6 +391,54 @@ def _audio_book_url(book: AudioBook) -> str:
     return ""
 
 
+def _ref(row: Any) -> dict[str, Any] | None:
+    return None if row is None else {"id": row.id, "name": row.name}
+
+
+def podcast_json(podcast: Podcast) -> dict[str, Any]:
+    heard = sorted((date_json(e)["date_sort"] for e in podcast.episodes), reverse=True)
+    return {
+        "id": podcast.id,
+        "name": podcast.name,
+        "url": podcast.url,
+        "rss_feed": podcast.rss_feed,
+        "rating": podcast.rating,
+        "review": podcast.review,
+        "image": image_url(podcast.image_id),
+        # the episodes heard: how many, how long all of them are (seconds), and when the last was
+        "episodes": len(podcast.episodes),
+        "duration": sum(e.duration or 0 for e in podcast.episodes),
+        "date_sort": heard[0] if heard else "",
+    }
+
+
+def podcast_episode_json(episode: PodcastEpisode) -> dict[str, Any]:
+    return {
+        "id": episode.id,
+        "name": episode.name,
+        "podcast": _ref(episode.podcast),
+        **date_json(episode),
+        "date_timezone": episode.date_timezone,
+        "description": episode.description,
+        "published": _stamp_json(episode.published_utcz),
+        "number": episode.number,
+        "duration": episode.duration,
+        "episode_type": episode.episode_type,
+        "explicit": episode.explicit,
+        "enclosure_url": episode.enclosure_url,
+        "image_url": episode.image_url,
+        "author": episode.author,
+        "guid": episode.guid or "",
+        "rating": episode.rating,
+        "review": episode.review,
+        "listened_at": episode.listened_at,
+        "device": _ref(episode.device),
+        # the audio itself, and the podcast's cover
+        "url": episode.enclosure_url,
+        "image": image_url(episode.podcast.image_id) if episode.podcast else None,
+    }
+
+
 def youtube_video_json(video: YouTubeVideo) -> dict[str, Any]:
     return {
         "id": video.id,
@@ -550,6 +600,25 @@ def api_audio_books() -> flask.Response:
     books = flask.g.db.scalars(select(AudioBook).where(AudioBook.owner_id == flask.g.user.id).options(selectinload(AudioBook.device))).all()
     # the latest finished, or come into the library, first
     return flask.jsonify(_newest_first([audio_book_json(b) for b in books]))
+
+
+@bp.route("/api/podcasts", methods=["GET"])
+@auth.login_required
+def api_podcasts() -> flask.Response:
+    podcasts = flask.g.db.scalars(select(Podcast).where(Podcast.owner_id == flask.g.user.id).options(selectinload(Podcast.episodes))).all()
+    # the one heard last first
+    return flask.jsonify(_newest_first([podcast_json(p) for p in podcasts]))
+
+
+@bp.route("/api/podcast-episodes", methods=["GET"])
+@auth.login_required
+def api_podcast_episodes() -> flask.Response:
+    query = select(PodcastEpisode).where(PodcastEpisode.owner_id == flask.g.user.id).options(
+        selectinload(PodcastEpisode.podcast), selectinload(PodcastEpisode.device),
+    )
+    # the latest heard first; of those heard the same day, the latest published first
+    episodes = [podcast_episode_json(e) for e in flask.g.db.scalars(query)]
+    return flask.jsonify(sorted(episodes, key=lambda e: (e["date_sort"], e["published"]), reverse=True))
 
 
 @bp.route("/api/youtube-videos", methods=["GET"])
@@ -807,7 +876,7 @@ def api_currencies() -> flask.Response:
 
 
 
-def _apply_dates(row: Concert | Visit | AudioCourse | AudioBook | YouTubeVideo, body: dict[str, Any]) -> None:
+def _apply_dates(row: Concert | Visit | AudioCourse | AudioBook | PodcastEpisode | YouTubeVideo, body: dict[str, Any]) -> None:
     """
     The date as typed: YYYY, YYYY-MM or YYYY-MM-DD, stored at that precision,
     or nothing. date_timezone is where it happened (an IANA name). A date
@@ -1098,6 +1167,56 @@ def _apply_audio_book(book: AudioBook, body: dict[str, Any]) -> None:
     book.device = owned_ref(body, "device_id", Device, "device")
     apply_image(book, body)
     _apply_dates(book, body)
+
+
+def _web_link(body: dict[str, Any], key: str) -> str:
+    value = text(body, key)
+    if value and not value.startswith(("https://", "http://")):
+        raise ApiError(400, f"{key}: expected an http(s) URL")
+    return value
+
+
+def _apply_podcast(podcast: Podcast, body: dict[str, Any]) -> None:
+    name = text(body, "name", required=True)
+    clash = flask.g.db.execute(select(Podcast.id).where(Podcast.owner_id == flask.g.user.id, Podcast.name == name, Podcast.id != podcast.id)).first()
+    if clash is not None:
+        raise ApiError(409, f"{name} is already in Podcasts")
+    podcast.name = name
+    podcast.url = _web_link(body, "url")
+    podcast.rss_feed = _web_link(body, "rss_feed")
+    podcast.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
+    podcast.review = text(body, "review")
+    apply_image(podcast, body)
+
+
+def _apply_podcast_episode(episode: PodcastEpisode, body: dict[str, Any]) -> None:
+    podcast = owned_ref(body, "podcast_id", Podcast, "podcast")
+    if podcast is None:
+        raise ApiError(400, "podcast_id: an episode is of a podcast")
+    guid = text(body, "guid")
+    if guid:
+        clash = flask.g.db.execute(select(PodcastEpisode.id).where(
+            PodcastEpisode.podcast_id == podcast.id, PodcastEpisode.guid == guid, PodcastEpisode.id != episode.id,
+        )).first()
+        if clash is not None:
+            raise ApiError(409, f"guid: that episode of {podcast.name} is in Podcast episodes already")
+    episode.podcast = podcast
+    episode.guid = guid or None
+    episode.name = text(body, "name", required=True)
+    episode.description = text(body, "description")
+    episode.published_utcz = _stamp(body, "published", episode.published_utcz)
+    episode.number = opt_int(body, "number", 0, 2**31 - 1)
+    episode.duration = opt_int(body, "duration", 0, 2**31 - 1)
+    episode.episode_type = text(body, "episode_type")
+    episode.explicit = text(body, "explicit")
+    episode.enclosure_url = _web_link(body, "enclosure_url")
+    episode.image_url = _web_link(body, "image_url")
+    episode.author = text(body, "author")
+    episode.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
+    episode.review = text(body, "review")
+    episode.listened_at = text(body, "listened_at")
+    episode.device = owned_ref(body, "device_id", Device, "device")
+    _apply_dates(episode, body)
 
 
 YOUTUBE_ID = re.compile(rf"[A-Za-z0-9_-]{{{YOUTUBE_ID_LENGTH}}}")
@@ -1397,6 +1516,8 @@ VIEWS: dict[str, _View] = {
     "concert-visits": _View(Concert, _apply_concert, concert_json),
     "audio-courses": _View(AudioCourse, _apply_audio_course, audio_course_json),
     "audio-books": _View(AudioBook, _apply_audio_book, audio_book_json),
+    "podcasts": _View(Podcast, _apply_podcast, podcast_json),
+    "podcast-episodes": _View(PodcastEpisode, _apply_podcast_episode, podcast_episode_json),
     "youtube-videos": _View(YouTubeVideo, _apply_youtube_video, youtube_video_json),
     "chess-games": _View(ChessGame, _apply_chess_game, chess_game_json),
     "people": _View(Person, _apply_person, person_json),
@@ -1469,7 +1590,11 @@ def api_world_delete(what: str, row_id: int) -> flask.Response:
     # the ORM also removes the row's links (to people, to organizations, to concerts and museums);
     # the concerts at a deleted place are kept, with no place
     _may_change(VIEWS[what].model)
-    flask.g.db.delete(owned(VIEWS[what].model, row_id))
+    row = owned(VIEWS[what].model, row_id)
+    # a podcast goes once none of its episodes is kept: they are what was heard
+    if isinstance(row, Podcast) and row.episodes:
+        raise ApiError(409, f"{row.name} has {len(row.episodes)} episodes heard: delete them first")
+    flask.g.db.delete(row)
     flask.g.db.flush()
     drop_unused_images()
     drop_unused_regions()

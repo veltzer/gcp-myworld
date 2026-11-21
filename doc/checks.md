@@ -150,6 +150,19 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `audio-book-duplicates`: no account has two audio books of the same
   title and subtitle.
 
+### Podcasts (`podcasts`)
+
+- `podcast-covers`: every podcast has a cover.
+- `podcast-reviews`: every podcast has your own rating and a review.
+- `podcast-episodes-heard`: every podcast has an episode heard.
+
+### Podcast episodes (`podcast-episodes`)
+
+- `podcast-episode-dates`: every podcast episode has the date it was
+  heard.
+- `podcast-episode-duplicates`: no podcast has two episodes of the same
+  title.
+
 ### YouTube (`youtube`)
 
 - `youtube-ids`: every YouTube video id is one YouTube could have given

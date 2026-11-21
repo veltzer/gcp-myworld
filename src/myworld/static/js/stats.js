@@ -105,6 +105,7 @@ function renderStats(stats) {
 		statTile("Museum visits", stats.museum_visits, `${stats.museums} museums`, "museums"),
 		statTile("Audio courses", stats.audio_courses, "", "audio-courses"),
 		statTile("Audio books", stats.audio_books, "", "audio-books"),
+		statTile("Podcasts", stats.podcasts, `${stats.podcast_episodes} episodes heard`, "podcasts"),
 		statTile("YouTube videos", stats.youtube_videos, "", "youtube"),
 		statTile("Chess games", stats.chess_games, stats.chess_by_outcome.map((o) => `${o.count.toLocaleString()} ${o.name.toLowerCase()}`).join(" · "), "chess"),
 		statTile("Places", stats.places, "", "places"),

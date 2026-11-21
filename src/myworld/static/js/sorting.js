@@ -54,6 +54,23 @@ const SORTS = {
 		["released", "Released", (b) => b.released, "desc"],
 		["source_rating", "Rating there", (b) => b.source_rating, "desc"],
 	],
+	podcasts: [
+		// when an episode of it was last heard
+		["date", "Last heard", (p) => p.date_sort, "desc"],
+		["name", "Name", (p) => p.name, "asc"],
+		["rating", "Rating", (p) => p.rating, "desc"],
+		["episodes", "Episodes", (p) => p.episodes, "desc"],
+		["duration", "Time heard", (p) => p.duration, "desc"],
+	],
+	"podcast-episodes": [
+		["date", "Heard", (e) => e.date_sort, "desc"],
+		["name", "Title", (e) => e.name, "asc"],
+		["podcast", "Podcast", (e) => e.podcast?.name, "asc"],
+		["published", "Published", (e) => e.published, "desc"],
+		["number", "Number", (e) => e.number, "asc"],
+		["duration", "Length", (e) => e.duration, "desc"],
+		["rating", "Rating", (e) => e.rating, "desc"],
+	],
 	youtube: [
 		["date", "Watched", (v) => v.date_sort, "desc"],
 		["name", "Name", (v) => v.name, "asc"],

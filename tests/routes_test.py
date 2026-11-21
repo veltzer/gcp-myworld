@@ -22,6 +22,9 @@ MINIMAL: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
     "concert-visits": ({"name": "Jarrett"}, {"name": "Jarrett Trio"}),
     "audio-courses": ({"name": "Logic"}, {"name": "Logic 101"}),
     "audio-books": ({"name": "Dune"}, {"name": "Dune Messiah"}),
+    "podcasts": ({"name": "Mindscape"}, {"name": "Mindscape 2"}),
+    # and the podcast it is of, which minimal() adds first
+    "podcast-episodes": ({"name": "Trailer"}, {"name": "The trailer"}),
     "youtube-videos": ({"youtube_id": "dQw4w9WgXcQ", "name": "A song"}, {"youtube_id": "dQw4w9WgXcQ", "name": "That song"}),
     # a game is added by its text and named by its players: an edit that sends another text renames it
     "chess-games": (
@@ -40,6 +43,15 @@ MINIMAL: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
 }
 
 
+def minimal(app: webtest.TestApp, path: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """ MINIMAL[path], with what the row needs there to be first (an episode, its podcast) added to the signed-in account. """
+    first, changed = MINIMAL[path]
+    if path == "podcast-episodes":
+        podcast = {"podcast_id": app.post_json("/api/podcasts", {"name": "Mindscape"}, status=201).json["id"]}
+        return {**first, **podcast}, {**changed, **podcast}
+    return first, changed
+
+
 def test_every_view_is_tried() -> None:
     assert set(MINIMAL) == set(VIEWS)
 
@@ -48,7 +60,7 @@ def test_every_view_is_tried() -> None:
 def test_add_edit_delete(app: webtest.TestApp, engine: Engine, path: str) -> None:
     # what everyone shares is changed by an admin
     sign_in_admin(app, engine)
-    first, changed = MINIMAL[path]
+    first, changed = minimal(app, path)
     # (place kinds and visit types start with those there always are)
     there = [row["id"] for row in app.get(f"/api/{path}").json]
     added = app.post_json(f"/api/{path}", first, status=201).json
@@ -69,14 +81,14 @@ def test_add_edit_delete(app: webtest.TestApp, engine: Engine, path: str) -> Non
 @pytest.mark.parametrize("path", sorted(path for path, view in VIEWS.items() if not is_shared(view.model)))
 def test_a_row_is_its_owners(app: webtest.TestApp, path: str) -> None:
     sign_in(app)
-    first, changed = MINIMAL[path]
+    first, changed = minimal(app, path)
     row_id = app.post_json(f"/api/{path}", first, status=201).json["id"]
     sign_in(app, sub="someone-else")
     assert app.get(f"/api/{path}").json == []
     assert app.put_json(f"/api/{path}/{row_id}", changed, status=404).json == {"error": "no such entry"}
     app.delete(f"/api/{path}/{row_id}", status=404)
-    # and the other account may have one of the same name
-    app.post_json(f"/api/{path}", first, status=201)
+    # and the other account may have one of the same name (of its own podcast)
+    app.post_json(f"/api/{path}", minimal(app, path)[0], status=201)
     sign_in(app)
     assert [row["id"] for row in app.get(f"/api/{path}").json] == [row_id]
 
@@ -107,7 +119,7 @@ def test_a_page_that_is_not_one(app: webtest.TestApp) -> None:
     app.delete("/api/unicorns/1", status=404)
 
 
-@pytest.mark.parametrize("path", ["concert-visits", "audio-courses", "youtube-videos"])
+@pytest.mark.parametrize("path", ["concert-visits", "audio-courses", "podcast-episodes", "youtube-videos"])
 @pytest.mark.parametrize(("date", "precision", "sort"), [
     ("2003", "year", "2003"),
     ("2003-07", "month", "2003-07"),
@@ -116,13 +128,14 @@ def test_a_page_that_is_not_one(app: webtest.TestApp) -> None:
 ])
 def test_a_date_is_as_exact_as_it_is_known(app: webtest.TestApp, path: str, date: str, precision: str | None, sort: str) -> None:
     sign_in(app)
-    added = app.post_json(f"/api/{path}", {**MINIMAL[path][0], "date": date, "date_timezone": "Asia/Jerusalem"}, status=201).json
+    first = minimal(app, path)[0]
+    added = app.post_json(f"/api/{path}", {**first, "date": date, "date_timezone": "Asia/Jerusalem"}, status=201).json
     assert (added["date"], added["date_precision"], added["date_sort"]) == (date or None, precision, sort)
     assert added["date_timezone"] == "Asia/Jerusalem"
     # sent back as it is shown, it stays; sent empty, it goes
-    kept = app.put_json(f"/api/{path}/{added['id']}", {**MINIMAL[path][0], "date": date}).json
+    kept = app.put_json(f"/api/{path}/{added['id']}", {**first, "date": date}).json
     assert (kept["date"], kept["date_precision"], kept["date_timezone"]) == (date or None, precision, "")
-    cleared = app.put_json(f"/api/{path}/{added['id']}", {**MINIMAL[path][0], "date": ""}).json
+    cleared = app.put_json(f"/api/{path}/{added['id']}", {**first, "date": ""}).json
     assert (cleared["date"], cleared["date_precision"], cleared["date_sort"]) == (None, None, "")
 
 
@@ -207,6 +220,7 @@ def test_what_a_row_points_at_is_the_users_own(app: webtest.TestApp) -> None:
         "person": app.post_json("/api/people", {"first_name": "Dana"}, status=201).json["id"],
         "device": app.post_json("/api/devices", {"name": "Phone"}, status=201).json["id"],
         "type": app.post_json("/api/organization-types", {"name": "Company"}, status=201).json["id"],
+        "podcast": app.post_json("/api/podcasts", {"name": "Mindscape"}, status=201).json["id"],
     }
     sign_in(app)
     for path, body, error in (
@@ -215,6 +229,7 @@ def test_what_a_row_points_at_is_the_users_own(app: webtest.TestApp) -> None:
         ("concert-visits", {"name": "Jarrett", "people": [True]}, "people: expected a list of ids"),
         ("organizations", {"name": "ACME", "type_id": theirs["type"]}, "type_id: unknown type"),
         ("audio-courses", {"name": "Logic", "device_id": theirs["device"]}, "device_id: unknown device"),
+        ("podcast-episodes", {"name": "Trailer", "podcast_id": theirs["podcast"]}, "podcast_id: unknown podcast"),
         ("organizations", {"name": "ACME", "city_id": "Haifa"}, "city_id: expected a number"),
         ("organizations", {"name": "ACME", "city_id": 999999}, "city_id: unknown city"),
     ):

@@ -14,6 +14,9 @@ export const WORLDS = {
 	"audio-courses": ["Audio courses", "/api/audio-courses", "audio course", "Audio courses"],
 	// the books of the user's audio book libraries (Audible, ...)
 	"audio-books": ["Audio books", "/api/audio-books", "audio book", "Audio books"],
+	// the podcasts listened to, and the episodes of them heard
+	podcasts: ["Podcasts", "/api/podcasts", "podcast", "Podcasts"],
+	"podcast-episodes": ["Podcast episodes", "/api/podcast-episodes", "podcast episode", "Podcast episodes"],
 	youtube: ["YouTube videos", "/api/youtube-videos", "YouTube video", "YouTube"],
 	chess: ["Chess games", "/api/chess-games", "chess game", "Chess"],
 	places: ["Places", "/api/places", "place", "Places"],

@@ -27,6 +27,8 @@ from myworld.models import (
     PersonType,
     Place,
     PlaceKind,
+    Podcast,
+    PodcastEpisode,
     RelationType,
     UserWork,
     Visit,
@@ -83,6 +85,8 @@ DATASETS: dict[str, str] = {
     "museums": "Museum visits",
     "audio-courses": "Audio courses",
     "audio-books": "Audio books",
+    "podcasts": "Podcasts",
+    "podcast-episodes": "Podcast episodes",
     "youtube": "YouTube",
     "chess": "Chess",
     "people": "People",
@@ -149,6 +153,8 @@ SUBJECTS: dict[type, tuple[str, str]] = {
     Concert: ("concert", "concerts"),
     AudioCourse: ("audio course", "audio-courses"),
     AudioBook: ("audio book", "audio-books"),
+    Podcast: ("podcast", "podcasts"),
+    PodcastEpisode: ("podcast episode", "podcast-episodes"),
     YouTubeVideo: ("YouTube video", "youtube"),
     Person: ("person", "people"),
     Organization: ("organization", "organizations"),
@@ -220,7 +226,7 @@ def squashed(name: str) -> str:
     return " ".join(name.casefold().split())
 
 
-def dated(course: AudioCourse | YouTubeVideo | Concert) -> bool:
+def dated(course: AudioCourse | PodcastEpisode | YouTubeVideo | Concert) -> bool:
     """ Whether it has a date, at any precision: the day it was finished. """
     return course.date_utcz is not None or course.date_ymd is not None or bool(course.date_my) or course.date_y is not None
 

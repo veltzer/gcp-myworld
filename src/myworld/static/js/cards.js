@@ -276,6 +276,38 @@ function audioBookCard(item) {
 	return card;
 }
 
+function podcastCard(item) {
+	const { card, list } = cardShell(item, "", "cover");
+	if (item.rating !== null) {
+		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
+	}
+	detail(list, "Review", item.review);
+	// always said, 0 too
+	detail(list, "Episodes heard", String(item.episodes));
+	detail(list, "Time heard", item.duration ? formatDuration(item.duration) : "");
+	detail(list, "Last heard", item.date_sort);
+	websiteButton(card, item.url);
+	return card;
+}
+
+function podcastEpisodeCard(item) {
+	const { card, list } = cardShell(item, item.podcast?.name || "", "cover");
+	linksDetail(list, "Podcast", "podcasts", item.podcast ? [item.podcast] : []);
+	detail(list, "Heard", formatDate(item));
+	detail(list, "Number", item.number === null ? "" : String(item.number));
+	detail(list, "Published", item.published.slice(0, 10));
+	detail(list, "Length", formatDuration(item.duration));
+	if (item.rating !== null) {
+		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
+	}
+	detail(list, "Review", item.review);
+	detail(list, "Where", item.listened_at);
+	linksDetail(list, "Device", "devices", item.device ? [item.device] : []);
+	detail(list, "About", item.description);
+	websiteButton(card, item.url, "Listen");
+	return card;
+}
+
 // 3725 -> "1:02:05", 391 -> "6:31"
 function formatDuration(seconds) {
 	if (seconds === null) {
@@ -367,6 +399,8 @@ export const CARDS = {
 	museums: museumCard,
 	"audio-courses": audioCourseCard,
 	"audio-books": audioBookCard,
+	podcasts: podcastCard,
+	"podcast-episodes": podcastEpisodeCard,
 	youtube: youtubeCard,
 	chess: chessCard,
 	places: placeCard,

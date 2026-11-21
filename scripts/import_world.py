@@ -47,12 +47,19 @@ either file (My World keeps them now): a source without them imports no
 YouTube videos, and --youtube and --youtube-history read them from a
 checkout of the site's history that has them.
 
+Podcasts come from data/yaml/podcasts.yaml: each podcast with its cover
+(static/images/podcast-<internal_id>.jpg) and the episodes of it heard
+(chapters), each as its feed says it and when, where and on what it was
+heard. A podcast is found again by its name and an episode by its feed's
+guid, so --podcasts adds only what is missing and can run again; the full
+import includes them when the source has the file.
+
 The full import (no mode flag) replaces everything the user had in these
 tables, in one transaction. It is meant for an empty account: when the
 account has any of these rows already it stops, since replacing them would
 lose every edit made in the app since the last import, unless
 --replace-everything is given with the account's email again. The --books,
---audio-books, --youtube-history and --only-types modes add to what is
+--audio-books, --podcasts, --youtube-history and --only-types modes add to what is
 there and are safe to run again. Unknown fields in the YAML stop the import rather than being
 dropped, so nothing is lost on the way in.
 
@@ -80,6 +87,7 @@ see doc/deploy.md.
 
 import argparse
 import datetime
+import email.utils
 import gzip
 import hashlib
 import json
@@ -127,6 +135,8 @@ from myworld.models import (
     PersonType,
     Place,
     PlaceKind,
+    Podcast,
+    PodcastEpisode,
     Read,
     RelationType,
     User,
@@ -272,6 +282,12 @@ AUDIO_COURSE_FIELDS = DATE_FIELDS | {
 }
 # audio_books.yaml: an audio book heard, not from a source's library, said as an audio course is
 AUDIO_BOOK_FIELDS = DATE_FIELDS | {"name", "authors", "date_started_utcz", "location", "device", "progress"}
+# a podcast, with its episodes heard (chapters), each as its feed says it, and when, where and on what it was heard;
+# internal_id only names the podcast's cover (static/images/podcast-<internal_id>.jpg)
+PODCAST_FIELDS = {"name", "url", "rss_feed", "rating", "review", "internal_id", "chapters"}
+PODCAST_EPISODE_FIELDS = DATE_FIELDS | {
+    "title", "description", "pubDate", "episode", "duration", "episodeType", "explicit", "enclosure_url", "image", "author", "guid", "location", "device",
+}
 YOUTUBE_FIELDS = DATE_FIELDS | {"id", "name", "rating", "review", "device", "location"}
 # the watch history: yt-dlp's names; status "missing" (with video_id) is a video YouTube no longer has
 YOUTUBE_HISTORY_FIELDS = {"title", "webpage_url", "channel", "categories", "duration", "upload_date", "view_count", "status", "video_id"}
@@ -496,7 +512,7 @@ def find_owner(session: Session, email: str, subject: str | None) -> User:
 # what the full import deletes and makes again, so what an account must not have unless it is replaced on purpose;
 # the shared rows (countries, cities, places) are everyone's: never deleted, found again or added
 REPLACED_MODELS = (
-    AudioCourse, AudioBook, YouTubeVideo, Device, Concert, Visit, Group, Person, Organization,
+    AudioCourse, AudioBook, PodcastEpisode, Podcast, YouTubeVideo, Device, Concert, Visit, Group, Person, Organization,
     OrganizationType, PersonType, RelationType, PersonRelationType, PersonOrganizationType, Image,
 )
 
@@ -531,7 +547,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
         what = ", ".join(f"{count} {table}" for table, count in existing.items())
         raise WorldImportError(
             f"the account has data already ({what}); the full import deletes it all and loses every edit made in the app."
-            f" Add only what is missing with --books, --audio-books, --youtube-history or --only-types, or pass --replace-everything {owner.email} to replace it anyway",
+            f" Add only what is missing with --books, --audio-books, --podcasts, --youtube-history or --only-types, or pass --replace-everything {owner.email} to replace it anyway",
         )
     people_items = _items(source, "people", PERSON_FIELDS)
     organization_items = _items(source, "organizations", ORGANIZATION_FIELDS)
@@ -738,6 +754,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     # the site no longer keeps them (My World does): a source without them has none to import
     has_audio_books = any((source / "data" / "yaml" / name).exists() for name in AUDIO_BOOK_FILES)
     audio_books = import_audio_books(session, owner, source) if has_audio_books else {"audio books added": 0, "images": 0, "devices added": 0}
+    podcasts = import_podcasts(session, owner, source) if _podcasts_path(source).exists() else {"podcasts added": 0, "podcast episodes added": 0, "covers added": 0, "devices added": 0}
     # the site no longer keeps them either: a source without one imports none of it
     has_videos = (source / "data" / "yaml" / "video_youtube.yaml").exists()
     videos = import_youtube(session, owner, source) if has_videos else {"YouTube videos": 0, "devices added": 0}
@@ -749,8 +766,9 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
         "relation types": len(relation_types), "person types": len(PERSON_TYPES), "people with a profession": typed["people given a profession"], "people related to the user": typed["people given a relation"],
         "concerts": len(concert_items), "places": place.added, "museums": len(museums), "museum visits": len(museum_items), "audio courses": courses["audio courses"],
         "audio books": audio_books["audio books added"],
-        "YouTube videos": videos["YouTube videos"] + history["YouTube videos added"], "devices": courses["devices added"] + audio_books["devices added"] + videos["devices added"],
-        "books": books["books"], "images": len(images) + courses["images"] + audio_books["images"] + books["covers"],
+        "podcasts": podcasts["podcasts added"], "podcast episodes": podcasts["podcast episodes added"],
+        "YouTube videos": videos["YouTube videos"] + history["YouTube videos added"], "devices": courses["devices added"] + audio_books["devices added"] + podcasts["devices added"] + videos["devices added"],
+        "books": books["books"], "images": len(images) + courses["images"] + audio_books["images"] + podcasts["covers added"] + books["covers"],
     }
 
 
@@ -1230,6 +1248,82 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
 NOT_KEPT = "veltzer.github.io no longer keeps it; its git history does"
 
 
+def _podcasts_path(source: Path) -> Path:
+    return source / "data" / "yaml" / "podcasts.yaml"
+
+
+def _published(value: str, where: str) -> datetime.datetime:
+    """ A feed's pubDate ("Wed, 28 Oct 2020 13:00:00 -0000"), as the naive UTC the columns keep. """
+    try:
+        stamp = email.utils.parsedate_to_datetime(value)
+    except (TypeError, ValueError) as e:
+        raise WorldImportError(f"{where}: pubDate {value!r} is not a date") from e
+    if stamp.tzinfo is None:
+        return stamp
+    return stamp.astimezone(datetime.UTC).replace(tzinfo=None)
+
+
+def import_podcasts(session: Session, owner: User, source: Path) -> dict[str, int]:
+    """
+    Add owner's podcasts (podcasts.yaml) with their covers
+    (static/images/podcast-<internal_id>.jpg) and the episodes of them heard:
+    a podcast is found again by its name, an episode in it by its feed's
+    guid, and only what owner does not have yet is added, so it runs again
+    safely and keeps what was edited. Does not commit.
+    """
+    path = _podcasts_path(source)
+    if not path.exists():
+        raise WorldImportError(f"{path} is not there ({NOT_KEPT})")
+    items = _items(source, "podcasts", PODCAST_FIELDS)
+    image_dir = source / "static" / "images"
+    have = {p.name: p for p in session.scalars(select(Podcast).where(Podcast.owner_id == owner.id).options(selectinload(Podcast.episodes)))}
+    device = Devices(session, owner)
+    counts = {"podcasts added": 0, "podcast episodes added": 0, "covers added": 0}
+    for item in items:
+        name = str(item["name"]).strip()
+        podcast = have.get(name)
+        if podcast is None:
+            podcast = Podcast(owner_id=owner.id, name=name, url=item.get("url", ""), rss_feed=item.get("rss_feed", ""), rating=item.get("rating"), review=item.get("review", ""))
+            session.add(podcast)
+            have[name] = podcast
+            counts["podcasts added"] += 1
+        cover = image_dir / f"podcast-{item['internal_id']}.jpg" if "internal_id" in item else None
+        if podcast.image_id is None and podcast.image is None and cover is not None and cover.exists():
+            data = cover.read_bytes()
+            podcast.image = Image(owner_id=owner.id, filename=cover.name, content_type="image/jpeg", sha256=hashlib.sha256(data).hexdigest(), data=data)
+            counts["covers added"] += 1
+        heard = {e.guid for e in podcast.episodes}
+        for chapter in item.get("chapters", []):
+            unknown = set(chapter) - PODCAST_EPISODE_FIELDS
+            where = f"{path}: {name!r}, {chapter.get('title')!r}"
+            if unknown:
+                raise WorldImportError(f"{where} has fields this import does not know: {sorted(unknown)}")
+            guid = str(chapter["guid"]) if chapter.get("guid") else None
+            if guid is not None and guid in heard:
+                continue
+            podcast.episodes.append(PodcastEpisode(
+                owner_id=owner.id,
+                name=str(chapter["title"]),
+                description=str(chapter.get("description", "")),
+                published_utcz=_published(str(chapter["pubDate"]), where) if chapter.get("pubDate") else None,
+                number=chapter.get("episode"),
+                duration=chapter.get("duration"),
+                episode_type=str(chapter.get("episodeType", "")),
+                explicit=str(chapter.get("explicit", "")),
+                enclosure_url=str(chapter.get("enclosure_url", "")),
+                image_url=str(chapter.get("image", "")),
+                author=str(chapter.get("author", "")),
+                guid=guid,
+                listened_at=str(chapter.get("location", "")),
+                device=device(str(chapter.get("device", ""))),
+                **_dates({**chapter, "name": chapter.get("title")}),
+            ))
+            heard.add(guid)
+            counts["podcast episodes added"] += 1
+    session.flush()
+    return {**counts, "devices added": device.added}
+
+
 def import_youtube(session: Session, owner: User, source: Path) -> dict[str, int]:
     """ Add owner's YouTube videos from source. Stops when owner has YouTube videos already. Does not commit. """
     if not (source / "data" / "yaml" / "video_youtube.yaml").exists():
@@ -1481,6 +1575,10 @@ def main() -> int:
         help="import only the audio books (the Audible library and those heard elsewhere), adding those the account does not have yet and refreshing what Audible changes on the rest; safe to run again",
     )
     parser.add_argument(
+        "--podcasts", action="store_true",
+        help="import only the podcasts and the episodes of them heard, adding what the account does not have yet; safe to run again",
+    )
+    parser.add_argument(
         "--youtube", action="store_true",
         help="import only the YouTube videos, adding them to what the account has (stops if it has YouTube videos already)",
     )
@@ -1515,6 +1613,8 @@ def main() -> int:
                 counts = import_youtube_history(session, owner, args.source)
             elif args.audio_books:
                 counts = import_audio_books(session, owner, args.source)
+            elif args.podcasts:
+                counts = import_podcasts(session, owner, args.source)
             elif args.youtube:
                 counts = import_youtube(session, owner, args.source)
             elif args.audio_courses:

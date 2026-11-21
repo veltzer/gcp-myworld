@@ -36,6 +36,8 @@ from myworld.models import (
     PersonName,
     PersonType,
     Place,
+    Podcast,
+    PodcastEpisode,
     Read,
     User,
     UserWork,
@@ -221,6 +223,66 @@ items:
 """
 
 
+PODCASTS = """
+items:
+  - name: "The rest is history"
+    url: "https://therestishistory.com/club"
+    rss_feed: "https://feeds.megaphone.fm/GLT4787413333"
+    chapters:
+      - title: "Trailer"
+        description: "Hosted by historians Tom Holland and Dominic Sandbrook"
+        pubDate: "Wed, 28 Oct 2020 13:00:00 -0000"
+        episode: 1
+        duration: 286
+        episodeType: "trailer"
+        explicit: "no"
+        enclosure_url: "https://pdst.fm/e/trailer.mp3"
+        author: "Goalhanger"
+        guid: "a428c3fa"
+        date_utcz: "2026-03-22T13:24:50Z"
+        date_timezone: "Asia/Jerusalem"
+        location: "Night Walks"
+        device: "Samsung S25"
+      - title: "1. Greatness"
+        description: "How did certain people come to be called the Great?"
+        pubDate: "Mon, 02 Nov 2020 04:00:00 +0200"
+        episode: 1
+        duration: 1975
+        episodeType: "full"
+        explicit: "yes"
+        enclosure_url: "https://pdst.fm/e/greatness.mp3"
+        image: "https://megaphone.imgix.net/greatness.jpg"
+        author: "Goalhanger"
+        guid: "d64331b9"
+        date_utcz: "2026-03-27T10:00:00Z"
+        date_timezone: "Asia/Jerusalem"
+        location: "Night Walks"
+        device: "Samsung S25"
+    rating: 7
+    review: "So-so podcast"
+    internal_id: 1
+  - name: "Mindscape"
+    url: "https://podcasts.apple.com/us/podcast/mindscape/id1406534739"
+    rss_feed: "https://rss.libsyn.com/shows/604590/destinations/5264190.xml"
+    chapters:
+      - title: "Welcome to the Mindscape Podcast!"
+        description: "Welcome"
+        pubDate: "Mon, 02 Jul 2018 05:00:00 +0000"
+        duration: 120
+        episodeType: "full"
+        explicit: "false"
+        enclosure_url: "https://traffic.libsyn.com/welcome.mp3"
+        image: "https://ssl-static.libsyn.com/welcome.jpg"
+        guid: "e7b5a1d2"
+        date_utcz: "2026-03-27T09:00:00Z"
+        date_timezone: "Asia/Jerusalem"
+        device: "Samsung S25"
+    rating: 8
+    review: "A very good podcast"
+    internal_id: 2
+"""
+
+
 YOUTUBE = """
 items:
   - id: "VNIRUigPxA8"
@@ -321,7 +383,7 @@ def write_source(root: Path, concerts: str = CONCERTS) -> Path:
     (root / "data" / "yaml").mkdir(parents=True)
     (root / "static" / "images").mkdir(parents=True)
     (root / "data" / "logos").mkdir(parents=True)
-    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("audible", AUDIBLE), ("audio_books", AUDIO_BOOKS), ("video_youtube", YOUTUBE), ("books_read", BOOKS), ("text_books", TEXT_BOOKS)):
+    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("audible", AUDIBLE), ("audio_books", AUDIO_BOOKS), ("podcasts", PODCASTS), ("video_youtube", YOUTUBE), ("books_read", BOOKS), ("text_books", TEXT_BOOKS)):
         (root / "data" / "yaml" / f"{name}.yaml").write_text(text, encoding="UTF8")
     (root / "data" / "logos" / "acme.svg").write_bytes(LOGO)
     (root / "static" / "data").mkdir(parents=True)
@@ -333,6 +395,8 @@ def write_source(root: Path, concerts: str = CONCERTS) -> Path:
     (root / "static" / "images" / "audiocourse-internal-1.jpg").write_bytes(b"\xff\xd8music")
     # the second book has no cover: it is added without one
     (root / "static" / "images" / "audible-0063005409.jpg").write_bytes(b"\xff\xd8sense")
+    # the second podcast has no cover: it is added without one
+    (root / "static" / "images" / "podcast-1.jpg").write_bytes(b"\xff\xd8history")
     (root / "static" / "images" / "book-goodreads-5907.jpg").write_bytes(b"\xff\xd8hobbit")
     (root / "static" / "images" / "book-simania-7005.jpg").write_bytes(b"\xff\xd8may")
     return root
@@ -351,7 +415,8 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         session.commit()
     assert counts == {
         "people": 7, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 3, "people with a profession": 4, "people related to the user": 2,
-        "concerts": 3, "places": 1, "museums": 2, "museum visits": 3, "audio courses": 2, "audio books": 4, "YouTube videos": 4, "devices": 3, "books": 3, "images": 8}
+        "concerts": 3, "places": 1, "museums": 2, "museum visits": 3, "audio courses": 2, "audio books": 4, "podcasts": 2, "podcast episodes": 3,
+        "YouTube videos": 4, "devices": 4, "books": 3, "images": 9}
     return app
 
 
@@ -671,8 +736,10 @@ def test_edit_audio_course(imported: webtest.TestApp) -> None:
 def test_devices(imported: webtest.TestApp) -> None:
     devices = imported.get("/api/devices").json
     # a list kept like the types: each with how many audio courses point to it
-    assert [(d["name"], d["count"]) for d in devices] == [("Desktop", 2), ("Samsung S10", 1), ("Samsung S7", 2)]
-    desktop, s10, s7 = devices
+    assert [(d["name"], d["count"]) for d in devices] == [("Desktop", 2), ("Samsung S10", 1), ("Samsung S25", 3), ("Samsung S7", 2)]
+    desktop, s10, s25, s7 = devices
+    # the podcast episodes heard on one count too
+    imported.delete(f"/api/devices/{s25['id']}", status=409)
     # a YouTube video's device counts too, and keeps it from being deleted
     imported.delete(f"/api/devices/{desktop['id']}", status=409)
     music = next(c for c in imported.get("/api/audio-courses").json if c["name"] == "How to Listen to Music")
@@ -859,6 +926,87 @@ def test_audio_books_import_refuses_what_it_does_not_know(imported: webtest.Test
     yaml_file.write_text(yaml_file.read_text(encoding="UTF8").replace('    cover_url: ""', '    cover_url: ""\n    wishlist: true'), encoding="UTF8")
     with Session(engine) as session, pytest.raises(import_world.WorldImportError, match="does not know"):
         import_world.import_audio_books(session, owner(session), source)
+
+
+def test_podcasts(imported: webtest.TestApp) -> None:
+    podcasts = imported.get("/api/podcasts").json
+    # the one heard last first
+    assert [p["name"] for p in podcasts] == ["The rest is history", "Mindscape"]
+    history, mindscape = podcasts
+    assert (history["url"], history["rss_feed"], history["rating"], history["review"]) == (
+        "https://therestishistory.com/club", "https://feeds.megaphone.fm/GLT4787413333", 7, "So-so podcast")
+    assert (history["episodes"], history["duration"], history["date_sort"]) == (2, 286 + 1975, "2026-03-27")
+    assert imported.get(history["image"]).body == b"\xff\xd8history"
+    assert (mindscape["episodes"], mindscape["image"]) == (1, None)
+    episodes = imported.get("/api/podcast-episodes").json
+    # the latest heard first; of a day, the latest published first
+    assert [e["name"] for e in episodes] == ["1. Greatness", "Welcome to the Mindscape Podcast!", "Trailer"]
+    greatness, welcome, trailer = episodes
+    # everything as the feed says it: pubDate in UTC
+    assert (greatness["podcast"]["name"], greatness["published"], greatness["number"], greatness["duration"]) == ("The rest is history", "2020-11-02T02:00:00Z", 1, 1975)
+    assert (greatness["episode_type"], greatness["explicit"], greatness["author"], greatness["guid"]) == ("full", "yes", "Goalhanger", "d64331b9")
+    assert (greatness["enclosure_url"], greatness["url"], greatness["image_url"]) == ("https://pdst.fm/e/greatness.mp3", "https://pdst.fm/e/greatness.mp3", "https://megaphone.imgix.net/greatness.jpg")
+    assert (greatness["description"], greatness["date"], greatness["date_timezone"]) == ("How did certain people come to be called the Great?", "2026-03-27T10:00:00Z", "Asia/Jerusalem")
+    assert (greatness["listened_at"], greatness["device"]["name"], greatness["image"]) == ("Night Walks", "Samsung S25", history["image"])
+    # what a feed leaves out is empty; "false" is kept as the feed says it
+    assert (welcome["number"], welcome["author"], welcome["explicit"], welcome["listened_at"], welcome["image"]) == (None, "", "false", "", None)
+    assert (trailer["episode_type"], trailer["image_url"], trailer["published"]) == ("trailer", "", "2020-10-28T13:00:00Z")
+
+
+def test_edit_podcasts(imported: webtest.TestApp) -> None:
+    history = imported.get("/api/podcasts").json[0]
+    edited = imported.put_json(f"/api/podcasts/{history['id']}", dict(history, rating=8, review="Better than I said")).json
+    assert (edited["rating"], edited["review"], edited["image"], edited["episodes"]) == (8, "Better than I said", history["image"], 2)
+    imported.post_json("/api/podcasts", {"name": "The rest is history"}, status=409)
+    imported.post_json("/api/podcasts", {"name": "x", "rss_feed": "feed"}, status=400)
+    # a podcast with episodes heard is not deleted: they are what was heard
+    imported.delete(f"/api/podcasts/{history['id']}", status=409)
+    new = imported.post_json("/api/podcasts", {"name": "Hardcore History", "url": "https://www.dancarlin.com"}, status=201).json
+    greatness = imported.get("/api/podcast-episodes").json[0]
+    # the published moment sent back as shown is kept to the second
+    body = {**greatness, "podcast_id": greatness["podcast"]["id"], "device_id": greatness["device"]["id"], "rating": 9}
+    edited = imported.put_json(f"/api/podcast-episodes/{greatness['id']}", body).json
+    assert (edited["rating"], edited["published"], edited["guid"], edited["date"]) == (9, greatness["published"], "d64331b9", greatness["date"])
+    # an episode is of a podcast, and in it once by its guid
+    imported.post_json("/api/podcast-episodes", {"name": "x"}, status=400)
+    imported.post_json("/api/podcast-episodes", {"name": "x", "podcast_id": greatness["podcast"]["id"], "guid": "d64331b9"}, status=409)
+    added = imported.post_json("/api/podcast-episodes", {"name": "Wrath of the Khans", "podcast_id": new["id"], "date": "2026-04-01", "published": "2006-04-01"}, status=201).json
+    assert (added["podcast"]["name"], added["date"], added["published"], added["guid"]) == ("Hardcore History", "2026-04-01", "2006-04-01T00:00:00Z", "")
+    imported.delete(f"/api/podcast-episodes/{added['id']}")
+    imported.delete(f"/api/podcasts/{new['id']}")
+
+
+def test_podcasts_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    episode = imported.get("/api/podcast-episodes").json[0]
+    imported.put_json(f"/api/podcast-episodes/{episode['id']}", {**episode, "podcast_id": episode["podcast"]["id"], "review": "edited"})
+    source = write_source(tmp_path / "again")
+    yaml_file = source / "data" / "yaml" / "podcasts.yaml"
+    # a new episode heard of a podcast there is: only it is added
+    yaml_file.write_text(yaml_file.read_text(encoding="UTF8").replace("    rating: 8\n", """      - title: "1 | Carol Tavris"
+        pubDate: "Mon, 02 Jul 2018 06:00:00 +0000"
+        guid: "c4f1"
+        date_ymd: "2026-04-02"
+    rating: 8
+"""), encoding="UTF8")
+    with Session(engine) as session:
+        counts = import_world.import_podcasts(session, owner(session), source)
+        session.commit()
+    assert counts == {"podcasts added": 0, "podcast episodes added": 1, "covers added": 0, "devices added": 0}
+    episodes = imported.get("/api/podcast-episodes").json
+    assert episodes[0]["name"] == "1 | Carol Tavris"
+    assert next(e for e in episodes if e["id"] == episode["id"])["review"] == "edited"
+
+
+def test_podcasts_import_refuses_what_it_does_not_know(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    del imported
+    source = write_source(tmp_path / "again")
+    yaml_file = source / "data" / "yaml" / "podcasts.yaml"
+    yaml_file.write_text(yaml_file.read_text(encoding="UTF8").replace('        guid: "e7b5a1d2"\n', '        guid: "e7b5a1d2"\n        season: 1\n'), encoding="UTF8")
+    with Session(engine) as session, pytest.raises(import_world.WorldImportError, match="does not know"):
+        import_world.import_podcasts(session, owner(session), source)
+    (source / "data" / "yaml" / "podcasts.yaml").unlink()
+    with Session(engine) as session, pytest.raises(import_world.WorldImportError, match="no longer keeps it"):
+        import_world.import_podcasts(session, owner(session), source)
 
 
 def test_youtube(imported: webtest.TestApp) -> None:
@@ -1492,7 +1640,7 @@ def test_reimport_replaces(imported: webtest.TestApp, engine: Engine, tmp_path: 
         import_world.import_world(session, owner(session), tmp_path, replace=True)
         session.commit()
         # the shared rows (places, the museums among them) are found again, not added twice
-        for model, count in ((Concert, 3), (Place, 3), (Visit, 3), (AudioCourse, 2), (Person, 8), (Organization, 3), (AudioBook, 4), (Image, 8)):
+        for model, count in ((Concert, 3), (Place, 3), (Visit, 3), (AudioCourse, 2), (Person, 8), (Organization, 3), (AudioBook, 4), (Podcast, 2), (PodcastEpisode, 3), (Image, 9)):
             assert session.scalar(select(func.count()).select_from(model)) == count
         assert session.scalar(select(func.count()).select_from(concert_companions)) == 3
         assert session.scalar(select(func.count()).select_from(person_organizations)) == 3
@@ -1764,7 +1912,7 @@ def test_delete(imported: webtest.TestApp, engine: Engine) -> None:
     assert imported.get("/api/concert-visits").json == []
     with Session(engine) as session:
         # the concert photo went with its last concert; the museum one stays
-        assert sorted(session.scalars(select(Image.filename)).all()) == ["acme.svg", "audible-0063005409.jpg", "audiocourse-gc-337.jpg", "audiocourse-internal-1.jpg", "book-goodreads-5907.jpg", "book-simania-7005.jpg", "museum-15.jpg"]
+        assert sorted(session.scalars(select(Image.filename)).all()) == ["acme.svg", "audible-0063005409.jpg", "audiocourse-gc-337.jpg", "audiocourse-internal-1.jpg", "book-goodreads-5907.jpg", "book-simania-7005.jpg", "museum-15.jpg", "podcast-1.jpg"]
         assert session.scalar(select(func.count()).select_from(concert_companions)) == 0
     imported.delete("/api/concert-visits/1", status=404)
 
@@ -1804,7 +1952,8 @@ def test_stats(imported: webtest.TestApp) -> None:
     imported.post_json("/api/library-entries", {"kind": "book", "title": "Dune", "status": "done"}, status=201)
     stats = imported.get("/api/stats").json
     assert (stats["concerts"], stats["museum_visits"], stats["museums"], stats["audio_courses"]) == (3, 3, 2, 2)
-    assert (stats["people"], stats["organizations"], stats["images"]) == (8, 3, 8)
+    assert (stats["people"], stats["organizations"], stats["images"]) == (8, 3, 9)
+    assert (stats["podcasts"], stats["podcast_episodes"]) == (2, 3)
     assert (stats["organization_types"], stats["person_types"]) == (7, 3)
     # Bob, Singer and The Band performed; Bob also went with the user, he counts once
     assert stats["performers"] == 3

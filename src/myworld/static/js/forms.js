@@ -292,6 +292,23 @@ const WORLD_BODIES = {
 			...(await pictureBody(form)),
 		};
 	},
+	podcasts: async (form) => {
+		const value = (name) => form.elements[name].value;
+		return {
+			name: value("name"),
+			url: value("url"),
+			rss_feed: value("rss_feed"),
+			rating: value("rating"),
+			review: value("review"),
+			...(await pictureBody(form)),
+		};
+	},
+	"podcast-episodes": async (form) => {
+		const value = (name) => form.elements[name].value;
+		const body = Object.fromEntries(["podcast_id", "name", "number", "published", "duration", "episode_type", "explicit", "author", "description",
+			"enclosure_url", "image_url", "guid", "date", "rating", "review", "device_id", "listened_at"].map((name) => [name, value(name)]));
+		return { ...body, date_timezone: state.editing?.date_timezone || where() };
+	},
 	youtube: async (form) => {
 		const value = (name) => form.elements[name].value;
 		return {

@@ -41,6 +41,8 @@ from myworld.models import (
     PersonType,
     Place,
     PlaceKind,
+    Podcast,
+    PodcastEpisode,
     Read,
     Region,
     RelationType,
@@ -364,6 +366,42 @@ def test_audio_books(engine: Engine) -> None:
         assert [p.subject.split(" (")[0] for p in duplicates] == ["Twice", "twice "]
         # each problem opens its book
         assert [(p.link.split("/")[0], p.owner) for p in duplicates] == [("audio-books", alice.id)] * 2
+
+
+def test_podcasts(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        cover = Image(owner_id=alice.id, filename="p.jpg", content_type="image/jpeg", sha256="0" * 64, data=b"\xff\xd8")
+        good = Podcast(owner_id=alice.id, name="Good", rating=8, review="Fine", image=cover)
+        bare = Podcast(owner_id=alice.id, name="Bare")
+        session.add_all([good, bare])
+        heard = {"owner_id": alice.id, "podcast": good, "date_ymd": datetime.date(2026, 3, 22)}
+        session.add_all([
+            PodcastEpisode(name="Trailer", **heard),
+            # the same title in another podcast is another episode
+            PodcastEpisode(owner_id=alice.id, podcast=bare, name="Trailer", date_y=2026),
+            # each of these breaks one rule
+            PodcastEpisode(owner_id=alice.id, podcast=good, name="Undated"),
+            PodcastEpisode(name="Twice", **heard),
+            PodcastEpisode(name="twice ", **heard),
+        ])
+        session.commit()
+
+        def found(name: str) -> list[tuple[str, str]]:
+            return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS[name].run(session).problems]
+
+        assert found("podcast-covers") == [("Bare", "has no cover")]
+        assert found("podcast-reviews") == [("Bare", "has no rating and no review")]
+        assert found("podcast-episodes-heard") == []
+        assert found("podcast-episode-dates") == [("Undated", "has no date")]
+        duplicates = checks.CHECKS["podcast-episode-duplicates"].run(session).problems
+        assert [p.subject.split(" (")[0] for p in duplicates] == ["Twice", "twice "]
+        assert [p.link.split("/")[0] for p in duplicates] == ["podcast-episodes"] * 2
+        session.add(Podcast(owner_id=alice.id, name="Unheard", rating=5, review="Meant to", image=cover))
+        session.commit()
+        assert found("podcast-episodes-heard") == [("Unheard", "has no episode heard")]
 
 
 def test_books(engine: Engine) -> None:
