@@ -8,8 +8,15 @@ library API (GET /api/<what>), it asks the view (GET
 /api/views/<username>/<name>/data/<what>), which answers it as the library
 endpoint would answer the owner, when the endpoint is one the view's data
 sets may read (READS) and never otherwise.
+
+An image comes through the view only by the address the view gave it in the
+rows it sent: that address is signed (image_signature), so a visitor cannot
+reach any other image of the owner's by trying ids, and taking a data set
+out of the view (or deleting it) makes the old addresses stop working.
 """
 
+import hashlib
+import hmac
 import re
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -57,8 +64,23 @@ READS: dict[str, Callable[[Mapping[str, Any]], str | None]] = {
     "views.api_library_list": lambda _args: flask.request.args.get("kind"),
 }
 
-# an image the rows of a view show: any data set's
+# an image the rows of a view show: any data set's, by the signed address the view gave it
 IMAGE_ENDPOINT = "pictures.api_image"
+
+
+def image_signature(view: SharedView, image_id: int) -> str:
+    """
+    What proves the view gave out the address of image_id: an HMAC, under the
+    app's secret key, of the view, the data sets it shows now and the image.
+    """
+    message = f"{view.id}:{','.join(sorted(view.datasets))}:{image_id}".encode()
+    key = str(flask.current_app.config["SECRET_KEY"]).encode()
+    return hmac.new(key, message, hashlib.sha256).hexdigest()[:32]
+
+
+def _image_address(view: SharedView) -> Callable[[int], str]:
+    base = f"/api/views/{view.owner.username}/{view.name}/data/images"
+    return lambda image_id: f"{base}/{image_id}?sig={image_signature(view, image_id)}"
 
 
 def view_path(username: str, name: str) -> str:
@@ -191,7 +213,10 @@ def api_visit_data(username: str, name: str, what: str) -> Any:
         endpoint, args = flask.current_app.url_map.bind(flask.request.host).match(f"/api/{what}", method="GET")
     except (NotFound, MethodNotAllowed, RequestRedirect) as e:
         raise ApiError(404, "not part of this view") from e
-    if endpoint != IMAGE_ENDPOINT:
+    if endpoint == IMAGE_ENDPOINT:
+        if not hmac.compare_digest(flask.request.args.get("sig", ""), image_signature(view, args["image_id"])):
+            raise ApiError(404, "not part of this view")
+    else:
         reads = READS.get(str(endpoint))
         dataset = None if reads is None else reads(args)
         if dataset is None or dataset not in view.datasets:
@@ -199,6 +224,6 @@ def api_visit_data(username: str, name: str, what: str) -> Any:
     function = flask.current_app.view_functions[str(endpoint)]
     # past login_required: the owner is who it is read as
     flask.g.user = view.owner
-    flask.g.image_base = f"/api/views/{view.owner.username}/{view.name}/data/images"
+    flask.g.image_address = _image_address(view)
     return getattr(function, "__wrapped__", function)(**args)
 

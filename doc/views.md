@@ -75,7 +75,7 @@ Visitor's (no sign-in needed):
 | `GET /view/<username>/<viewname>`                 | the page                                     |
 | `GET /api/views/<username>/<viewname>`            | the page's configuration: the vocabularies, whose view it is, its data sets |
 | `GET /api/views/<username>/<viewname>/data/<api>` | `GET /api/<api>` answered as the owner would see it, if `<api>` belongs to a data set the view enables; 404 otherwise |
-| `.../data/images/<id>`                            | an image of the owner's (or a shared one)    |
+| `.../data/images/<id>?sig=...`                    | an image a row of the view shows, by the signed address the view gave it |
 
 The data endpoint does not have endpoints of its own: it finds the library
 endpoint `<api>` names and runs it as the owner, read only, after checking it
@@ -90,9 +90,14 @@ private until it is added there.
 - A view's rows are the JSON the owner's own page gets. Fields the owner
   would not want shown (a remark, who they were with, a review) are shown
   too. See *Open questions*: per-field choices.
-- Images: a visitor may fetch any image of the owner's by its id, not only
-  those the view's rows show. Ids are sequential, so this should be narrowed
-  to the images of the enabled data sets before views are advertised.
+- Images: a visitor gets an image only by the address the view put in the
+  rows it sent, which carries a signature (`?sig=`): an HMAC, under the
+  app's secret key, of the view, the data sets it shows and the image id.
+  Trying other ids gets nothing, though ids are sequential. Taking a data
+  set out of the view (or deleting the view) makes the addresses it gave
+  stop working; putting it back makes them work again. Whoever copied an
+  address keeps that one image while the view still shows it, as with
+  anything shown in public. Changing the secret key changes every address.
 - Search engines: the page is a script, nothing is indexed today; a
   `noindex` choice per view is cheap to add.
 - Logging: who opens a view is not recorded beyond the request log.

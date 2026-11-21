@@ -107,3 +107,32 @@ def test_a_view_that_is_not_there(app: webtest.TestApp) -> None:
     app.get("/api/views/veltzer/nothing/data/concert-visits", status=404)
     # the address is not case sensitive
     app.get("/view/Veltzer/MUSIC")
+
+
+def test_an_image_comes_through_a_view_only_by_the_address_it_gave(app: webtest.TestApp) -> None:
+    owner(app)
+    # a photo of the owner's that no row of the view shows
+    hidden = app.post("/api/images", upload_files=[("file", "private.jpg", JPEG + b"private")]).json["id"]
+    made = app.post_json("/api/shared-views", {"name": "music", "datasets": ["concerts", "people"]}, status=201).json
+    app.post("/auth/logout")
+    base = "/api/views/veltzer/music/data"
+    address = app.get(f"{base}/people").json[0]["image"]
+    path, sig = address.split("?sig=")
+    assert app.get(address).body == JPEG
+    # without the signature, with a wrong one, or another image's id under this one's
+    for tried in (path, f"{path}?sig=", f"{path}?sig={'0' * 32}", f"{base}/images/{hidden}", f"{base}/images/{hidden}?sig={sig}"):
+        assert app.get(tried, status=404).json == {"error": "not part of this view"}, tried
+    # people taken out of the view: the address it gave stops working
+    sign_in(app)
+    app.put_json(f"/api/shared-views/{made['id']}", {"name": "music", "datasets": ["concerts"]})
+    app.post("/auth/logout")
+    app.get(address, status=404)
+    # and back in, it works again; deleted, it never does
+    sign_in(app)
+    app.put_json(f"/api/shared-views/{made['id']}", {"name": "music", "datasets": ["concerts", "people"]})
+    app.post("/auth/logout")
+    assert app.get(address).body == JPEG
+    sign_in(app)
+    app.delete(f"/api/shared-views/{made['id']}", status=204)
+    app.post("/auth/logout")
+    app.get(address, status=404)

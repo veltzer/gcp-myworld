@@ -50,10 +50,10 @@ IMAGE_EXTENSIONS = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gi
 def image_url(image_id: int | None) -> str | None:
     if image_id is None:
         return None
-    # read through a view (sharing.py): its visitor fetches the image through the view too
-    base = flask.g.get("image_base")
-    if base:
-        return f"{base}/{image_id}"
+    # read through a view (sharing.py): its visitor fetches the image through the view, by a signed address
+    address = flask.g.get("image_address")
+    if address is not None:
+        return address(image_id)
     return flask.url_for("pictures.api_image", image_id=image_id)
 
 
