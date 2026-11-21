@@ -476,6 +476,15 @@
 					<label title="What you thought of the book, in your own words" class="wide">Review <input name="review"></label>
 				</div>
 				<div class="row">
+					<label title="How much of the date is known">Finished <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
+					<label title="The day you started listening, as YYYY-MM-DD">Started <input name="started" pattern="\d{4}-\d{2}-\d{2}(T[0-9:.]+Z)?" placeholder="YYYY-MM-DD"></label>
+					<label title="How far you got in a book you have not finished, in your own words: did part03, disc 2 of 9">Progress <input name="progress" placeholder="e.g. did part03"></label>
+				</div>
+				<div class="row">
+					<label title="What you listened on, one of Devices; add a new one on the Devices page">Device <select name="device_id"></select></label>
+					<label title="Where you listened to it: on night walks, in the car, ...">Where <input name="listened_at" placeholder="e.g. Night Walks, Car"></label>
+				</div>
+				<div class="row">
 					<label title="Where the book is in your library: its import finds it again there by its id">Source <select name="source"><option value="">None</option><option value="audible">Audible</option></select></label>
 					<label title="The book's id at its source (Audible's ASIN), for the link to its page">Id there <input name="source_id"></label>
 				</div>

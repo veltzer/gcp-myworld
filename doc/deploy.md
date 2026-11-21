@@ -450,8 +450,11 @@ first `companies` tables to `organizations`, then making
   `finished`, `percent_heard`, `status` (`done`, `in_progress` or `""`),
   `source_rating` (of 5) and `source_ratings`, `added`, `purchased`,
   `released`, `cover_url` (the cover's address at the source), the
-  user's own `rating` and `review`, `url` (its page at the source) and the
-  cover as `image`. A source's book is in an account once (409). Imported
+  user's own `rating` and `review`, as an audio course has them the day
+  it was finished (`date`, at the precision known), `started`, `progress`,
+  `listened_at` and `device`, `url` (its page at the source) and the
+  cover as `image`. Those heard elsewhere came from `audio_books.yaml`, with
+  no source, found again by name. A source's book is in an account once (409). Imported
   (2026-11-21) from `audible.yaml` in `veltzer.github.io`, which no longer
   has it (My World keeps them now; the site's git history does) (covers
   `static/images/audible-<asin>.jpg`) by

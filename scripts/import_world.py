@@ -31,9 +31,12 @@ written into its notes.
 Audio books came from data/yaml/audible.yaml (the books of the Audible
 library, as Audible says them), their covers from
 static/images/audible-<asin>.jpg; each is an audio book with source
-"audible", found again by its ASIN. veltzer.github.io no longer has them
-(My World keeps them now): a source without audible.yaml imports none, and
---audio-books reads them from a checkout of the site's history that has it.
+"audible", found again by its ASIN. The audio books heard elsewhere came
+from data/yaml/audio_books.yaml, as an audio course is said (when finished
+or started, how far, where, on what device); each has no source, and is
+found again by its name. veltzer.github.io no longer has either file (My
+World keeps them now): a source without them imports no audio books, and
+--audio-books reads them from a checkout of the site's history that has them.
 
 YouTube videos come from data/yaml/video_youtube.yaml (the reviewed ones)
 and static/data/youtube.json.gz (the watch history: what YouTube says about
@@ -270,6 +273,8 @@ AUDIBLE_FIELDS = {
     "is_finished", "percent_complete", "rating", "num_ratings", "date_added", "release_date", "cover_url", "purchase_date",
 }
 AUDIBLE = "audible"
+# audio_books.yaml: an audio book heard, not from a source's library, said as an audio course is
+AUDIO_BOOK_FIELDS = DATE_FIELDS | {"name", "authors", "date_started_utcz", "location", "device", "progress"}
 YOUTUBE_FIELDS = DATE_FIELDS | {"id", "name", "rating", "review", "device", "location"}
 # the watch history: yt-dlp's names; status "missing" (with video_id) is a video YouTube no longer has
 YOUTUBE_HISTORY_FIELDS = {"title", "webpage_url", "channel", "categories", "duration", "upload_date", "view_count", "status", "video_id"}
@@ -734,8 +739,8 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     session.flush()
     courses = import_audio_courses(session, owner, source)
     # the site no longer keeps them (My World does): a source without them has none to import
-    audible = source / "data" / "yaml" / "audible.yaml"
-    audio_books = import_audio_books(session, owner, source) if audible.exists() else {"audio books added": 0, "images": 0}
+    has_audio_books = any((source / "data" / "yaml" / name).exists() for name in AUDIO_BOOK_FILES)
+    audio_books = import_audio_books(session, owner, source) if has_audio_books else {"audio books added": 0, "images": 0, "devices added": 0}
     videos = import_youtube(session, owner, source)
     history = import_youtube_history(session, owner, source)
     books = import_books(session, owner, source)
@@ -745,7 +750,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
         "relation types": len(relation_types), "person types": len(PERSON_TYPES), "people with a profession": typed["people given a profession"], "people related to the user": typed["people given a relation"],
         "concerts": len(concert_items), "places": place.added, "museums": len(museums), "museum visits": len(museum_items), "audio courses": courses["audio courses"],
         "audio books": audio_books["audio books added"],
-        "YouTube videos": videos["YouTube videos"] + history["YouTube videos added"], "devices": courses["devices added"] + videos["devices added"],
+        "YouTube videos": videos["YouTube videos"] + history["YouTube videos added"], "devices": courses["devices added"] + audio_books["devices added"] + videos["devices added"],
         "books": books["books"], "images": len(images) + courses["images"] + audio_books["images"] + books["covers"],
     }
 
@@ -863,7 +868,63 @@ def _audible_values(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+AUDIO_BOOK_FILES = ("audible.yaml", "audio_books.yaml")
+
+
 def import_audio_books(session: Session, owner: User, source: Path) -> dict[str, int]:
+    """
+    Add owner's audio books from source: those of the Audible library
+    (audible.yaml, _import_audible) and those heard elsewhere
+    (audio_books.yaml, _import_heard), whichever of the two is there; both
+    can run again. Does not commit.
+    """
+    yaml_dir = source / "data" / "yaml"
+    if not any((yaml_dir / name).exists() for name in AUDIO_BOOK_FILES):
+        raise WorldImportError(f"{yaml_dir}: neither {' nor '.join(AUDIO_BOOK_FILES)} is there (veltzer.github.io no longer keeps them; its git history does)")
+    counts = {"audio books added": 0, "audio books refreshed": 0, "images": 0, "devices added": 0}
+    for name, part in (("audible.yaml", _import_audible), ("audio_books.yaml", _import_heard)):
+        if (yaml_dir / name).exists():
+            for key, count in part(session, owner, yaml_dir / name, source).items():
+                counts[key] += count
+    return counts
+
+
+def _import_heard(session: Session, owner: User, path: Path, source: Path) -> dict[str, int]:
+    """
+    Add the audio books owner heard elsewhere (audio_books.yaml) that owner
+    does not have yet: a book of no source is found again by its name. Does
+    not commit.
+    """
+    items = _items(source, "audio_books", AUDIO_BOOK_FIELDS)
+    had = {b.name for b in session.scalars(select(AudioBook).where(AudioBook.owner_id == owner.id, AudioBook.source == ""))}
+    device = Devices(session, owner)
+    added = 0
+    for item in items:
+        name = str(item["name"]).strip()
+        if name in had:
+            continue
+        authors = [str(a).strip() for a in item.get("authors", []) if str(a).strip()]
+        if any("," in a for a in authors):
+            raise WorldImportError(f"{path}: {name!r} has an author with a comma, which the authors' list would split")
+        dates = _dates(item)
+        session.add(AudioBook(
+            owner_id=owner.id,
+            name=name,
+            authors=", ".join(authors),
+            finished=any(dates.get(key) for key in ("date_utcz", "date_ymd", "date_my", "date_y")),
+            started_utcz=_stamp(item, "date_started_utcz"),
+            progress=str(item.get("progress", "")),
+            listened_at=str(item.get("location", "")),
+            device=device(str(item.get("device", ""))),
+            **dates,
+        ))
+        had.add(name)
+        added += 1
+    session.flush()
+    return {"audio books added": added, "devices added": device.added}
+
+
+def _import_audible(session: Session, owner: User, path: Path, source: Path) -> dict[str, int]:
     """
     Add the books of owner's Audible library from source (audible.yaml) that
     owner does not have yet (by ASIN), with their covers; on those owner has,
@@ -871,9 +932,6 @@ def import_audio_books(session: Session, owner: User, source: Path) -> dict[str,
     edited in the app stays; genres an earlier import kept each once only
     are given back as Audible lists them. Safe to run again. Does not commit.
     """
-    path = source / "data" / "yaml" / "audible.yaml"
-    if not path.exists():
-        raise WorldImportError(f"{path}: not there (veltzer.github.io no longer keeps the Audible library; its git history does)")
     with path.open(encoding="UTF8") as fp:
         items = yaml.safe_load(fp)["items"]
     asins = [str(item.get("asin", "")) for item in items]
@@ -1478,7 +1536,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--audio-books", action="store_true",
-        help="import only the Audible books, adding those the account does not have yet and refreshing what Audible changes on the rest; safe to run again",
+        help="import only the audio books (the Audible library and those heard elsewhere), adding those the account does not have yet and refreshing what Audible changes on the rest; safe to run again",
     )
     parser.add_argument(
         "--youtube", action="store_true",

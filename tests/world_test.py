@@ -200,6 +200,27 @@ items:
 """
 
 
+AUDIO_BOOKS = """
+items:
+  - name: "Letter to a Christian Nation"
+    authors:
+      - "Sam Harris"
+    date_utcz: "2016-05-01T21:33:15Z"
+    date_timezone: "Asia/Jerusalem"
+    location: "Night Walks"
+    device: "Samsung S7"
+  - name: "Heretic"
+    authors:
+      - "Ayaan Hirsi Ali"
+      - "A. N. Other"
+    date_started_utcz: "2022-08-20T12:28:35Z"
+    date_timezone: "Asia/Jerusalem"
+    location: "Home"
+    device: "Desktop"
+    progress: "did part03"
+"""
+
+
 YOUTUBE = """
 items:
   - id: "VNIRUigPxA8"
@@ -300,7 +321,7 @@ def write_source(root: Path, concerts: str = CONCERTS) -> Path:
     (root / "data" / "yaml").mkdir(parents=True)
     (root / "static" / "images").mkdir(parents=True)
     (root / "data" / "logos").mkdir(parents=True)
-    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("audible", AUDIBLE), ("video_youtube", YOUTUBE), ("books_read", BOOKS), ("text_books", TEXT_BOOKS)):
+    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("audible", AUDIBLE), ("audio_books", AUDIO_BOOKS), ("video_youtube", YOUTUBE), ("books_read", BOOKS), ("text_books", TEXT_BOOKS)):
         (root / "data" / "yaml" / f"{name}.yaml").write_text(text, encoding="UTF8")
     (root / "data" / "logos" / "acme.svg").write_bytes(LOGO)
     (root / "static" / "data").mkdir(parents=True)
@@ -330,7 +351,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         session.commit()
     assert counts == {
         "people": 7, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 3, "people with a profession": 4, "people related to the user": 2,
-        "concerts": 3, "places": 1, "museums": 2, "museum visits": 3, "audio courses": 2, "audio books": 2, "YouTube videos": 4, "devices": 3, "books": 3, "images": 8}
+        "concerts": 3, "places": 1, "museums": 2, "museum visits": 3, "audio courses": 2, "audio books": 4, "YouTube videos": 4, "devices": 3, "books": 3, "images": 8}
     return app
 
 
@@ -650,7 +671,7 @@ def test_edit_audio_course(imported: webtest.TestApp) -> None:
 def test_devices(imported: webtest.TestApp) -> None:
     devices = imported.get("/api/devices").json
     # a list kept like the types: each with how many audio courses point to it
-    assert [(d["name"], d["count"]) for d in devices] == [("Desktop", 1), ("Samsung S10", 1), ("Samsung S7", 1)]
+    assert [(d["name"], d["count"]) for d in devices] == [("Desktop", 2), ("Samsung S10", 1), ("Samsung S7", 2)]
     desktop, s10, s7 = devices
     # a YouTube video's device counts too, and keeps it from being deleted
     imported.delete(f"/api/devices/{desktop['id']}", status=409)
@@ -659,7 +680,10 @@ def test_devices(imported: webtest.TestApp) -> None:
     assert imported.put_json(f"/api/audio-courses/{music['id']}", body).json["device"] == {"id": s10["id"], "name": "Samsung S10"}
     # a device in use is not deleted; an unused one is
     imported.delete(f"/api/devices/{s10['id']}", status=409)
-    imported.delete(f"/api/devices/{s7['id']}", status=204)
+    # an audio book was heard on it too
+    imported.delete(f"/api/devices/{s7['id']}", status=409)
+    spare = imported.post_json("/api/devices", {"name": "Spare"}, status=201).json
+    imported.delete(f"/api/devices/{spare['id']}", status=204)
     sansa = imported.post_json("/api/devices", {"name": "Sansa Clip 2", "description": "MP3 player"}, status=201).json
     imported.post_json("/api/devices", {"name": "Sansa Clip 2"}, status=409)
     # a device has a photo, with its credit; an edit that uploads none keeps it
@@ -698,8 +722,9 @@ def test_audio_courses_import_adds_once(imported: webtest.TestApp, engine: Engin
 def test_audio_books(imported: webtest.TestApp) -> None:
     books = imported.get("/api/audio-books").json
     # the latest into the library first
-    assert [b["name"] for b in books] == ["Political Order and Political Decay", "Making Sense"]
-    order, sense = books
+    # the latest finished or into the library first; one never finished nor added (only started) last
+    assert [b["name"] for b in books] == ["Political Order and Political Decay", "Making Sense", "Letter to a Christian Nation", "Heretic"]
+    order, sense, letter, heretic = books
     assert (sense["source"], sense["source_name"], sense["source_id"], sense["url"]) == ("audible", "Audible", "0063005409", "https://www.audible.com/pd/0063005409")
     assert (sense["subtitle"], sense["authors"], sense["narrators"], sense["minutes"]) == ("Conversations on Consciousness", "Sam Harris", "Sam Harris, David Chalmers", 1346)
     # everything as Audible gives it: the genres repeats too, the cover's address, when bought
@@ -711,6 +736,12 @@ def test_audio_books(imported: webtest.TestApp) -> None:
     # what Audible leaves empty is empty; a book without a cover file has none
     assert (order["series"], order["series_sequence"], order["minutes"], order["released"], order["source_rating"]) == ("Political Order", "2", None, "", None)
     assert (order["finished"], order["status"], order["percent_heard"], order["image"]) == (False, "in_progress", 12.5, None)
+    # heard elsewhere: no source; said as an audio course is
+    assert (letter["source"], letter["source_id"], letter["authors"], letter["url"]) == ("", "", "Sam Harris", "")
+    assert (letter["finished"], letter["status"], letter["date"], letter["date_timezone"]) == (True, "done", "2016-05-01T21:33:15Z", "Asia/Jerusalem")
+    assert (letter["listened_at"], letter["device"]["name"], letter["started"]) == ("Night Walks", "Samsung S7", "")
+    assert (heretic["authors"], heretic["status"], heretic["started"], heretic["progress"]) == ("Ayaan Hirsi Ali, A. N. Other", "in_progress", "2022-08-20T12:28:35Z", "did part03")
+    assert (heretic["date"], heretic["listened_at"], heretic["device"]["name"]) == (None, "Home", "Desktop")
 
 
 def test_edit_audio_book(imported: webtest.TestApp) -> None:
@@ -728,8 +759,14 @@ def test_edit_audio_book(imported: webtest.TestApp) -> None:
     imported.post_json("/api/audio-books", {"name": "x", "source_id": "123"}, status=400)
     imported.post_json("/api/audio-books", {"name": "x", "source": "nowhere"}, status=400)
     imported.post_json("/api/audio-books", {"name": "x", "percent_heard": 101}, status=400)
+    # finished on a day, and the device it was heard on; then started only, on none
+    dated = imported.put_json(f"/api/audio-books/{added['id']}", dict(added, date="2024-03", listened_at="Car")).json
+    assert (dated["status"], dated["date"], dated["date_precision"], dated["listened_at"]) == ("done", "2024-03", "month", "Car")
+    started = imported.put_json(f"/api/audio-books/{added['id']}", dict(dated, date="", started="2024-01-02", progress="disc 2")).json
+    assert (started["status"], started["started"], started["progress"]) == ("in_progress", "2024-01-02T00:00:00Z", "disc 2")
+    imported.put_json(f"/api/audio-books/{added['id']}", dict(started, device_id=99999), status=400)
     imported.delete(f"/api/audio-books/{added['id']}", status=204)
-    assert len(imported.get("/api/audio-books").json) == 2
+    assert len(imported.get("/api/audio-books").json) == 4
 
 
 def test_audio_books_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
@@ -761,7 +798,7 @@ def test_audio_books_import_runs_again(imported: webtest.TestApp, engine: Engine
     with Session(engine) as session:
         counts = import_world.import_audio_books(session, owner(session), source)
         session.commit()
-    assert counts == {"audio books added": 1, "audio books refreshed": 1, "images": 0}
+    assert counts == {"audio books added": 1, "audio books refreshed": 1, "images": 0, "devices added": 0}
     books = {b["source_id"]: b for b in imported.get("/api/audio-books").json}
     assert books["B07D23CFGR"]["percent_heard"] == 40.0
     # what was edited in the app stays
@@ -769,7 +806,7 @@ def test_audio_books_import_runs_again(imported: webtest.TestApp, engine: Engine
     assert books["B0NEWBOOK1"]["name"] == "A New One"
     with Session(engine) as session:
         again = import_world.import_audio_books(session, owner(session), source)
-    assert again == {"audio books added": 0, "audio books refreshed": 0, "images": 0}
+    assert again == {"audio books added": 0, "audio books refreshed": 0, "images": 0, "devices added": 0}
 
 
 def test_audio_books_import_gives_back_the_genres_kept_once(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
@@ -793,10 +830,11 @@ def test_a_source_without_the_audible_library(app: webtest.TestApp, engine: Engi
     sign_in_admin(app, engine)
     source = write_source(tmp_path)
     (source / "data" / "yaml" / "audible.yaml").unlink()
+    (source / "data" / "yaml" / "audio_books.yaml").unlink()
     with Session(engine) as session:
-        # the site no longer keeps it: the full import imports no audio books, --audio-books says why it cannot
+        # the site no longer keeps them: the full import imports no audio books, --audio-books says why it cannot
         assert import_world.import_world(session, owner(session), source)["audio books"] == 0
-        with pytest.raises(import_world.WorldImportError, match="no longer keeps the Audible library"):
+        with pytest.raises(import_world.WorldImportError, match="no longer keeps them"):
             import_world.import_audio_books(session, owner(session), source)
 
 
@@ -1440,7 +1478,7 @@ def test_reimport_replaces(imported: webtest.TestApp, engine: Engine, tmp_path: 
         import_world.import_world(session, owner(session), tmp_path, replace=True)
         session.commit()
         # the shared rows (places, the museums among them) are found again, not added twice
-        for model, count in ((Concert, 3), (Place, 3), (Visit, 3), (AudioCourse, 2), (Person, 8), (Organization, 3), (AudioBook, 2), (Image, 8)):
+        for model, count in ((Concert, 3), (Place, 3), (Visit, 3), (AudioCourse, 2), (Person, 8), (Organization, 3), (AudioBook, 4), (Image, 8)):
             assert session.scalar(select(func.count()).select_from(model)) == count
         assert session.scalar(select(func.count()).select_from(concert_companions)) == 3
         assert session.scalar(select(func.count()).select_from(person_organizations)) == 3

@@ -44,7 +44,8 @@ const SORTS = {
 		["started", "Started", (c) => c.started, "desc"],
 	],
 	"audio-books": [
-		["date", "Added", (b) => b.date_sort, "desc"],
+		// when finished, else when it came into the library
+		["date", "Date", (b) => b.date_sort, "desc"],
 		["name", "Title", (b) => b.name, "asc"],
 		["author", "Author", (b) => b.authors, "asc"],
 		["rating", "Rating", (b) => b.rating, "desc"],

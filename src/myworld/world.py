@@ -343,6 +343,7 @@ def _course_url(course: AudioCourse) -> str:
 
 def audio_book_json(book: AudioBook) -> dict[str, Any]:
     added = _stamp_json(book.added_utcz)
+    dated = date_json(book)
     return {
         "id": book.id,
         "name": book.name,
@@ -357,15 +358,22 @@ def audio_book_json(book: AudioBook) -> dict[str, Any]:
         "genres": book.genres,
         "minutes": book.minutes,
         "finished": book.finished,
-        "status": "done" if book.finished else ("in_progress" if book.percent_heard else ""),
+        # finished when it says so or has the day it was; in progress when heard some, or started
+        "status": "done" if book.finished or dated["date"] else ("in_progress" if book.percent_heard or book.started_utcz else ""),
+        **dated,
+        "date_timezone": book.date_timezone,
+        "started": _stamp_json(book.started_utcz),
+        "progress": book.progress,
+        "listened_at": book.listened_at,
+        "device": None if book.device is None else {"id": book.device.id, "name": book.device.name},
         "percent_heard": book.percent_heard,
         "source_rating": book.source_rating,
         "source_ratings": book.source_ratings,
         "added": added,
         "purchased": _stamp_json(book.purchased_utcz),
         "cover_url": book.cover_url,
-        # what the sorting and the date filter go by: when it came into the library
-        "date_sort": added,
+        # what the sorting goes by: when it was finished, else when it came into the library
+        "date_sort": dated["date_sort"] or added,
         "released": book.released.isoformat() if book.released else "",
         "rating": book.rating,
         "review": book.review,
@@ -539,8 +547,8 @@ def api_audio_courses() -> flask.Response:
 @bp.route("/api/audio-books", methods=["GET"])
 @auth.login_required
 def api_audio_books() -> flask.Response:
-    books = flask.g.db.scalars(select(AudioBook).where(AudioBook.owner_id == flask.g.user.id)).all()
-    # the latest come into the library first
+    books = flask.g.db.scalars(select(AudioBook).where(AudioBook.owner_id == flask.g.user.id).options(selectinload(AudioBook.device))).all()
+    # the latest finished, or come into the library, first
     return flask.jsonify(_newest_first([audio_book_json(b) for b in books]))
 
 
@@ -799,7 +807,7 @@ def api_currencies() -> flask.Response:
 
 
 
-def _apply_dates(row: Concert | Visit | AudioCourse | YouTubeVideo, body: dict[str, Any]) -> None:
+def _apply_dates(row: Concert | Visit | AudioCourse | AudioBook | YouTubeVideo, body: dict[str, Any]) -> None:
     """
     The date as typed: YYYY, YYYY-MM or YYYY-MM-DD, stored at that precision,
     or nothing. date_timezone is where it happened (an IANA name). A date
@@ -1084,7 +1092,12 @@ def _apply_audio_book(book: AudioBook, body: dict[str, Any]) -> None:
     book.percent_heard = _opt_number(body, "percent_heard", 0, 100)
     book.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
     book.review = text(body, "review")
+    book.started_utcz = _stamp(body, "started", book.started_utcz)
+    book.progress = text(body, "progress")
+    book.listened_at = text(body, "listened_at")
+    book.device = owned_ref(body, "device_id", Device, "device")
     apply_image(book, body)
+    _apply_dates(book, body)
 
 
 YOUTUBE_ID = re.compile(rf"[A-Za-z0-9_-]{{{YOUTUBE_ID_LENGTH}}}")

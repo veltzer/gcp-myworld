@@ -1244,7 +1244,7 @@ class Device(_Pictured, Base):
     """
     What something was played on: "Samsung S10", "Sansa Clip 2", "Desktop".
     An enumeration the user keeps themselves (the Devices page); an audio
-    course or a YouTube video points to one. Its photo is the device's own
+    course, an audio book or a YouTube video points to one. Its photo is the device's own
     (scripts/fetch_pictures.py --only devices takes Wikipedia's).
     """
     __tablename__ = "devices"
@@ -1256,6 +1256,7 @@ class Device(_Pictured, Base):
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     audio_courses: Mapped[list[AudioCourse]] = relationship(back_populates="device")
+    audio_books: Mapped[list[AudioBook]] = relationship(back_populates="device")
     youtube_videos: Mapped[list[YouTubeVideo]] = relationship(back_populates="device")
 
 
@@ -1304,14 +1305,16 @@ AUDIO_BOOK_SOURCES: dict[str, str] = {
 }
 
 
-class AudioBook(Base):
+class AudioBook(_Dated, Base):
     """
     An audio book in the user's library at a source (Audible, for now): what
     the source says of it (title, authors, narrators, series, genres, length,
     how far it was heard, its rating there), and what the user says of it
-    (their rating and review). Imported from veltzer.github.io's audible.yaml
-    (scripts/import_world.py --audio-books), which it keeps field for field,
-    every value as the source gives it;
+    (their rating and review), and, as an audio course has them, when it was
+    finished (the date, _Dated), when started, how far it got, where it was
+    heard and on what device. Imported from veltzer.github.io's audible.yaml
+    and audio_books.yaml (scripts/import_world.py --audio-books), which it
+    keeps field for field, every value as the source gives it;
     a run again refreshes what the source changes (how far it was heard, its
     rating there) and adds the new books, and leaves the rest as edited.
     """
@@ -1356,6 +1359,13 @@ class AudioBook(Base):
     # the user's own
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     review: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # not finished: when it was started, and how far it got ("did part03")
+    started_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    progress: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    # where it was heard ("Night Walks"), and on what: one of the user's own devices
+    listened_at: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id", ondelete="SET NULL", name="fk_audio_books_device_id"), nullable=True)
+    device: Mapped[Device | None] = relationship(back_populates="audio_books")
     image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     image: Mapped[Image | None] = relationship()
 
@@ -1585,7 +1595,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0020"
+SCHEMA_REVISION = "0021"
 
 
 def prepare_schema(engine: Engine) -> None:

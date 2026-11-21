@@ -250,7 +250,12 @@ function audioBookCard(item) {
 	detail(list, "Subtitle", item.subtitle);
 	detail(list, "Narrators", item.narrators);
 	detail(list, "Series", [item.series, item.series_sequence && `#${item.series_sequence}`].filter(Boolean).join(" "));
-	detail(list, "Status", item.finished ? "Finished" : (item.percent_heard ? `${Math.round(item.percent_heard)}% heard` : "Not started"));
+	if (item.status === "done") {
+		detail(list, "Finished", item.date ? formatDate(item) : "Yes");
+	} else {
+		detail(list, "Status", item.status === "in_progress" ? ["In progress", item.percent_heard ? `${Math.round(item.percent_heard)}% heard` : item.progress].filter(Boolean).join(", ") : "Not started");
+		detail(list, "Started", item.started.slice(0, 10));
+	}
 	detail(list, "Length", formatMinutes(item.minutes));
 	if (item.rating !== null) {
 		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
@@ -258,6 +263,8 @@ function audioBookCard(item) {
 	detail(list, "Review", item.review);
 	// each once: the list repeats a top genre for each path under it
 	detail(list, "Genres", [...new Set(item.genres)].join(", "));
+	detail(list, "Where", item.listened_at);
+	linksDetail(list, "Device", "devices", item.device ? [item.device] : []);
 	detail(list, "Released", item.released);
 	detail(list, "Added", item.added.slice(0, 10));
 	if (item.source_rating !== null) {
@@ -465,7 +472,7 @@ const TYPE_COUNTS = {
 	"relation-types": "Organizations",
 	"person-relation-types": "Relations",
 	"person-organization-types": "Links",
-	devices: "Audio courses",
+	devices: "Recordings",
 };
 
 // A language of the locales table: its code, the script it is written in, and how much is said in it

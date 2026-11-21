@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from myworld import auth
 from myworld.api import ApiError, json_body, owned, text
 from myworld.models import (
+    AudioBook,
     AudioCourse,
     Device,
     Organization,
@@ -54,8 +55,9 @@ def _type_links(what: str) -> Any:
     if what == "organization-types":
         return select(Organization.type_id.label("type_id")).where(Organization.owner_id == flask.g.user.id)
     if what == "devices":
-        # audio courses and YouTube videos both point to a device
+        # audio courses, audio books and YouTube videos point to a device
         return select(AudioCourse.device_id.label("type_id")).where(AudioCourse.owner_id == flask.g.user.id).union_all(
+            select(AudioBook.device_id.label("type_id")).where(AudioBook.owner_id == flask.g.user.id),
             select(YouTubeVideo.device_id.label("type_id")).where(YouTubeVideo.owner_id == flask.g.user.id),
         )
     if what == "person-organization-types":
