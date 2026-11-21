@@ -24,6 +24,7 @@ bp = flask.Blueprint("admin", __name__)
 def user_json(user: User) -> dict[str, Any]:
     return {
         "id": user.id,
+        "username": user.username,
         "email": user.email,
         "name": user.name,
         # every way they sign in: google, github, email, dev

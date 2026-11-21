@@ -36,6 +36,10 @@ def test_admin_delegates(app: webtest.TestApp, engine: Engine) -> None:
     assert app.get("/api/config").json["user"]["role"] == "admin"
     users = app.get("/api/users").json
     assert [(u["id"], u["methods"], u["role"]) for u in users] == [(1, ["google"], "user"), (2, ["google"], "admin")]
+    # an account has no username until it chooses one
+    assert [u["username"] for u in users] == [None, None]
+    app.put_json("/api/account/username", {"username": "alice"})
+    assert [u["username"] for u in app.get("/api/users").json] == [None, "alice"]
     # the last admin stays one
     app.put_json("/api/users/2", {"role": "user"}, status=409)
     app.put_json("/api/users/1", {"role": "root"}, status=400)

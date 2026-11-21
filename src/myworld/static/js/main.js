@@ -34,6 +34,7 @@ export async function libraryPage() {
 	}
 	// the username first: a new account chooses it before anything else
 	await askUsername(user);
+	showWho(user);
 	setupAccountMenu(user);
 	setupSettings(user);
 	setupRunLog();

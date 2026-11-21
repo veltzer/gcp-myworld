@@ -64,7 +64,8 @@ function renderUsers(users) {
 			await selectUsers();
 		};
 		tr.append(
-			el("td", "title", user.name),
+			el("td", "title", user.username || ""),
+			el("td", null, user.name),
 			el("td", null, user.email),
 			el("td", null, user.methods.map((method) => methodOf(method).name).join(", ")),
 			el("td", null, user.created_at.slice(0, 10)),

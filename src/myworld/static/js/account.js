@@ -25,9 +25,11 @@ function methodIcon(key) {
 	return img;
 }
 
-// The panel under the avatar and name: who is signed in, how, and every way they sign in.
-export function setupAccountMenu(user) {
+// The panel's first part: who is signed in and how (again when Settings changes the username)
+function showAccountDetails(user) {
 	const rows = [
+		["Username", user.username || ""],
+		["Name", user.name || ""],
 		["Email", user.email],
 		["Signed in with", methodOf(user.method).name],
 		["Role", user.role === "admin" ? "Admin" : "User"],
@@ -35,6 +37,11 @@ export function setupAccountMenu(user) {
 		["Since", user.since],
 	];
 	$("account-details").replaceChildren(...rows.flatMap(([label, value]) => [el("dt", null, label), el("dd", null, value)]));
+}
+
+// The panel under the avatar and name: who is signed in, how, and every way they sign in.
+export function setupAccountMenu(user) {
+	showAccountDetails(user);
 	const count = user.logins.length;
 	$("account-logins-heading").textContent = count === 1 ? "Your way to sign in" : `Your ${count} ways to sign in`;
 	$("account-logins").replaceChildren(...user.logins.map((login) => {
@@ -76,9 +83,10 @@ export function setupAccountMenu(user) {
 	});
 }
 
-// The top bar's name, and the icon of how this session signed in beside it
+// The top bar's username (the name or email until there is one), and the icon of how this session signed in beside it
 export function showWho(user) {
-	$("who").textContent = user.name || user.email;
+	$("who").textContent = user.username || user.name || user.email;
+	$("who").title = user.name || user.email;
 	const method = methodOf(user.method);
 	const icon = $("who-method");
 	icon.src = `/static/${method.icon}.svg`;
@@ -164,8 +172,9 @@ export function setupSettings(user) {
 			saved = account.name;
 			if (username.value.toLowerCase() !== (user.username || "")) {
 				user.username = (await api("/api/account/username", { method: "PUT", body: { username: username.value } })).username;
+				showAccountDetails(user);
 			}
-			showWho(account);
+			showWho({ ...account, username: user.username });
 			if (theme.value !== savedTheme) {
 				savedTheme = (await api("/api/account/theme", { method: "PUT", body: { theme: theme.value } })).theme;
 				applyTheme(savedTheme);
