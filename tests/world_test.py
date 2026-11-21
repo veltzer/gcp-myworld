@@ -838,6 +838,20 @@ def test_a_source_without_the_audible_library(app: webtest.TestApp, engine: Engi
             import_world.import_audio_books(session, owner(session), source)
 
 
+def test_a_source_without_youtube(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    sign_in_admin(app, engine)
+    source = write_source(tmp_path)
+    (source / "data" / "yaml" / "video_youtube.yaml").unlink()
+    (source / "static" / "data" / "youtube.json.gz").unlink()
+    with Session(engine) as session:
+        # the site no longer keeps them: the full import imports no YouTube videos, --youtube and --youtube-history say why they cannot
+        assert import_world.import_world(session, owner(session), source)["YouTube videos"] == 0
+        with pytest.raises(import_world.WorldImportError, match="no longer keeps it"):
+            import_world.import_youtube(session, owner(session), source)
+        with pytest.raises(import_world.WorldImportError, match="no longer keeps it"):
+            import_world.import_youtube_history(session, owner(session), source)
+
+
 def test_audio_books_import_refuses_what_it_does_not_know(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
     del imported
     source = write_source(tmp_path / "again")

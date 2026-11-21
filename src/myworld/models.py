@@ -1377,7 +1377,8 @@ YOUTUBE_ID_LENGTH = 11
 class YouTubeVideo(_Dated, Base):
     """
     A YouTube video watched; the date (_Dated) is when. Imported from
-    veltzer.github.io's video_youtube.yaml, which it keeps field for field.
+    veltzer.github.io's video_youtube.yaml (and its watch history), which it
+    keeps field for field; My World keeps them now.
     The page and the thumbnail are YouTube's own, found by youtube_id.
     """
     __tablename__ = "youtube_videos"

@@ -42,7 +42,10 @@ YouTube videos come from data/yaml/video_youtube.yaml (the reviewed ones)
 and static/data/youtube.json.gz (the watch history: what YouTube says about
 each video, no date or review); a video in both is one row. Their
 thumbnails are YouTube's own, so there is no image to import. Their devices
-are the same list as the audio courses'.
+are the same list as the audio courses'. veltzer.github.io no longer has
+either file (My World keeps them now): a source without them imports no
+YouTube videos, and --youtube and --youtube-history read them from a
+checkout of the site's history that has them.
 
 The full import (no mode flag) replaces everything the user had in these
 tables, in one transaction. It is meant for an empty account: when the
@@ -735,8 +738,10 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     # the site no longer keeps them (My World does): a source without them has none to import
     has_audio_books = any((source / "data" / "yaml" / name).exists() for name in AUDIO_BOOK_FILES)
     audio_books = import_audio_books(session, owner, source) if has_audio_books else {"audio books added": 0, "images": 0, "devices added": 0}
-    videos = import_youtube(session, owner, source)
-    history = import_youtube_history(session, owner, source)
+    # the site no longer keeps them either: a source without one imports none of it
+    has_videos = (source / "data" / "yaml" / "video_youtube.yaml").exists()
+    videos = import_youtube(session, owner, source) if has_videos else {"YouTube videos": 0, "devices added": 0}
+    history = import_youtube_history(session, owner, source) if _history_path(source).exists() else {"YouTube videos added": 0}
     books = import_books(session, owner, source)
     typed = give_types(session, owner)
     return {
@@ -1222,8 +1227,13 @@ def import_books(session: Session, owner: User, source: Path) -> dict[str, int]:
     }
 
 
+NOT_KEPT = "veltzer.github.io no longer keeps it; its git history does"
+
+
 def import_youtube(session: Session, owner: User, source: Path) -> dict[str, int]:
     """ Add owner's YouTube videos from source. Stops when owner has YouTube videos already. Does not commit. """
+    if not (source / "data" / "yaml" / "video_youtube.yaml").exists():
+        raise WorldImportError(f"{source / 'data' / 'yaml' / 'video_youtube.yaml'} is not there ({NOT_KEPT})")
     items = _items(source, "video_youtube", YOUTUBE_FIELDS)
     if session.scalar(select(YouTubeVideo.id).where(YouTubeVideo.owner_id == owner.id).limit(1)) is not None:
         raise WorldImportError("this account has YouTube videos already: delete them first, or run the full import")
@@ -1246,8 +1256,14 @@ def import_youtube(session: Session, owner: User, source: Path) -> dict[str, int
     return {"YouTube videos": len(items), "devices added": device.added}
 
 
+def _history_path(source: Path) -> Path:
+    return source / "static" / "data" / "youtube.json.gz"
+
+
 def _history_items(source: Path) -> list[dict[str, Any]]:
-    path = source / "static" / "data" / "youtube.json.gz"
+    path = _history_path(source)
+    if not path.exists():
+        raise WorldImportError(f"{path} is not there ({NOT_KEPT})")
     with gzip.open(path, "rt", encoding="UTF8") as fp:
         items = json.load(fp)["items"]
     for item in items:

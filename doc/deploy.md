@@ -473,7 +473,9 @@ first `companies` tables to `organizations`, then making
   from `video_youtube.yaml` in `veltzer.github.io` by
   `scripts/import_world.py --youtube`, and the watch history (about
   30,000 videos, `static/data/youtube.json.gz`) by `--youtube-history`,
-  which can run again.
+  which can run again. Both were imported (2026-11-21); `veltzer.github.io`
+  no longer keeps either file, and the importers read them from its git
+  history.
 - `GET /api/chess-games`: the games of chess played, newest first, each
   with `name` (its players, "White vs Black", or "against Opponent" for
   one recorded without its sides), the date, `color` (the side the user
