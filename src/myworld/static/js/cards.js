@@ -236,6 +236,38 @@ function audioCourseCard(item) {
 	return card;
 }
 
+// 1346 -> "22h 26m", 45 -> "45m"
+function formatMinutes(minutes) {
+	if (minutes === null) {
+		return "";
+	}
+	const h = Math.floor(minutes / 60);
+	return h ? `${h}h ${minutes % 60}m` : `${minutes}m`;
+}
+
+function audioBookCard(item) {
+	const { card, list } = cardShell(item, item.authors);
+	detail(list, "Subtitle", item.subtitle);
+	detail(list, "Narrators", item.narrators);
+	detail(list, "Series", [item.series, item.series_sequence && `#${item.series_sequence}`].filter(Boolean).join(" "));
+	detail(list, "Status", item.finished ? "Finished" : (item.percent_heard ? `${Math.round(item.percent_heard)}% heard` : "Not started"));
+	detail(list, "Length", formatMinutes(item.minutes));
+	if (item.rating !== null) {
+		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
+	}
+	detail(list, "Review", item.review);
+	detail(list, "Genres", item.genres.join(", "));
+	detail(list, "Released", item.released);
+	detail(list, "Added", item.added.slice(0, 10));
+	if (item.source_rating !== null) {
+		detail(list, `On ${item.source_name || "its source"}`, `${item.source_rating}/5${item.source_ratings ? ` (${item.source_ratings.toLocaleString()} ratings)` : ""}`);
+	} else {
+		detail(list, "From", item.source_name);
+	}
+	websiteButton(card, item.url, item.source_name ? `${item.source_name} page` : "Page");
+	return card;
+}
+
 // 3725 -> "1:02:05", 391 -> "6:31"
 function formatDuration(seconds) {
 	if (seconds === null) {
@@ -326,6 +358,7 @@ export const CARDS = {
 	concerts: concertCard,
 	museums: museumCard,
 	"audio-courses": audioCourseCard,
+	"audio-books": audioBookCard,
 	youtube: youtubeCard,
 	chess: chessCard,
 	places: placeCard,

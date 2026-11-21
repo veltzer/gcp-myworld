@@ -14,6 +14,7 @@ from sqlalchemy import select
 from myworld import auth
 from myworld.api import ApiError, opt_int, text
 from myworld.models import (
+    AudioBook,
     AudioCourse,
     City,
     CityPhoto,
@@ -181,6 +182,7 @@ def drop_unused_images() -> None:
     used = select(Concert.image_id).where(Concert.image_id.is_not(None)).union(
         select(Organization.image_id).where(Organization.image_id.is_not(None)),
         select(AudioCourse.image_id).where(AudioCourse.image_id.is_not(None)),
+        select(AudioBook.image_id).where(AudioBook.image_id.is_not(None)),
         select(UserWork.image_id).where(UserWork.image_id.is_not(None)),
         select(Cover.image_id),
         select(City.image_id).where(City.image_id.is_not(None)),

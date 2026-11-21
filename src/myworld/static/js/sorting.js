@@ -43,6 +43,16 @@ const SORTS = {
 		["rating", "Rating", (c) => c.rating, "desc"],
 		["started", "Started", (c) => c.started, "desc"],
 	],
+	"audio-books": [
+		["date", "Added", (b) => b.date_sort, "desc"],
+		["name", "Title", (b) => b.name, "asc"],
+		["author", "Author", (b) => b.authors, "asc"],
+		["rating", "Rating", (b) => b.rating, "desc"],
+		["heard", "Heard", (b) => (b.finished ? 100 : b.percent_heard), "desc"],
+		["length", "Length", (b) => b.minutes, "desc"],
+		["released", "Released", (b) => b.released, "desc"],
+		["source_rating", "Rating there", (b) => b.source_rating, "desc"],
+	],
 	youtube: [
 		["date", "Watched", (v) => v.date_sort, "desc"],
 		["name", "Name", (v) => v.name, "asc"],

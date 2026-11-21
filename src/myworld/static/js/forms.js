@@ -266,6 +266,26 @@ const WORLD_BODIES = {
 			...(await pictureBody(form)),
 		};
 	},
+	"audio-books": async (form) => {
+		const value = (name) => form.elements[name].value;
+		return {
+			name: value("name"),
+			subtitle: value("subtitle"),
+			authors: value("authors"),
+			narrators: value("narrators"),
+			series: value("series"),
+			series_sequence: value("series_sequence"),
+			genres: value("genres"),
+			minutes: value("minutes"),
+			finished: form.elements.finished.checked,
+			percent_heard: value("percent_heard"),
+			rating: value("rating"),
+			review: value("review"),
+			source: value("source"),
+			source_id: value("source_id"),
+			...(await pictureBody(form)),
+		};
+	},
 	youtube: async (form) => {
 		const value = (name) => form.elements[name].value;
 		return {

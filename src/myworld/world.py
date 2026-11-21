@@ -1,6 +1,6 @@
 """
 JSON API for what the signed-in user keeps: concerts, their museum visits,
-audio courses, YouTube videos, chess games, people, organizations and
+audio courses, audio books, YouTube videos, chess games, people, organizations and
 groups; and for what everyone shares: places (and their kinds), visit
 types, cities and countries. For each: what a row looks like as JSON, how a
 request body is applied to it, and the routes that list, add, edit and
@@ -34,12 +34,14 @@ from myworld.api import (
     text,
 )
 from myworld.models import (
+    AUDIO_BOOK_SOURCES,
     DEFAULT_LOCALE,
     MUSEUM_KIND,
     MUSEUM_VISIT,
     RATING_MAX,
     RATING_MIN,
     YOUTUBE_ID_LENGTH,
+    AudioBook,
     AudioCourse,
     ChessGame,
     City,
@@ -339,6 +341,44 @@ def _course_url(course: AudioCourse) -> str:
     return course.link
 
 
+def audio_book_json(book: AudioBook) -> dict[str, Any]:
+    added = _stamp_json(book.added_utcz)
+    return {
+        "id": book.id,
+        "name": book.name,
+        "subtitle": book.subtitle,
+        "source": book.source,
+        "source_name": AUDIO_BOOK_SOURCES.get(book.source, ""),
+        "source_id": book.source_id or "",
+        "authors": book.authors,
+        "narrators": book.narrators,
+        "series": book.series,
+        "series_sequence": book.series_sequence,
+        "genres": book.genres,
+        "minutes": book.minutes,
+        "finished": book.finished,
+        "status": "done" if book.finished else ("in_progress" if book.percent_heard else ""),
+        "percent_heard": book.percent_heard,
+        "source_rating": book.source_rating,
+        "source_ratings": book.source_ratings,
+        "added": added,
+        # what the sorting and the date filter go by: when it came into the library
+        "date_sort": added,
+        "released": book.released.isoformat() if book.released else "",
+        "rating": book.rating,
+        "review": book.review,
+        "url": _audio_book_url(book),
+        "image": image_url(book.image_id),
+    }
+
+
+def _audio_book_url(book: AudioBook) -> str:
+    """ The book's page at its source. """
+    if book.source == "audible" and book.source_id:
+        return f"https://www.audible.com/pd/{book.source_id}"
+    return ""
+
+
 def youtube_video_json(video: YouTubeVideo) -> dict[str, Any]:
     return {
         "id": video.id,
@@ -492,6 +532,14 @@ def api_audio_courses() -> flask.Response:
     courses = flask.g.db.execute(query).scalars().all()
     # finished ones newest first; those in progress (no date yet) after them
     return flask.jsonify(_newest_first([audio_course_json(c) for c in courses]))
+
+
+@bp.route("/api/audio-books", methods=["GET"])
+@auth.login_required
+def api_audio_books() -> flask.Response:
+    books = flask.g.db.scalars(select(AudioBook).where(AudioBook.owner_id == flask.g.user.id)).all()
+    # the latest come into the library first
+    return flask.jsonify(_newest_first([audio_book_json(b) for b in books]))
 
 
 @bp.route("/api/youtube-videos", methods=["GET"])
@@ -987,6 +1035,55 @@ def _apply_audio_course(course: AudioCourse, body: dict[str, Any]) -> None:
     _apply_dates(course, body)
 
 
+def _opt_number(body: dict[str, Any], key: str, low: float, high: float) -> float | None:
+    """ A number from low to high, or None when empty. """
+    value = body.get(key)
+    if value in (None, ""):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as e:
+        raise ApiError(400, f"{key}: expected a number") from e
+    if not low <= number <= high:
+        raise ApiError(400, f"{key}: expected {low:g} to {high:g}")
+    return number
+
+
+def _apply_audio_book(book: AudioBook, body: dict[str, Any]) -> None:
+    book.name = text(body, "name", required=True)
+    book.subtitle = text(body, "subtitle")
+    source = text(body, "source")
+    if source and source not in AUDIO_BOOK_SOURCES:
+        raise ApiError(400, f"source: expected one of {', '.join(AUDIO_BOOK_SOURCES)}, or none")
+    book.source = source
+    source_id = text(body, "source_id")
+    if source_id and not source:
+        raise ApiError(400, "source_id: a book's id at a source needs the source")
+    if source_id:
+        taken = flask.g.db.scalars(select(AudioBook.id).where(
+            AudioBook.owner_id == flask.g.user.id, AudioBook.source == source, AudioBook.source_id == source_id, AudioBook.id != book.id,
+        )).first()
+        if taken is not None:
+            raise ApiError(409, f"source_id: {source_id} is in Audio books already")
+    book.source_id = source_id or None
+    book.authors = text(body, "authors")
+    book.narrators = text(body, "narrators")
+    book.series = text(body, "series")
+    book.series_sequence = text(body, "series_sequence")
+    genres = body.get("genres", [])
+    if isinstance(genres, str):
+        genres = [g.strip() for g in genres.split(",")]
+    if not isinstance(genres, list) or not all(isinstance(g, str) for g in genres):
+        raise ApiError(400, "genres: expected a list of names")
+    book.genres = list(dict.fromkeys(g.strip() for g in genres if g.strip()))
+    book.minutes = opt_int(body, "minutes", 1, 100_000)
+    book.finished = bool(body.get("finished"))
+    book.percent_heard = _opt_number(body, "percent_heard", 0, 100)
+    book.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
+    book.review = text(body, "review")
+    apply_image(book, body)
+
+
 YOUTUBE_ID = re.compile(rf"[A-Za-z0-9_-]{{{YOUTUBE_ID_LENGTH}}}")
 # the id inside a pasted link: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/shorts/ID, /embed/ID, /live/ID
 YOUTUBE_LINK = re.compile(r"(?:[?&]v=|youtu\.be/|/(?:shorts|embed|live)/)([A-Za-z0-9_-]+)")
@@ -1283,6 +1380,7 @@ class _View:
 VIEWS: dict[str, _View] = {
     "concert-visits": _View(Concert, _apply_concert, concert_json),
     "audio-courses": _View(AudioCourse, _apply_audio_course, audio_course_json),
+    "audio-books": _View(AudioBook, _apply_audio_book, audio_book_json),
     "youtube-videos": _View(YouTubeVideo, _apply_youtube_video, youtube_video_json),
     "chess-games": _View(ChessGame, _apply_chess_game, chess_game_json),
     "people": _View(Person, _apply_person, person_json),

@@ -442,6 +442,20 @@ first `companies` tables to `organizations`, then making
   dialog the museum is picked from the museums of Places, and the Visits
   box lists the visits, each with a red pencil, a red − and one red + to
   add another.
+- `GET /api/audio-books`: the books of the user's audio book libraries,
+  latest into the library first, each with `source` (`audible`, or `""`
+  for one typed in by hand), `source_name`, `source_id` (Audible's ASIN),
+  `name` (the title), `subtitle`, `authors` and `narrators` (as the source
+  writes them), `series`, `series_sequence`, `genres`, `minutes`,
+  `finished`, `percent_heard`, `status` (`done`, `in_progress` or `""`),
+  `source_rating` (of 5) and `source_ratings`, `added`, `released`, the
+  user's own `rating` and `review`, `url` (its page at the source) and the
+  cover as `image`. A source's book is in an account once (409). Imported
+  from `audible.yaml` in `veltzer.github.io` (covers
+  `static/images/audible-<asin>.jpg`) by
+  `scripts/import_world.py --audio-books`, which adds the books the account does not have yet and
+  refreshes what Audible changes on the rest (finished, how much was
+  heard, the rating there), so it can run again after the site's data is.
 - `GET /api/youtube-videos`: the YouTube videos watched, newest first (the
   watch history, with no dates, after), with `youtube_id`, rating,
   review, `device` (id and name), `watched_at`, and what YouTube says
@@ -556,7 +570,7 @@ a person is written with `type_ids`, a list.
   (how it is related to the user: ids and names of relation types), status, website, location, address, `latitude` and `longitude`, the logo as
   `image`, and `people` (ids and names).
 - `POST` to the same paths adds,
-  `PUT /api/<concert-visits|museum-visits|audio-courses|youtube-videos|chess-games|places|groups|people|organizations>/<id>` replaces the fields,
+  `PUT /api/<concert-visits|museum-visits|audio-courses|audio-books|youtube-videos|chess-games|places|groups|people|organizations>/<id>` replaces the fields,
   `DELETE` removes. The date is sent as `YYYY`, `YYYY-MM` or
   `YYYY-MM-DD` (the add and edit forms pick it with a date picker and a Day, Month
   only or Year only choice, so it is always a real date); a date sent back exactly as it came keeps its stored
@@ -750,7 +764,7 @@ The Imports page and its API are in `imports.md`.
 - Every other table that holds an account's rows says whose they are in
   `owner_id` (or through the rows it links):
     - `concert_visits`, `visits` (a visit to a place, of a type: the
-  museum visits), `audio_courses`, `youtube_videos`, `chess_games`: one
+  museum visits), `audio_courses`, `audio_books`, `youtube_videos`, `chess_games`: one
   row per thing done (see "Concerts, museums, people and organizations").
   A chess game keeps its text whole (`pgn`), and beside it what is listed
   and sorted by, read out of that text; one recorded without its moves has

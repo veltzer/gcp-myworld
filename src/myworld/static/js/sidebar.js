@@ -9,7 +9,7 @@ import { SHARED_VIEWS, WORLDS, el } from "./worlds.js";
 // the sidebar's groups of views: first what is the user's own (the library's kinds, from the config, ahead
 // of the rest), then what everyone shares (SHARED_VIEWS), apart, under a heading of its own
 const NAV_GROUPS = [
-	["Yours", ["concerts", "museums", "audio-courses", "youtube", "chess"]],
+	["Yours", ["concerts", "museums", "audio-courses", "audio-books", "youtube", "chess"]],
 	["Your people", ["people", "groups", "organizations"]],
 	["Your types", ["organization-types", "person-types", "relation-types", "person-relation-types", "person-organization-types", "devices"]],
 	["Shared by everyone", ["places", "cities", "countries", "currencies", "place-kinds", "visit-types", "locales"]],
@@ -93,7 +93,7 @@ export async function loadCounts() {
 		setCount(kind.kind, kind.total);
 	}
 	const keys = {
-		concerts: "concerts", museums: "museum_visits", "audio-courses": "audio_courses", youtube: "youtube_videos", chess: "chess_games",
+		concerts: "concerts", museums: "museum_visits", "audio-courses": "audio_courses", "audio-books": "audio_books", youtube: "youtube_videos", chess: "chess_games",
 		places: "places", cities: "cities", countries: "countries", currencies: "currencies", people: "people", groups: "groups", organizations: "organizations", "organization-types": "organization_types",
 		"person-types": "person_types", "relation-types": "relation_types", "person-relation-types": "person_relation_types",
 		"person-organization-types": "person_organization_types", devices: "devices", locales: "locales",

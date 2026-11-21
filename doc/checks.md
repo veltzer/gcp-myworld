@@ -141,6 +141,15 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `audio-course-duplicates`: no account has two audio courses of the same
   name.
 
+### Audio books (`audio-books`)
+
+- `audio-book-authors`: every audio book says who wrote it.
+- `audio-book-covers`: every audio book has a cover.
+- `audio-book-reviews`: every finished audio book has your own rating and
+  a review.
+- `audio-book-duplicates`: no account has two audio books of the same
+  title and subtitle.
+
 ### YouTube (`youtube`)
 
 - `youtube-ids`: every YouTube video id is one YouTube could have given

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from myworld.models import (
     KINDS,
+    AudioBook,
     AudioCourse,
     City,
     Concert,
@@ -81,6 +82,7 @@ DATASETS: dict[str, str] = {
     "concerts": "Concerts",
     "museums": "Museum visits",
     "audio-courses": "Audio courses",
+    "audio-books": "Audio books",
     "youtube": "YouTube",
     "chess": "Chess",
     "people": "People",
@@ -146,6 +148,7 @@ def one_of(dataset: str) -> str:
 SUBJECTS: dict[type, tuple[str, str]] = {
     Concert: ("concert", "concerts"),
     AudioCourse: ("audio course", "audio-courses"),
+    AudioBook: ("audio book", "audio-books"),
     YouTubeVideo: ("YouTube video", "youtube"),
     Person: ("person", "people"),
     Organization: ("organization", "organizations"),

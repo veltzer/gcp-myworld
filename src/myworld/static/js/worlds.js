@@ -12,6 +12,8 @@ export const WORLDS = {
 	// the user's museum visits, a card for each museum with its visits to it
 	museums: ["My Museum visits", "/api/museum-visits", "museum visit", "Museum visits"],
 	"audio-courses": ["Audio courses", "/api/audio-courses", "audio course", "Audio courses"],
+	// the books of the user's audio book libraries (Audible, ...)
+	"audio-books": ["Audio books", "/api/audio-books", "audio book", "Audio books"],
 	youtube: ["YouTube videos", "/api/youtube-videos", "YouTube video", "YouTube"],
 	chess: ["Chess games", "/api/chess-games", "chess game", "Chess"],
 	places: ["Places", "/api/places", "place", "Places"],

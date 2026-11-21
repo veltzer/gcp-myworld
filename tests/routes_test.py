@@ -21,6 +21,7 @@ NAMED = {"people": "Dana Levi", "chess-games": "me vs Deeper Blue"}
 MINIMAL: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
     "concert-visits": ({"name": "Jarrett"}, {"name": "Jarrett Trio"}),
     "audio-courses": ({"name": "Logic"}, {"name": "Logic 101"}),
+    "audio-books": ({"name": "Dune"}, {"name": "Dune Messiah"}),
     "youtube-videos": ({"youtube_id": "dQw4w9WgXcQ", "name": "A song"}, {"youtube_id": "dQw4w9WgXcQ", "name": "That song"}),
     # a game is added by its text and named by its players: an edit that sends another text renames it
     "chess-games": (

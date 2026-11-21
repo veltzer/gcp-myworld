@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from myworld import addresses, checks, cities, languages, names, notes
 from myworld.models import (
     SEED_LOCALES,
+    AudioBook,
     AudioCourse,
     Concert,
     Cover,
@@ -159,6 +160,45 @@ items:
 """
 
 
+AUDIBLE = """
+items:
+  - asin: "0063005409"
+    title: "Making Sense"
+    subtitle: "Conversations on Consciousness"
+    authors: "Sam Harris"
+    narrators: "Sam Harris, David Chalmers"
+    series_title: ""
+    series_sequence: ""
+    genres: ["Psychology", "Science", "Psychology"]
+    runtime_length_min: "1346"
+    is_finished: true
+    percent_complete: "0.0"
+    rating: "4.7"
+    num_ratings: "592"
+    date_added: "2021-08-10T08:55:06.867Z"
+    release_date: "2020-08-11"
+    cover_url: "https://m.media-amazon.com/images/I/x.jpg"
+    purchase_date: "2021-08-10T08:55:06.867Z"
+  - asin: "B07D23CFGR"
+    title: "Political Order and Political Decay"
+    subtitle: ""
+    authors: "Francis Fukuyama"
+    narrators: "Jonathan Davis"
+    series_title: "Political Order"
+    series_sequence: "2"
+    genres: ["History"]
+    runtime_length_min: ""
+    is_finished: false
+    percent_complete: "12.5"
+    rating: ""
+    num_ratings: ""
+    date_added: "2022-01-02T10:00:00Z"
+    release_date: ""
+    cover_url: ""
+    purchase_date: "2022-01-02T10:00:00Z"
+"""
+
+
 YOUTUBE = """
 items:
   - id: "VNIRUigPxA8"
@@ -259,7 +299,7 @@ def write_source(root: Path, concerts: str = CONCERTS) -> Path:
     (root / "data" / "yaml").mkdir(parents=True)
     (root / "static" / "images").mkdir(parents=True)
     (root / "data" / "logos").mkdir(parents=True)
-    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("video_youtube", YOUTUBE), ("books_read", BOOKS), ("text_books", TEXT_BOOKS)):
+    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("audible", AUDIBLE), ("video_youtube", YOUTUBE), ("books_read", BOOKS), ("text_books", TEXT_BOOKS)):
         (root / "data" / "yaml" / f"{name}.yaml").write_text(text, encoding="UTF8")
     (root / "data" / "logos" / "acme.svg").write_bytes(LOGO)
     (root / "static" / "data").mkdir(parents=True)
@@ -269,6 +309,8 @@ def write_source(root: Path, concerts: str = CONCERTS) -> Path:
     (root / "static" / "images" / "museum-15.jpg").write_bytes(b"\xff\xd8louvre")
     (root / "static" / "images" / "audiocourse-gc-337.jpg").write_bytes(b"\xff\xd8greeks")
     (root / "static" / "images" / "audiocourse-internal-1.jpg").write_bytes(b"\xff\xd8music")
+    # the second book has no cover: it is added without one
+    (root / "static" / "images" / "audible-0063005409.jpg").write_bytes(b"\xff\xd8sense")
     (root / "static" / "images" / "book-goodreads-5907.jpg").write_bytes(b"\xff\xd8hobbit")
     (root / "static" / "images" / "book-simania-7005.jpg").write_bytes(b"\xff\xd8may")
     return root
@@ -287,7 +329,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         session.commit()
     assert counts == {
         "people": 7, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 3, "people with a profession": 4, "people related to the user": 2,
-        "concerts": 3, "places": 1, "museums": 2, "museum visits": 3, "audio courses": 2, "YouTube videos": 4, "devices": 3, "books": 3, "images": 7}
+        "concerts": 3, "places": 1, "museums": 2, "museum visits": 3, "audio courses": 2, "audio books": 2, "YouTube videos": 4, "devices": 3, "books": 3, "images": 8}
     return app
 
 
@@ -650,6 +692,89 @@ def test_audio_courses_import_adds_once(imported: webtest.TestApp, engine: Engin
         session.commit()
     # the lecturers are the people already there, and the covers the images already stored: nothing is added twice
     assert counts == {"audio courses": 2, "lecturers added": 0, "devices added": 0, "images": 0}
+
+
+def test_audio_books(imported: webtest.TestApp) -> None:
+    books = imported.get("/api/audio-books").json
+    # the latest into the library first
+    assert [b["name"] for b in books] == ["Political Order and Political Decay", "Making Sense"]
+    order, sense = books
+    assert (sense["source"], sense["source_name"], sense["source_id"], sense["url"]) == ("audible", "Audible", "0063005409", "https://www.audible.com/pd/0063005409")
+    assert (sense["subtitle"], sense["authors"], sense["narrators"], sense["minutes"]) == ("Conversations on Consciousness", "Sam Harris", "Sam Harris, David Chalmers", 1346)
+    # a genre Audible repeats is kept once
+    assert sense["genres"] == ["Psychology", "Science"]
+    assert (sense["finished"], sense["status"], sense["source_rating"], sense["source_ratings"]) == (True, "done", 4.7, 592)
+    assert (sense["added"], sense["released"], sense["rating"], sense["review"]) == ("2021-08-10T08:55:06.867000Z", "2020-08-11", None, "")
+    assert imported.get(sense["image"]).body == b"\xff\xd8sense"
+    # what Audible leaves empty is empty; a book without a cover file has none
+    assert (order["series"], order["series_sequence"], order["minutes"], order["released"], order["source_rating"]) == ("Political Order", "2", None, "", None)
+    assert (order["finished"], order["status"], order["percent_heard"], order["image"]) == (False, "in_progress", 12.5, None)
+
+
+def test_edit_audio_book(imported: webtest.TestApp) -> None:
+    sense = next(b for b in imported.get("/api/audio-books").json if b["name"] == "Making Sense")
+    edited = imported.put_json(f"/api/audio-books/{sense['id']}", dict(sense, rating=9, review="Deep", genres="Psychology, Philosophy")).json
+    assert (edited["rating"], edited["review"], edited["genres"]) == (9, "Deep", ["Psychology", "Philosophy"])
+    # the cover is kept when the edit sends none
+    assert edited["image"] == sense["image"]
+    added = imported.post_json("/api/audio-books", {"name": "A Book Heard Elsewhere", "authors": "Someone"}, status=201).json
+    assert (added["source"], added["source_id"], added["url"], added["status"]) == ("", "", "", "")
+    # a book is in a source's library once; an id needs its source; a source is one there is
+    imported.post_json("/api/audio-books", {"name": "x", "source": "audible", "source_id": "0063005409"}, status=409)
+    imported.post_json("/api/audio-books", {"name": "x", "source_id": "123"}, status=400)
+    imported.post_json("/api/audio-books", {"name": "x", "source": "nowhere"}, status=400)
+    imported.post_json("/api/audio-books", {"name": "x", "percent_heard": 101}, status=400)
+    imported.delete(f"/api/audio-books/{added['id']}", status=204)
+    assert len(imported.get("/api/audio-books").json) == 2
+
+
+def test_audio_books_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    sense = next(b for b in imported.get("/api/audio-books").json if b["name"] == "Making Sense")
+    imported.put_json(f"/api/audio-books/{sense['id']}", dict(sense, name="Making Sense (edited)", rating=9))
+    source = write_source(tmp_path / "again")
+    yaml_file = source / "data" / "yaml" / "audible.yaml"
+    # Audible since: the second book further along, and a third one bought
+    text = yaml_file.read_text(encoding="UTF8").replace('percent_complete: "12.5"', 'percent_complete: "40.0"')
+    text += """  - asin: "B0NEWBOOK1"
+    title: "A New One"
+    subtitle: ""
+    authors: "Someone New"
+    narrators: ""
+    series_title: ""
+    series_sequence: ""
+    genres: []
+    runtime_length_min: "60"
+    is_finished: false
+    percent_complete: "0.0"
+    rating: ""
+    num_ratings: ""
+    date_added: "2023-03-03T00:00:00Z"
+    release_date: "2023-01-01"
+    cover_url: ""
+    purchase_date: "2023-03-03T00:00:00Z"
+"""
+    yaml_file.write_text(text, encoding="UTF8")
+    with Session(engine) as session:
+        counts = import_world.import_audio_books(session, owner(session), source)
+        session.commit()
+    assert counts == {"audio books added": 1, "audio books refreshed": 1, "images": 0}
+    books = {b["source_id"]: b for b in imported.get("/api/audio-books").json}
+    assert books["B07D23CFGR"]["percent_heard"] == 40.0
+    # what was edited in the app stays
+    assert (books["0063005409"]["name"], books["0063005409"]["rating"]) == ("Making Sense (edited)", 9)
+    assert books["B0NEWBOOK1"]["name"] == "A New One"
+    with Session(engine) as session:
+        again = import_world.import_audio_books(session, owner(session), source)
+    assert again == {"audio books added": 0, "audio books refreshed": 0, "images": 0}
+
+
+def test_audio_books_import_refuses_what_it_does_not_know(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    del imported
+    source = write_source(tmp_path / "again")
+    yaml_file = source / "data" / "yaml" / "audible.yaml"
+    yaml_file.write_text(yaml_file.read_text(encoding="UTF8").replace('    cover_url: ""', '    cover_url: ""\n    wishlist: true'), encoding="UTF8")
+    with Session(engine) as session, pytest.raises(import_world.WorldImportError, match="does not know"):
+        import_world.import_audio_books(session, owner(session), source)
 
 
 def test_youtube(imported: webtest.TestApp) -> None:
@@ -1283,7 +1408,7 @@ def test_reimport_replaces(imported: webtest.TestApp, engine: Engine, tmp_path: 
         import_world.import_world(session, owner(session), tmp_path, replace=True)
         session.commit()
         # the shared rows (places, the museums among them) are found again, not added twice
-        for model, count in ((Concert, 3), (Place, 3), (Visit, 3), (AudioCourse, 2), (Person, 8), (Organization, 3), (Image, 7)):
+        for model, count in ((Concert, 3), (Place, 3), (Visit, 3), (AudioCourse, 2), (Person, 8), (Organization, 3), (AudioBook, 2), (Image, 8)):
             assert session.scalar(select(func.count()).select_from(model)) == count
         assert session.scalar(select(func.count()).select_from(concert_companions)) == 3
         assert session.scalar(select(func.count()).select_from(person_organizations)) == 3
@@ -1555,7 +1680,7 @@ def test_delete(imported: webtest.TestApp, engine: Engine) -> None:
     assert imported.get("/api/concert-visits").json == []
     with Session(engine) as session:
         # the concert photo went with its last concert; the museum one stays
-        assert sorted(session.scalars(select(Image.filename)).all()) == ["acme.svg", "audiocourse-gc-337.jpg", "audiocourse-internal-1.jpg", "book-goodreads-5907.jpg", "book-simania-7005.jpg", "museum-15.jpg"]
+        assert sorted(session.scalars(select(Image.filename)).all()) == ["acme.svg", "audible-0063005409.jpg", "audiocourse-gc-337.jpg", "audiocourse-internal-1.jpg", "book-goodreads-5907.jpg", "book-simania-7005.jpg", "museum-15.jpg"]
         assert session.scalar(select(func.count()).select_from(concert_companions)) == 0
     imported.delete("/api/concert-visits/1", status=404)
 
@@ -1595,7 +1720,7 @@ def test_stats(imported: webtest.TestApp) -> None:
     imported.post_json("/api/library-entries", {"kind": "book", "title": "Dune", "status": "done"}, status=201)
     stats = imported.get("/api/stats").json
     assert (stats["concerts"], stats["museum_visits"], stats["museums"], stats["audio_courses"]) == (3, 3, 2, 2)
-    assert (stats["people"], stats["organizations"], stats["images"]) == (8, 3, 7)
+    assert (stats["people"], stats["organizations"], stats["images"]) == (8, 3, 8)
     assert (stats["organization_types"], stats["person_types"]) == (7, 3)
     # Bob, Singer and The Band performed; Bob also went with the user, he counts once
     assert stats["performers"] == 3

@@ -280,6 +280,8 @@ export function setupAddDialog() {
 	$("museum-visit-rating").max = rating_max;
 	$("audio-course-form").elements.rating.min = rating_min;
 	$("audio-course-form").elements.rating.max = rating_max;
+	$("audio-book-form").elements.rating.min = rating_min;
+	$("audio-book-form").elements.rating.max = rating_max;
 	$("youtube-video-form").elements.rating.min = rating_min;
 	$("youtube-video-form").elements.rating.max = rating_max;
 	setupBoard();

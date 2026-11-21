@@ -28,6 +28,11 @@ and what the entry has no field for (the other readings, the languages read
 and owned, the names in other languages, the publisher, the remark) is
 written into its notes.
 
+Audio books come from data/yaml/audible.yaml (the books of the Audible
+library, as Audible says them), their covers from
+static/images/audible-<asin>.jpg; each is an audio book with source
+"audible", found again by its ASIN.
+
 YouTube videos come from data/yaml/video_youtube.yaml (the reviewed ones)
 and static/data/youtube.json.gz (the watch history: what YouTube says about
 each video, no date or review); a video in both is one row. Their
@@ -39,8 +44,8 @@ tables, in one transaction. It is meant for an empty account: when the
 account has any of these rows already it stops, since replacing them would
 lose every edit made in the app since the last import, unless
 --replace-everything is given with the account's email again. The --books,
---youtube-history and --only-types modes add to what is there and are safe
-to run again. Unknown fields in the YAML stop the import rather than being
+--audio-books, --youtube-history and --only-types modes add to what is
+there and are safe to run again. Unknown fields in the YAML stop the import rather than being
 dropped, so nothing is lost on the way in.
 
 The user must have signed in at least once; pass the email they signed in
@@ -52,7 +57,10 @@ login, e.g. google:1087...).
 With --audio-courses only the audio courses are imported, added to what the
 account already has and touching nothing else; it stops if the account has
 audio courses already, rather than replace what was edited since. --youtube
-does the same for the YouTube videos. --books adds the books the account
+does the same for the YouTube videos. --audio-books adds the Audible books
+the account does not have yet and refreshes what Audible changes on those
+it has (finished, how much was heard, the rating there), leaving the rest as
+edited; it can run again. --books adds the books the account
 does not have yet, and can run again. --youtube-history adds the watch
 history to the videos there are: the ones not there yet as new rows, and
 YouTube's details (channel, category, ...) on those already there; it can
@@ -90,6 +98,7 @@ from myworld.models import (
     DEFAULT_LOCALE,
     MUSEUM_KIND,
     MUSEUM_VISIT,
+    AudioBook,
     AudioCourse,
     City,
     Concert,
@@ -253,6 +262,12 @@ AUDIO_COURSE_FIELDS = DATE_FIELDS | {
     "name", "lecturers", "rating", "review", "device", "location", "date_started_utcz", "date_ended_utcz", "progress",
     "great_courses_id", "great_courses_slug", "audible_asin", "internal_id",
 }
+# audible.yaml: what Audible says of a book of the library (date_added and purchase_date are the same moment)
+AUDIBLE_FIELDS = {
+    "asin", "title", "subtitle", "authors", "narrators", "series_title", "series_sequence", "genres", "runtime_length_min",
+    "is_finished", "percent_complete", "rating", "num_ratings", "date_added", "release_date", "cover_url", "purchase_date",
+}
+AUDIBLE = "audible"
 YOUTUBE_FIELDS = DATE_FIELDS | {"id", "name", "rating", "review", "device", "location"}
 # the watch history: yt-dlp's names; status "missing" (with video_id) is a video YouTube no longer has
 YOUTUBE_HISTORY_FIELDS = {"title", "webpage_url", "channel", "categories", "duration", "upload_date", "view_count", "status", "video_id"}
@@ -477,7 +492,7 @@ def find_owner(session: Session, email: str, subject: str | None) -> User:
 # what the full import deletes and makes again, so what an account must not have unless it is replaced on purpose;
 # the shared rows (countries, cities, places) are everyone's: never deleted, found again or added
 REPLACED_MODELS = (
-    AudioCourse, YouTubeVideo, Device, Concert, Visit, Group, Person, Organization,
+    AudioCourse, AudioBook, YouTubeVideo, Device, Concert, Visit, Group, Person, Organization,
     OrganizationType, PersonType, RelationType, PersonRelationType, PersonOrganizationType, Image,
 )
 
@@ -512,7 +527,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
         what = ", ".join(f"{count} {table}" for table, count in existing.items())
         raise WorldImportError(
             f"the account has data already ({what}); the full import deletes it all and loses every edit made in the app."
-            f" Add only what is missing with --books, --youtube-history or --only-types, or pass --replace-everything {owner.email} to replace it anyway",
+            f" Add only what is missing with --books, --audio-books, --youtube-history or --only-types, or pass --replace-everything {owner.email} to replace it anyway",
         )
     people_items = _items(source, "people", PERSON_FIELDS)
     organization_items = _items(source, "organizations", ORGANIZATION_FIELDS)
@@ -716,6 +731,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
         ))
     session.flush()
     courses = import_audio_courses(session, owner, source)
+    audio_books = import_audio_books(session, owner, source)
     videos = import_youtube(session, owner, source)
     history = import_youtube_history(session, owner, source)
     books = import_books(session, owner, source)
@@ -724,8 +740,9 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
         "people": len(people) + courses["lecturers added"] + books["authors added"], "organizations": len(organizations), "organization types": len(types),
         "relation types": len(relation_types), "person types": len(PERSON_TYPES), "people with a profession": typed["people given a profession"], "people related to the user": typed["people given a relation"],
         "concerts": len(concert_items), "places": place.added, "museums": len(museums), "museum visits": len(museum_items), "audio courses": courses["audio courses"],
+        "audio books": audio_books["audio books added"],
         "YouTube videos": videos["YouTube videos"] + history["YouTube videos added"], "devices": courses["devices added"] + videos["devices added"],
-        "books": books["books"], "images": len(images) + courses["images"] + books["covers"],
+        "books": books["books"], "images": len(images) + courses["images"] + audio_books["images"] + books["covers"],
     }
 
 
@@ -817,6 +834,88 @@ def import_audio_courses(session: Session, owner: User, source: Path) -> dict[st
         ))
     session.flush()
     return {"audio courses": len(items), "lecturers added": added, "devices added": device.added, "images": images}
+
+
+def _optional(value: Any, kind: type[int | float]) -> Any:
+    """ A number Audible writes as a string, None when it writes nothing. """
+    text = str(value).strip()
+    return kind(text) if text else None
+
+
+def _audible_values(item: dict[str, Any]) -> dict[str, Any]:
+    """ What Audible says may change of a book it has: refreshed on every import. """
+    return {
+        "finished": bool(item["is_finished"]),
+        "percent_heard": _optional(item["percent_complete"], float),
+        "source_rating": _optional(item["rating"], float),
+        "source_ratings": _optional(item["num_ratings"], int),
+    }
+
+
+def import_audio_books(session: Session, owner: User, source: Path) -> dict[str, int]:
+    """
+    Add the books of owner's Audible library from source (audible.yaml) that
+    owner does not have yet (by ASIN), with their covers; on those owner has,
+    refresh only what Audible changes (_audible_values), so whatever was
+    edited in the app stays. Safe to run again. Does not commit.
+    """
+    path = source / "data" / "yaml" / "audible.yaml"
+    with path.open(encoding="UTF8") as fp:
+        items = yaml.safe_load(fp)["items"]
+    asins = [str(item.get("asin", "")) for item in items]
+    for item in items:
+        _check_fields(path, repr(item.get("title")), item, AUDIBLE_FIELDS)
+        if not item.get("asin") or not str(item.get("title", "")).strip():
+            raise WorldImportError(f"{path}: {item.get('title')!r} has no ASIN or no title")
+    if len(set(asins)) != len(asins):
+        raise WorldImportError(f"{path}: an ASIN is listed twice")
+    had = {b.source_id: b for b in session.scalars(select(AudioBook).where(AudioBook.owner_id == owner.id, AudioBook.source == AUDIBLE))}
+    image_dir = source / "static" / "images"
+    stored = {image.filename: image for image in session.scalars(select(Image).where(Image.owner_id == owner.id))}
+    added = refreshed = images = 0
+    for item in items:
+        asin = str(item["asin"])
+        book = had.get(asin)
+        if book is not None:
+            changed = {key: value for key, value in _audible_values(item).items() if getattr(book, key) != value}
+            for key, value in changed.items():
+                setattr(book, key, value)
+            refreshed += bool(changed)
+            continue
+        cover = None
+        file = image_dir / f"audible-{asin}.jpg"
+        if file.exists():
+            data = file.read_bytes()
+            sha256 = hashlib.sha256(data).hexdigest()
+            cover = stored.get(file.name)
+            if cover is not None and cover.sha256 != sha256:
+                raise WorldImportError(f"{file}: an image of that name is stored already, with other contents")
+            if cover is None:
+                cover = Image(owner_id=owner.id, filename=file.name, content_type="image/jpeg", sha256=sha256, data=data)
+                session.add(cover)
+                stored[file.name] = cover
+                images += 1
+        session.add(AudioBook(
+            owner_id=owner.id,
+            source=AUDIBLE,
+            source_id=asin,
+            name=str(item["title"]).strip(),
+            subtitle=str(item.get("subtitle", "")).strip(),
+            authors=str(item.get("authors", "")).strip(),
+            narrators=str(item.get("narrators", "")).strip(),
+            series=str(item.get("series_title", "")).strip(),
+            series_sequence=str(item.get("series_sequence", "")).strip(),
+            # Audible repeats a genre under each of its parents: each once, in its order
+            genres=list(dict.fromkeys(str(g).strip() for g in item.get("genres", []) if str(g).strip())),
+            minutes=_optional(item.get("runtime_length_min", ""), int),
+            added_utcz=_stamp(item, "date_added"),
+            released=datetime.date.fromisoformat(str(item["release_date"])) if item.get("release_date") else None,
+            image=cover,
+            **_audible_values(item),
+        ))
+        added += 1
+    session.flush()
+    return {"audio books added": added, "audio books refreshed": refreshed, "images": images}
 
 
 def _check_fields(path: Path, what: str, item: dict[str, Any], fields: set[str]) -> None:
@@ -1360,6 +1459,10 @@ def main() -> int:
         help="import only the audio courses, adding them to what the account has (stops if it has audio courses already)",
     )
     parser.add_argument(
+        "--audio-books", action="store_true",
+        help="import only the Audible books, adding those the account does not have yet and refreshing what Audible changes on the rest; safe to run again",
+    )
+    parser.add_argument(
         "--youtube", action="store_true",
         help="import only the YouTube videos, adding them to what the account has (stops if it has YouTube videos already)",
     )
@@ -1392,6 +1495,8 @@ def main() -> int:
                 counts = import_books(session, owner, args.source)
             elif args.youtube_history:
                 counts = import_youtube_history(session, owner, args.source)
+            elif args.audio_books:
+                counts = import_audio_books(session, owner, args.source)
             elif args.youtube:
                 counts = import_youtube(session, owner, args.source)
             elif args.audio_courses:

@@ -1297,6 +1297,63 @@ class AudioCourse(_Dated, Base):
     lecturers: Mapped[list[Person]] = relationship(secondary=audio_course_lecturers, back_populates="lectured")
 
 
+# where an audio book came from -> its name; the importer of each source
+# finds a book again by its id there (source_id), so it is added once
+AUDIO_BOOK_SOURCES: dict[str, str] = {
+    "audible": "Audible",
+}
+
+
+class AudioBook(Base):
+    """
+    An audio book in the user's library at a source (Audible, for now): what
+    the source says of it (title, authors, narrators, series, genres, length,
+    how far it was heard, its rating there), and what the user says of it
+    (their rating and review). Imported from veltzer.github.io's audible.yaml
+    (scripts/import_world.py --audio-books), which it keeps field for field;
+    a run again refreshes what the source changes (how far it was heard, its
+    rating there) and adds the new books, and leaves the rest as edited.
+    """
+    __tablename__ = "audio_books"
+    __table_args__ = (
+        # a book is in a source's library once; one typed in by hand has no source id (NULLs never clash)
+        UniqueConstraint("owner_id", "source", "source_id", name="uq_audio_book_source_id"),
+        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_audio_book_rating_range"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # one of AUDIO_BOOK_SOURCES, or "" for none
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    # the book's id at its source: Audible's ASIN
+    source_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # the title
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    subtitle: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    # as the source writes them: "Sam Harris, David Chalmers"
+    authors: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    narrators: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    series: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    # its place in the series: "2", "0.5"
+    series_sequence: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    genres: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    finished: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    # how much of it was heard, 0 to 100, as the source says
+    percent_heard: Mapped[float | None] = mapped_column(Double, nullable=True)
+    # its rating at the source (of 5) and by how many
+    source_rating: Mapped[float | None] = mapped_column(Double, nullable=True)
+    source_ratings: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # when it came into the user's library there
+    added_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    released: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    # the user's own
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    review: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
+    image: Mapped[Image | None] = relationship()
+
+
 # a YouTube video id: 11 characters of the URL-safe base64 alphabet
 YOUTUBE_ID_LENGTH = 11
 
@@ -1522,7 +1579,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0018"
+SCHEMA_REVISION = "0019"
 
 
 def prepare_schema(engine: Engine) -> None:

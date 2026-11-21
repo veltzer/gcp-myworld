@@ -446,6 +446,53 @@
 					<button type="submit">Add</button>
 				</div>
 			</form>
+			<form id="audio-book-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="The book's title" class="wide">Title <input name="name" required></label>
+				</div>
+				<div class="row">
+					<label title="The book's subtitle, when it has one" class="wide">Subtitle <input name="subtitle"></label>
+				</div>
+				<div class="row">
+					<label title="Who wrote it, as the source writes them: names separated by commas" class="wide">Authors <input name="authors"></label>
+				</div>
+				<div class="row">
+					<label title="Who reads it, as the source writes them: names separated by commas" class="wide">Narrators <input name="narrators"></label>
+				</div>
+				<div class="row">
+					<label title="The series it is part of, when it is" class="wide">Series <input name="series"></label>
+					<label title="Its place in the series: 1, 2, 0.5, ...">Number <input name="series_sequence"></label>
+				</div>
+				<div class="row">
+					<label title="Its genres, separated by commas" class="wide">Genres <input name="genres"></label>
+					<label title="How long it is, in minutes">Minutes <input name="minutes" type="number" min="1"></label>
+				</div>
+				<div class="row">
+					<label class="check" title="Whether you heard all of it; the source's import refreshes it"><input name="finished" type="checkbox"> Finished</label>
+					<label title="How much of it you heard, 0 to 100; the source's import refreshes it">Heard (%) <input name="percent_heard" type="number" min="0" max="100" step="any"></label>
+					<label title="Your rating of the book, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
+				</div>
+				<div class="row">
+					<label title="What you thought of the book, in your own words" class="wide">Review <input name="review"></label>
+				</div>
+				<div class="row">
+					<label title="Where the book is in your library: its import finds it again there by its id">Source <select name="source"><option value="">None</option><option value="audible">Audible</option></select></label>
+					<label title="The book's id at its source (Audible's ASIN), for the link to its page">Id there <input name="source_id"></label>
+				</div>
+				<div class="row">
+					<label title="The book's cover image. + adds one, in place of the one it has; − takes it away" class="wide">Cover <span class="chips pictures" id="audio-book-pictures" data-pictures="one" data-what="cover"></span></label>
+				</div>
+				<div class="adder" data-picture-adder hidden>
+					<div class="row">
+						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Cover file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					</div>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
 			<form id="youtube-video-form" class="dialog-form" hidden>
 				<div class="row">
 					<label title="The video's id on YouTube, or a link to the video: the id is taken from it" class="wide">Video <input name="youtube_id" required placeholder="the video's id, or a link to it"></label>

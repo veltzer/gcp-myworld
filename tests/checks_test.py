@@ -24,6 +24,7 @@ from myworld.models import (
     MUSEUM_KIND,
     MUSEUM_VISIT,
     ROLE_ADMIN,
+    AudioBook,
     AudioCourse,
     Base,
     City,
@@ -91,7 +92,8 @@ def test_bad_logo(data: bytes, wanted: str) -> None:
 def test_every_check_describes_itself() -> None:
     assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "people-known", "museum-dates", "museum-visit-places", "organization-locations", "museum-addresses", "museum-locations", "museum-company",
         "audio-course-lecturers", "audio-course-devices", "audio-course-status", "audio-course-reviews",
-        "audio-course-covers", "audio-course-links", "audio-course-stalled", "audio-course-duplicates"} <= set(checks.CHECKS)
+        "audio-course-covers", "audio-course-links", "audio-course-stalled", "audio-course-duplicates",
+        "audio-book-authors", "audio-book-covers", "audio-book-reviews", "audio-book-duplicates"} <= set(checks.CHECKS)
     for chosen in checks.CHECKS.values():
         assert chosen.title and chosen.description and chosen.noun
         assert chosen.dataset in checks.DATASETS
@@ -328,6 +330,40 @@ def test_audio_courses(engine: Engine) -> None:
         assert [name for name, _ in found("audio-course-duplicates")] == ["Twice", "twice "]
         # each problem opens its course
         assert [(p.link.split("/")[0], p.owner) for p in stalled.problems] == [("audio-courses", alice.id)]
+
+
+def test_audio_books(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        cover = Image(owner_id=alice.id, filename="c.jpg", content_type="image/jpeg", sha256="0" * 64, data=b"\xff\xd8")
+        good = {"authors": "Sam Harris", "image": cover}
+        session.add_all([
+            # every rule kept: finished, rated and reviewed; one not finished is not asked for a review
+            AudioBook(owner_id=alice.id, name="Good", finished=True, rating=8, review="Fine", **good),
+            AudioBook(owner_id=alice.id, name="Halfway", percent_heard=50, **good),
+            # the same title with another subtitle is another book
+            AudioBook(owner_id=alice.id, name="Political Order", subtitle="Volume 1", **good),
+            AudioBook(owner_id=alice.id, name="Political Order", subtitle="Volume 2", **good),
+            # each of these breaks one rule
+            AudioBook(owner_id=alice.id, name="Bare"),
+            AudioBook(owner_id=alice.id, name="Unreviewed", finished=True, rating=7, **good),
+            AudioBook(owner_id=alice.id, name="Twice", **good),
+            AudioBook(owner_id=alice.id, name="twice ", **good),
+        ])
+        session.commit()
+
+        def found(name: str) -> list[tuple[str, str]]:
+            return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS[name].run(session).problems]
+
+        assert found("audio-book-authors") == [("Bare", "has no author")]
+        assert found("audio-book-covers") == [("Bare", "has no cover")]
+        assert found("audio-book-reviews") == [("Unreviewed", "is finished but has no review")]
+        duplicates = checks.CHECKS["audio-book-duplicates"].run(session).problems
+        assert [p.subject.split(" (")[0] for p in duplicates] == ["Twice", "twice "]
+        # each problem opens its book
+        assert [(p.link.split("/")[0], p.owner) for p in duplicates] == [("audio-books", alice.id)] * 2
 
 
 def test_books(engine: Engine) -> None:
