@@ -256,7 +256,8 @@ function audioBookCard(item) {
 		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
 	}
 	detail(list, "Review", item.review);
-	detail(list, "Genres", item.genres.join(", "));
+	// each once: the list repeats a top genre for each path under it
+	detail(list, "Genres", [...new Set(item.genres)].join(", "));
 	detail(list, "Released", item.released);
 	detail(list, "Added", item.added.slice(0, 10));
 	if (item.source_rating !== null) {

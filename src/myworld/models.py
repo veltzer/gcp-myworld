@@ -1310,7 +1310,8 @@ class AudioBook(Base):
     the source says of it (title, authors, narrators, series, genres, length,
     how far it was heard, its rating there), and what the user says of it
     (their rating and review). Imported from veltzer.github.io's audible.yaml
-    (scripts/import_world.py --audio-books), which it keeps field for field;
+    (scripts/import_world.py --audio-books), which it keeps field for field,
+    every value as the source gives it;
     a run again refreshes what the source changes (how far it was heard, its
     rating there) and adds the new books, and leaves the rest as edited.
     """
@@ -1336,6 +1337,8 @@ class AudioBook(Base):
     series: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     # its place in the series: "2", "0.5"
     series_sequence: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    # as the source lists them: Audible gives each genre's path from its top
+    # genre down, one after another, so a top genre comes again for each path
     genres: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     finished: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
@@ -1344,8 +1347,11 @@ class AudioBook(Base):
     # its rating at the source (of 5) and by how many
     source_rating: Mapped[float | None] = mapped_column(Double, nullable=True)
     source_ratings: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # when it came into the user's library there
+    # when it came into the user's library there, and when it was bought there
     added_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    purchased_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    # the address of its cover at the source (the cover itself is image)
+    cover_url: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     released: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
     # the user's own
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -1579,7 +1585,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0019"
+SCHEMA_REVISION = "0020"
 
 
 def prepare_schema(engine: Engine) -> None:

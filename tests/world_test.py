@@ -2,6 +2,7 @@
 The concerts, museums, people and organizations: the import script and the API.
 """
 
+import datetime
 import gzip
 import json
 from pathlib import Path
@@ -178,7 +179,7 @@ items:
     date_added: "2021-08-10T08:55:06.867Z"
     release_date: "2020-08-11"
     cover_url: "https://m.media-amazon.com/images/I/x.jpg"
-    purchase_date: "2021-08-10T08:55:06.867Z"
+    purchase_date: "2021-08-11T00:00:00Z"
   - asin: "B07D23CFGR"
     title: "Political Order and Political Decay"
     subtitle: ""
@@ -701,8 +702,9 @@ def test_audio_books(imported: webtest.TestApp) -> None:
     order, sense = books
     assert (sense["source"], sense["source_name"], sense["source_id"], sense["url"]) == ("audible", "Audible", "0063005409", "https://www.audible.com/pd/0063005409")
     assert (sense["subtitle"], sense["authors"], sense["narrators"], sense["minutes"]) == ("Conversations on Consciousness", "Sam Harris", "Sam Harris, David Chalmers", 1346)
-    # a genre Audible repeats is kept once
-    assert sense["genres"] == ["Psychology", "Science"]
+    # everything as Audible gives it: the genres repeats too, the cover's address, when bought
+    assert sense["genres"] == ["Psychology", "Science", "Psychology"]
+    assert (sense["cover_url"], sense["purchased"]) == ("https://m.media-amazon.com/images/I/x.jpg", "2021-08-11T00:00:00Z")
     assert (sense["finished"], sense["status"], sense["source_rating"], sense["source_ratings"]) == (True, "done", 4.7, 592)
     assert (sense["added"], sense["released"], sense["rating"], sense["review"]) == ("2021-08-10T08:55:06.867000Z", "2020-08-11", None, "")
     assert imported.get(sense["image"]).body == b"\xff\xd8sense"
@@ -713,8 +715,10 @@ def test_audio_books(imported: webtest.TestApp) -> None:
 
 def test_edit_audio_book(imported: webtest.TestApp) -> None:
     sense = next(b for b in imported.get("/api/audio-books").json if b["name"] == "Making Sense")
-    edited = imported.put_json(f"/api/audio-books/{sense['id']}", dict(sense, rating=9, review="Deep", genres="Psychology, Philosophy")).json
-    assert (edited["rating"], edited["review"], edited["genres"]) == (9, "Deep", ["Psychology", "Philosophy"])
+    edited = imported.put_json(f"/api/audio-books/{sense['id']}", dict(sense, rating=9, review="Deep", genres="Psychology, Philosophy, Psychology")).json
+    assert (edited["rating"], edited["review"], edited["genres"]) == (9, "Deep", ["Psychology", "Philosophy", "Psychology"])
+    # what only the source says is kept by an edit
+    assert (edited["cover_url"], edited["purchased"]) == (sense["cover_url"], sense["purchased"])
     # the cover is kept when the edit sends none
     assert edited["image"] == sense["image"]
     added = imported.post_json("/api/audio-books", {"name": "A Book Heard Elsewhere", "authors": "Someone"}, status=201).json
@@ -766,6 +770,23 @@ def test_audio_books_import_runs_again(imported: webtest.TestApp, engine: Engine
     with Session(engine) as session:
         again = import_world.import_audio_books(session, owner(session), source)
     assert again == {"audio books added": 0, "audio books refreshed": 0, "images": 0}
+
+
+def test_audio_books_import_gives_back_the_genres_kept_once(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    del imported
+    with Session(engine) as session:
+        # as an earlier import kept them: each once, and without the cover's address or when bought
+        sense = session.scalars(select(AudioBook).where(AudioBook.source_id == "0063005409")).one()
+        sense.genres, sense.cover_url, sense.purchased_utcz = ["Psychology", "Science"], "", None
+        order = session.scalars(select(AudioBook).where(AudioBook.source_id == "B07D23CFGR")).one()
+        # edited in the app: left as it is
+        order.genres = ["Politics"]
+        session.commit()
+        import_world.import_audio_books(session, owner(session), write_source(tmp_path / "again"))
+        session.commit()
+        assert sense.genres == ["Psychology", "Science", "Psychology"]
+        assert (sense.cover_url, sense.purchased_utcz) == ("https://m.media-amazon.com/images/I/x.jpg", datetime.datetime(2021, 8, 11))
+        assert order.genres == ["Politics"]
 
 
 def test_audio_books_import_refuses_what_it_does_not_know(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:

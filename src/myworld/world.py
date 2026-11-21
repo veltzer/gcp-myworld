@@ -362,6 +362,8 @@ def audio_book_json(book: AudioBook) -> dict[str, Any]:
         "source_rating": book.source_rating,
         "source_ratings": book.source_ratings,
         "added": added,
+        "purchased": _stamp_json(book.purchased_utcz),
+        "cover_url": book.cover_url,
         # what the sorting and the date filter go by: when it came into the library
         "date_sort": added,
         "released": book.released.isoformat() if book.released else "",
@@ -1075,7 +1077,8 @@ def _apply_audio_book(book: AudioBook, body: dict[str, Any]) -> None:
         genres = [g.strip() for g in genres.split(",")]
     if not isinstance(genres, list) or not all(isinstance(g, str) for g in genres):
         raise ApiError(400, "genres: expected a list of names")
-    book.genres = list(dict.fromkeys(g.strip() for g in genres if g.strip()))
+    # kept as listed, repeats too: a source's list says each genre's path (AudioBook.genres)
+    book.genres = [g.strip() for g in genres if g.strip()]
     book.minutes = opt_int(body, "minutes", 1, 100_000)
     book.finished = bool(body.get("finished"))
     book.percent_heard = _opt_number(body, "percent_heard", 0, 100)

@@ -448,14 +448,15 @@ first `companies` tables to `organizations`, then making
   `name` (the title), `subtitle`, `authors` and `narrators` (as the source
   writes them), `series`, `series_sequence`, `genres`, `minutes`,
   `finished`, `percent_heard`, `status` (`done`, `in_progress` or `""`),
-  `source_rating` (of 5) and `source_ratings`, `added`, `released`, the
+  `source_rating` (of 5) and `source_ratings`, `added`, `purchased`,
+  `released`, `cover_url` (the cover's address at the source), the
   user's own `rating` and `review`, `url` (its page at the source) and the
   cover as `image`. A source's book is in an account once (409). Imported
   from `audible.yaml` in `veltzer.github.io` (covers
   `static/images/audible-<asin>.jpg`) by
   `scripts/import_world.py --audio-books`, which adds the books the account does not have yet and
   refreshes what Audible changes on the rest (finished, how much was
-  heard, the rating there), so it can run again after the site's data is.
+  heard, the rating there, when bought, the cover's address), so it can run again after the site's data is.
 - `GET /api/youtube-videos`: the YouTube videos watched, newest first (the
   watch history, with no dates, after), with `youtube_id`, rating,
   review, `device` (id and name), `watched_at`, and what YouTube says

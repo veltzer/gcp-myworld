@@ -262,7 +262,7 @@ AUDIO_COURSE_FIELDS = DATE_FIELDS | {
     "name", "lecturers", "rating", "review", "device", "location", "date_started_utcz", "date_ended_utcz", "progress",
     "great_courses_id", "great_courses_slug", "audible_asin", "internal_id",
 }
-# audible.yaml: what Audible says of a book of the library (date_added and purchase_date are the same moment)
+# audible.yaml: what Audible says of a book of the library
 AUDIBLE_FIELDS = {
     "asin", "title", "subtitle", "authors", "narrators", "series_title", "series_sequence", "genres", "runtime_length_min",
     "is_finished", "percent_complete", "rating", "num_ratings", "date_added", "release_date", "cover_url", "purchase_date",
@@ -842,9 +842,16 @@ def _optional(value: Any, kind: type[int | float]) -> Any:
     return kind(text) if text else None
 
 
+def _audible_genres(item: dict[str, Any]) -> list[str]:
+    """ A book's genres as Audible lists them, repeats too: each genre's path from its top genre down. """
+    return [str(g).strip() for g in item.get("genres", []) if str(g).strip()]
+
+
 def _audible_values(item: dict[str, Any]) -> dict[str, Any]:
-    """ What Audible says may change of a book it has: refreshed on every import. """
+    """ What Audible says of a book that the app does not edit: refreshed on every import. """
     return {
+        "purchased_utcz": _stamp(item, "purchase_date"),
+        "cover_url": str(item.get("cover_url", "")).strip(),
         "finished": bool(item["is_finished"]),
         "percent_heard": _optional(item["percent_complete"], float),
         "source_rating": _optional(item["rating"], float),
@@ -857,7 +864,8 @@ def import_audio_books(session: Session, owner: User, source: Path) -> dict[str,
     Add the books of owner's Audible library from source (audible.yaml) that
     owner does not have yet (by ASIN), with their covers; on those owner has,
     refresh only what Audible changes (_audible_values), so whatever was
-    edited in the app stays. Safe to run again. Does not commit.
+    edited in the app stays; genres an earlier import kept each once only
+    are given back as Audible lists them. Safe to run again. Does not commit.
     """
     path = source / "data" / "yaml" / "audible.yaml"
     with path.open(encoding="UTF8") as fp:
@@ -877,7 +885,12 @@ def import_audio_books(session: Session, owner: User, source: Path) -> dict[str,
         asin = str(item["asin"])
         book = had.get(asin)
         if book is not None:
-            changed = {key: value for key, value in _audible_values(item).items() if getattr(book, key) != value}
+            values = _audible_values(item)
+            genres = _audible_genres(item)
+            # kept each once by an earlier import, and not edited since: as Audible lists them
+            if book.genres != genres and book.genres == list(dict.fromkeys(genres)):
+                values["genres"] = genres
+            changed = {key: value for key, value in values.items() if getattr(book, key) != value}
             for key, value in changed.items():
                 setattr(book, key, value)
             refreshed += bool(changed)
@@ -905,8 +918,7 @@ def import_audio_books(session: Session, owner: User, source: Path) -> dict[str,
             narrators=str(item.get("narrators", "")).strip(),
             series=str(item.get("series_title", "")).strip(),
             series_sequence=str(item.get("series_sequence", "")).strip(),
-            # Audible repeats a genre under each of its parents: each once, in its order
-            genres=list(dict.fromkeys(str(g).strip() for g in item.get("genres", []) if str(g).strip())),
+            genres=_audible_genres(item),
             minutes=_optional(item.get("runtime_length_min", ""), int),
             added_utcz=_stamp(item, "date_added"),
             released=datetime.date.fromisoformat(str(item["release_date"])) if item.get("release_date") else None,
