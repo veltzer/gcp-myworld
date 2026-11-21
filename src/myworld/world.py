@@ -30,6 +30,7 @@ from myworld.api import (
     owned,
     owned_list,
     owned_ref,
+    require_edit_shared,
     text,
 )
 from myworld.models import (
@@ -38,7 +39,6 @@ from myworld.models import (
     MUSEUM_VISIT,
     RATING_MAX,
     RATING_MIN,
-    ROLE_ADMIN,
     YOUTUBE_ID_LENGTH,
     AudioCourse,
     ChessGame,
@@ -46,6 +46,7 @@ from myworld.models import (
     CityPhoto,
     Concert,
     Country,
+    Currency,
     Device,
     Group,
     Organization,
@@ -114,7 +115,7 @@ def _names(people: list[Person]) -> list[str]:
     return sorted(shown_name(p) for p in people)
 
 
-def _refs(rows: list[Person] | list[Organization] | list[PersonType] | list[RelationType] | list[Group] | list[Concert] | list[Place] | list[City] | list[PlaceKind]) -> list[dict[str, Any]]:
+def _refs(rows: list[Person] | list[Organization] | list[PersonType] | list[RelationType] | list[Group] | list[Concert] | list[Place] | list[City] | list[PlaceKind] | list[Country]) -> list[dict[str, Any]]:
     """ Names with the ids the People and Organizations views link to, each row once (a person may be linked to one organization twice). """
     unique = {row.id: row for row in rows}.values()
     return sorted(({"id": row.id, "name": _name(row)} for row in unique), key=lambda ref: ref["name"])
@@ -155,10 +156,28 @@ def city_ref(city: City | None) -> dict[str, Any] | None:
 
 
 
+def currency_ref(currency: Currency) -> dict[str, Any]:
+    return {"id": currency.id, "name": currency.name or currency.code, "code": currency.code}
+
+
+def currency_json(currency: Currency) -> dict[str, Any]:
+    return {
+        **currency_ref(currency),
+        "symbol": currency.symbol,
+        "digits": currency.digits,
+        "countries": _refs(currency.countries),
+    }
+
+
 def country_json(country: Country) -> dict[str, Any]:
     return {
         "id": country.id,
         "name": country.name,
+        "code": country.code or "",
+        "code3": country.code3,
+        "currencies": [currency_ref(currency) for currency in country.currencies],
+        # its official languages, by name (the Languages page's rows are by their place in the list)
+        "languages": [{"id": locale.position, "name": locale.name} for locale in country.languages],
         **picture_json(country),
         "latitude": country.latitude,
         "longitude": country.longitude,
@@ -192,6 +211,7 @@ def _place_ref(place: Place) -> dict[str, Any]:
 def city_json(city: City) -> dict[str, Any]:
     return {
         **(city_ref(city) or {}),
+        "population": city.population,
         # the photo its card shows, and all of its photos (that one first), each with its credit
         **picture_json(city),
         "photos": [photo_json(photo) for photo in ([city] if city.image_id is not None else []) + city.more_photos],
@@ -678,10 +698,24 @@ def api_cities() -> flask.Response:
         select(City)
         .options(
             selectinload(City.places).selectinload(Place.kinds), selectinload(City.organizations), selectinload(City.headquarters_of), selectinload(City.country),
+            selectinload(City.region_row), selectinload(City.more_photos),
         )
         .order_by(City.name, City.id)
     )
-    return flask.jsonify([city_json(c) for c in flask.g.db.execute(query).scalars().all()])
+    return _listed([city_json(c) for c in flask.g.db.execute(query).scalars().all()])
+
+
+def _listed(listed: list[dict[str, Any]]) -> flask.Response:
+    """
+    A long list (the cities of the world, tens of thousands of them): as
+    it is, or, with ?compact=1 (what the page asks for), with the names of
+    its fields said once ("columns") and each row as its values in that
+    order ("rows"), which is a fraction of the size.
+    """
+    if flask.request.args.get("compact") != "1":
+        return flask.jsonify(listed)
+    columns = list(listed[0]) if listed else []
+    return flask.jsonify({"columns": columns, "rows": [[row[column] for column in columns] for row in listed]})
 
 
 @bp.route("/api/regions", methods=["GET"])
@@ -698,8 +732,15 @@ def api_regions() -> flask.Response:
 @bp.route("/api/countries", methods=["GET"])
 @auth.login_required
 def api_countries() -> flask.Response:
-    query = select(Country).options(selectinload(Country.cities)).order_by(Country.name)
+    query = select(Country).options(selectinload(Country.cities), selectinload(Country.currencies), selectinload(Country.languages)).order_by(Country.name)
     return flask.jsonify([country_json(c) for c in flask.g.db.execute(query).scalars().all()])
+
+
+@bp.route("/api/currencies", methods=["GET"])
+@auth.login_required
+def api_currencies() -> flask.Response:
+    query = select(Currency).options(selectinload(Currency.countries)).order_by(Currency.code)
+    return flask.jsonify([currency_json(c) for c in flask.g.db.execute(query).scalars().all()])
 
 
 
@@ -788,7 +829,17 @@ def _apply_country(country: Country, body: dict[str, Any]) -> None:
     clash = flask.g.db.execute(select(Country.id).where(Country.name == name, Country.id != country.id)).first()
     if clash is not None:
         raise ApiError(409, f"{name} is already in Countries")
-    country.name = name
+    code = text(body, "code").upper() or None
+    if code is not None and not re.fullmatch(r"[A-Z]{2}", code):
+        raise ApiError(400, "code: a country's code is its two letters, as ISO 3166 names it (IL, US, FR)")
+    if code is not None and flask.g.db.execute(select(Country.id).where(Country.code == code, Country.id != country.id)).first() is not None:
+        raise ApiError(409, f"code: {code} is another country's")
+    code3 = text(body, "code3").upper()
+    if code3 and not re.fullmatch(r"[A-Z]{3}", code3):
+        raise ApiError(400, "code3: a country's three-letter code, as ISO 3166 names it (ISR, USA, FRA)")
+    country.name, country.code, country.code3 = name, code, code3
+    if "currency_ids" in body:
+        country.currencies = owned_list(body, "currency_ids", Currency)
     country.latitude, country.longitude = coordinates(body)
     apply_picture(country, body)
 
@@ -814,6 +865,7 @@ def _apply_city(city: City, body: dict[str, Any]) -> None:
         raise ApiError(409, f"{name}{', ' + country.name if country else ''} is already in Cities")
     city.name, city.region_row, city.country = name, region, country
     city.latitude, city.longitude = coordinates(body)
+    city.population = opt_int(body, "population", 0, 10**11)
     if "photos" in body:
         # all its photos, replacing those it had: the first is the one its card shows
         # (cities.image_id and its credit), the others follow it
@@ -867,6 +919,18 @@ def _apply_visit(visit: Visit, body: dict[str, Any]) -> None:
     if visit.alone and visit.people:
         raise ApiError(400, "a visit made alone has no one in With")
     _apply_dates(visit, body)
+
+
+def _apply_currency(currency: Currency, body: dict[str, Any]) -> None:
+    code = text(body, "code", required=True).upper()
+    if not re.fullmatch(r"[A-Z]{3}", code):
+        raise ApiError(400, "code: a currency's code is its three letters, as ISO 4217 names it (ILS, USD, EUR)")
+    if flask.g.db.execute(select(Currency.id).where(Currency.code == code, Currency.id != currency.id)).first() is not None:
+        raise ApiError(409, f"{code} is already in Currencies")
+    currency.code = code
+    currency.name = text(body, "name")
+    currency.symbol = text(body, "symbol")
+    currency.digits = opt_int(body, "digits", 0, 6)
 
 
 def place_kind_json(kind: PlaceKind) -> dict[str, Any]:
@@ -1227,6 +1291,7 @@ VIEWS: dict[str, _View] = {
     "groups": _View(Group, _apply_group, group_json),
     "cities": _View(City, _apply_city, city_json),
     "countries": _View(Country, _apply_country, country_json),
+    "currencies": _View(Currency, _apply_currency, currency_json),
     "place-kinds": _View(PlaceKind, _apply_named(PlaceKind, "Place kinds"), place_kind_json),
     "visit-types": _View(VisitType, _apply_named(VisitType, "Visit types"), visit_type_json),
 }
@@ -1241,9 +1306,9 @@ def api_shared_names(what: str) -> flask.Response:
 
 
 def _may_change(model: type[Any]) -> None:
-    """ A shared row is everyone's: only an admin adds, changes or deletes one. """
-    if is_shared(model) and flask.g.user.role != ROLE_ADMIN:
-        raise ApiError(403, "this is shared by everyone: only an admin may change it")
+    """ A shared row is everyone's: only an admin with Edit shared data turned on adds, changes or deletes one. """
+    if is_shared(model):
+        require_edit_shared()
 
 
 def drop_unused_regions() -> None:

@@ -263,9 +263,14 @@ Some data is shared instead: countries, regions, cities, places (with
 their kinds: museum, concert venue, ...), the visit types and the
 languages are the same rows for every account, with nothing personal on
 them (no remark, no rating), and only an admin adds, changes or deletes
-them (403 for anyone else). The sidebar lists them apart, under "Shared by
-everyone", and their pages say so; for anyone but an admin their + and
-their dialogs' Save, Delete and pencils stay in place, disabled. A user's
+them (403 for anyone else), and then only with Edit shared data turned on
+in Settings (`users.edit_shared`, off to start with, so shared data is not
+changed by accident; 403 too until then). The Locale importer (admins only,
+see [imports](imports.md)) brings the countries, currencies, languages and
+cities of the world into them. The sidebar lists them apart, under "Shared
+by everyone", and their pages say so; for anyone who may not change them
+now their + and their dialogs' Save, Delete and pencils stay in place,
+disabled. A user's
 rows point into them: a concert to its place, a visit to the place
 visited, an organization to its city. The images a shared row shows are
 seen by everyone, whoever uploaded them.

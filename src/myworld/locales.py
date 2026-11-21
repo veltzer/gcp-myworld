@@ -14,10 +14,9 @@ import flask
 from sqlalchemy import func, select
 
 from myworld import auth, languages
-from myworld.api import ApiError, json_body, text
+from myworld.api import ApiError, json_body, require_edit_shared, text
 from myworld.models import (
     DEFAULT_LOCALE,
-    ROLE_ADMIN,
     Locale,
     Owning,
     Person,
@@ -67,8 +66,7 @@ def _locale(row_id: int) -> Locale:
 
 
 def _admin_only() -> None:
-    if flask.g.user.role != ROLE_ADMIN:
-        raise ApiError(403, "the languages are the same for every account: only an admin changes them")
+    require_edit_shared("the languages are the same for every account")
 
 
 def _apply_locale(locale: Locale, body: dict[str, Any]) -> None:

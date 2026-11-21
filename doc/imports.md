@@ -6,6 +6,12 @@ Run, and the page lists the runs going and the last that ended. An
 importer imports into the signed-in user's own data only, and a user sees
 only their own runs; an admin sees everyone's, with the user's id and email.
 
+The importers are listed in two groups: Your importers (into the user's
+own data) and, for an admin, Admin importers: those that write the shared
+data, everyone's (`shared`), and the tests (`admin_only`). Only admins see
+and run either kind. Each importer is one line until it is clicked; then it
+opens to say what it does, with its parameters and Dry run and Run.
+
 ## Runs go in the background
 
 A run is not done in the request that asks for it. Run (or Dry run) checks
@@ -46,6 +52,37 @@ admin has no limit. The page says how many were started this month.
 `sleep` imports nothing and takes five minutes doing it, saying so every 30
 seconds. Only admins see it and may run it, as many at once as they like:
 it is for seeing what long runs look like.
+
+## Locale, the world into the shared data
+
+`locale` (admins only) brings, as chosen:
+
+- Currencies: every currency some country pays in today (ISO 4217 by
+  pycountry; names, symbols and digits by CLDR through Babel).
+- Languages: every language CLDR has a two-letter code for, named in
+  English and in itself; its script is the one its own name is in.
+- Countries: every ISO 3166 country, named as CLDR names it in English,
+  with its two- and three-letter codes, the currencies it pays in and its
+  official languages.
+- Cities: every city GeoNames counts at least the chosen number of people
+  in (1,000,000 down to 15,000: 34,000 cities), downloaded from GeoNames'
+  `cities15000.zip` as the run goes, with its region (`admin1CodesASCII.txt`),
+  position and population. A country not on the map yet is put where its
+  capital is. Cities need countries, so choosing them runs Countries too.
+
+It never deletes a row or makes one again, so every id stays, and with it
+whatever an account's rows point at (a concert's place, an organization's
+city). A row is known again by its code: a country by its ISO code
+(`countries.code`), a currency and a language by theirs, a region by
+GeoNames' code (`regions.code`) and a city by GeoNames' id
+(`cities.geonames_id`). A row that was there before any import is first met
+by its name (a country by any of its ISO and CLDR names, "USA" and the
+like; a city by GeoNames' name, ASCII name or other names, "Kiev" for
+Kyiv, in a region that may be its own: Concord, California is not Concord,
+Massachusetts) and is given its code then. A name already there is never
+changed; only what a row lacks is filled in (a code, a region, a position,
+a symbol), and a city's population, which is GeoNames' to say. A second run
+right after the first adds nothing and changes nothing.
 
 ## Running again is safe
 
@@ -184,5 +221,6 @@ function that does the import into the session, counting what it does on
 the `Report`) and is named in `importers/__init__.py`. The page draws its
 parameters, and running it in a job of its own, keeping the run, dry runs
 and rolling back are the same for all (`importers/core.py`). One with
-`admin_only` is seen and run by admins only. It keeps to the rules above: a key
+`admin_only` (a test) or `shared` (it writes the shared data) is seen and
+run by admins only. It keeps to the rules above: a key
 for every row, and only the source's columns refreshed.

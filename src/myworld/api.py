@@ -10,7 +10,7 @@ from typing import Any
 import flask
 from sqlalchemy import select
 
-from myworld.models import is_shared
+from myworld.models import ROLE_ADMIN, is_shared, may_edit_shared
 
 
 class ApiError(Exception):
@@ -90,6 +90,17 @@ def opt_date(body: dict[str, Any], key: str) -> datetime.date | None:
         return datetime.date.fromisoformat(value)
     except ValueError as e:
         raise ApiError(400, f"{key}: expected a date as YYYY-MM-DD") from e
+
+
+def require_edit_shared(what: str = "this is shared by everyone") -> None:
+    """
+    That the signed-in user may change the shared rows by hand: an admin,
+    with Edit shared data turned on (Settings); 403 otherwise, saying which.
+    """
+    if flask.g.user.role != ROLE_ADMIN:
+        raise ApiError(403, f"{what}: only an admin may change it")
+    if not may_edit_shared(flask.g.user):
+        raise ApiError(403, f"{what}: turn on Edit shared data in Settings to change it")
 
 
 def _theirs(model: Any, row: Any) -> bool:

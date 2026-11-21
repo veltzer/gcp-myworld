@@ -17,6 +17,7 @@ export const WORLDS = {
 	places: ["Places", "/api/places", "place", "Places"],
 	cities: ["Cities", "/api/cities", "city", "Cities"],
 	countries: ["Countries", "/api/countries", "country", "Countries"],
+	currencies: ["Currencies", "/api/currencies", "currency", "Currencies"],
 	// what a place is (museum, concert venue, ...) and what a visit was (museum visit, ...)
 	"place-kinds": ["Place kinds", "/api/place-kinds", "place kind", "Place kinds"],
 	"visit-types": ["Visit types", "/api/visit-types", "visit type", "Visit types"],
@@ -36,15 +37,27 @@ export const WORLDS = {
 
 // The pages whose rows are shared by everyone: the same for every account, with nothing personal
 // on them, changed by admins only (the server refuses anyone else). The sidebar lists them apart.
-export const SHARED_VIEWS = new Set(["places", "cities", "countries", "place-kinds", "visit-types", "locales"]);
+export const SHARED_VIEWS = new Set(["places", "cities", "countries", "currencies", "place-kinds", "visit-types", "locales"]);
 
 export function isAdmin() {
 	return state.config.user?.role === "admin";
 }
 
+// whether the signed-in user may change the shared data by hand now: an admin who turned on
+// Edit shared data in Settings (it starts off, so shared data is not changed by accident)
+export function editsShared() {
+	return isAdmin() && state.config.user?.edit_shared === true;
+}
+
+// why the shared rows cannot be changed now: one who is no admin never may; an admin first turns on
+// Edit shared data in Settings
+export function sharedLockedWhy() {
+	return isAdmin() ? "Shared data is locked: turn on Edit shared data in Settings to change it" : "Shared by everyone: only an admin changes it";
+}
+
 // whether the signed-in user may add, change and delete the rows of view
 export function canChange(view) {
-	return !SHARED_VIEWS.has(view) || isAdmin();
+	return !SHARED_VIEWS.has(view) || editsShared();
 }
 
 // A page whose cards are not what it counts: the museum visits, a card per museum with the
@@ -87,15 +100,18 @@ export function chessGame(game) {
 	};
 }
 
-// The rows of a view, fetched. The chess games, 60,000 of them, come with the names of
-// their fields said once and each game as its values, and are made rows here.
+// the views whose lists may be long (60,000 chess games, the cities of the world): they come with
+// the names of their fields said once and each row as its values, and are made rows here
+const COMPACT = { chess: chessGame, cities: (city) => city };
+
+// The rows of a view, fetched.
 export async function fetchWorld(view) {
 	const path = WORLDS[view][1];
-	if (view !== "chess") {
+	if (!(view in COMPACT)) {
 		return api(path);
 	}
 	const { columns, rows } = await api(`${path}?compact=1`);
-	return rows.map((values) => chessGame(Object.fromEntries(columns.map((column, index) => [column, values[index]]))));
+	return rows.map((values) => COMPACT[view](Object.fromEntries(columns.map((column, index) => [column, values[index]]))));
 }
 
 export function el(tag, className, text) {

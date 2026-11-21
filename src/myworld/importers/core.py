@@ -72,6 +72,8 @@ class Param:
     required: bool = False
     # for "choices": what may be chosen, for this user, as (value, label)
     choices: Callable[[Session, User], list[tuple[str, str]]] | None = None
+    # one choice at most, not as many as wanted
+    single: bool = False
 
 
 class Report:
@@ -102,10 +104,17 @@ class Importer:
     unavailable: Callable[[Session, User], str] = lambda _session, _user: ""
     # only an admin sees it, and may run it
     admin_only: bool = False
+    # it writes the shared data (countries, cities, ...), everyone's: only an admin sees it, and may run it
+    shared: bool = False
+
+
+def for_admins(importer: Importer) -> bool:
+    """ Whether only admins see and run importer: one made for them, or one that writes the shared data. """
+    return importer.admin_only or importer.shared
 
 
 def visible(importer: Importer, user: User) -> bool:
-    return not importer.admin_only or user.role == ROLE_ADMIN
+    return not for_admins(importer) or user.role == ROLE_ADMIN
 
 
 IMPORTERS: dict[str, Importer] = {}
@@ -140,7 +149,9 @@ def parse_params(session: Session, owner: User, importer: Importer, given: Any) 
         if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
             raise ParamError(f"{param.title}: expected a list of choices")
         if param.required and not value:
-            raise ParamError(f"{param.title}: choose at least one")
+            raise ParamError(f"{param.title}: choose {'one' if param.single else 'at least one'}")
+        if param.single and len(value) > 1:
+            raise ParamError(f"{param.title}: choose only one")
         if value:
             assert param.choices is not None
             allowed = {choice for choice, _label in param.choices(session, owner)}

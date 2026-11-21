@@ -12,7 +12,7 @@ const NAV_GROUPS = [
 	["Yours", ["concerts", "museums", "audio-courses", "youtube", "chess"]],
 	["Your people", ["people", "groups", "organizations"]],
 	["Your types", ["organization-types", "person-types", "relation-types", "person-relation-types", "person-organization-types", "devices"]],
-	["Shared by everyone", ["places", "cities", "countries", "place-kinds", "visit-types", "locales"]],
+	["Shared by everyone", ["places", "cities", "countries", "currencies", "place-kinds", "visit-types", "locales"]],
 ];
 
 function sideLink(label, key, open) {
@@ -76,7 +76,7 @@ export async function loadCounts() {
 	}
 	const keys = {
 		concerts: "concerts", museums: "museum_visits", "audio-courses": "audio_courses", youtube: "youtube_videos", chess: "chess_games",
-		places: "places", cities: "cities", countries: "countries", people: "people", groups: "groups", organizations: "organizations", "organization-types": "organization_types",
+		places: "places", cities: "cities", countries: "countries", currencies: "currencies", people: "people", groups: "groups", organizations: "organizations", "organization-types": "organization_types",
 		"person-types": "person_types", "relation-types": "relation_types", "person-relation-types": "person_relation_types",
 		"person-organization-types": "person_organization_types", devices: "devices", locales: "locales",
 		"place-kinds": "place_kinds", "visit-types": "visit_types",

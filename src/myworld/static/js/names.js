@@ -41,12 +41,25 @@ export function fillLocales() {
 	}
 }
 
+// a script as the server names it (after Unicode's names of letters: "Cjk" for 中) -> as a regular expression does
+const SCRIPT_PROPERTIES = { Cjk: "Han", Canadian: "Canadian_Aboriginal" };
+
+// the letters of a script, as a regular expression; null for a script no expression knows
+function scriptPattern(script) {
+	try {
+		return new RegExp(`\\p{Script=${SCRIPT_PROPERTIES[script] || script}}`, "gu");
+	} catch (e) {
+		return null;
+	}
+}
+
 // the script most of the letters of text are in ("Hebrew"), of those the languages are written in; "" with no such letters
 function scriptOf(text) {
 	let best = "";
 	let most = 0;
 	for (const script of new Set(Object.values(state.config.locale_scripts))) {
-		const count = (text.match(new RegExp(`\\p{Script=${script}}`, "gu")) || []).length;
+		const pattern = scriptPattern(script);
+		const count = pattern ? (text.match(pattern) || []).length : 0;
 		if (count > most) {
 			best = script;
 			most = count;

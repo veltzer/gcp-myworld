@@ -149,6 +149,7 @@ function cityCard(item) {
 	const { card, body, list } = cardShell(item, [item.region, item.country?.name].filter(Boolean).join(", "));
 	cornerOf(card).appendChild(placeButton(item));
 	linksDetail(list, "Country", "countries", item.country ? [item.country] : []);
+	detail(list, "Population", item.population === null || item.population === undefined ? "" : item.population.toLocaleString());
 	// what is in it, each always counted (0 too), then which
 	detail(list, "Places", String(item.places.length));
 	linksDetail(list, "Which places", "places", item.places);
@@ -163,8 +164,21 @@ function cityCard(item) {
 function countryCard(item) {
 	const { card, body, list } = cardShell(item, `${item.cities.length.toLocaleString()} ${item.cities.length === 1 ? "city" : "cities"}`, "logo");
 	cornerOf(card).appendChild(placeButton(item));
+	detail(list, "Code", [item.code, item.code3].filter(Boolean).join(", "));
+	linksDetail(list, "Currencies", "currencies", item.currencies);
+	linksDetail(list, "Languages", "locales", item.languages);
 	linksDetail(list, "Cities", "cities", item.cities);
 	photoCredit(body, item, "Flag");
+	return card;
+}
+
+function currencyCard(item) {
+	const { card, list } = cardShell(item, [item.code, item.symbol].filter(Boolean).join(" "));
+	detail(list, "Code", item.code);
+	detail(list, "Symbol", item.symbol);
+	detail(list, "Digits", item.digits === null ? "" : String(item.digits));
+	detail(list, "Countries", String(item.countries.length));
+	linksDetail(list, "Which countries", "countries", item.countries);
 	return card;
 }
 
@@ -317,6 +331,7 @@ export const CARDS = {
 	places: placeCard,
 	cities: cityCard,
 	countries: countryCard,
+	currencies: currencyCard,
 	"place-kinds": sharedNameCard,
 	"visit-types": sharedNameCard,
 	groups: groupCard,

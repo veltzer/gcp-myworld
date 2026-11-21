@@ -97,6 +97,11 @@ export function setupSettings(user) {
 	name.maxLength = state.config.name_max_length;
 	const locale = $("settings-locale");
 	const theme = $("settings-theme");
+	// an admin's lock on the shared data; one who is no admin sees it, disabled
+	const editShared = $("settings-edit-shared");
+	editShared.disabled = user.role !== "admin";
+	editShared.title = user.role === "admin" ? "" : "Only an admin may change the shared data";
+	let savedEditShared = user.edit_shared === true;
 	let saved = user.name;
 	let savedLocale = user.locale;
 	let savedTheme = user.theme;
@@ -105,9 +110,12 @@ export function setupSettings(user) {
 		name.value = saved;
 		locale.value = savedLocale;
 		theme.value = savedTheme;
+		editShared.checked = savedEditShared;
 		error.hidden = true;
 		// both are there to read; the pencil of each lets it be changed
 		lockFields($("settings-form"), true);
+		// one who is no admin cannot unlock it either
+		editShared.closest(".lock-box").querySelector(".lock-edit").disabled = user.role !== "admin";
 		dialog.showModal();
 	};
 	$("settings-cancel").onclick = () => dialog.close();
@@ -126,9 +134,15 @@ export function setupSettings(user) {
 				savedTheme = (await api("/api/account/theme", { method: "PUT", body: { theme: theme.value } })).theme;
 				applyTheme(savedTheme);
 			}
+			const reload = locale.value !== savedLocale || editShared.checked !== savedEditShared;
+			if (editShared.checked !== savedEditShared) {
+				savedEditShared = (await api("/api/account/edit-shared", { method: "PUT", body: { edit_shared: editShared.checked } })).edit_shared;
+			}
 			if (locale.value !== savedLocale) {
 				savedLocale = (await api("/api/account/locale", { method: "PUT", body: { locale: locale.value } })).locale;
-				// every book may be shown by another title now: load the page again
+			}
+			if (reload) {
+				// every book may be shown by another title, every shared page be changed or not: load the page again
 				window.location.reload();
 				return;
 			}

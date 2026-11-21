@@ -6,7 +6,7 @@ import { $ } from "./core.js";
 import { renderEntries, state } from "./library.js";
 import { MAPPED } from "./map.js";
 import { pagerOff, renderWorld } from "./paging.js";
-import { WORLDS, canChange } from "./worlds.js";
+import { WORLDS, canChange, sharedLockedWhy } from "./worlds.js";
 
 // view -> the fields it can be sorted by: [key, label, value of an item, first direction].
 // The first field is the default. A view with none still shows the (disabled) control.
@@ -68,10 +68,17 @@ const SORTS = {
 		["name", "Name", (c) => c.name, "asc"],
 		["country", "Country", (c) => c.country?.name, "asc"],
 		["places", "Places", (c) => c.places.length, "desc"],
+		["population", "Population", (c) => c.population, "desc"],
 	],
 	countries: [
 		["name", "Name", (c) => c.name, "asc"],
+		["code", "Code", (c) => c.code, "asc"],
 		["cities", "Cities", (c) => c.cities.length, "desc"],
+	],
+	currencies: [
+		["code", "Code", (c) => c.code, "asc"],
+		["name", "Name", (c) => c.name, "asc"],
+		["countries", "Countries", (c) => c.countries.length, "desc"],
 	],
 	groups: [
 		["name", "Name", (g) => g.name, "asc"],
@@ -223,7 +230,7 @@ export function updateTools() {
 	// a shared page (places, cities, ...) is added to by admins only: the button stays, disabled for anyone else
 	const shared = !canChange(state.view);
 	$("fab").disabled = PAGES.has(state.view) || shared;
-	$("fab").title = shared ? "Shared by everyone: only an admin adds to it" : "Add";
+	$("fab").title = shared ? sharedLockedWhy() : "Add";
 	const cards = state.view in CARDS || state.view in state.config.kinds;
 	for (const layout of $("layouts").querySelectorAll("button")) {
 		layout.disabled = !cards || (layout.dataset.layout === "map" && !MAPPED.has(state.view));

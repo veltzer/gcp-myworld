@@ -22,9 +22,19 @@ from myworld.models import (
 
 @check("city-used", "Every city has something in it", "cities", "cities")
 def check_city_used(session: Session) -> Result:
-    """ Every city has a place (a museum, a concert venue, ...), an organization or an organization's headquarters in it. """
-    cities, used = rows(session, City), ids(session, Place.city_id, Organization.city_id, Organization.headquarters_id)
+    """
+    Every city added by hand has a place (a museum, a concert venue, ...),
+    an organization or an organization's headquarters in it. The cities the
+    Locale importer brought (the world's, by GeoNames) are there whether
+    anything is in them or not.
+    """
+    cities, used = [city for city in rows(session, City) if city.geonames_id is None], _used(session)
     return Result(checked=len(cities), problems=[problem(city, "nothing is in it") for city in cities if city.id not in used])
+
+
+def _used(session: Session) -> set[int]:
+    """ The cities something is in: a place, an organization, an organization's headquarters. """
+    return ids(session, Place.city_id, Organization.city_id, Organization.headquarters_id)
 
 
 @check("city-countries", "Every city has a country", "cities", "cities")
@@ -43,8 +53,9 @@ def check_city_locations(session: Session) -> Result:
 
 @check("city-photos", "Every city has a photo", "cities", "cities")
 def check_city_photos(session: Session) -> Result:
-    """ Every city has a photo (scripts/fetch_pictures.py takes Wikipedia's). """
-    cities = rows(session, City)
+    """ Every city something is in has a photo (scripts/fetch_pictures.py takes Wikipedia's): of the world's cities, the ones in use. """
+    used = _used(session)
+    cities = [city for city in rows(session, City) if city.id in used]
     return Result(checked=len(cities), problems=[problem(city, "has no photo") for city in cities if city.image_id is None])
 
 

@@ -88,6 +88,7 @@ DATASETS: dict[str, str] = {
     "places": "Places",
     "cities": "Cities",
     "countries": "Countries",
+    "currencies": "Currencies",
     "place-kinds": "Place kinds",
     "visit-types": "Visit types",
     "organizations": "Organizations",

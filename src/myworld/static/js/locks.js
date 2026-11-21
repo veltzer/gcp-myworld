@@ -9,7 +9,7 @@ import { loadEntries, state } from "./library.js";
 import { prepareNames } from "./names.js";
 import { refreshWorld } from "./views.js";
 import { prepareVisits } from "./visits.js";
-import { TYPED, WORLDS, canChange, el, slug } from "./worlds.js";
+import { TYPED, WORLDS, canChange, el, isAdmin, sharedLockedWhy, slug } from "./worlds.js";
 
 // What a dialog shows of something that exists is there to read: every box that
 // holds a value is locked, and the red pencil beside it lets it be changed; the
@@ -206,11 +206,11 @@ export async function openDialog(listed) {
 		for (const pencil of form.querySelectorAll(".lock-edit")) {
 			pencil.disabled = true;
 		}
-		$("dialog-title").textContent = `${noun[0].toUpperCase()}${noun.slice(1)}: shared by everyone, only an admin changes it`;
+		$("dialog-title").textContent = `${noun[0].toUpperCase()}${noun.slice(1)}: ${isAdmin() ? "shared data, locked (Settings: Edit shared data)" : "shared by everyone, only an admin changes it"}`;
 	}
 	const submit = form.querySelector("button[type=submit]");
 	submit.disabled = readOnly;
-	submit.title = readOnly ? "Shared by everyone: only an admin changes it" : "";
+	submit.title = readOnly ? sharedLockedWhy() : "";
 	remove.disabled = readOnly;
 	// another view was opened while the lists loaded: its dialog is not this one
 	if (state.view !== view) {

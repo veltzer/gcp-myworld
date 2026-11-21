@@ -610,6 +610,7 @@
 				<div class="row">
 					<label title="The city's latitude in decimal degrees, north positive: where it is on the map">Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
 					<label title="The city's longitude in decimal degrees, east positive: where it is on the map">Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
+					<label title="How many people live there (GeoNames says, for the cities the Locale importer brought)">Population <input name="population" type="number" min="0" step="1"></label>
 				</div>
 				<div class="row">
 					<label title="The city's photos: the first is the one its card shows. + adds a photo, − takes one away" class="wide">Photos <span class="chips pictures" id="city-pictures" data-pictures="many" data-what="photo"></span></label>
@@ -634,6 +635,11 @@
 			<form id="country-form" class="dialog-form" hidden>
 				<div class="row">
 					<label title="What the country is called" class="wide">Name <input name="name" required placeholder="Israel"></label>
+					<label title="Its two-letter code, as ISO 3166 names it: the Locale importer knows the country again by it">Code <input name="code" maxlength="2" placeholder="IL"></label>
+					<label title="Its three-letter code, as ISO 3166 names it">Code (3) <input name="code3" maxlength="3" placeholder="ISR"></label>
+				</div>
+				<div class="row">
+					<label title="The currencies it pays in; the currencies are on the Currencies page" class="wide">Currencies <select multiple data-chips="currencies" data-field="currencies" data-placeholder="Type a currency: Euro, US Dollar"><option value=""></option></select></label>
 				</div>
 				<div class="row">
 					<label title="The country's latitude in decimal degrees, north positive: where it is on the map">Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
@@ -651,6 +657,21 @@
 					<label title="The page the flag comes from, for the credit shown with it" class="wide">Flag source <input name="image_source" type="url" placeholder="Where it comes from"></label>
 					<label title="The license the picture is under, e.g. CC BY-SA 4.0, for the credit shown with it">License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
 					<label title="Who made the picture, for the credit shown with it">Author <input name="image_author"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="currency-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="Its three-letter code, as ISO 4217 names it">Code <input name="code" required maxlength="3" placeholder="ILS"></label>
+					<label title="What the currency is called" class="wide">Name <input name="name" placeholder="Israeli New Shekel"></label>
+				</div>
+				<div class="row">
+					<label title="How a sum in it is written: ₪, $, €">Symbol <input name="symbol" maxlength="20" placeholder="₪"></label>
+					<label title="How many digits a sum in it has after the point (2 for cents, 0 for none)">Digits <input name="digits" type="number" min="0" max="6" step="1"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -861,6 +882,13 @@
 				</select>
 				<p class="settings-hint">
 					Yours on every device you sign in on. "As my device" follows your device's light or dark setting.
+				</p>
+				<label class="check settings-check" title="Admins only: let the shared data (countries, cities, places, ...) be added to, changed and deleted by hand">
+					<input id="settings-edit-shared" name="edit_shared" type="checkbox">
+					Edit shared data
+				</label>
+				<p class="settings-hint" id="settings-edit-shared-hint">
+					The shared data is everyone's: it stays locked, even for an admin, until this is on, so it is not changed by accident. Imports into it run either way.
 				</p>
 				<p id="settings-error" class="warning" hidden></p>
 				<div class="dialog-actions">

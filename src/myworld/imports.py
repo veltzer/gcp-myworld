@@ -41,7 +41,7 @@ def _param_json(param: importers.Param, unavailable: str, last: dict[str, Any]) 
     out: dict[str, Any] = {
         "name": param.name, "title": param.title, "kind": param.kind,
         "description": param.description, "required": param.required,
-        "choices": [], "chosen": [], "error": "",
+        "single": param.single, "choices": [], "chosen": [], "error": "",
     }
     # the choices are asked of the source only when the importer can run
     if param.choices is not None and not unavailable:
@@ -72,6 +72,10 @@ def api_importers() -> flask.Response:
             "dataset": importer.dataset,
             "dataset_name": DATASETS[importer.dataset] if importer.dataset else "",
             "admin_only": importer.admin_only,
+            # it writes the shared data, everyone's (only admins see it)
+            "shared": importer.shared,
+            # the page lists it with the admins' importers
+            "for_admins": importers.for_admins(importer),
             "unavailable": unavailable,
             "params": [_param_json(param, unavailable, _last_params(importer)) for param in importer.params],
         })

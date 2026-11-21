@@ -14,8 +14,11 @@ row belongs to one user (owner_id) and is never shared.
 Some data is shared instead: the same rows for every account, which
 everyone sees and only admins change, with nothing personal on them (no
 remark, no rating). A shared table has no owner_id (is_shared): the
-languages (locales), countries, regions, cities, places and their kinds
-(place_kinds), and the types of visit (visit_types). A user's rows point
+languages (locales), currencies, countries, regions, cities, places and
+their kinds (place_kinds), and the types of visit (visit_types). An admin
+changes them by hand only with Edit shared data turned on (may_edit_shared),
+and the Locale importer brings the countries, currencies, languages and
+cities of the world into them. A user's rows point
 into them: a concert to its place, a visit to the place visited, an
 organization to its city. A person may be linked
 to several organizations, each link of a kind ("Worked at", "Studied at":
@@ -146,6 +149,9 @@ class User(Base):
     locale: Mapped[str] = mapped_column(ForeignKey("locales.code"), nullable=False, default=DEFAULT_LOCALE, server_default=DEFAULT_LOCALE)
     # light, dark, or the device's (THEMES)
     theme: Mapped[str] = mapped_column(String(10), nullable=False, default=DEFAULT_THEME, server_default=DEFAULT_THEME)
+    # an admin's own lock on the shared data (may_edit_shared): off, even an admin cannot change it by
+    # hand, so it is not changed by accident; Settings turns it on. A regular user never may.
+    edit_shared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     last_login: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -246,6 +252,11 @@ def _fill_locales(target: Table, connection: Connection, **_: Any) -> None:
 def is_shared(model: Any) -> bool:
     """ Whether model's rows are everyone's (no owner_id): seen by every account, changed by admins only. """
     return "owner_id" not in model.__table__.c
+
+
+def may_edit_shared(user: User) -> bool:
+    """ Whether user may change the shared rows by hand: an admin who has turned on Edit shared data (Settings). """
+    return user.role == ROLE_ADMIN and user.edit_shared
 
 
 class Work(Base):
@@ -543,6 +554,22 @@ visit_companions = Table(
 )
 
 # the kinds of a place (a museum, a concert venue, ...): any number of them
+# the currencies a country uses (a country may use several, a currency be of several countries)
+country_currencies = Table(
+    "country_currencies",
+    Base.metadata,
+    Column("country_id", ForeignKey("countries.id", ondelete="CASCADE"), primary_key=True),
+    Column("currency_id", ForeignKey("currencies.id", ondelete="CASCADE"), primary_key=True),
+)
+
+# the official languages of a country (locales, by code)
+country_languages = Table(
+    "country_languages",
+    Base.metadata,
+    Column("country_id", ForeignKey("countries.id", ondelete="CASCADE"), primary_key=True),
+    Column("locale_code", ForeignKey("locales.code", ondelete="CASCADE"), primary_key=True),
+)
+
 place_kind_links = Table(
     "place_kind_links",
     Base.metadata,
@@ -888,18 +915,44 @@ class _Addressed:
         return compose(self.street, self.neighbourhood, city.name if city else "", self.postcode, city.country.name if city and city.country else "")
 
 
+class Currency(Base):
+    """
+    A currency, as ISO 4217 names it: its code ("ILS"), name ("Israeli New
+    Shekel"), symbol ("₪") and how many digits it has after the point.
+    Countries point to the ones they use. Shared, kept by admins (SHARED);
+    the Locale importer brings them all.
+    """
+    __tablename__ = "currencies"
+    __table_args__ = (UniqueConstraint("code", name="uq_currency_code"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(3), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, default="", server_default="")
+    digits: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    countries: Mapped[list[Country]] = relationship(secondary=country_currencies, back_populates="currencies")
+
+
 class Country(_Pictured, _Located, Base):
     """
     A country; cities point to the one they are in. A name is a country
-    once. Shared: the same for every account, kept by admins (SHARED).
+    once, and so is a code: its ISO 3166 code ("IL"), by which the Locale
+    importer knows it again whatever it is called here. Shared: the same
+    for every account, kept by admins (SHARED).
     """
     __tablename__ = "countries"
-    __table_args__ = (UniqueConstraint("name", name="uq_country_name"),)
+    __table_args__ = (UniqueConstraint("name", name="uq_country_name"), UniqueConstraint("code", name="uq_country_code"))
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    # ISO 3166-1 alpha-2 ("IL") and alpha-3 ("ISR"); None and "" for a country no code is known for
+    code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    code3: Mapped[str] = mapped_column(String(3), nullable=False, default="", server_default="")
 
     cities: Mapped[list[City]] = relationship(back_populates="country")
+    currencies: Mapped[list[Currency]] = relationship(secondary=country_currencies, back_populates="countries", order_by=lambda: Currency.code)
+    languages: Mapped[list[Locale]] = relationship(secondary=country_languages, order_by=lambda: Locale.position)
 
 
 class Region(Base):
@@ -910,12 +963,14 @@ class Region(Base):
     the last city that does. Shared, as cities are.
     """
     __tablename__ = "regions"
-    __table_args__ = (UniqueConstraint("name", "country_id", name="uq_region_name"),)
+    __table_args__ = (UniqueConstraint("name", "country_id", name="uq_region_name"), UniqueConstraint("code", name="uq_region_code"))
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     country_id: Mapped[int | None] = mapped_column(ForeignKey("countries.id", ondelete="SET NULL"), nullable=True, index=True)
     country: Mapped[Country | None] = relationship()
+    # GeoNames' code of it ("IL.05"), by which the Locale importer knows it again; None for one it did not bring
+    code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     cities: Mapped[list[City]] = relationship(back_populates="region_row")
 
 
@@ -941,7 +996,7 @@ class City(_Pictured, _Located, Base):
     Shared: the same for every account, kept by admins (SHARED).
     """
     __tablename__ = "cities"
-    __table_args__ = (UniqueConstraint("name", "region_id", "country_id", name="uq_city_name"),)
+    __table_args__ = (UniqueConstraint("name", "region_id", "country_id", name="uq_city_name"), UniqueConstraint("geonames_id", name="uq_city_geonames_id"))
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -949,6 +1004,10 @@ class City(_Pictured, _Located, Base):
     region_row: Mapped[Region | None] = relationship(back_populates="cities")
     country_id: Mapped[int | None] = mapped_column(ForeignKey("countries.id", ondelete="SET NULL"), nullable=True, index=True)
     country: Mapped[Country | None] = relationship(back_populates="cities")
+    # how many live there, as GeoNames says; None when not known
+    population: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # GeoNames' id of it, by which the Locale importer knows it again; None for one it never matched
+    geonames_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     @property
     def region(self) -> str:
@@ -1406,7 +1465,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0012"
+SCHEMA_REVISION = "0013"
 
 
 def prepare_schema(engine: Engine) -> None:

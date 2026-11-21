@@ -333,17 +333,25 @@ const WORLD_BODIES = {
 			country_id: value("country_id"),
 			latitude: value("latitude"),
 			longitude: value("longitude"),
+			population: value("population"),
 			// all its photos, each with its credit: the first is the one its card shows
 			photos: (await pictures(form)).map((photo) => ({
 				image_id: photo.id, image_source: photo.image_source || "", image_license: photo.image_license || "", image_author: photo.image_author || "",
 			})),
 		};
 	},
+	currencies: async (form) => {
+		const value = (name) => form.elements[name].value;
+		return { code: value("code"), name: value("name"), symbol: value("symbol"), digits: value("digits") };
+	},
 	"place-kinds": async (form) => ({ name: form.elements.name.value }),
 	"visit-types": async (form) => ({ name: form.elements.name.value }),
 	countries: async (form) => {
 		const value = (name) => form.elements[name].value;
-		return { name: value("name"), latitude: value("latitude"), longitude: value("longitude"), ...(await pictureFields(form)) };
+		return {
+			name: value("name"), code: value("code"), code3: value("code3"), currency_ids: chosen(form, "currencies"),
+			latitude: value("latitude"), longitude: value("longitude"), ...(await pictureFields(form)),
+		};
 	},
 	places: async (form) => {
 		const value = (name) => form.elements[name].value;

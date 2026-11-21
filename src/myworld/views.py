@@ -19,6 +19,7 @@ from myworld.models import (
     KINDS,
     RATING_MAX,
     RATING_MIN,
+    ROLE_ADMIN,
     STATUSES,
     THEMES,
     Login,
@@ -389,6 +390,8 @@ def _account_json(login: Login) -> dict[str, Any]:
         "locale": user.locale,
         # how the pages look (Settings): "system", "light" or "dark"
         "theme": user.theme,
+        # an admin's lock on the shared data (Settings): whether they may change it by hand now
+        "edit_shared": user.edit_shared,
         # the account panel: since when, how this session signed in, and every way they sign in
         "since": user.created_at.date().isoformat(),
         "method": login.method,
@@ -438,6 +441,26 @@ def api_account_theme() -> flask.Response:
     login = auth.current_login()
     assert login is not None
     login.user.theme = theme
+    flask.g.db.commit()
+    return flask.jsonify(_account_json(login))
+
+
+@bp.route("/api/account/edit-shared", methods=["PUT"])
+@auth.login_required
+def api_account_edit_shared() -> flask.Response:
+    """
+    An admin turns their lock on the shared data off ({"edit_shared": true}:
+    they may change it by hand) or on again. It starts on, so shared data is
+    not changed by accident; a regular user never may change it.
+    """
+    value = json_body().get("edit_shared")
+    if not isinstance(value, bool):
+        raise ApiError(400, "edit_shared: expected true or false")
+    login = auth.current_login()
+    assert login is not None
+    if login.user.role != ROLE_ADMIN:
+        raise ApiError(403, "only an admin may change the shared data")
+    login.user.edit_shared = value
     flask.g.db.commit()
     return flask.jsonify(_account_json(login))
 

@@ -29,7 +29,7 @@ export async function selectImports() {
 	if (state.view === "imports") {
 		renderConnection(youtube);
 		$("world-count").textContent = `${importers.length} importer${importers.length === 1 ? "" : "s"}`;
-		$("importers-list").replaceChildren(...importers.map(importerCard));
+		renderImporters(importers);
 		renderRuns(runs);
 	}
 }
@@ -98,22 +98,52 @@ function renderConnection(youtube) {
 	box.replaceChildren(el("span", "", said), button);
 }
 
-// One importer: what it does, a field per parameter, and Dry run and Run with the result under them.
+// the importers whose details are open: they stay open when the page is drawn again
+const opened = new Set();
+
+// The importers in two lists, each a line until it is clicked: the user's own (into their data), then,
+// for an admin, the admins' (into the shared data, everyone's, and the tests)
+function renderImporters(importers) {
+	const groups = [
+		["Your importers", "Into your own data: only you see what they bring.", importers.filter((i) => !i.for_admins)],
+		["Admin importers", "Seen and run by admins only: into the shared data, everyone's, and the tests.", importers.filter((i) => i.for_admins)],
+	];
+	const out = [];
+	for (const [title, intro, list] of groups) {
+		if (!list.length) {
+			continue;
+		}
+		const group = el("section", "importer-group");
+		group.append(el("h2", "schema-heading", `${title} (${list.length})`), el("p", "importer-group-intro", intro), ...list.map(importerCard));
+		out.push(group);
+	}
+	$("importers-list").replaceChildren(...out);
+}
+
+// One importer: a line with its name and what it adds to; a click opens what it does, a field per
+// parameter, and Dry run and Run with the result under them.
 function importerCard(importer) {
-	const card = el("section", "importer");
-	const heading = el("h2", "schema-heading", importer.title);
-	// what it adds to; a test adds to nothing, and says only admins see it
-	const into = [importer.dataset_name ? `into ${importer.dataset_name}` : "", importer.admin_only ? "(only admins see it)" : ""].filter(Boolean).join(" ");
-	heading.appendChild(el("span", "importer-dataset", ` ${into}`));
+	const card = el("details", "importer");
+	card.open = opened.has(importer.name);
+	card.ontoggle = () => (card.open ? opened.add(importer.name) : opened.delete(importer.name));
+	const summary = el("summary", "importer-summary");
+	summary.appendChild(el("span", "importer-title", importer.title));
+	// what it adds to; one into the shared data says so, a test says only admins see it
+	const into = [
+		importer.dataset_name ? `into ${importer.dataset_name}` : "",
+		importer.shared ? "(shared data, everyone's)" : importer.admin_only ? "(only admins see it)" : "",
+	].filter(Boolean).join(" ") + (importer.unavailable ? `: ${importer.unavailable}` : "");
+	summary.appendChild(el("span", "importer-dataset", into));
+	card.appendChild(summary);
 	// one with choices to make says how they are picked
-	const picking = importer.params.length ? " Pick as many as you like; the ones of your last run are picked to start with." : "";
-	card.append(heading, el("p", "checks-intro", `${importer.description}${picking}`));
+	const picking = importer.params.length ? " The choices of your last run are picked to start with." : "";
+	card.append(el("p", "checks-intro", `${importer.description}${picking}`));
 	const fields = [];
 	for (const param of importer.params) {
 		const row = el("label", "importer-param");
-		row.appendChild(el("span", "importer-param-title", param.title));
+		row.appendChild(el("span", "importer-param-title", `${param.title}${param.single ? " (one)" : " (as many as you like)"}`));
 		const select = document.createElement("select");
-		select.multiple = true;
+		select.multiple = !param.single;
 		select.dataset.placeholder = param.description;
 		for (const choice of param.choices) {
 			const option = document.createElement("option");
@@ -129,7 +159,7 @@ function importerCard(importer) {
 		// a short list (a user's playlists): every choice is offered, not the best few
 		const picker = makePicker(select, undefined, null);
 		// it starts from what was chosen the last time it was run
-		picker.setValue(param.chosen, true);
+		picker.setValue(param.single ? param.chosen.slice(0, 1) : param.chosen, true);
 		if (importer.unavailable || param.error) {
 			picker.disable();
 		}
@@ -162,7 +192,7 @@ function importerCard(importer) {
 async function runImporter(importer, fields, dryRun, buttons, result) {
 	const params = {};
 	for (const { param, picker } of fields) {
-		params[param.name] = picker.items.slice();
+		params[param.name] = picker.items.filter(Boolean);
 	}
 	for (const button of buttons) {
 		button.disabled = true;

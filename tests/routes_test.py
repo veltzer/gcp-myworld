@@ -33,6 +33,7 @@ MINIMAL: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
     "groups": ({"name": "Trio"}, {"name": "The Trio"}),
     "cities": ({"name": "Haifa"}, {"name": "Hefa"}),
     "countries": ({"name": "Israel"}, {"name": "State of Israel"}),
+    "currencies": ({"code": "ILS", "name": "Shekel"}, {"code": "ILS", "name": "New Shekel"}),
     "place-kinds": ({"name": "Lecture hall"}, {"name": "Auditorium"}),
     "visit-types": ({"name": "Lecture"}, {"name": "Talk"}),
 }
@@ -159,6 +160,29 @@ def test_only_an_admin_changes_what_everyone_shares(app: webtest.TestApp, engine
     assert app.post_json(f"/api/{path}", changed, status=403).json == forbidden
     assert app.put_json(f"/api/{path}/{added['id']}", changed, status=403).json == forbidden
     assert app.delete(f"/api/{path}/{added['id']}", status=403).json == forbidden
+
+
+@pytest.mark.parametrize("path", sorted(path for path, view in VIEWS.items() if is_shared(view.model)))
+def test_an_admin_changes_shared_data_only_with_edit_shared_on(app: webtest.TestApp, engine: Engine, path: str) -> None:
+    sign_in_admin(app, engine, sub="the-admin")
+    first, changed = MINIMAL[path]
+    added = app.post_json(f"/api/{path}", first, status=201).json
+    # an admin starts locked, so shared data is not changed by accident
+    sign_in_admin(app, engine, sub="the-admin", edit_shared=False)
+    locked = {"error": "this is shared by everyone: turn on Edit shared data in Settings to change it"}
+    assert app.post_json(f"/api/{path}", changed, status=403).json == locked
+    assert app.put_json(f"/api/{path}/{added['id']}", changed, status=403).json == locked
+    assert app.delete(f"/api/{path}/{added['id']}", status=403).json == locked
+    # Settings turns it on
+    assert app.put_json("/api/account/edit-shared", {"edit_shared": True}).json["edit_shared"] is True
+    app.put_json(f"/api/{path}/{added['id']}", changed)
+
+
+def test_only_an_admin_turns_edit_shared_on(app: webtest.TestApp) -> None:
+    sign_in(app)
+    assert app.get("/api/config").json["user"]["edit_shared"] is False
+    assert app.put_json("/api/account/edit-shared", {"edit_shared": True}, status=403).json == {"error": "only an admin may change the shared data"}
+    assert app.put_json("/api/account/edit-shared", {"edit_shared": "yes"}, status=400).json == {"error": "edit_shared: expected true or false"}
 
 
 def test_a_users_rows_point_at_shared_ones(app: webtest.TestApp, engine: Engine) -> None:

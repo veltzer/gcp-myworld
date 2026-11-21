@@ -74,8 +74,14 @@ def sign_in(app: webtest.TestApp, sub: str = "1234567890") -> None:
     assert response.status_int == 302
 
 
-def sign_in_admin(app: webtest.TestApp, engine: Engine, sub: str = "1234567890") -> None:
-    """ Sign in, as an admin: the one who may change what everyone shares (countries, cities, places, ...). """
+def sign_in_admin(app: webtest.TestApp, engine: Engine, sub: str = "1234567890", edit_shared: bool = True) -> None:
+    """
+    Sign in, as an admin: the one who may change what everyone shares
+    (countries, cities, places, ...), by hand once Edit shared data is on
+    (edit_shared, on here unless said otherwise).
+    """
     sign_in(app, sub)
     with engine.begin() as connection:
-        connection.execute(update(User).where(User.id.in_(select(Login.owner_id).where(Login.subject == "google:" + sub))).values(role=ROLE_ADMIN))
+        connection.execute(
+            update(User).where(User.id.in_(select(Login.owner_id).where(Login.subject == "google:" + sub))).values(role=ROLE_ADMIN, edit_shared=edit_shared)
+        )

@@ -2287,18 +2287,61 @@ button.text.check-toggle {
 	gap: 0.5rem 1rem;
 }
 
-.importer {
+.importer-group {
 	margin-bottom: 1.5rem;
-	padding: 0.25rem 1rem 0.75rem;
+}
+
+.importer-group-intro {
+	margin: 0 0 0.5rem;
+	color: var(--muted);
+}
+
+/* an importer is a line until it is clicked: then what it does, its choices and its buttons */
+.importer {
+	margin-bottom: 0.5rem;
+	padding: 0 1rem;
 	border: 1px solid var(--line);
 	border-radius: 8px;
 	background: var(--surface);
+}
+
+.importer[open] {
+	padding-bottom: 0.75rem;
+}
+
+.importer-summary {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.25rem 0.75rem;
+	padding: 0.6rem 0;
+	cursor: pointer;
+}
+
+.importer-title {
+	font-weight: 600;
+	white-space: nowrap;
 }
 
 .importer-dataset {
 	color: var(--muted);
 	font-weight: normal;
 	font-size: 0.9rem;
+}
+
+/* a box to tick in Settings, its name beside it (not the checks page's .check row) */
+.settings label.settings-check {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-top: 1rem;
+	padding: 0;
+	border-top: none;
+	font-weight: 600;
+}
+
+.settings .settings-check input {
+	width: auto;
 }
 
 .importer-param {
