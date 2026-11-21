@@ -102,7 +102,7 @@ private until it is added there.
   `noindex` choice per view is cheap to add.
 - Logging: who opens a view is not recorded beyond the request log.
 
-## Private views (not built)
+## Private views (designed, not built)
 
 Options, roughly from simplest to richest:
 
@@ -126,6 +126,104 @@ Suggestion: 4, with 1 as the way to show a view to someone without an
 account. Both fit `access` (`public`, `link`, `users`) and a small
 `shared_view_members` table; 3 adds a password store and its upkeep for
 little over 4.
+
+Chosen: 4 first (1 may follow). How to build it:
+
+### Implementing private views: a list of usernames
+
+**The data.** `shared_views.access` gets a second value, `users`
+(`VIEW_ACCESS_USERS` beside `VIEW_ACCESS_PUBLIC`). A new table holds who may
+open such a view:
+
+    shared_view_members(view_id  -> shared_views.id, on delete cascade,
+                        user_id  -> users.id,        on delete cascade,
+                        primary key (view_id, user_id))
+
+with an index on `user_id` (for "shared with me"). Members are kept by user
+id, not by username, so a member who changes their username stays a member,
+and a deleted account drops out by itself. Migration 0019 adds the table
+(adds: migrate, then deploy). Switching a view back to `public` keeps its
+members, so switching again restores them.
+
+**The owner's API.** The body of `POST`/`PUT /api/shared-views` takes
+`access` (`public` or `users`) and `members`, a list of usernames, which
+replaces the view's list. `_apply` checks them: each must be an account's
+username (400 `members: no such user: ...` otherwise; the same answer for
+every unknown name), the owner's own is dropped (the owner always sees
+their views), duplicates are dropped. `view_json` carries `members` (the
+usernames, sorted) in the owner's answers only, never in a visitor's.
+
+**Who may open it.** `_visited` decides, after finding the view:
+
+| Visitor                          | A public view | A `users` view           |
+|----------------------------------|---------------|--------------------------|
+| not signed in                    | sees it       | is asked to sign in      |
+| signed in, the owner             | sees it       | sees it                  |
+| signed in, a member              | sees it       | sees it                  |
+| signed in, anyone else           | sees it       | 404 "no such view"       |
+
+The visitor's account is `auth.current_user()` (the session; these routes
+are not `login_required`). It must be read *before* `api_visit_data` sets
+`flask.g.user` to the owner; keep it as `flask.g.visitor`, so nothing later
+in the request mistakes the owner for the visitor.
+
+Not signed in: so that the answer does not tell whether a private view
+exists, every address that is not a public view (a private one, or none at
+all) gets the same answer, 401 `sign in to see this view` from the API and
+from the page a page saying so with a Sign in link. Signed in and not a
+member: 404, as for a view that does not exist.
+
+**Signing in and coming back.** Sign-in today always lands on the library
+(`/auth/login`, `email_login` and `email_password` answer
+`url_for("views.library")`, the OAuth callback redirects there). It needs a
+return address: the sign-in link carries `?next=/view/<u>/<v>`, the login
+page keeps it in the session (`flask.session["next"]`) across the OAuth
+round trip, and every way of signing in ends there. Only a local path is
+taken (`next` must start with `/` and not `//`), so the link cannot send
+anyone to another site.
+
+**Images.** An image of a private view is checked as now (the signature),
+and `_visited` runs first, so its address works only for those who may open
+the view: copying it to someone else gives them nothing. The signature
+need not change.
+
+**Caching.** A private view's page and every answer of its API carry
+`Cache-Control: private, no-store` (a public one keeps `no-cache`), so no
+shared cache keeps a member's copy for someone else.
+
+**The page.**
+
+- The view dialog gets *Who may see it*: two radio buttons, *Anyone with the
+  address* and *Only these users*, and under the second a usernames field.
+  The field is a Tom Select in create mode with no suggestions: the owner
+  types the usernames they were told, each checked on Save. There is
+  deliberately no search over all usernames, which would be a directory of
+  every account for anyone signed in.
+- The Views table gets a *Who* column: "Anyone" or the members' usernames.
+- The Views page gets a second table, *Shared with me*: the private views
+  others made that list the user (`GET /api/shared-views/shared-with-me`:
+  owner's username, name, title, address). Public views are not listed
+  there; the user would not know of them otherwise either.
+- In visitor mode the 401 for the page's configuration shows the sign-in page described above
+  (the page's API calls do not redirect on a 401 when visiting, which stays
+  so; the page catches it). A member sees the view as anyone sees a public one, with
+  "shared with you" in the banner; the owner sees it the same way.
+
+**Tests** (`tests/sharing_test.py`):
+
+- making a private view; members by username, case-insensitive; an unknown
+  username is 400; the owner's own name is ignored; PUT replaces the list;
+- no one signed in: 401 for a private view and for one that does not exist
+  alike, for the page's configuration, its data and its images;
+- a member reads it (data and images); another account gets 404; the owner
+  reads it;
+- a member who changes their username is still a member; a deleted member
+  account is gone from the list;
+- taking a member off: their next request is 404;
+- switching to public and back keeps the members;
+- `shared-with-me` lists the private views that name the user, only;
+- sign-in with `next` comes back to the view; a `next` of
+  `https://elsewhere` or `//elsewhere` lands on the library.
 
 ## Open questions
 
