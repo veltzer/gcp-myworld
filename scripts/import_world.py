@@ -28,10 +28,12 @@ and what the entry has no field for (the other readings, the languages read
 and owned, the names in other languages, the publisher, the remark) is
 written into its notes.
 
-Audio books come from data/yaml/audible.yaml (the books of the Audible
+Audio books came from data/yaml/audible.yaml (the books of the Audible
 library, as Audible says them), their covers from
 static/images/audible-<asin>.jpg; each is an audio book with source
-"audible", found again by its ASIN.
+"audible", found again by its ASIN. veltzer.github.io no longer has them
+(My World keeps them now): a source without audible.yaml imports none, and
+--audio-books reads them from a checkout of the site's history that has it.
 
 YouTube videos come from data/yaml/video_youtube.yaml (the reviewed ones)
 and static/data/youtube.json.gz (the watch history: what YouTube says about
@@ -731,7 +733,9 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
         ))
     session.flush()
     courses = import_audio_courses(session, owner, source)
-    audio_books = import_audio_books(session, owner, source)
+    # the site no longer keeps them (My World does): a source without them has none to import
+    audible = source / "data" / "yaml" / "audible.yaml"
+    audio_books = import_audio_books(session, owner, source) if audible.exists() else {"audio books added": 0, "images": 0}
     videos = import_youtube(session, owner, source)
     history = import_youtube_history(session, owner, source)
     books = import_books(session, owner, source)
@@ -868,6 +872,8 @@ def import_audio_books(session: Session, owner: User, source: Path) -> dict[str,
     are given back as Audible lists them. Safe to run again. Does not commit.
     """
     path = source / "data" / "yaml" / "audible.yaml"
+    if not path.exists():
+        raise WorldImportError(f"{path}: not there (veltzer.github.io no longer keeps the Audible library; its git history does)")
     with path.open(encoding="UTF8") as fp:
         items = yaml.safe_load(fp)["items"]
     asins = [str(item.get("asin", "")) for item in items]

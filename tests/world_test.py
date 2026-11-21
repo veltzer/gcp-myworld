@@ -789,6 +789,17 @@ def test_audio_books_import_gives_back_the_genres_kept_once(imported: webtest.Te
         assert order.genres == ["Politics"]
 
 
+def test_a_source_without_the_audible_library(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    sign_in_admin(app, engine)
+    source = write_source(tmp_path)
+    (source / "data" / "yaml" / "audible.yaml").unlink()
+    with Session(engine) as session:
+        # the site no longer keeps it: the full import imports no audio books, --audio-books says why it cannot
+        assert import_world.import_world(session, owner(session), source)["audio books"] == 0
+        with pytest.raises(import_world.WorldImportError, match="no longer keeps the Audible library"):
+            import_world.import_audio_books(session, owner(session), source)
+
+
 def test_audio_books_import_refuses_what_it_does_not_know(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
     del imported
     source = write_source(tmp_path / "again")

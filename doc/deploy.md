@@ -452,7 +452,8 @@ first `companies` tables to `organizations`, then making
   `released`, `cover_url` (the cover's address at the source), the
   user's own `rating` and `review`, `url` (its page at the source) and the
   cover as `image`. A source's book is in an account once (409). Imported
-  from `audible.yaml` in `veltzer.github.io` (covers
+  (2026-11-21) from `audible.yaml` in `veltzer.github.io`, which no longer
+  has it (My World keeps them now; the site's git history does) (covers
   `static/images/audible-<asin>.jpg`) by
   `scripts/import_world.py --audio-books`, which adds the books the account does not have yet and
   refreshes what Audible changes on the rest (finished, how much was
