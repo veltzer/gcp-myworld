@@ -79,7 +79,7 @@ class Check:
 DATASETS: dict[str, str] = {
     **{kind: plural for kind, (_, plural, _) in KINDS.items()},
     "concerts": "Concerts",
-    "museums": "Museums",
+    "museums": "Museum visits",
     "audio-courses": "Audio courses",
     "youtube": "YouTube",
     "chess": "Chess",
@@ -174,7 +174,7 @@ def rows[T](session: Session, model: type[T]) -> list[T]:
 def problem(row: Any, message: str) -> Problem:
     """ What is wrong with a row, told as every check tells it: "Barby, Tel Aviv (place 12, account 1)", and where the row is in the app. """
     if isinstance(row, Visit):
-        # a visit is found at its museum (a place), on the account's Museums page
+        # a visit is found at its museum (a place), on the account's Museum visits page
         place = row.place
         name = place.name if place else "No place"
         return Problem(f"{name} ({row.type.name.lower()} {row.id}, account {row.owner_id})", message, f"museums/{place.id}" if place else "", row.owner_id)

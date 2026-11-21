@@ -152,7 +152,7 @@ function cityCard(item) {
 	// what is in it, each always counted (0 too), then which
 	detail(list, "Places", String(item.places.length));
 	linksDetail(list, "Which places", "places", item.places);
-	linksDetail(list, "Museums", "museums", item.museums);
+	linksDetail(list, "Museums", "places", item.museums);
 	linksDetail(list, "Organizations", "organizations", item.organizations);
 	linksDetail(list, "Headquarters of", "organizations", item.headquarters_of);
 	photoCredit(body, item);

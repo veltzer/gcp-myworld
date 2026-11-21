@@ -24,7 +24,7 @@ export function visitText(visit) {
 
 // the row's boxes show this visit (a new one: all empty)
 function fillVisitRow(visit) {
-	const form = $("museum-form");
+	const form = $("museum-visit-form");
 	$("museum-visit-date").querySelector("input[type=hidden]").value = visit?.date || "";
 	syncDatePicks(form);
 	$("museum-visit-rating").value = visit?.rating ?? "";
@@ -82,7 +82,7 @@ function renderVisits() {
 
 // what the row says, as a visit
 function visitOfRow() {
-	const form = $("museum-form");
+	const form = $("museum-visit-form");
 	const old = editingVisit === null ? null : editingVisits[editingVisit];
 	const picker = form.querySelector("[data-field=people]").tomselect;
 	const date = $("museum-visit-date").querySelector("input[type=hidden]").value || null;

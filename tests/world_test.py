@@ -528,13 +528,13 @@ def test_a_museum_has_its_visits(imported: webtest.TestApp) -> None:
     imported.put_json(f"/api/museum-visits/{louvre['id']}", {}, status=400)
     imported.put_json(f"/api/museum-visits/{louvre['id']}", {"visits": [{"id": museums[0]["visits"][0]["id"]}]}, status=400)
     imported.put_json(f"/api/museum-visits/{louvre['id']}", {"visits": [{"id": first["id"]}, {"id": first["id"]}]}, status=400)
-    # a museum is in the user's Museums once: adding visits to it again is refused (they are added to it)
+    # a museum is in the user's Museum visits once: adding visits to it again is refused (they are added to it)
     imported.post_json("/api/museum-visits", {"place_id": louvre["id"], "visits": [{}]}, status=409)
     # the museum itself is shared: what is sent of it is not the user's to change
     again = [dict(v, people=[p["id"] for p in v["people"]]) for v in changed["visits"]]
     renamed = imported.put_json(f"/api/museum-visits/{louvre['id']}", {"name": "Le Louvre", "visits": again}).json
     assert renamed["name"] == "The Louvre"
-    # its visits taken away, it leaves the user's Museums, and stays a place, everyone's
+    # its visits taken away, it leaves the user's Museum visits, and stays a place, everyone's
     imported.put_json(f"/api/museum-visits/{louvre['id']}", {"visits": []})
     assert [m["name"] for m in imported.get("/api/museum-visits").json] == ["No Photo Museum"]
     assert "The Louvre" in [p["name"] for p in imported.get("/api/places").json]

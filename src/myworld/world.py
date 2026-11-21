@@ -252,7 +252,7 @@ def _visit_json(visit: Visit) -> dict[str, Any]:
 
 
 def museum_json(museum: Place, mine: list[Visit]) -> dict[str, Any]:
-    """ A museum (a shared place) with the signed-in user's visits to it, as their Museums page shows it: its id is the place's. """
+    """ A museum (a shared place) with the signed-in user's visits to it, as their Museum visits page shows it: its id is the place's. """
     # the visits, the latest first (one with no date last)
     visits = sorted((_visit_json(visit) for visit in mine), key=lambda visit: (visit["date_sort"], visit["id"]), reverse=True)
     rated = [visit["rating"] for visit in visits if visit["rating"] is not None]
@@ -590,7 +590,7 @@ def api_museum_add() -> tuple[flask.Response, int]:
     body = json_body()
     place = _museum(body)
     if _museum_visits(place.id):
-        raise ApiError(409, f"{place.name} is in your Museums already: add the visit to it")
+        raise ApiError(409, f"{place.name} has visits in your Museum visits already: add the visit to them")
     visits = _apply_museum_visits(place, [], body)
     flask.g.db.commit()
     return flask.jsonify(museum_json(place, visits)), 201

@@ -432,7 +432,7 @@ first `companies` tables to `organizations`, then making
   otherwise); `PUT /api/museum-visits/<place id>` with `visits` is all the
   user's visits to it: one with the `id` of a visit they had is that visit,
   changed; the others are new; those not sent are gone (all of them: it
-  leaves their Museums). `DELETE` deletes the user's visits to it. The
+  leaves their Museum visits). `DELETE` deletes the user's visits to it. The
   museum itself is shared: an admin changes it on the Places page. In the
   dialog the museum is picked from the museums of Places, and the Visits
   box lists the visits, each with a red pencil, a red − and one red + to

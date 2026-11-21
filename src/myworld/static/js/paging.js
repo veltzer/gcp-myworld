@@ -8,7 +8,7 @@ import { renderMap, showsMap } from "./map.js";
 import { rankBySearch, searchMatches } from "./search.js";
 import { setCount } from "./sidebar.js";
 import { rerender, sortItems } from "./sorting.js";
-import { WORLDS, worldCache } from "./worlds.js";
+import { COUNTS, WORLDS, worldCache } from "./worlds.js";
 
 const PAGE_SIZES = [25, 50, 100, 200];
 
@@ -101,9 +101,15 @@ export function renderWorld() {
 	// "Audio courses" -> "audio courses"; a name with capitals inside ("YouTube videos") stays
 	const title = WORLDS[view][0].replace(/^My /, "");
 	const what = /^.+[A-Z]/.test(title) ? title : title.toLowerCase();
-	setCount(view, items.length);
+	const counted = COUNTS[view];
+	setCount(view, counted ? counted(items)[0] : items.length);
 	if (items.length === 0) {
 		$("world-count").textContent = `Nothing here yet: no ${what} for this account.`;
+	} else if (counted) {
+		// the visits, of the museums shown and of them all
+		const [total, said] = counted(items);
+		const [inView, saidShown] = counted(shown);
+		$("world-count").textContent = inView === total && shown.length === items.length ? `${total.toLocaleString()} ${said}` : `${inView.toLocaleString()} ${saidShown} (of ${total.toLocaleString()})`;
 	} else {
 		showCount(shown.length, items.length, what);
 	}

@@ -9,7 +9,8 @@ import { showRow } from "./views.js";
 // but on the shared pages (SHARED_VIEWS), whose rows are everyone's
 export const WORLDS = {
 	concerts: ["My Concerts", "/api/concert-visits", "concert", "Concerts"],
-	museums: ["My Museums", "/api/museum-visits", "museum", "Museums"],
+	// the user's museum visits, a card for each museum with its visits to it
+	museums: ["My Museum visits", "/api/museum-visits", "museum visit", "Museum visits"],
 	"audio-courses": ["Audio courses", "/api/audio-courses", "audio course", "Audio courses"],
 	youtube: ["YouTube videos", "/api/youtube-videos", "YouTube video", "YouTube"],
 	chess: ["Chess games", "/api/chess-games", "chess game", "Chess"],
@@ -45,6 +46,15 @@ export function isAdmin() {
 export function canChange(view) {
 	return !SHARED_VIEWS.has(view) || isAdmin();
 }
+
+// A page whose cards are not what it counts: the museum visits, a card per museum with the
+// visits to it, count the visits. (items) -> [how many, what they are]; one not here counts its cards
+export const COUNTS = {
+	museums: (items) => {
+		const visits = items.reduce((n, museum) => n + museum.visits.length, 0);
+		return [visits, `${visits === 1 ? "visit" : "visits"} to ${items.length.toLocaleString()} ${items.length === 1 ? "museum" : "museums"}`];
+	},
+};
 
 // views whose rows have a type -> the view of their enumeration
 export const TYPED = { people: "person-types", organizations: "organization-types" };

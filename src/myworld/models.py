@@ -1038,7 +1038,7 @@ class PlaceKind(Base):
     places: Mapped[list[Place]] = relationship(secondary=place_kind_links, back_populates="kinds")
 
 
-# the kinds of place and the types of visit there always are: the Museums page lists the visits of
+# the kinds of place and the types of visit there always are: the Museum visits page lists the visits of
 # MUSEUM_VISIT, each to a place of MUSEUM_KIND; a concert's place is of CONCERT_VENUE_KIND
 MUSEUM_KIND = "Museum"
 CONCERT_VENUE_KIND = "Concert venue"

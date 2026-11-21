@@ -75,7 +75,7 @@ export async function loadCounts() {
 		setCount(kind.kind, kind.total);
 	}
 	const keys = {
-		concerts: "concerts", museums: "museums", "audio-courses": "audio_courses", youtube: "youtube_videos", chess: "chess_games",
+		concerts: "concerts", museums: "museum_visits", "audio-courses": "audio_courses", youtube: "youtube_videos", chess: "chess_games",
 		places: "places", cities: "cities", countries: "countries", people: "people", groups: "groups", organizations: "organizations", "organization-types": "organization_types",
 		"person-types": "person_types", "relation-types": "relation_types", "person-relation-types": "person_relation_types",
 		"person-organization-types": "person_organization_types", devices: "devices", locales: "locales",

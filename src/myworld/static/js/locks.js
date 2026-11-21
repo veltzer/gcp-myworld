@@ -177,7 +177,7 @@ export async function openDialog(listed) {
 			const chosen = item?.[select.name.replace(/_id$/, "")];
 			setPickerValue(select, chosen ? [chosen.id] : []);
 		}
-		if (form.id === "museum-form") {
+		if (form.id === "museum-visit-form") {
 			prepareVisits(item?.visits || [], !item);
 		}
 		if (form.id === "chess-game-form") {
@@ -269,7 +269,7 @@ export function setupAddDialog() {
 			event.preventDefault();
 		}
 	}, true);
-	$("museum-form").elements.alone.onchange = () => syncAlone($("museum-form"));
+	$("museum-visit-form").elements.alone.onchange = () => syncAlone($("museum-visit-form"));
 	$("concert-form").elements.alone.onchange = () => syncAlone($("concert-form"));
 	const { rating_min, rating_max } = state.config;
 	$("museum-visit-rating").min = rating_min;
