@@ -2259,12 +2259,24 @@ button.text.check-toggle {
 	white-space: pre-wrap;
 }
 
-#import-runs td.pass {
+.import-runs td.pass {
 	color: #1a7f37;
 }
 
-#import-runs td.fail {
+.import-runs td.fail {
 	color: #b42318;
+}
+
+.import-runs td.going {
+	color: var(--accent);
+}
+
+.import-runs details summary {
+	cursor: pointer;
+}
+
+.import-limit {
+	color: var(--muted);
 }
 
 /* ─── the map layout ─────────────────────────────────────────────────────── */

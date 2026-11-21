@@ -1285,15 +1285,20 @@ class YouTubeConnection(Base):
     connected_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
 
-IMPORT_STATUSES = ("done", "failed")
+# queued: waiting for its job to start (on Cloud Run, a Cloud Run Jobs execution);
+# running: its job is at it; done, failed: it ended
+IMPORT_STATUSES = ("queued", "running", "done", "failed")
+IMPORT_ENDED = ("done", "failed")
 
 
 class ImportRun(Base):
     """
     One run of an importer (myworld.importers) by a user: which one, with
-    what parameters, whether it was a dry run (done and rolled back), how it
-    ended, what it counted ({"YouTube videos added": 3, ...}) and what it
-    said. The Imports page lists a user's last runs.
+    what parameters, whether it was a dry run (done and rolled back), where
+    it is (queued, running) or how it ended, what it counted ({"YouTube
+    videos added": 3, ...}) and what it said, written as it goes. A run is
+    done by a job of its own (myworld.importers.worker), which says it is
+    alive (heartbeat_at) while it runs. The Imports page lists a user's runs.
     """
     __tablename__ = "import_runs"
     __table_args__ = (
@@ -1308,8 +1313,12 @@ class ImportRun(Base):
     status: Mapped[str] = mapped_column(String(10), nullable=False)
     counts: Mapped[dict[str, int]] = mapped_column(JSON, nullable=False, default=dict)
     log: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # when it was asked for (queued), when its job last said it is alive, when it ended
     started_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    heartbeat_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    # the Cloud Run Jobs execution doing it ("projects/.../executions/..."), "" when run in the app itself
+    execution: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
 
 
 def database_url() -> str:
@@ -1344,7 +1353,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0008"
+SCHEMA_REVISION = "0009"
 
 
 def prepare_schema(engine: Engine) -> None:

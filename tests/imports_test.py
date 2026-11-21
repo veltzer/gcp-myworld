@@ -16,8 +16,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld import importers, youtube
-from myworld.importers import core
-from myworld.models import ImportRun, User, YouTubeConnection, YouTubeVideo
+from myworld.importers import core, jobs, sleep
+from myworld.models import ROLE_ADMIN, ImportRun, User, YouTubeConnection, YouTubeVideo
 from tests.conftest import sign_in
 
 REFRESH = "refresh-token-of-alice"
@@ -83,6 +83,26 @@ class FakeYouTube:
         self.revoked.append(token)
 
 
+# how the app starts jobs, before fixture_inline_jobs puts its own in
+REAL_DISPATCHER = jobs.dispatcher
+
+
+@pytest.fixture(autouse=True)
+def fixture_inline_jobs(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """ A run's job is done right away, inside the request that starts it: the answer is the run as it ended. """
+    started: list[int] = []
+
+    def dispatcher(engine: Engine) -> Any:
+        def dispatch(run_id: int) -> str:
+            started.append(run_id)
+            core.execute(engine, run_id)
+            return f"projects/p/locations/r/jobs/myworld-import/executions/run-{run_id}"
+        return dispatch
+
+    monkeypatch.setattr(jobs, "dispatcher", dispatcher)
+    return started
+
+
 @pytest.fixture(name="fake")
 def fixture_fake(monkeypatch: pytest.MonkeyPatch) -> FakeYouTube:
     fake = FakeYouTube()
@@ -126,7 +146,7 @@ def videos(engine: Engine) -> dict[str, YouTubeVideo]:
         return {v.youtube_id: v for v in session.scalars(select(YouTubeVideo))}
 
 
-def run(app: webtest.TestApp, playlists: list[str], dry_run: bool = False, status: int = 200) -> Any:
+def run(app: webtest.TestApp, playlists: list[str], dry_run: bool = False, status: int = 202) -> Any:
     return app.post_json("/api/importers/youtube-playlists/runs", {"params": {"playlists": playlists}, "dry_run": dry_run}, status=status).json
 
 
@@ -269,7 +289,7 @@ def test_a_dry_run_keeps_nothing_but_says_what_a_run_would_do(app: webtest.TestA
     dry = run(app, ["LLalice"], dry_run=True)
     assert (dry["status"], dry["dry_run"], dry["counts"]) == ("done", True, {"YouTube videos added": 1})
     assert videos(engine) == {}
-    runs = app.get("/api/import-runs").json
+    runs = app.get("/api/import-runs").json["ended"]
     assert [(r["importer"], r["dry_run"], r["params"]) for r in runs] == [("youtube-playlists", True, {"playlists": ["LLalice"]})]
 
 
@@ -315,7 +335,7 @@ def test_a_failing_import_is_rolled_back_and_kept_as_failed(app: webtest.TestApp
     assert (failed["status"], failed["counts"]) == ("failed", {})
     assert failed["log"].endswith("Failed: YouTube answered 403 to videos: quota exceeded")
     assert videos(engine) == {}
-    assert app.get("/api/import-runs").json[0]["status"] == "failed"
+    assert app.get("/api/import-runs").json["ended"][0]["status"] == "failed"
 
 
 def test_each_user_imports_into_their_own_data(app: webtest.TestApp, engine: Engine, fake: FakeYouTube) -> None:
@@ -324,7 +344,7 @@ def test_each_user_imports_into_their_own_data(app: webtest.TestApp, engine: Eng
     run(app, ["LLalice"])
     sign_in(app, "bob")
     assert app.get("/youtube/status").json["connected"] is False
-    assert app.get("/api/import-runs").json == []
+    assert app.get("/api/import-runs").json["ended"] == []
     assert run(app, ["LLalice"], status=400)["error"] == "Connect YouTube first"
     assert [v.owner_id for v in videos(engine).values()] == [alice(engine).id]
 
@@ -372,7 +392,8 @@ def test_every_importer_adds_to_a_page_there_is() -> None:
     from myworld.checks import DATASETS
     assert importers.IMPORTERS
     for importer in importers.IMPORTERS.values():
-        assert importer.dataset in DATASETS, importer.name
+        # a test adds to nothing
+        assert importer.dataset in DATASETS or (importer.dataset is None and importer.admin_only), importer.name
         assert importer.title and importer.description
 
 
@@ -424,7 +445,7 @@ def test_youtube_details_fills_in_the_videos_that_have_none(app: webtest.TestApp
         session.commit()
 
     def post(dry_run: bool) -> Any:
-        return app.post_json("/api/importers/youtube-details/runs", {"params": {}, "dry_run": dry_run}).json
+        return app.post_json("/api/importers/youtube-details/runs", {"params": {}, "dry_run": dry_run}, status=202).json
 
     assert post(True)["counts"] == {"YouTube videos given YouTube's details": 2}
     assert videos(engine)["vidMusic001"].duration is None
@@ -439,3 +460,184 @@ def test_youtube_details_fills_in_the_videos_that_have_none(app: webtest.TestApp
     # again: only the gone one is asked about, and nothing changes
     assert post(False)["counts"] == {"YouTube videos unchanged": 1}
     assert len(videos(engine)) == 3
+
+
+
+# ─── runs as jobs of their own ──────────────────────────────────────────────
+
+def make_admin(engine: Engine, email: str) -> None:
+    with Session(engine) as session:
+        session.scalars(select(User).where(User.email == email)).one().role = ROLE_ADMIN
+        session.commit()
+
+
+def queue(engine: Engine, owner_id: int, status: str, **columns: Any) -> int:
+    """ A run as its job left it. """
+    with Session(engine) as session:
+        record = ImportRun(**{"owner_id": owner_id, "importer": "sleep", "params": {}, "dry_run": False, "status": status, "counts": {}, "log": "", **columns})
+        session.add(record)
+        session.commit()
+        return record.id
+
+
+def test_a_run_is_queued_and_its_job_does_it(app: webtest.TestApp, engine: Engine, fake: FakeYouTube, fixture_inline_jobs: list[int]) -> None:
+    sign_in(app)
+    connect(app)
+    done = run(app, ["LLalice"])
+    # the job was started for the run, and said its execution
+    assert fixture_inline_jobs == [done["id"]]
+    assert done["execution"].endswith(f"/executions/run-{done['id']}")
+    assert (done["status"], done["ended"]) == ("done", True)
+    assert done["heartbeat_at"] and done["finished_at"]
+    # a job started again for a run that ended does nothing
+    core.execute(engine, done["id"])
+    assert run(app, ["LLalice"])["counts"] == {"YouTube videos unchanged": 1}
+
+
+def test_a_job_that_cannot_be_started_fails_the_run(app: webtest.TestApp, engine: Engine, fake: FakeYouTube, monkeypatch: pytest.MonkeyPatch) -> None:
+    sign_in(app)
+    connect(app)
+
+    def refusing(_run_id: int) -> str:
+        raise core.ImporterError("Cloud Run answered 403: permission denied")
+
+    monkeypatch.setattr(jobs, "dispatcher", lambda _engine: refusing)
+    failed = run(app, ["LLalice"])
+    assert failed["status"] == "failed"
+    assert failed["log"] == "Failed: its job could not be started: Cloud Run answered 403: permission denied"
+    assert videos(engine) == {}
+
+
+def test_runs_going_and_ended_and_ones_whose_jobs_stopped(app: webtest.TestApp, engine: Engine) -> None:
+    sign_in(app)
+    owner = alice(engine).id
+    now = core.utcnow()
+    alive = queue(engine, owner, "running", heartbeat_at=now, started_at=now)
+    waiting = queue(engine, owner, "queued", started_at=now)
+    died = queue(engine, owner, "running", heartbeat_at=now - datetime.timedelta(seconds=core.STALE_SECONDS + 5), started_at=now, log="Sleeping")
+    never = queue(engine, owner, "queued", started_at=now - datetime.timedelta(seconds=core.QUEUED_SECONDS + 5))
+    runs = app.get("/api/import-runs").json
+    assert [r["id"] for r in runs["running"]] == [waiting, alive]
+    assert [(r["id"], r["status"]) for r in runs["ended"]] == [(never, "failed"), (died, "failed")]
+    logs = {r["id"]: r["log"] for r in runs["ended"]}
+    assert logs[died].startswith("Sleeping\nFailed: its job stopped answering")
+    assert logs[never] == "Failed: its job never started"
+    assert runs["everyone"] is False
+    assert "owner" not in runs["running"][0]
+
+
+def test_each_user_sees_their_own_runs_and_an_admin_everyones(app: webtest.TestApp, engine: Engine) -> None:
+    # bob signs in once, so he has an account
+    sign_in(app, "bob")
+    sign_in(app)
+    owner = alice(engine).id
+    with Session(engine) as session:
+        bob_id = session.scalars(select(User.id).where(User.email == "bob@example.com")).one()
+    mine = queue(engine, owner, "done", started_at=core.utcnow())
+    theirs = queue(engine, bob_id, "done", started_at=core.utcnow())
+    assert [r["id"] for r in app.get("/api/import-runs").json["ended"]] == [mine]
+    make_admin(engine, "alice@example.com")
+    runs = app.get("/api/import-runs").json
+    assert runs["everyone"] is True
+    assert [(r["id"], r["owner"]) for r in runs["ended"]] == [
+        (theirs, {"id": bob_id, "email": "bob@example.com"}),
+        (mine, {"id": owner, "email": "alice@example.com"}),
+    ]
+
+
+def test_the_sleep_importer_is_an_admins_only(app: webtest.TestApp, engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sleep, "SECONDS", 2)
+    monkeypatch.setattr(sleep, "SAY_EVERY", 1)
+    monkeypatch.setattr(sleep.time, "sleep", lambda _seconds: None)
+    sign_in(app)
+    names = [i["name"] for i in app.get("/api/importers").json["importers"]]
+    assert "sleep" not in names
+    app.post_json("/api/importers/sleep/runs", {"params": {}}, status=404)
+    make_admin(engine, "alice@example.com")
+    assert "sleep" in [i["name"] for i in app.get("/api/importers").json["importers"]]
+    # as many at once as wanted
+    first = app.post_json("/api/importers/sleep/runs", {"params": {}}, status=202).json
+    second = app.post_json("/api/importers/sleep/runs", {"params": {}}, status=202).json
+    assert first["id"] != second["id"]
+    assert (first["status"], first["counts"]) == ("done", {"seconds slept": 2})
+    assert first["log"] == "Sleeping for 2 seconds\n1 of 2 seconds\n2 of 2 seconds\nWoke up"
+
+
+def test_a_user_may_start_so_many_runs_a_month_and_an_admin_any_number(app: webtest.TestApp, engine: Engine, fake: FakeYouTube, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("IMPORT_RUNS_PER_MONTH", "2")
+    sign_in(app)
+    connect(app)
+    owner = alice(engine).id
+    # one of last month does not count
+    queue(engine, owner, "done", started_at=core.utcnow().replace(day=1) - datetime.timedelta(days=3))
+    assert app.get("/api/importers").json["limit"] == {"used": 0, "allowed": 2}
+    run(app, ["LLalice"], dry_run=True)
+    run(app, ["LLalice"])
+    assert app.get("/api/import-runs").json["limit"] == {"used": 2, "allowed": 2}
+    error = run(app, ["LLalice"], status=429)["error"]
+    assert error == "You have started your 2 import runs of this month; more may be started on the 1st"
+    make_admin(engine, "alice@example.com")
+    assert app.get("/api/importers").json["limit"] == {"used": 2, "allowed": None}
+    run(app, ["LLalice"])
+
+
+def test_a_running_job_says_it_is_alive_and_what_it_did_so_far(app: webtest.TestApp, engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
+    sign_in(app)
+    run_id = queue(engine, alice(engine).id, "running", heartbeat_at=core.utcnow() - datetime.timedelta(seconds=60), started_at=core.utcnow())
+    monkeypatch.setattr(core, "HEARTBEAT_SECONDS", 0.01)
+    report = core.Report()
+    report.say("Sleeping for 300 seconds")
+    report.count("seconds slept", 30)
+    beat = core._Heartbeat(engine, run_id, report)
+    beat.start()
+    try:
+        for _ in range(500):
+            with Session(engine) as session:
+                record = session.get(ImportRun, run_id)
+                assert record is not None
+                if record.log:
+                    break
+            beat.stopping.wait(0.01)
+    finally:
+        beat.stop()
+    assert (record.log, record.counts) == ("Sleeping for 300 seconds", {"seconds slept": 30})
+    assert record.heartbeat_at is not None and record.heartbeat_at > record.started_at.replace(tzinfo=None) - datetime.timedelta(seconds=1)
+
+
+def test_a_cloud_run_jobs_execution_is_asked_for_with_the_run_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    asked: list[tuple[str, Any, Any]] = []
+
+    class Answer:
+        def __init__(self, status: int, body: dict[str, Any]) -> None:
+            self.status_code = status
+            self.ok = status < 400
+            self.text = str(body)
+            self.body = body
+
+        def json(self) -> dict[str, Any]:
+            return self.body
+
+        def raise_for_status(self) -> None:
+            assert self.ok
+
+    def get(url: str, headers: dict[str, str], timeout: int) -> Answer:
+        assert headers == {"Metadata-Flavor": "Google"} and timeout
+        return Answer(200, {"access_token": "sa-token"})
+
+    def post(url: str, headers: dict[str, str], json: Any, timeout: int) -> Answer:
+        asked.append((url, headers, json))
+        return Answer(200, {"name": "operations/1", "metadata": {"name": "projects/p/locations/r/jobs/myworld-import/executions/x1"}})
+
+    monkeypatch.setattr(jobs.requests, "get", get)
+    monkeypatch.setattr(jobs.requests, "post", post)
+    monkeypatch.setenv("IMPORT_JOB", "projects/p/locations/r/jobs/myworld-import")
+    dispatch = REAL_DISPATCHER(None)  # type: ignore[arg-type] - a job, not the app, does the run
+    assert dispatch(42) == "projects/p/locations/r/jobs/myworld-import/executions/x1"
+    assert asked == [(
+        "https://run.googleapis.com/v2/projects/p/locations/r/jobs/myworld-import:run",
+        {"Authorization": "Bearer sa-token"},
+        {"overrides": {"containerOverrides": [{"args": ["-m", "myworld.importers.worker", "42"]}]}},
+    )]
+    monkeypatch.setattr(jobs.requests, "post", lambda *_args, **_kwargs: Answer(403, {"error": "denied"}))
+    with pytest.raises(core.ImporterError, match="Cloud Run answered 403"):
+        dispatch(43)

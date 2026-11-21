@@ -2,6 +2,13 @@
 What every importer is made of: its parameters, the report it writes, the
 register it is in, and running one, which is the same for all of them.
 
+A run is not done in the request that asks for it: it is queued (start),
+and a job of its own does it (execute; on Cloud Run a Cloud Run Jobs
+execution, see myworld.importers.jobs), saying what it has done so far and
+that it is alive as it goes. A run whose job stopped answering is failed
+(settle). A regular user may start RUNS_PER_MONTH runs a month; an admin,
+any number.
+
 An importer may be run again and again with nothing to fear: every row it
 writes has a key it is told from the others by (a YouTube video by its id),
 so a row the user has is never added twice; of a row they have it may
@@ -11,15 +18,33 @@ right after the first adds nothing and changes nothing.
 """
 
 import dataclasses
+import datetime
+import logging
+import os
+import threading
 from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
 import requests
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func, select, update
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from myworld.models import ImportRun, User, utcnow
+from myworld.models import IMPORT_ENDED, ROLE_ADMIN, ImportRun, User, utcnow
+
+logger = logging.getLogger(__name__)
+
+# the runs a regular user may start in a calendar month (UTC), dry ones too: each is a job;
+# IMPORT_RUNS_PER_MONTH says otherwise. An admin has no limit.
+RUNS_PER_MONTH = 100
+# how often a running job says it is alive, with what it has done so far
+HEARTBEAT_SECONDS = 10
+# a running run whose job has not said it is alive for this long has stopped (its job died or was cancelled)
+STALE_SECONDS = 120
+# a queued run whose job has not started in this long never will
+QUEUED_SECONDS = 600
 
 # the kinds of parameter there are, as the Imports page draws them:
 # "choices" is one or more of a list the importer gives for the user (a list of strings)
@@ -32,6 +57,10 @@ class ImporterError(Exception):
 
 class ParamError(ImporterError):
     """ A parameter given wrong: nothing is run. """
+
+
+class LimitError(ImporterError):
+    """ The user has started as many runs this month as they may. """
 
 
 @dataclasses.dataclass(frozen=True)
@@ -64,13 +93,19 @@ class Importer:
     name: str
     title: str
     description: str
-    # the data it adds to, a key of checks.DATASETS ("youtube")
-    dataset: str
+    # the data it adds to, a key of checks.DATASETS ("youtube"); None for one that adds to none (a test)
+    dataset: str | None
     params: tuple[Param, ...]
     # does the import into the session, without committing: run() commits or rolls back
     run: Callable[[Session, User, dict[str, Any], Report], None]
     # why the user cannot run it now ("connect YouTube first"), "" when they can
     unavailable: Callable[[Session, User], str] = lambda _session, _user: ""
+    # only an admin sees it, and may run it
+    admin_only: bool = False
+
+
+def visible(importer: Importer, user: User) -> bool:
+    return not importer.admin_only or user.role == ROLE_ADMIN
 
 
 IMPORTERS: dict[str, Importer] = {}
@@ -117,48 +152,163 @@ def parse_params(session: Session, owner: User, importer: Importer, given: Any) 
     return params
 
 
-def run(session: Session, owner: User, importer: Importer, given: Any, dry_run: bool) -> ImportRun:
+def runs_allowed(owner: User) -> int | None:
+    """ How many runs owner may start a month; None for no limit (an admin). """
+    if owner.role == ROLE_ADMIN:
+        return None
+    return int(os.environ.get("IMPORT_RUNS_PER_MONTH", RUNS_PER_MONTH))
+
+
+def runs_used(session: Session, owner: User) -> int:
+    """ How many runs owner started this calendar month (UTC), whatever became of them. """
+    month = utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return session.scalar(select(func.count()).select_from(ImportRun).where(ImportRun.owner_id == owner.id, ImportRun.started_at >= month)) or 0
+
+
+def start(session: Session, owner: User, importer: Importer, given: Any, dry_run: bool, dispatch: Callable[[int], str]) -> ImportRun:
     """
-    Run an importer as owner, and keep the run (models.ImportRun). A dry run
-    does it all and rolls it back, so its counts say what a real one would
-    do. One that fails is rolled back and says why. ParamError, before
-    anything is run, when it cannot be.
+    Queue a run of importer as owner and have its job started (dispatch,
+    which says the job's execution). ParamError when it cannot be run (its
+    parameters, or it is not available), LimitError when owner started as
+    many as they may this month. A job that cannot be started fails the run.
     """
+    if not visible(importer, owner):
+        raise ParamError(f"no importer called {importer.name}")
     reason = importer.unavailable(session, owner)
     if reason:
         raise ParamError(reason)
     params = parse_params(session, owner, importer, given)
-    started = utcnow()
-    report = Report()
-    status = "done"
-    try:
-        importer.run(session, owner, params, report)
-        session.flush()
-    except IntegrityError:
-        session.rollback()
-        status = "failed"
-        report.say("Failed: another import added the same rows meanwhile; run it again")
-    except (ImporterError, requests.RequestException) as e:
-        session.rollback()
-        status = "failed"
-        report.say(f"Failed: {e}")
-    if status == "done" and not dry_run:
-        session.commit()
-    else:
-        session.rollback()
-    record = ImportRun(
-        owner_id=owner.id, importer=importer.name, params=params, dry_run=dry_run, status=status,
-        counts=dict(report.counts) if status == "done" else {}, log="\n".join(report.lines),
-        started_at=started, finished_at=utcnow(),
-    )
+    allowed = runs_allowed(owner)
+    if allowed is not None and runs_used(session, owner) >= allowed:
+        raise LimitError(f"You have started your {allowed} import runs of this month; more may be started on the 1st")
+    record = ImportRun(owner_id=owner.id, importer=importer.name, params=params, dry_run=dry_run, status="queued", counts={}, log="", started_at=utcnow())
     session.add(record)
     session.commit()
-    return record
+    run_id = record.id
+    try:
+        execution = dispatch(run_id)
+    except (requests.RequestException, ImporterError) as e:
+        logger.exception("the job of import run %s could not be started", run_id)
+        session.execute(
+            update(ImportRun).where(ImportRun.id == run_id, ImportRun.status == "queued")
+            .values(status="failed", log=f"Failed: its job could not be started: {e}", finished_at=utcnow())
+        )
+        session.commit()
+    else:
+        if execution:
+            session.execute(update(ImportRun).where(ImportRun.id == run_id).values(execution=execution))
+            session.commit()
+    session.expire_all()
+    found = session.get(ImportRun, run_id)
+    assert found is not None
+    return found
 
 
-def run_json(record: ImportRun) -> dict[str, Any]:
+class _Heartbeat(threading.Thread):
+    """ While a run goes: every HEARTBEAT_SECONDS, that it is alive and what it has done so far, in a session of its own. """
+
+    def __init__(self, engine: Engine, run_id: int, report: Report) -> None:
+        super().__init__(name=f"import-run-{run_id}-heartbeat", daemon=True)
+        self.engine = engine
+        self.run_id = run_id
+        self.report = report
+        self.stopping = threading.Event()
+
+    def run(self) -> None:
+        while not self.stopping.wait(HEARTBEAT_SECONDS):
+            try:
+                with Session(self.engine) as session:
+                    session.execute(
+                        update(ImportRun).where(ImportRun.id == self.run_id, ImportRun.status == "running")
+                        .values(heartbeat_at=utcnow(), log="\n".join(list(self.report.lines)), counts=dict(self.report.counts))
+                    )
+                    session.commit()
+            except SQLAlchemyError:
+                # the next one may get through; a run that never does is settled as stopped
+                logger.warning("import run %s: could not say it is alive", self.run_id, exc_info=True)
+
+    def stop(self) -> None:
+        self.stopping.set()
+        self.join()
+
+
+def execute(engine: Engine, run_id: int) -> None:
+    """
+    Do a queued run: what its job does. It is marked running and says it is
+    alive as it goes; a dry run does it all and rolls it back, so its counts
+    say what a real one would do; one that fails is rolled back and says
+    why. A run that is not queued (done already, or settled) is left alone.
+    """
+    with Session(engine) as session:
+        record = session.get(ImportRun, run_id)
+        if record is None or record.status != "queued":
+            logger.warning("import run %s is not queued: nothing to do", run_id)
+            return
+        record.status = "running"
+        record.heartbeat_at = utcnow()
+        session.commit()
+        importer = IMPORTERS.get(record.importer)
+        owner = session.get(User, record.owner_id)
+        params = dict(record.params)
+        dry_run = record.dry_run
+        report = Report()
+        status = "done"
+        beat = _Heartbeat(engine, run_id, report)
+        beat.start()
+        try:
+            if importer is None or owner is None:
+                raise ImporterError(f"there is no importer {record.importer} any more")
+            reason = importer.unavailable(session, owner)
+            if reason:
+                raise ImporterError(reason)
+            importer.run(session, owner, params, report)
+            session.flush()
+            if not dry_run:
+                session.commit()
+        except IntegrityError:
+            status = "failed"
+            report.say("Failed: another import added the same rows meanwhile; run it again")
+        except (ImporterError, requests.RequestException) as e:
+            status = "failed"
+            report.say(f"Failed: {e}")
+        except Exception as e:
+            logger.exception("import run %s failed", run_id)
+            status = "failed"
+            report.say(f"Failed: {type(e).__name__}: {e}")
+        finally:
+            beat.stop()
+        session.rollback()
+        session.execute(
+            update(ImportRun).where(ImportRun.id == run_id).values(
+                status=status, counts=dict(report.counts) if status == "done" else {}, log="\n".join(report.lines),
+                heartbeat_at=utcnow(), finished_at=utcnow(),
+            )
+        )
+        session.commit()
+
+
+def settle(session: Session) -> None:
+    """ Fail the runs whose jobs stopped: running ones no longer saying they are alive, queued ones never started. """
+    now = utcnow()
+    session.execute(
+        update(ImportRun).where(ImportRun.status == "running", ImportRun.heartbeat_at < now - datetime.timedelta(seconds=STALE_SECONDS))
+        .values(status="failed", log=ImportRun.log + "\nFailed: its job stopped answering (it died, ran out of time or was cancelled)", finished_at=now)
+    )
+    session.execute(
+        update(ImportRun).where(ImportRun.status == "queued", ImportRun.started_at < now - datetime.timedelta(seconds=QUEUED_SECONDS))
+        .values(status="failed", log="Failed: its job never started", finished_at=now)
+    )
+    session.commit()
+
+
+def ended(record: ImportRun) -> bool:
+    return record.status in IMPORT_ENDED
+
+
+def run_json(record: ImportRun, owner: User | None = None) -> dict[str, Any]:
+    """ A run, as the page shows it; with owner (an admin's list of everyone's runs), whose it is. """
     importer = IMPORTERS.get(record.importer)
-    return {
+    out: dict[str, Any] = {
         "id": record.id,
         "importer": record.importer,
         "title": importer.title if importer else record.importer,
@@ -168,5 +318,11 @@ def run_json(record: ImportRun) -> dict[str, Any]:
         "counts": record.counts,
         "log": record.log,
         "started_at": record.started_at.isoformat(),
+        "heartbeat_at": record.heartbeat_at.isoformat() if record.heartbeat_at else None,
         "finished_at": record.finished_at.isoformat() if record.finished_at else None,
+        "ended": ended(record),
+        "execution": record.execution,
     }
+    if owner is not None:
+        out["owner"] = {"id": owner.id, "email": owner.email}
+    return out

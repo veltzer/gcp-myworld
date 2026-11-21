@@ -4,6 +4,8 @@ America
 Aviv
 Binyamin
 CDN
+CPU
+Cyrillic
 Dana
 Fernet
 Goodreads
@@ -21,6 +23,8 @@ Simania
 TV
 Theatre
 USA
+UTC
+Unicode
 WGS
 Wayback
 Westminster
@@ -30,6 +34,7 @@ XML
 YouTube
 api
 apis
+cancelled
 cdnjs
 cloudflare
 csrf
@@ -76,5 +81,3 @@ werkzeug
 wikidata
 wordmark
 yaml
-Cyrillic
-Unicode

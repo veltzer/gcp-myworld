@@ -135,17 +135,26 @@
 				<p class="checks-intro">
 					Bring your data in from elsewhere. Any importer can run again whenever: it adds only what you do not
 					have, and never changes what you wrote. Dry run does it all and keeps nothing, to see what a run would do.
+					A run goes on its own, in the background: leave the page, and come back to see how it went.
 				</p>
+				<!-- how many runs were started this month, of how many may be -->
+				<p id="import-limit" class="import-limit"></p>
 				<!-- the YouTube account the importers read: Connect or Disconnect, always here -->
 				<p id="youtube-connection" class="youtube-connection"></p>
 				<div id="importers-list"></div>
-				<h2 class="schema-heading">Your last runs</h2>
-				<p id="import-runs-none" class="empty">No run yet.</p>
-				<table id="import-runs" class="entries" hidden>
-					<thead>
-						<tr><th>When (UTC)</th><th>Importer</th><th>Kind</th><th>Status</th><th>What it did</th></tr>
-					</thead>
-					<tbody id="import-runs-rows"></tbody>
+				<!-- runs going now (the page looks again every few seconds while there are any), then the last that ended;
+				     an admin sees everyone's, with a User column -->
+				<h2 id="import-running-title" class="schema-heading">Running</h2>
+				<p id="import-running-none" class="empty">Nothing is running.</p>
+				<table id="import-running" class="entries import-runs" hidden>
+					<thead id="import-running-head"></thead>
+					<tbody id="import-running-rows"></tbody>
+				</table>
+				<h2 id="import-ended-title" class="schema-heading">Ended</h2>
+				<p id="import-ended-none" class="empty">No run has ended yet.</p>
+				<table id="import-ended" class="entries import-runs" hidden>
+					<thead id="import-ended-head"></thead>
+					<tbody id="import-ended-rows"></tbody>
 				</table>
 			</section>
 			<section id="schema-view" class="schema" hidden>

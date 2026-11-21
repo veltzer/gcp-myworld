@@ -1,5 +1,7 @@
 // The Imports page: the importers, each with its parameters, Dry run and Run,
-// the YouTube connection they read through, and the last runs.
+// the YouTube connection they read through, and the runs: the ones going
+// (each done by a job of its own, in the background) and the last that ended.
+// The page looks again every few seconds while any is going.
 
 import { $, api, showError } from "./core.js";
 import { makePicker } from "./dialog.js";
@@ -29,6 +31,27 @@ export async function selectImports() {
 		$("world-count").textContent = `${importers.length} importer${importers.length === 1 ? "" : "s"}`;
 		$("importers-list").replaceChildren(...importers.map(importerCard));
 		renderRuns(runs);
+	}
+}
+
+// how often the page looks again while a run is going
+const POLL_MS = 3000;
+let pollTimer = null;
+// the runs that were going the last time it looked: one that ended since may have added rows
+let goingIds = new Set();
+
+async function refreshRuns() {
+	const runs = await api("/api/import-runs");
+	if (state.view === "imports") {
+		renderRuns(runs);
+	}
+}
+
+function schedulePoll(going) {
+	clearTimeout(pollTimer);
+	pollTimer = null;
+	if (going && state.view === "imports") {
+		pollTimer = setTimeout(() => refreshRuns().catch((e) => showError(e.message)), POLL_MS);
 	}
 }
 
@@ -79,7 +102,9 @@ function renderConnection(youtube) {
 function importerCard(importer) {
 	const card = el("section", "importer");
 	const heading = el("h2", "schema-heading", importer.title);
-	heading.appendChild(el("span", "importer-dataset", ` into ${importer.dataset_name}`));
+	// what it adds to; a test adds to nothing, and says only admins see it
+	const into = [importer.dataset_name ? `into ${importer.dataset_name}` : "", importer.admin_only ? "(only admins see it)" : ""].filter(Boolean).join(" ");
+	heading.appendChild(el("span", "importer-dataset", ` ${into}`));
 	// one with choices to make says how they are picked
 	const picking = importer.params.length ? " Pick as many as you like; the ones of your last run are picked to start with." : "";
 	card.append(heading, el("p", "checks-intro", `${importer.description}${picking}`));
@@ -143,16 +168,16 @@ async function runImporter(importer, fields, dryRun, buttons, result) {
 		button.disabled = true;
 	}
 	result.className = "importer-result";
-	result.textContent = dryRun ? "Dry run…" : "Importing…";
+	result.textContent = "Starting…";
 	try {
-		const done = await api(`/api/importers/${importer.name}/runs`, { method: "POST", body: { params, dry_run: dryRun } });
-		result.replaceChildren(...runSummary(done));
-		result.classList.add(done.status === "done" ? "pass" : "fail");
-		// what was added shows in the sidebar's counts at once (a view fetches its rows again when opened)
-		if (done.status === "done" && !dryRun) {
-			loadCounts().catch((e) => showError(e.message));
+		const run = await api(`/api/importers/${importer.name}/runs`, { method: "POST", body: { params, dry_run: dryRun } });
+		if (run.status === "failed") {
+			result.classList.add("fail");
+			result.textContent = run.log;
+		} else {
+			result.textContent = `${dryRun ? "Dry run" : "Run"} started: it goes on in the background, under Running below.`;
 		}
-		renderRuns(await api("/api/import-runs"));
+		await refreshRuns();
 	} catch (e) {
 		result.classList.add("fail");
 		result.textContent = e.message;
@@ -163,28 +188,116 @@ async function runImporter(importer, fields, dryRun, buttons, result) {
 	}
 }
 
-// What a run did: its counts on one line (or why it failed), then what it said.
-function runSummary(run) {
-	const counts = Object.entries(run.counts).map(([what, n]) => `${what}: ${n.toLocaleString()}`).join(", ");
-	const head = run.status === "done"
-		? `${run.dry_run ? "Dry run, nothing kept. It would have: " : ""}${counts || "nothing to do"}`
-		: "Failed, nothing kept";
-	const out = [el("p", "importer-counts", head)];
-	if (run.log) {
-		out.push(el("pre", "importer-log", run.log));
-	}
-	return out;
+// "2026-11-21T10:00:00" is UTC, said or not
+function utc(iso) {
+	return new Date(/[zZ]|[+-]\d\d:\d\d$/.test(iso) ? iso : `${iso}Z`);
 }
 
-function renderRuns(runs) {
-	$("import-runs-rows").replaceChildren(...runs.map((run) => {
-		const tr = el("tr");
-		const when = el("td", "nowrap", run.started_at.slice(0, 16).replace("T", " "));
-		const counts = Object.entries(run.counts).map(([what, n]) => `${what}: ${n.toLocaleString()}`).join(", ");
-		const said = run.status === "done" ? counts || "nothing to do" : run.log.split("\n").at(-1);
-		tr.append(when, el("td", "nowrap", run.title), el("td", "", run.dry_run ? "Dry run" : "Run"), el("td", run.status === "done" ? "pass" : "fail", run.status === "done" ? "Done" : "Failed"), el("td", "", said));
-		return tr;
-	}));
-	$("import-runs").hidden = runs.length === 0;
-	$("import-runs-none").hidden = runs.length !== 0;
+// "4:05", "1:02:03": how long from one time to another
+function took(from, to) {
+	const seconds = Math.max(0, Math.round((to - from) / 1000));
+	const two = (n) => String(n).padStart(2, "0");
+	const [h, m, sec] = [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60];
+	return h ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`;
+}
+
+// What a run did: its counts on one line (or why it failed), and all it said under it, opened with a click.
+function said(run) {
+	const counts = Object.entries(run.counts).map(([what, n]) => `${what}: ${n.toLocaleString()}`).join(", ");
+	const lines = run.log ? run.log.split("\n") : [];
+	let head;
+	if (run.status === "done") {
+		head = `${run.dry_run ? "Nothing kept; it would have: " : ""}${counts || "nothing to do"}`;
+	} else if (run.status === "failed") {
+		head = lines.at(-1) || "Failed";
+	} else {
+		head = lines.at(-1) || (run.status === "queued" ? "Waiting for its job to start" : "Started");
+	}
+	const cell = el("td");
+	if (lines.length === 0) {
+		cell.textContent = head;
+		return cell;
+	}
+	const details = el("details");
+	details.append(el("summary", "", head), el("pre", "importer-log", run.log));
+	cell.appendChild(details);
+	return cell;
+}
+
+const STATUS = { queued: "Queued", running: "Running", done: "Done", failed: "Failed" };
+
+// the logs of a run's Cloud Run Jobs execution, in the console (an admin's)
+function executionLink(run) {
+	const parts = run.execution.match(/^projects\/([^/]+)\/locations\/([^/]+)\/jobs\/[^/]+\/executions\/([^/]+)$/);
+	if (!parts) {
+		return document.createTextNode("");
+	}
+	const a = el("a", "", "Logs");
+	a.href = `https://console.cloud.google.com/run/jobs/executions/details/${parts[2]}/${parts[3]}/logs?project=${parts[1]}`;
+	a.target = "_blank";
+	a.rel = "noopener";
+	return a;
+}
+
+function runRow(run, everyone, now) {
+	const tr = el("tr");
+	const started = utc(run.started_at);
+	const cells = [el("td", "nowrap", run.started_at.slice(0, 16).replace("T", " "))];
+	if (everyone) {
+		const who = el("td", "nowrap", run.owner.email);
+		who.title = `User ${run.owner.id}`;
+		cells.push(el("td", "nowrap", String(run.owner.id)), who);
+	}
+	const statusClass = run.ended ? (run.status === "done" ? "pass" : "fail") : "going";
+	cells.push(
+		el("td", "nowrap", run.title),
+		el("td", "nowrap", run.dry_run ? "Dry run" : "Run"),
+		el("td", `nowrap ${statusClass}`, STATUS[run.status] || run.status),
+		el("td", "nowrap", took(started, run.finished_at ? utc(run.finished_at) : now)),
+		said(run),
+	);
+	if (everyone) {
+		const logs = el("td", "nowrap");
+		logs.appendChild(executionLink(run));
+		cells.push(logs);
+	}
+	tr.append(...cells);
+	return tr;
+}
+
+function runsHead(everyone, timeLabel) {
+	const tr = el("tr");
+	const labels = ["Started (UTC)", ...(everyone ? ["User id", "User"] : []), "Importer", "Kind", "Status", timeLabel, "What it did", ...(everyone ? ["Job"] : [])];
+	tr.append(...labels.map((label) => el("th", "", label)));
+	return tr;
+}
+
+function renderLimit(limit, everyone) {
+	const { used, allowed } = limit;
+	const runs = (n) => `${n.toLocaleString()} run${n === 1 ? "" : "s"}`;
+	const mine = allowed === null
+		? `You started ${runs(used)} this month; as an admin you have no limit.`
+		: `You started ${runs(used)} of your ${allowed.toLocaleString()} this month (dry runs count too).`;
+	$("import-limit").textContent = everyone ? `${mine} The runs below are everyone's.` : mine;
+}
+
+function renderRuns({ running, ended, everyone, limit }) {
+	const now = new Date();
+	renderLimit(limit, everyone);
+	$("import-running-title").textContent = everyone ? "Running (everyone's)" : "Running";
+	$("import-ended-title").textContent = everyone ? "Ended (everyone's)" : "Ended";
+	$("import-running-head").replaceChildren(runsHead(everyone, "Time so far"));
+	$("import-ended-head").replaceChildren(runsHead(everyone, "Took"));
+	$("import-running-rows").replaceChildren(...running.map((run) => runRow(run, everyone, now)));
+	$("import-ended-rows").replaceChildren(...ended.map((run) => runRow(run, everyone, now)));
+	$("import-running").hidden = running.length === 0;
+	$("import-running-none").hidden = running.length !== 0;
+	$("import-ended").hidden = ended.length === 0;
+	$("import-ended-none").hidden = ended.length !== 0;
+	// a run that ended since the last look, and kept what it did, shows in the sidebar's counts
+	if (ended.some((run) => goingIds.has(run.id) && run.status === "done" && !run.dry_run)) {
+		loadCounts().catch((e) => showError(e.message));
+	}
+	goingIds = new Set(running.map((run) => run.id));
+	schedulePoll(running.length > 0);
 }

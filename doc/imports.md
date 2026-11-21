@@ -2,8 +2,50 @@
 
 The Imports page (sidebar, Overview, every account) brings a user's data in
 from elsewhere. Each importer has parameters of its own, a Dry run and a
-Run, and the page lists the user's last runs. An importer imports into the
-signed-in user's own data only.
+Run, and the page lists the runs going and the last that ended. An
+importer imports into the signed-in user's own data only, and a user sees
+only their own runs; an admin sees everyone's, with the user's id and email.
+
+## Runs go in the background
+
+A run is not done in the request that asks for it. Run (or Dry run) checks
+the parameters, keeps the run in `import_runs` as `queued`, starts a job for
+it, and answers at once; the job does it and the page shows how it goes:
+
+- On Cloud Run the job is an execution of the Cloud Run Job `myworld-import`
+  (`gcp_job_name` in `.gcp.conf`), which runs
+  `python -m myworld.importers.worker <run id>` in a container of its own,
+  from the same image as the service, with the same database, secrets and
+  service account. It has the whole CPU for as long as the run takes (an
+  hour at most, `--task-timeout`), is never retried, and nothing is billed
+  between runs. `gcloud_deploy.sh` deploys the job after the service, from
+  the image the service now runs. The service starts it through the Cloud
+  Run API (`jobs.run` with the run's id as an argument), as its service
+  account, which has `roles/run.jobsExecutorWithOverrides` for that.
+  The service knows the job from `IMPORT_JOB`.
+- Anywhere else (no `IMPORT_JOB`, development) the run is done in a thread
+  of the app itself.
+
+The job marks the run `running`, and every 10 seconds says it is alive
+(`heartbeat_at`) with what it has said and counted so far; it ends it
+`done` or `failed`. A run whose job stopped saying it is alive for two
+minutes (it died, ran out of time, or was cancelled) is failed, and so is
+one queued for ten minutes whose job never started. `execution` names the
+Cloud Run execution; an admin's list links to its logs.
+
+The page looks again every three seconds while a run is going.
+
+## How many runs
+
+A regular user may start 100 runs a calendar month (UTC), dry runs and
+failed ones too: each is a job. `IMPORT_RUNS_PER_MONTH` says otherwise. An
+admin has no limit. The page says how many were started this month.
+
+## Sleep, a test for admins
+
+`sleep` imports nothing and takes five minutes doing it, saying so every 30
+seconds. Only admins see it and may run it, as many at once as they like:
+it is for seeing what long runs look like.
 
 ## Running again is safe
 
@@ -117,11 +159,20 @@ GOOGLE_CLIENT_ID=<gcp_oauth_client_id> GOOGLE_CLIENT_SECRET="$(pass show keys/go
   `chosen`, what the user's last run of it chose of those (the page starts
   with them), and `unavailable`, why the user cannot run it now ("Connect YouTube first"),
   `""` when they can; and `youtube`, the state of the connection.
+  `limit` is `{"used": n, "allowed": m}`, `allowed` null for no limit.
+  An importer only admins may see is listed for admins only.
 - `POST /api/importers/<name>/runs` with
-  `{"params": {...}, "dry_run": false}`: runs it and answers the run (`status` `done` or `failed`,
-  `counts`, `log`). 400 for parameters it does not take, a choice that is
-  not one, or an importer that cannot run; nothing is run then.
-- `GET /api/import-runs`: the user's last 20 runs, newest first.
+  `{"params": {...}, "dry_run": false}`: starts it and answers (202) the
+  run, `queued` (or `failed` when its job could not be started). 400 for
+  parameters it does not take, a choice that is not one, or an importer
+  that cannot run; 429 when the user started as many runs this month as
+  they may; nothing is run then.
+- `GET /api/import-runs`: `running`, the runs going (`queued`, `running`),
+  and `ended`, the last 20 that ended, newest first; each with `status`,
+  `counts` and `log` so far, `started_at`, `heartbeat_at`, `finished_at`
+  and `execution`. For an admin they are everyone's, each with `owner`
+  (`id`, `email`), and `everyone` is true. Runs whose jobs stopped are
+  failed first. `limit` as above.
 - `GET /youtube/status`: whether connecting is set up, whether the user
   connected, and the channel connected.
 
@@ -131,6 +182,7 @@ A module in `src/myworld/importers/` that registers an `Importer` (name,
 title, description, the page of data it adds to, its parameters, and the
 function that does the import into the session, counting what it does on
 the `Report`) and is named in `importers/__init__.py`. The page draws its
-parameters, and running it, keeping the run, dry runs and rolling back are
-the same for all (`importers/core.py`). It keeps to the rules above: a key
+parameters, and running it in a job of its own, keeping the run, dry runs
+and rolling back are the same for all (`importers/core.py`). One with
+`admin_only` is seen and run by admins only. It keeps to the rules above: a key
 for every row, and only the source's columns refreshed.
