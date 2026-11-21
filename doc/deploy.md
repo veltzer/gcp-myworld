@@ -779,7 +779,8 @@ The Imports page and its API are in `imports.md`.
     - `disabled_checks`: the database checks an admin turned off for
   themselves (see `checks.md`).
     - `youtube_connections`: the YouTube account a user connected for the
-  importers (a sealed refresh token), and `import_runs`, each run of an
+  importers (a sealed refresh token), `audible_connections`: the Audible
+  account (My World's device's sealed tokens), and `import_runs`, each run of an
   importer (see `imports.md`).
     - the user's own enumerations: `organization_types`, `person_types`,
   `relation_types`, `person_relation_types`, `devices`.

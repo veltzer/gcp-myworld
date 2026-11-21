@@ -1482,6 +1482,27 @@ class YouTubeConnection(Base):
     connected_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
 
+class AudibleConnection(Base):
+    """
+    The user's Audible account, connected from the Imports page so its
+    importer can read the library (myworld.audible): My World is a device of
+    the account, and this is what it signs with (the ADP token and the
+    device's private key) and the refresh token kept to deregister it, each
+    encrypted with a key derived from SECRET_KEY (a new SECRET_KEY makes
+    them unreadable, and the user connects again); the Audible store, and
+    the account's name, to show which account is connected.
+    """
+    __tablename__ = "audible_connections"
+
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    marketplace: Mapped[str] = mapped_column(String(10), nullable=False, default="us")
+    adp_token: Mapped[str] = mapped_column(Text, nullable=False)
+    private_key: Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    connected_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+
+
 # queued: waiting for its job to start (on Cloud Run, a Cloud Run Jobs execution);
 # running: its job is at it; done, failed: it ended
 IMPORT_STATUSES = ("queued", "running", "done", "failed")
@@ -1595,7 +1616,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0021"
+SCHEMA_REVISION = "0022"
 
 
 def prepare_schema(engine: Engine) -> None:

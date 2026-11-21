@@ -1,5 +1,5 @@
 // The Imports page: the importers, each with its parameters, Dry run and Run,
-// the YouTube connection they read through, and the runs: the ones going
+// the YouTube and Audible connections they read through, and the runs: the ones going
 // (each done by a job of its own, in the background) and the last that ended,
 // each with its Log (all it said, in a dialog here; #imports/<id> opens it).
 // The page looks again every few seconds while any is going.
@@ -26,9 +26,10 @@ export async function selectImports() {
 	await fillTypeFilter("imports");
 	updateTools();
 	$("world-count").textContent = "";
-	const [{ importers, youtube }, runs] = await Promise.all([api("/api/importers"), api("/api/import-runs")]);
+	const [{ importers, youtube, audible }, runs] = await Promise.all([api("/api/importers"), api("/api/import-runs")]);
 	if (state.view === "imports") {
 		renderConnection(youtube);
+		renderAudible(audible);
 		$("world-count").textContent = `${importers.length} importer${importers.length === 1 ? "" : "s"}`;
 		renderImporters(importers);
 		renderRuns(runs);
@@ -97,6 +98,76 @@ function renderConnection(youtube) {
 		};
 	}
 	box.replaceChildren(el("span", "", said), button);
+}
+
+// The Audible account the Audible library importer reads: who it is, and Connect or Disconnect in the same spot.
+// Connecting is two steps on the page: sign in at Amazon in a tab of its own (My World never sees the
+// password), then paste back the address Amazon ended on, whose code makes My World a device of the account.
+function renderAudible(audible) {
+	const box = $("audible-connection");
+	const button = el("button", "", audible.connected ? "Disconnect" : "Connect Audible");
+	button.type = "button";
+	let said;
+	if (audible.connected) {
+		said = `Audible: connected${audible.name ? ` as ${audible.name}` : ""} (${audible.store}), reading the library only.`;
+		button.title = "Forget the connection, and take My World off your Audible account's devices";
+		button.onclick = async () => {
+			button.disabled = true;
+			try {
+				await api("/audible/disconnect", { method: "POST" });
+				await selectImports();
+			} catch (e) {
+				showError(e.message);
+				button.disabled = false;
+			}
+		};
+	} else {
+		said = "Audible: not connected. Connecting lets the importer read your Audible library, nothing else.";
+		button.title = "Sign in at Amazon, in a new tab, to make My World a device of your Audible account";
+		button.onclick = async () => {
+			button.disabled = true;
+			try {
+				const { url } = await api("/audible/connect/start", { method: "POST" });
+				audibleSteps(box, url);
+			} catch (e) {
+				showError(e.message);
+				button.disabled = false;
+			}
+		};
+	}
+	box.replaceChildren(el("span", "", said), button);
+}
+
+// The two steps of connecting Audible, in the connection's spot until it is done or cancelled.
+function audibleSteps(box, url) {
+	const signIn = el("a", "", "1. Sign in at Amazon");
+	signIn.href = url;
+	signIn.target = "_blank";
+	signIn.rel = "noopener";
+	signIn.title = "Amazon's own sign-in page, in a new tab: your password goes to Amazon only";
+	const address = el("input");
+	address.type = "url";
+	address.placeholder = "https://www.amazon.com/ap/maplanding?...";
+	address.setAttribute("aria-label", "The address Amazon ended on");
+	address.size = 40;
+	const finish = el("button", "", "Finish");
+	finish.type = "button";
+	finish.title = "Make My World a device of your Audible account, with the code in that address";
+	const cancel = el("button", "text", "Cancel");
+	cancel.type = "button";
+	cancel.onclick = () => selectImports().catch((e) => showError(e.message));
+	finish.onclick = async () => {
+		finish.disabled = true;
+		try {
+			await api("/audible/connect/finish", { method: "POST", body: { address: address.value } });
+			await selectImports();
+		} catch (e) {
+			showError(e.message);
+			finish.disabled = false;
+		}
+	};
+	const paste = el("span", "", "2. Amazon then shows a page that is not found: copy that page's whole address, paste it here");
+	box.replaceChildren(signIn, paste, address, finish, cancel);
 }
 
 // the importers whose details are open: they stay open when the page is drawn again

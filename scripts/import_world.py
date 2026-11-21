@@ -94,7 +94,7 @@ import yaml
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.orm import Session, selectinload
 
-from myworld import languages
+from myworld import audible, languages
 from myworld import names as naming
 from myworld.addresses import parse_address
 from myworld.cities import city_key, country_name, parse_location
@@ -267,12 +267,6 @@ AUDIO_COURSE_FIELDS = DATE_FIELDS | {
     "name", "lecturers", "rating", "review", "device", "location", "date_started_utcz", "date_ended_utcz", "progress",
     "great_courses_id", "great_courses_slug", "audible_asin", "internal_id",
 }
-# audible.yaml: what Audible says of a book of the library
-AUDIBLE_FIELDS = {
-    "asin", "title", "subtitle", "authors", "narrators", "series_title", "series_sequence", "genres", "runtime_length_min",
-    "is_finished", "percent_complete", "rating", "num_ratings", "date_added", "release_date", "cover_url", "purchase_date",
-}
-AUDIBLE = "audible"
 # audio_books.yaml: an audio book heard, not from a source's library, said as an audio course is
 AUDIO_BOOK_FIELDS = DATE_FIELDS | {"name", "authors", "date_started_utcz", "location", "device", "progress"}
 YOUTUBE_FIELDS = DATE_FIELDS | {"id", "name", "rating", "review", "device", "location"}
@@ -845,27 +839,7 @@ def import_audio_courses(session: Session, owner: User, source: Path) -> dict[st
     return {"audio courses": len(items), "lecturers added": added, "devices added": device.added, "images": images}
 
 
-def _optional(value: Any, kind: type[int | float]) -> Any:
-    """ A number Audible writes as a string, None when it writes nothing. """
-    text = str(value).strip()
-    return kind(text) if text else None
 
-
-def _audible_genres(item: dict[str, Any]) -> list[str]:
-    """ A book's genres as Audible lists them, repeats too: each genre's path from its top genre down. """
-    return [str(g).strip() for g in item.get("genres", []) if str(g).strip()]
-
-
-def _audible_values(item: dict[str, Any]) -> dict[str, Any]:
-    """ What Audible says of a book that the app does not edit: refreshed on every import. """
-    return {
-        "purchased_utcz": _stamp(item, "purchase_date"),
-        "cover_url": str(item.get("cover_url", "")).strip(),
-        "finished": bool(item["is_finished"]),
-        "percent_heard": _optional(item["percent_complete"], float),
-        "source_rating": _optional(item["rating"], float),
-        "source_ratings": _optional(item["num_ratings"], int),
-    }
 
 
 AUDIO_BOOK_FILES = ("audible.yaml", "audio_books.yaml")
@@ -926,72 +900,24 @@ def _import_heard(session: Session, owner: User, path: Path, source: Path) -> di
 
 def _import_audible(session: Session, owner: User, path: Path, source: Path) -> dict[str, int]:
     """
-    Add the books of owner's Audible library from source (audible.yaml) that
-    owner does not have yet (by ASIN), with their covers; on those owner has,
-    refresh only what Audible changes (_audible_values), so whatever was
-    edited in the app stays; genres an earlier import kept each once only
-    are given back as Audible lists them. Safe to run again. Does not commit.
+    Add the books of owner's Audible library from source (audible.yaml, as
+    audible-cli exports it) as the Audible library importer does
+    (audible.store_library), their covers from
+    static/images/audible-<asin>.jpg. Safe to run again. Does not commit.
     """
     with path.open(encoding="UTF8") as fp:
         items = yaml.safe_load(fp)["items"]
-    asins = [str(item.get("asin", "")) for item in items]
-    for item in items:
-        _check_fields(path, repr(item.get("title")), item, AUDIBLE_FIELDS)
-        if not item.get("asin") or not str(item.get("title", "")).strip():
-            raise WorldImportError(f"{path}: {item.get('title')!r} has no ASIN or no title")
-    if len(set(asins)) != len(asins):
-        raise WorldImportError(f"{path}: an ASIN is listed twice")
-    had = {b.source_id: b for b in session.scalars(select(AudioBook).where(AudioBook.owner_id == owner.id, AudioBook.source == AUDIBLE))}
     image_dir = source / "static" / "images"
-    stored = {image.filename: image for image in session.scalars(select(Image).where(Image.owner_id == owner.id))}
-    added = refreshed = images = 0
-    for item in items:
-        asin = str(item["asin"])
-        book = had.get(asin)
-        if book is not None:
-            values = _audible_values(item)
-            genres = _audible_genres(item)
-            # kept each once by an earlier import, and not edited since: as Audible lists them
-            if book.genres != genres and book.genres == list(dict.fromkeys(genres)):
-                values["genres"] = genres
-            changed = {key: value for key, value in values.items() if getattr(book, key) != value}
-            for key, value in changed.items():
-                setattr(book, key, value)
-            refreshed += bool(changed)
-            continue
-        cover = None
+
+    def cover(asin: str, _url: str) -> bytes | None:
         file = image_dir / f"audible-{asin}.jpg"
-        if file.exists():
-            data = file.read_bytes()
-            sha256 = hashlib.sha256(data).hexdigest()
-            cover = stored.get(file.name)
-            if cover is not None and cover.sha256 != sha256:
-                raise WorldImportError(f"{file}: an image of that name is stored already, with other contents")
-            if cover is None:
-                cover = Image(owner_id=owner.id, filename=file.name, content_type="image/jpeg", sha256=sha256, data=data)
-                session.add(cover)
-                stored[file.name] = cover
-                images += 1
-        session.add(AudioBook(
-            owner_id=owner.id,
-            source=AUDIBLE,
-            source_id=asin,
-            name=str(item["title"]).strip(),
-            subtitle=str(item.get("subtitle", "")).strip(),
-            authors=str(item.get("authors", "")).strip(),
-            narrators=str(item.get("narrators", "")).strip(),
-            series=str(item.get("series_title", "")).strip(),
-            series_sequence=str(item.get("series_sequence", "")).strip(),
-            genres=_audible_genres(item),
-            minutes=_optional(item.get("runtime_length_min", ""), int),
-            added_utcz=_stamp(item, "date_added"),
-            released=datetime.date.fromisoformat(str(item["release_date"])) if item.get("release_date") else None,
-            image=cover,
-            **_audible_values(item),
-        ))
-        added += 1
-    session.flush()
-    return {"audio books added": added, "audio books refreshed": refreshed, "images": images}
+        return file.read_bytes() if file.exists() else None
+
+    try:
+        audible.check_items(items, str(path))
+        return audible.store_library(session, owner, items, cover)
+    except audible.AudibleError as e:
+        raise WorldImportError(str(e)) from e
 
 
 def _check_fields(path: Path, what: str, item: dict[str, Any], fields: set[str]) -> None:

@@ -1,3 +1,5 @@
+ADP
+AGPL
 ASCII
 ASIN
 Ada
@@ -26,6 +28,9 @@ Meola
 Nahalat
 Nominatim
 OpenStreetMap
+PKCE
+RSA
+SHA
 SQLAlchemy
 SchemaCrawler
 SchemaSpy
@@ -48,6 +53,8 @@ cancelled
 cdnjs
 cloudflare
 csrf
+deregister
+deregisters
 dev
 dialogs
 dns

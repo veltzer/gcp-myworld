@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from myworld import (
     admin,
+    audible,
     auth,
     dump,
     enumerations,
@@ -141,4 +142,5 @@ def create_app(engine: Engine | None = None, mail: verification.Mailer | None = 
     app.register_blueprint(dump.bp)
     app.register_blueprint(sharing.bp)
     app.register_blueprint(youtube.bp)
+    app.register_blueprint(audible.bp)
     return app

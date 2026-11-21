@@ -203,6 +203,49 @@ GOOGLE_CLIENT_ID=<gcp_oauth_client_id> GOOGLE_CLIENT_SECRET="$(pass show keys/go
   MYWORLD_DEV_LOGIN=1 python src/main.py
 ```
 
+## Audible library
+
+`audible-library` brings the books of the user's Audible library in as
+audio books from Audible (source `audible`, found again by ASIN). A book
+the user does not have is added with its cover; one they have is given
+what Audible says of it now (finished, how much was heard, its rating
+there, when bought, the cover's address) and keeps the rest as edited:
+the user's rating, review, title and the like. Genres are kept as Audible
+lists them, each genre's path from its top genre down. It takes no
+parameters, adds only, and needs Audible connected. It shares its writing
+with `scripts/import_world.py --audio-books` (`audible.store_library`).
+
+## Connecting Audible
+
+Audible has no public API. Its apps use one of their own, and
+`myworld.audible` is a small client of it written for My World (no
+third-party Audible library: the one there is, `audible`, is AGPL). It
+reads JSON from `api.audible.com` and never reads a web page.
+
+- "Connect Audible" (`POST /audible/connect/start`) makes the address of
+  Amazon's sign-in page for a new device (OAuth 2.0 with PKCE, the scope
+  `device_auth_access`), and keeps the PKCE verifier and the device's serial in the
+  session. The user signs in at Amazon in a tab of their own, so their
+  password and second factor never reach My World.
+- Amazon ends on `https://www.amazon.com/ap/maplanding?...`, a page it does
+  not have, whose address holds a one-time code
+  (`openid.oa2.authorization_code`). The user pastes the address back
+  (`POST /audible/connect/finish` with `{"address": ...}`), and the code is
+  traded at `api.amazon.com/auth/register` for the tokens of a device
+  called "<name>'s My World" (the Audible app's device type).
+- What is kept, in `audible_connections`, sealed (Fernet) with a key
+  derived from `SECRET_KEY`: the ADP token and the device's private key,
+  which sign every request to the library (RSA with SHA-256, over the
+  method, the path with its query, the moment, the body and the token; they
+  do not expire), and the refresh token, used only to deregister the device.
+  Also the account's name and the store (only `us`, audible.com, for now).
+- `POST /audible/disconnect` deregisters the device at Amazon (with an
+  access token got from the refresh token) and forgets it all; so does
+  removing the device in the Amazon account's devices. Connecting again
+  deregisters the device before.
+
+Nothing needs setting up: there is no client to register with Amazon.
+
 ## API
 
 - `GET /api/importers`: the importers, each with its parameters and, for a
@@ -210,7 +253,7 @@ GOOGLE_CLIENT_ID=<gcp_oauth_client_id> GOOGLE_CLIENT_SECRET="$(pass show keys/go
   the importer can run; `error` says why they could not be read), and
   `chosen`, what the user's last run of it chose of those (the page starts
   with them), and `unavailable`, why the user cannot run it now ("Connect YouTube first"),
-  `""` when they can; and `youtube`, the state of the connection.
+  `""` when they can; and `youtube` and `audible`, the state of the connections.
   `limit` is `{"used": n, "allowed": m}`, `allowed` null for no limit.
   An importer only admins may see is listed for admins only.
 - `POST /api/importers/<name>/runs` with
@@ -233,6 +276,8 @@ GOOGLE_CLIENT_ID=<gcp_oauth_client_id> GOOGLE_CLIENT_SECRET="$(pass show keys/go
   user's own, or anyone's for an admin (with `owner`); 404 otherwise.
 - `GET /youtube/status`: whether connecting is set up, whether the user
   connected, and the channel connected.
+- `GET /audible/status`: whether the user connected Audible, the account's
+  name and the store.
 
 ## A new importer
 
