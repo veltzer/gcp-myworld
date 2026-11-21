@@ -252,8 +252,8 @@ function said(run) {
 
 const STATUS = { queued: "Queued", running: "Running", done: "Done", failed: "Failed" };
 
-// Clear: the runs that ended off the list (the user's own; an admin's, everyone's), asking twice in the
-// button itself. A cleared run still counts against the month's runs, and its log opens by its address.
+// Clear: deletes the runs that ended, records and logs (the user's own; an admin's, everyone's), asking
+// twice in the button itself. What they imported stays, and they still count against the month's runs.
 function setupClear(count, everyone) {
 	const button = $("import-clear");
 	delete button.dataset.armed;
@@ -261,11 +261,11 @@ function setupClear(count, everyone) {
 	button.disabled = count === 0;
 	button.title = count === 0
 		? "No run that ended is listed"
-		: `Take the runs that ended off this list${everyone ? ", everyone's" : ""}: they still count against this month's runs`;
+		: `Delete the runs that ended${everyone ? ", everyone's" : ""}, with their logs. What they imported stays, and they still count against this month's runs`;
 	button.onclick = async () => {
 		if (!button.dataset.armed) {
 			button.dataset.armed = "1";
-			button.textContent = everyone ? "Clear everyone's ended runs?" : "Clear your ended runs?";
+			button.textContent = everyone ? "Delete everyone's ended runs and logs?" : "Delete your ended runs and logs?";
 			return;
 		}
 		button.disabled = true;
@@ -277,6 +277,17 @@ function setupClear(count, everyone) {
 			button.disabled = false;
 		}
 	};
+}
+
+async function clearRun(run, button) {
+	if (!button.dataset.armed) {
+		button.dataset.armed = "1";
+		button.textContent = "Delete?";
+		return;
+	}
+	button.disabled = true;
+	await api(`/api/import-runs/${run.id}`, { method: "DELETE" });
+	await refreshRuns();
 }
 
 // ─── a run's log ─────────────────────────────────────────────────────────────
@@ -417,6 +428,13 @@ function runRow(run, everyone, now) {
 	log.onclick = () => openRunLog(run.id).catch((e) => showError(e.message));
 	const logCell = el("td", "nowrap");
 	logCell.appendChild(log);
+	// one that ended can be deleted, record and log (asking twice); one going has it, disabled
+	const clear = el("button", "text danger", "Clear");
+	clear.type = "button";
+	clear.disabled = !run.ended;
+	clear.title = run.ended ? "Delete this run and its log; what it imported stays" : "It can be cleared once it ended";
+	clear.onclick = () => clearRun(run, clear).catch((e) => showError(e.message));
+	logCell.appendChild(clear);
 	cells.push(logCell);
 	tr.append(...cells);
 	return tr;
@@ -453,7 +471,7 @@ function scheduleTick(going) {
 
 function runsHead(everyone, timeLabel) {
 	const tr = el("tr");
-	const labels = ["Started (UTC)", ...(everyone ? ["User id", "User"] : []), "Importer", "Kind", "Status", timeLabel, "What it did", "Log"];
+	const labels = ["Started (UTC)", ...(everyone ? ["User id", "User"] : []), "Importer", "Kind", "Status", timeLabel, "What it did", ""];
 	tr.append(...labels.map((label) => el("th", "", label)));
 	return tr;
 }

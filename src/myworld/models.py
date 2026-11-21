@@ -1431,9 +1431,21 @@ class ImportRun(Base):
     finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     # the Cloud Run Jobs execution doing it ("projects/.../executions/..."), "" when run in the app itself
     execution: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
-    # when it was cleared off the Imports page (its Clear): no longer listed, but still counted against
-    # the month's runs, and its log still opens by its address; None while it is listed
-    cleared_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ImportUsage(Base):
+    """
+    How many import runs a user started in a calendar month (UTC), whatever
+    became of them: what the month's limit is counted against. Kept apart
+    from the runs, so deleting runs (the Imports page's Clear) gives back
+    none of the month's runs.
+    """
+    __tablename__ = "import_usage"
+
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    # the first day of the month
+    month: Mapped[datetime.date] = mapped_column(Date, primary_key=True)
+    runs: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 def database_url() -> str:
@@ -1468,7 +1480,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0014"
+SCHEMA_REVISION = "0016"
 
 
 def prepare_schema(engine: Engine) -> None:

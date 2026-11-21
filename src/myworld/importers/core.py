@@ -28,12 +28,19 @@ from collections.abc import Callable
 from typing import Any
 
 import requests
-from sqlalchemy import func, select, update
+from sqlalchemy import update
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from myworld.models import IMPORT_ENDED, ROLE_ADMIN, ImportRun, User, utcnow
+from myworld.models import (
+    IMPORT_ENDED,
+    ROLE_ADMIN,
+    ImportRun,
+    ImportUsage,
+    User,
+    utcnow,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -201,10 +208,24 @@ def runs_allowed(owner: User) -> int | None:
     return int(os.environ.get("IMPORT_RUNS_PER_MONTH", RUNS_PER_MONTH))
 
 
+def _month() -> datetime.date:
+    """ The first day of this calendar month (UTC). """
+    return utcnow().date().replace(day=1)
+
+
 def runs_used(session: Session, owner: User) -> int:
-    """ How many runs owner started this calendar month (UTC), whatever became of them. """
-    month = utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    return session.scalar(select(func.count()).select_from(ImportRun).where(ImportRun.owner_id == owner.id, ImportRun.started_at >= month)) or 0
+    """ How many runs owner started this calendar month (UTC), whatever became of them, deleted ones too (models.ImportUsage). """
+    usage = session.get(ImportUsage, (owner.id, _month()))
+    return usage.runs if usage is not None else 0
+
+
+def _count_run(session: Session, owner: User) -> None:
+    """ One more run started by owner this month. """
+    usage = session.get(ImportUsage, (owner.id, _month()))
+    if usage is None:
+        session.add(ImportUsage(owner_id=owner.id, month=_month(), runs=1))
+    else:
+        usage.runs += 1
 
 
 def start(session: Session, owner: User, importer: Importer, given: Any, dry_run: bool, dispatch: Callable[[int], str]) -> ImportRun:
@@ -225,6 +246,7 @@ def start(session: Session, owner: User, importer: Importer, given: Any, dry_run
         raise LimitError(f"You have started your {allowed} import runs of this month; more may be started on the 1st")
     record = ImportRun(owner_id=owner.id, importer=importer.name, params=params, dry_run=dry_run, status="queued", counts={}, log="", started_at=utcnow())
     session.add(record)
+    _count_run(session, owner)
     session.commit()
     run_id = record.id
     try:

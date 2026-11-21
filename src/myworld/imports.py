@@ -10,13 +10,13 @@ A regular user may start so many runs a month (core.runs_allowed).
 from typing import Any
 
 import flask
-from sqlalchemy import select, update
+from sqlalchemy import delete, select
 
 from myworld import auth, importers, youtube
 from myworld.api import ApiError, json_body
 from myworld.checks import DATASETS
 from myworld.importers import jobs
-from myworld.models import IMPORT_ENDED, ROLE_ADMIN, ImportRun, User, utcnow
+from myworld.models import IMPORT_ENDED, ROLE_ADMIN, ImportRun, User
 
 bp = flask.Blueprint("imports", __name__)
 
@@ -114,16 +114,16 @@ def api_run(name: str) -> flask.Response:
 @auth.login_required
 def api_runs_clear() -> flask.Response:
     """
-    Clear the runs that ended off the Imports page: the signed-in user's,
-    or everyone's for an admin (whose list is everyone's). A run going is
-    left alone. A cleared run is not deleted: it still counts against the
-    month's runs, and its log still opens by its address. {"cleared": n}.
+    Delete the runs that ended, records and logs: the signed-in user's, or
+    everyone's for an admin (whose list is everyone's). A run going is left
+    alone, and so is everything the runs imported: only the runs go. They
+    still count against the month's runs (models.ImportUsage). {"cleared": n}.
     """
     importers.settle(flask.g.db)
-    query = update(ImportRun).where(ImportRun.status.in_(IMPORT_ENDED), ImportRun.cleared_at.is_(None))
+    query = delete(ImportRun).where(ImportRun.status.in_(IMPORT_ENDED))
     if flask.g.user.role != ROLE_ADMIN:
         query = query.where(ImportRun.owner_id == flask.g.user.id)
-    cleared = flask.g.db.execute(query.values(cleared_at=utcnow())).rowcount
+    cleared = flask.g.db.execute(query).rowcount
     flask.g.db.commit()
     return flask.jsonify({"cleared": cleared})
 
@@ -144,6 +144,26 @@ def api_run_one(run_id: int) -> flask.Response:
     return flask.jsonify(importers.run_json(record, flask.g.db.get(User, record.owner_id) if admin else None))
 
 
+@bp.route("/api/import-runs/<int:run_id>", methods=["DELETE"])
+@auth.login_required
+def api_run_delete(run_id: int) -> flask.Response:
+    """
+    Delete one run that ended, its record and log: the signed-in user's
+    own, or anyone's for an admin (404 for anyone else); 409 for one still
+    going. What it imported stays, and it still counts against the month's
+    runs (models.ImportUsage).
+    """
+    importers.settle(flask.g.db)
+    record = flask.g.db.get(ImportRun, run_id)
+    if record is None or (record.owner_id != flask.g.user.id and flask.g.user.role != ROLE_ADMIN):
+        raise ApiError(404, "no such import run")
+    if not importers.ended(record):
+        raise ApiError(409, "this run is still going: it can be cleared once it ended")
+    flask.g.db.delete(record)
+    flask.g.db.commit()
+    return flask.Response(status=204)
+
+
 @bp.route("/api/import-runs", methods=["GET"])
 @auth.login_required
 def api_runs() -> flask.Response:
@@ -158,7 +178,7 @@ def api_runs() -> flask.Response:
     if not admin:
         query = query.where(ImportRun.owner_id == flask.g.user.id)
     going = flask.g.db.execute(query.where(ImportRun.status.not_in(IMPORT_ENDED))).all()
-    ended = flask.g.db.execute(query.where(ImportRun.status.in_(IMPORT_ENDED), ImportRun.cleared_at.is_(None)).limit(RUNS_SHOWN)).all()
+    ended = flask.g.db.execute(query.where(ImportRun.status.in_(IMPORT_ENDED)).limit(RUNS_SHOWN)).all()
     shown = (lambda record, owner: importers.run_json(record, owner if admin else None))
     return flask.jsonify({
         "running": [shown(record, owner) for record, owner in going],

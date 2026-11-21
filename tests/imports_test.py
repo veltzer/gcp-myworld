@@ -688,31 +688,58 @@ def test_what_goes_wrong_in_a_run_is_in_its_log(app: webtest.TestApp, engine: En
     assert log[-1] == "Failed: ZeroDivisionError: a bug"
 
 
-def test_clear_takes_ended_runs_off_the_list_but_they_still_count(app: webtest.TestApp, engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("IMPORT_RUNS_PER_MONTH", "3")
+def test_clear_deletes_ended_runs_and_nothing_they_imported(app: webtest.TestApp, engine: Engine, fake: FakeYouTube, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("IMPORT_RUNS_PER_MONTH", "5")
     sign_in(app, "bob")
     sign_in(app)
+    connect(app)
+    first = run(app, ["PLmusic"])
+    second = run(app, ["PLtalks"], dry_run=True)
     owner = alice(engine).id
     with Session(engine) as session:
         bob_id = session.scalars(select(User.id).where(User.email == "bob@example.com")).one()
-    done = queue(engine, owner, "done", started_at=core.utcnow())
-    failed = queue(engine, owner, "failed", started_at=core.utcnow())
     going = queue(engine, owner, "running", started_at=core.utcnow(), heartbeat_at=core.utcnow())
     theirs = queue(engine, bob_id, "done", started_at=core.utcnow())
+    imported = videos(engine)
     assert app.post_json("/api/import-runs/clear", {}).json == {"cleared": 2}
+    # the records and logs are gone
+    with Session(engine) as session:
+        assert {r.id for r in session.scalars(select(ImportRun))} == {going, theirs}
+    app.get(f"/api/import-runs/{first['id']}", status=404)
+    app.get(f"/api/import-runs/{second['id']}", status=404)
     runs = app.get("/api/import-runs").json
     assert runs["ended"] == []
-    # a run going is left alone
+    # a run going is left alone, and so is everything the runs imported
     assert [r["id"] for r in runs["running"]] == [going]
-    # still counted: three runs this month, of three
-    assert runs["limit"] == {"used": 3, "allowed": 3}
-    # and its log still opens by its address
-    assert app.get(f"/api/import-runs/{done}").json["id"] == done
-    assert app.get(f"/api/import-runs/{failed}").json["status"] == "failed"
-    # another user's runs are theirs: an admin's Clear is everyone's
+    assert sorted(videos(engine)) == sorted(imported)
+    # and the month's runs are not given back
+    assert runs["limit"] == {"used": 2, "allowed": 5}
+    # another user's runs are theirs; an admin's Clear is everyone's
     sign_in(app, "bob")
     assert [r["id"] for r in app.get("/api/import-runs").json["ended"]] == [theirs]
     sign_in(app)
     make_admin(engine, "alice@example.com")
     assert app.post_json("/api/import-runs/clear", {}).json == {"cleared": 1}
     assert app.get("/api/import-runs").json["ended"] == []
+
+
+def test_a_run_that_ended_is_deleted_by_its_user_or_an_admin(app: webtest.TestApp, engine: Engine, fake: FakeYouTube) -> None:
+    sign_in(app, "bob")
+    sign_in(app)
+    connect(app)
+    done = run(app, ["PLmusic"])
+    imported = videos(engine)
+    owner = alice(engine).id
+    with Session(engine) as session:
+        bob_id = session.scalars(select(User.id).where(User.email == "bob@example.com")).one()
+    going = queue(engine, owner, "running", started_at=core.utcnow(), heartbeat_at=core.utcnow())
+    theirs = queue(engine, bob_id, "done", started_at=core.utcnow())
+    app.delete(f"/api/import-runs/{done['id']}", status=204)
+    app.get(f"/api/import-runs/{done['id']}", status=404)
+    # what it imported stays, and it still counts
+    assert sorted(videos(engine)) == sorted(imported)
+    assert app.get("/api/import-runs").json["limit"]["used"] == 1
+    assert app.delete(f"/api/import-runs/{going}", status=409).json == {"error": "this run is still going: it can be cleared once it ended"}
+    app.delete(f"/api/import-runs/{theirs}", status=404)
+    make_admin(engine, "alice@example.com")
+    app.delete(f"/api/import-runs/{theirs}", status=204)
