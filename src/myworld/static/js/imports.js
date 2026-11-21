@@ -253,7 +253,7 @@ function runRow(run, everyone, now) {
 		el("td", "nowrap", run.title),
 		el("td", "nowrap", run.dry_run ? "Dry run" : "Run"),
 		el("td", `nowrap ${statusClass}`, STATUS[run.status] || run.status),
-		el("td", "nowrap", took(started, run.finished_at ? utc(run.finished_at) : now)),
+		timeCell(run, started, now),
 		said(run),
 	);
 	if (everyone) {
@@ -263,6 +263,35 @@ function runRow(run, everyone, now) {
 	}
 	tr.append(...cells);
 	return tr;
+}
+
+// how long it took, or, for one going, how long so far: that one ticks every second (tick)
+function timeCell(run, started, now) {
+	const cell = el("td", "nowrap", took(started, run.finished_at ? utc(run.finished_at) : now));
+	if (!run.ended) {
+		cell.classList.add("ticking");
+		cell.dataset.started = String(started.getTime());
+	}
+	return cell;
+}
+
+let tickTimer = null;
+
+function tick() {
+	// another page was opened: the clock stops (the Imports page starts it again)
+	if (state.view !== "imports") {
+		scheduleTick(false);
+		return;
+	}
+	const now = new Date();
+	for (const cell of document.querySelectorAll("#import-running-rows .ticking")) {
+		cell.textContent = took(new Date(Number(cell.dataset.started)), now);
+	}
+}
+
+function scheduleTick(going) {
+	clearInterval(tickTimer);
+	tickTimer = going ? setInterval(tick, 1000) : null;
 }
 
 function runsHead(everyone, timeLabel) {
@@ -300,4 +329,5 @@ function renderRuns({ running, ended, everyone, limit }) {
 	}
 	goingIds = new Set(running.map((run) => run.id));
 	schedulePoll(running.length > 0);
+	scheduleTick(running.length > 0);
 }
