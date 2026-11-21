@@ -2,7 +2,7 @@
 
 import { prepareBoard, setupBoard } from "./board.js";
 import { PICKER_LABELS, showYouTubeFacts } from "./cards.js";
-import { $, api, showError } from "./core.js";
+import { $, VISIT, api, showError } from "./core.js";
 import { DIALOG_FORMS, dialogError, makePicker, preparePictures, setPickerRows, setPickerValue, syncAlone, worldList } from "./dialog.js";
 import { fillTypes, fillWorldForm, preparePersonLinks, prepareWorkForm, resetForm, setupWorldForm, syncDatePicks } from "./forms.js";
 import { loadEntries, state } from "./library.js";
@@ -121,6 +121,10 @@ export function lockFields(form, existing) {
 
 // The + button (item null) or a click on an item: the dialog with the form of the view on screen.
 export async function openDialog(listed) {
+	// a view is read only: no dialog to change anything in
+	if (VISIT) {
+		return;
+	}
 	// the view is fixed here: the lists below load before the dialog shows, and another view may be opened meanwhile
 	const view = state.view;
 	const world = WORLDS[view];

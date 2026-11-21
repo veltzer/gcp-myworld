@@ -26,6 +26,7 @@ from myworld import (
     imports,
     locales,
     pictures,
+    sharing,
     stats,
     verification,
     views,
@@ -138,5 +139,6 @@ def create_app(engine: Engine | None = None, mail: verification.Mailer | None = 
     app.register_blueprint(stats.bp)
     app.register_blueprint(imports.bp)
     app.register_blueprint(dump.bp)
+    app.register_blueprint(sharing.bp)
     app.register_blueprint(youtube.bp)
     return app

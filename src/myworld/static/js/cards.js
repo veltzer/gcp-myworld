@@ -1,14 +1,14 @@
 // What a row looks like as a card, for every page.
 
 import { boardImage } from "./board.js";
-import { $, api, showError } from "./core.js";
+import { $, api, pageHref, showError } from "./core.js";
 import { worldList } from "./dialog.js";
 import { editable, state } from "./library.js";
 import { placeButton } from "./map.js";
 import { localeName } from "./names.js";
 import { showRow } from "./views.js";
 import { visitText } from "./visits.js";
-import { SIDES, cornerOf, detail, el, formatDate, linksDetail, slug, websiteButton } from "./worlds.js";
+import { SIDES, cornerOf, detail, el, formatDate, inView, linksDetail, slug, websiteButton } from "./worlds.js";
 
 // what the picture of the rows of the view shown is called ("photo", "logo", "flag": its dialog's
 // picture box says), "" for rows that never have one
@@ -352,7 +352,9 @@ const LINK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 12c
 // Everything that ties a person to the user, grouped, each entry a link to its card.
 async function showConnections(person) {
 	const [concerts, museums, courses, books, bands] = await Promise.all([
-		worldList("concerts"), worldList("museums"), worldList("audio-courses"), api("/api/library-entries?kind=book"), worldList("groups"),
+		// in a view, only what it shows
+		...["concerts", "museums", "audio-courses"].map((view) => (inView(view) ? worldList(view) : [])),
+		inView("book") ? api("/api/library-entries?kind=book") : [], inView("groups") ? worldList("groups") : [],
 	]);
 	const has = (list) => list.some((p) => p.id === person.id);
 	// a book is known by its work: #book/<work id>
@@ -367,7 +369,7 @@ async function showConnections(person) {
 		// how they are related to other people, both ways; each links to the other person
 		["Related people", "people", [...person.relations, ...person.related].map((r) => ({ id: r.person.id, name: r.name }))],
 		["Organizations", "organizations", person.organization_links.map((link) => ({ id: link.organization.id, name: link.name }))],
-	].filter(([, , items]) => items.length > 0);
+	].filter(([, view, items]) => items.length > 0 && inView(view));
 	$("connections-title").textContent = person.name;
 	const body = $("connections-body");
 	body.replaceChildren();
@@ -384,7 +386,7 @@ async function showConnections(person) {
 				li.appendChild(el("span", "when", when));
 			}
 			const a = el("a", "person-link", item.name);
-			a.href = `/library#${view}/${item.id}`;
+			a.href = pageHref(`${view}/${item.id}`);
 			a.onclick = (event) => {
 				event.preventDefault();
 				$("connections-dialog").close();

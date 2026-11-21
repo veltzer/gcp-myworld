@@ -34,8 +34,10 @@
 				My World
 			</a>
 			<div class="whoami">
+				<!-- on a view's page (/view/<username>/<name>): whose view it is, in place of the account's controls -->
+				<div id="visit-banner" class="visit-banner" hidden></div>
 				<!-- the account menu: how you signed in and as whom -->
-				<div class="account">
+				<div class="account" id="account-box">
 					<button id="account-button" class="account-button" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="account-menu" title="Your account">
 						<!-- how this session signed in: Google, GitHub or email -->
 						<img id="who-method" class="login-icon" src="/static/email.svg" alt="">
@@ -65,7 +67,7 @@
 		<aside id="sidebar" class="sidebar" aria-label="Pages">
 			<!-- the data, in groups, each with how many rows it has -->
 			<nav id="kinds" class="kinds"></nav>
-			<div class="side-group">
+			<div class="side-group" id="overview-group">
 				<h2 class="side-heading">Overview</h2>
 				<!-- a summary of all of them -->
 				<a id="stats-link" class="stats-link side-link" href="/library#stats" title="How many of everything you have">
@@ -76,6 +78,11 @@
 				<a id="imports-link" class="stats-link side-link" href="/library#imports" title="Bring your data in from elsewhere: YouTube playlists, ...">
 					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
 					Imports
+				</a>
+				<!-- your views: some of your data, shown to anyone at an address of its own -->
+				<a id="shared-views-link" class="stats-link side-link" href="/library#shared-views" title="Show some of your data to anyone, read only, at an address of its own">
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+					Views
 				</a>
 				<!-- only an admin can open these; for everyone else they stay here, disabled -->
 				<a id="users-link" class="stats-link side-link" href="/library#users" title="Every account and its role">
@@ -96,6 +103,8 @@
 		<div id="sidebar-scrim" class="sidebar-scrim" hidden></div>
 		<main class="content">
 			<p id="error" class="warning" hidden></p>
+			<!-- on a view's page: what its owner says it is -->
+			<p id="visit-note" class="shared-note" hidden></p>
 			<!-- one toolbar for every tab: a control that does not apply is disabled, never hidden -->
 			<div class="world-tools">
 				<span class="history" role="group" aria-label="History">
@@ -186,6 +195,25 @@
 				<div id="schema-diagram" class="schema-diagram"></div>
 				<h2 class="schema-heading">The tables</h2>
 				<div id="schema-tables" class="schema-tables"></div>
+			</section>
+			<section id="shared-views-view" hidden>
+				<p class="checks-intro">
+					A view shows some of your data to anyone, read only, at an address of its own:
+					myworld.stream/view/your-username/the-view's-name. Choose what each view shows; a view is public,
+					so whoever has its address sees all of that, your reviews and remarks too.
+				</p>
+				<p id="shared-views-username" class="warning" hidden>Choose a username in Settings first: a view's address has it.</p>
+				<div class="import-ended-heading">
+					<h2 class="schema-heading">Your views</h2>
+					<button type="button" id="shared-view-new">New view</button>
+				</div>
+				<p id="shared-views-none" class="empty">You have no views yet.</p>
+				<table id="shared-views" class="entries" hidden>
+					<thead>
+						<tr><th>Address</th><th>Title</th><th>Shows</th><th></th></tr>
+					</thead>
+					<tbody id="shared-views-rows"></tbody>
+				</table>
 			</section>
 			<section id="users-view" hidden>
 				<table id="users" class="entries">
@@ -907,6 +935,28 @@
 				<p id="settings-error" class="warning" hidden></p>
 				<div class="dialog-actions">
 					<button type="button" class="text" id="settings-cancel">Cancel</button>
+					<button type="submit">Save</button>
+				</div>
+			</form>
+		</dialog>
+		<!-- a view, new or changed, from the Views page -->
+		<dialog id="shared-view-dialog" class="dialog settings" aria-labelledby="shared-view-title">
+			<form id="shared-view-form">
+				<h2 id="shared-view-title">New view</h2>
+				<label title="The end of the view's address: 1 to 60 lowercase letters, digits, dots, dashes or underscores, starting with a letter or digit" for="shared-view-name">Name</label>
+				<input id="shared-view-name" name="name" type="text" maxlength="60" required pattern="[a-zA-Z0-9][a-zA-Z0-9._\-]{0,59}" placeholder="music">
+				<p id="shared-view-address" class="settings-hint"></p>
+				<label title="What the view's page says it is; its name when empty" for="shared-view-title-input">Title</label>
+				<input id="shared-view-title-input" name="title" type="text" maxlength="200" placeholder="My concerts">
+				<label title="A line or two shown above what it shows" for="shared-view-description">Description</label>
+				<textarea id="shared-view-description" name="description" rows="2"></textarea>
+				<fieldset class="shared-view-datasets">
+					<legend title="The data sets of yours the view shows; nothing else of yours is ever shown">Shows</legend>
+					<div id="shared-view-datasets"></div>
+				</fieldset>
+				<p id="shared-view-error" class="warning" hidden></p>
+				<div class="dialog-actions">
+					<button type="button" class="text" id="shared-view-cancel">Cancel</button>
 					<button type="submit">Save</button>
 				</div>
 			</form>

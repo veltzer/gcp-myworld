@@ -1460,6 +1460,36 @@ class ImportUsage(Base):
     runs: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
+# a view's name, the last part of its address (/view/<username>/<name>)
+VIEW_NAME_MAX = 60
+VIEW_NAME_PATTERN = rf"[a-z0-9][a-z0-9._-]{{0,{VIEW_NAME_MAX - 1}}}"
+VIEW_ACCESS_PUBLIC = "public"
+VIEW_ACCESSES = (VIEW_ACCESS_PUBLIC,)
+
+
+class SharedView(Base):
+    """
+    A view: a named selection of a user's own data sets that anyone may open
+    at /view/<username>/<name>, read only (doc/views.md).
+    """
+    __tablename__ = "shared_views"
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_shared_view_owner_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(VIEW_NAME_MAX), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False, default="", server_default="")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    # the data sets it shows: library kinds ("book") and views ("concerts"), as the page names them
+    datasets: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    # who may open it: "public" (anyone with the address); private views are still to come
+    access: Mapped[str] = mapped_column(String(20), nullable=False, default=VIEW_ACCESS_PUBLIC, server_default=VIEW_ACCESS_PUBLIC)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+
+    owner: Mapped[User] = relationship()
+
+
 def database_url() -> str:
     """
     Where the data lives.
@@ -1492,7 +1522,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0017"
+SCHEMA_REVISION = "0018"
 
 
 def prepare_schema(engine: Engine) -> None:

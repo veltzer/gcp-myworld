@@ -501,8 +501,13 @@ def api_account_edit_shared() -> flask.Response:
 def api_config() -> flask.Response:
     """ Everything the browser side needs to render: who is signed in and the vocabularies. """
     login = auth.current_login()
+    return flask.jsonify({**vocabularies(), "user": None if login is None else _account_json(login)})
+
+
+def vocabularies() -> dict[str, Any]:
+    """ What the page needs to render anyone's data: the kinds, statuses, languages, limits (a view's page too). """
     locales = languages.known(flask.g.db)
-    return flask.jsonify({
+    return {
         "google_client_id": auth.client_id(),
         "dev_login": auth.dev_login_enabled(),
         "password_min_length": auth.PASSWORD_MIN_LENGTH,
@@ -517,8 +522,7 @@ def api_config() -> flask.Response:
         "rating_min": RATING_MIN,
         "rating_max": RATING_MAX,
         "name_max_length": NAME_MAX_LENGTH,
-        "user": None if login is None else _account_json(login),
-    })
+    }
 
 
 @bp.route("/api/library-entries", methods=["GET"])

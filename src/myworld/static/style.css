@@ -2923,3 +2923,72 @@ body.sidebar-folded .sidebar {
 .shared-note[hidden] {
 	display: none;
 }
+
+/* ─── views (doc/views.md) ──────────────────────────────────────────────── */
+
+/* a view's page: whose view it is, in the top bar, in place of the account's controls */
+.visit-banner {
+	display: flex;
+	align-items: baseline;
+	gap: 0.6rem;
+	min-width: 0;
+}
+
+.visit-banner[hidden] {
+	display: none;
+}
+
+.visit-title {
+	font-weight: 600;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.visit-owner {
+	color: var(--muted);
+	white-space: nowrap;
+}
+
+.visit-home {
+	color: var(--accent);
+	text-decoration: none;
+	white-space: nowrap;
+}
+
+.visit-home:hover {
+	text-decoration: underline;
+}
+
+/* a name a view does not show the page of: the name, not a link */
+.person-name {
+	white-space: nowrap;
+}
+
+/* the data sets a view shows, in its dialog */
+.shared-view-datasets {
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	padding: 0.5rem 0.75rem;
+	margin: 0.75rem 0;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+	gap: 0.25rem 1rem;
+}
+
+.shared-view-datasets > div {
+	display: contents;
+}
+
+.settings .shared-view-datasets label.settings-check {
+	margin: 0;
+	font-weight: normal;
+}
+
+/* a view's page has no account: its controls are gone (their own display would show them, hidden or not) */
+body.visiting #account-box,
+body.visiting #settings-button,
+body.visiting #logout,
+body.visiting #overview-group {
+	display: none;
+}

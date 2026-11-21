@@ -11,7 +11,7 @@ import { updateTools } from "./sorting.js";
 import { el } from "./worlds.js";
 
 export function isAdmin() {
-	return state.config.user.role === "admin";
+	return state.config.user?.role === "admin";
 }
 
 export async function selectUsers() {

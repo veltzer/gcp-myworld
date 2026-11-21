@@ -1,6 +1,6 @@
 // The sidebar: the pages there are, how many rows each has, and folding it away.
 
-import { $, api, showError } from "./core.js";
+import { $, VISIT, api, pageHref, showError } from "./core.js";
 import { selectKind, state } from "./library.js";
 import { markActive } from "./paging.js";
 import { selectWorld } from "./views.js";
@@ -17,7 +17,7 @@ const NAV_GROUPS = [
 
 function sideLink(label, key, open) {
 	const a = el("a", "side-link");
-	a.href = `/library#${key}`;
+	a.href = pageHref(key);
 	a.append(el("span", "side-label", label), el("span", "side-count"));
 	a.onclick = (event) => {
 		event.preventDefault();
@@ -44,7 +44,9 @@ function sideGroup(heading, links, shared = false) {
 // The sidebar, made once; after that only which page is active changes
 export function renderKinds() {
 	const nav = $("kinds");
-	if (!nav.children.length) {
+	if (!nav.children.length && VISIT) {
+		nav.append(visitGroup());
+	} else if (!nav.children.length) {
 		const library = Object.entries(state.config.kinds).map(([kind, { plural }]) => {
 			const a = sideLink(plural, kind, () => selectKind(kind));
 			a.dataset.kind = kind;
@@ -58,6 +60,22 @@ export function renderKinds() {
 		nav.append(...groups);
 	}
 	markActive();
+}
+
+// A view's sidebar: the data sets it shows, in the library's order, under its title
+function visitGroup() {
+	const { datasets, title } = state.config.visit;
+	const library = Object.entries(state.config.kinds).filter(([kind]) => datasets.includes(kind)).map(([kind, { plural }]) => {
+		const a = sideLink(plural, kind, () => selectKind(kind));
+		a.dataset.kind = kind;
+		return a;
+	});
+	const worlds = NAV_GROUPS.flatMap(([, views]) => views).filter((view) => datasets.includes(view)).map((view) => {
+		const a = sideLink(WORLDS[view][3], view, () => selectWorld(view).catch((e) => showError(e.message)));
+		a.dataset.world = view;
+		return a;
+	});
+	return sideGroup(title, [...library, ...worlds]);
 }
 
 // How many rows a view or library kind has, next to its name in the sidebar

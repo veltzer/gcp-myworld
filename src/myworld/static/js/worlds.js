@@ -1,6 +1,6 @@
 // The pages of the world: concerts, museums, people, organizations and the rest.
 
-import { $, api, showError } from "./core.js";
+import { $, VISIT, api, pageHref, showError } from "./core.js";
 import { state } from "./library.js";
 import { rerender } from "./sorting.js";
 import { showRow } from "./views.js";
@@ -50,13 +50,19 @@ export function editsShared() {
 }
 
 // why the shared rows cannot be changed now: one who is no admin never may; an admin first turns on
-// Edit shared data in Settings
+// Edit shared data in Settings; in a view nothing is ever changed
 export function sharedLockedWhy() {
+	if (VISIT) {
+		return "This is a view: nothing can be changed here";
+	}
 	return isAdmin() ? "Shared data is locked: turn on Edit shared data in Settings to change it" : "Shared by everyone: only an admin changes it";
 }
 
 // whether the signed-in user may add, change and delete the rows of view
 export function canChange(view) {
+	if (VISIT) {
+		return false;
+	}
 	return !SHARED_VIEWS.has(view) || editsShared();
 }
 
@@ -203,12 +209,24 @@ function appendLimited(parent, count, add) {
 	parent.append(rest, " ", more);
 }
 
+// whether a view's visitor can open view: one of the data sets it shows (on the library page, every one)
+export function inView(view) {
+	return !state.config.visit || state.config.visit.datasets.includes(view);
+}
+
 export function appendLinks(parent, view, rows) {
 	appendLimited(parent, rows.length, (index, into) => {
 		const row = rows[index];
+		if (!inView(view)) {
+			// in a view that does not show them: the name, not a link that leads nowhere
+			const name = el("span", "person-name", row.name);
+			name.dir = "auto";
+			into.appendChild(name);
+			return;
+		}
 		const a = el("a", "person-link", row.name);
 		a.dir = "auto";
-		a.href = `/library#${view}/${row.id}`;
+		a.href = pageHref(`${view}/${row.id}`);
 		a.onclick = (event) => {
 			event.preventDefault();
 			showRow(view, row.id).catch((e) => showError(e.message));

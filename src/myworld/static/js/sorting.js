@@ -143,7 +143,7 @@ const SORTS = {
 const SORT_KEY = "myworld.sort";
 
 // views that are a page of their own, outside the tabs: nothing to search, sort or add
-const PAGES = new Set(["stats", "imports", "users", "checks", "schema"]);
+const PAGES = new Set(["stats", "imports", "shared-views", "users", "checks", "schema"]);
 
 function sortFields() {
 	if (PAGES.has(state.view)) {

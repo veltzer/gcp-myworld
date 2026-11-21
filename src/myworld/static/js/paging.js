@@ -125,6 +125,7 @@ export function markActive() {
 	}
 	$("stats-link").classList.toggle("active", state.view === "stats");
 	$("imports-link").classList.toggle("active", state.view === "imports");
+	$("shared-views-link").classList.toggle("active", state.view === "shared-views");
 	$("users-link").classList.toggle("active", state.view === "users");
 	$("checks-link").classList.toggle("active", state.view === "checks");
 	$("schema-link").classList.toggle("active", state.view === "schema");
@@ -132,7 +133,7 @@ export function markActive() {
 
 // One of the page bodies: the library table, the cards and tables, the stats, the imports, the users, the checks.
 export function showSection(id) {
-	for (const section of ["library-view", "world-view", "stats-view", "imports-view", "users-view", "checks-view", "schema-view"]) {
+	for (const section of ["library-view", "world-view", "stats-view", "imports-view", "shared-views-view", "users-view", "checks-view", "schema-view"]) {
 		$(section).hidden = section !== id;
 	}
 }

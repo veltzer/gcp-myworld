@@ -2,7 +2,7 @@
 
 import { askUsername, setupAccountMenu, setupSettings, showWho } from "./account.js";
 import { selectChecks, setupViewChecks } from "./checks.js";
-import { $, api, applyTheme, showError } from "./core.js";
+import { $, VISIT, api, applyTheme, showError } from "./core.js";
 import { dialogError, pictures, setupPictures } from "./dialog.js";
 import { setupMovieSearch } from "./films.js";
 import { chosen, ownedValues, setupDatePicks, setupLocalized } from "./forms.js";
@@ -14,35 +14,47 @@ import { openRunLog, selectImports, setupRunLog } from "./imports.js";
 import { setupPager } from "./paging.js";
 import { readsValues } from "./readings.js";
 import { selectSchema } from "./schema.js";
+import { selectSharedViews, setupSharedViews } from "./shared-views.js";
 import { loadCounts, renderKinds, setupSidebar } from "./sidebar.js";
 import { selectStats } from "./stats.js";
 import { isAdmin, selectUsers } from "./users.js";
 import { selectWorld, setupWorlds, showRow } from "./views.js";
-import { WORLDS } from "./worlds.js";
+import { WORLDS, el } from "./worlds.js";
 
 export async function libraryPage() {
-	state.config = await api("/api/config");
-	if (!state.config.user) {
+	try {
+		state.config = await api("/api/config");
+	} catch (e) {
+		// a view that is no longer there
+		showError(e.message);
+		return;
+	}
+	if (!state.config.user && !VISIT) {
 		window.location.href = "/";
 		return;
 	}
 	const { user, rating_min, rating_max } = state.config;
-	applyTheme(user.theme);
-	showWho(user);
-	if (user.picture) {
-		$("avatar").src = user.picture;
+	if (VISIT) {
+		setupVisit(state.config.visit);
+	} else {
+		applyTheme(user.theme);
+		showWho(user);
+		if (user.picture) {
+			$("avatar").src = user.picture;
+		}
+		// the username first: a new account chooses it before anything else
+		await askUsername(user);
+		showWho(user);
+		setupAccountMenu(user);
+		setupSettings(user);
+		setupRunLog();
+		setupSharedViews();
+		$("logout").onclick = async () => {
+			await fetch("/auth/logout", { method: "POST" });
+			window.location.href = "/";
+		};
 	}
-	// the username first: a new account chooses it before anything else
-	await askUsername(user);
-	showWho(user);
-	setupAccountMenu(user);
-	setupSettings(user);
-	setupRunLog();
 	setupSidebar();
-	$("logout").onclick = async () => {
-		await fetch("/auth/logout", { method: "POST" });
-		window.location.href = "/";
-	};
 
 	const form = $("add-form");
 	fillStatuses($("book-read-status"), "done");
@@ -101,7 +113,9 @@ export async function libraryPage() {
 	setupPager();
 	setupAddDialog();
 	renderKinds();
-	loadCounts().catch((e) => showError(e.message));
+	if (!VISIT) {
+		loadCounts().catch((e) => showError(e.message));
+	}
 	startHistory();
 	setupFreshness();
 	await openHash();
@@ -117,8 +131,31 @@ export async function openHash() {
 	}
 }
 
+// A view's page (doc/views.md): whose view it is and what it is, in place of the account's controls,
+// and of the sidebar only the data sets it shows
+function setupVisit(visit) {
+	document.body.classList.add("visiting");
+	for (const id of ["account-box", "settings-button", "logout", "overview-group"]) {
+		$(id).hidden = true;
+	}
+	const banner = $("visit-banner");
+	banner.hidden = false;
+	banner.replaceChildren(el("span", "visit-title", visit.title), el("span", "visit-owner", ` by ${visit.username}`));
+	const home = el("a", "visit-home", "My World");
+	home.href = "/";
+	home.title = "Make your own: sign in to My World";
+	banner.appendChild(home);
+	const note = $("visit-note");
+	note.hidden = !visit.description;
+	note.textContent = visit.description;
+}
+
 // Open what an address-bar hash names: a tab, a page, or one row of a view.
 async function route(requested) {
+	if (VISIT) {
+		await visitRoute(requested);
+		return;
+	}
 	const linked = requested.match(/^([a-z-]+)\/(\d+)$/);
 	if (linked && (linked[1] in WORLDS || linked[1] in state.config.kinds)) {
 		await showRow(linked[1], Number(linked[2]));
@@ -136,9 +173,31 @@ async function route(requested) {
 		await selectChecks();
 	} else if (requested === "schema" && isAdmin()) {
 		await selectSchema();
+	} else if (requested === "shared-views") {
+		await selectSharedViews();
 	} else if (requested in state.config.kinds) {
 		await selectKind(requested);
 	} else {
 		await selectWorld(requested in WORLDS ? requested : "concerts");
+	}
+}
+
+// In a view, only its data sets open: a hash naming anything else opens the first of them
+async function visitRoute(requested) {
+	const { datasets } = state.config.visit;
+	if (datasets.length === 0) {
+		showError("This view shows nothing yet");
+		return;
+	}
+	const linked = requested.match(/^([a-z-]+)\/(\d+)$/);
+	if (linked && datasets.includes(linked[1])) {
+		await showRow(linked[1], Number(linked[2]));
+		return;
+	}
+	const open = datasets.includes(requested) ? requested : datasets[0];
+	if (open in state.config.kinds) {
+		await selectKind(open);
+	} else {
+		await selectWorld(open);
 	}
 }

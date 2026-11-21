@@ -1,7 +1,7 @@
 // The library: the state of the page, a kind of work (books, films), its entries and their cards.
 
 import { cardShell } from "./cards.js";
-import { $, api, showError } from "./core.js";
+import { $, VISIT, api, showError } from "./core.js";
 import { fillTypeFilter, pickedTypes, typeMatches } from "./filters.js";
 import { navigate } from "./history.js";
 import { openDialog } from "./locks.js";
@@ -73,6 +73,10 @@ function catalogLinks(entry) {
 // Make a card or row open its item in the dialog, by click or by Enter, except
 // where the click lands on a link of its own.
 export function editable(node, item) {
+	// a view's visitor reads the cards: there is nothing to edit
+	if (VISIT) {
+		return;
+	}
 	node.classList.add("clickable");
 	node.tabIndex = 0;
 	node.title = "Click to edit";
