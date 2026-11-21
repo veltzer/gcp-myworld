@@ -1,6 +1,7 @@
 // The Imports page: the importers, each with its parameters, Dry run and Run,
 // the YouTube connection they read through, and the runs: the ones going
-// (each done by a job of its own, in the background) and the last that ended.
+// (each done by a job of its own, in the background) and the last that ended,
+// each with its Log (all it said, in a dialog here; #imports/<id> opens it).
 // The page looks again every few seconds while any is going.
 
 import { $, api, showError } from "./core.js";
@@ -231,42 +232,138 @@ function took(from, to) {
 	return h ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`;
 }
 
-// What a run did: its counts on one line (or why it failed), and all it said under it, opened with a click.
+// a line of a run's log without the time it was said ("10:04:05 Countries" -> "Countries")
+function unstamped(line) {
+	return line.replace(/^\d\d:\d\d:\d\d /, "");
+}
+
+// What a run did, on one line: its counts (or why it failed, or the last it said); its Log has all of it.
 function said(run) {
 	const counts = Object.entries(run.counts).map(([what, n]) => `${what}: ${n.toLocaleString()}`).join(", ");
-	const lines = run.log ? run.log.split("\n") : [];
-	let head;
+	const last = run.log ? unstamped(run.log.split("\n").at(-1)) : "";
 	if (run.status === "done") {
-		head = `${run.dry_run ? "Nothing kept; it would have: " : ""}${counts || "nothing to do"}`;
-	} else if (run.status === "failed") {
-		head = lines.at(-1) || "Failed";
-	} else {
-		head = lines.at(-1) || (run.status === "queued" ? "Waiting for its job to start" : "Started");
+		return `${run.dry_run ? "Nothing kept; it would have: " : ""}${counts || "nothing to do"}`;
 	}
-	const cell = el("td");
-	if (lines.length === 0) {
-		cell.textContent = head;
-		return cell;
+	if (run.status === "failed") {
+		return last || "Failed";
 	}
-	const details = el("details");
-	details.append(el("summary", "", head), el("pre", "importer-log", run.log));
-	cell.appendChild(details);
-	return cell;
+	return last || (run.status === "queued" ? "Waiting for its job to start" : "Started");
 }
 
 const STATUS = { queued: "Queued", running: "Running", done: "Done", failed: "Failed" };
 
-// the logs of a run's Cloud Run Jobs execution, in the console (an admin's)
-function executionLink(run) {
-	const parts = run.execution.match(/^projects\/([^/]+)\/locations\/([^/]+)\/jobs\/[^/]+\/executions\/([^/]+)$/);
-	if (!parts) {
-		return document.createTextNode("");
+// ─── a run's log ─────────────────────────────────────────────────────────────
+
+// the run whose log is open, and the timer that looks at it again while it goes
+const shownLog = { id: null, run: null, timer: null };
+
+function logText(run) {
+	const facts = [
+		`${run.title}: ${run.dry_run ? "dry run" : "run"} ${run.id}, ${STATUS[run.status] || run.status}`,
+		`Started ${run.started_at.slice(0, 19).replace("T", " ")} UTC${run.finished_at ? `, ended ${run.finished_at.slice(0, 19).replace("T", " ")} UTC` : ""}`,
+		...(run.owner ? [`User ${run.owner.id} (${run.owner.email})`] : []),
+		...(Object.keys(run.counts).length ? [Object.entries(run.counts).map(([what, n]) => `${what}: ${n}`).join(", ")] : []),
+	];
+	return `${facts.join("\n")}\n\n${run.log || "(nothing said yet)"}\n`;
+}
+
+function drawLog(run) {
+	shownLog.run = run;
+	$("run-log-title").textContent = `${run.title}: ${run.dry_run ? "dry run" : "run"} ${run.id}`;
+	const ends = run.finished_at ? utc(run.finished_at) : new Date();
+	const facts = [
+		STATUS[run.status] || run.status,
+		`started ${run.started_at.slice(0, 16).replace("T", " ")} UTC`,
+		`${run.ended ? "took" : "so far"} ${took(utc(run.started_at), ends)}`,
+		...(run.owner ? [`by ${run.owner.email} (user ${run.owner.id})`] : []),
+	];
+	$("run-log-facts").textContent = facts.join(" · ");
+	const pre = $("run-log-text");
+	// at the bottom (or not scrolled yet): it follows what is added
+	const following = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 8;
+	pre.textContent = run.log || (run.status === "queued" ? "Waiting for its job to start…" : "Nothing said yet.");
+	if (following) {
+		pre.scrollTop = pre.scrollHeight;
 	}
-	const a = el("a", "", "Logs");
-	a.href = `https://console.cloud.google.com/run/jobs/executions/details/${parts[2]}/${parts[3]}/logs?project=${parts[1]}`;
-	a.target = "_blank";
-	a.rel = "noopener";
-	return a;
+}
+
+function scheduleLog() {
+	clearTimeout(shownLog.timer);
+	shownLog.timer = null;
+	if (shownLog.run && !shownLog.run.ended && $("run-log-dialog").open) {
+		shownLog.timer = setTimeout(() => refreshLog().catch((e) => showError(e.message)), POLL_MS);
+	}
+}
+
+async function refreshLog() {
+	const id = shownLog.id;
+	const run = await api(`/api/import-runs/${id}`);
+	if (shownLog.id === id && $("run-log-dialog").open) {
+		drawLog(run);
+		scheduleLog();
+	}
+}
+
+// Open a run's log: all it said, each line with its time (UTC), looked at again while it goes;
+// its address (#imports/<id>) opens it for whoever may see the run (its user, an admin)
+export async function openRunLog(id) {
+	shownLog.id = id;
+	const run = await api(`/api/import-runs/${id}`);
+	const dialog = $("run-log-dialog");
+	$("run-log-text").scrollTop = 0;
+	drawLog(run);
+	navigate(`imports/${id}`);
+	if (!dialog.open) {
+		dialog.showModal();
+	}
+	$("run-log-text").scrollTop = $("run-log-text").scrollHeight;
+	scheduleLog();
+}
+
+// a button that says it did it, for a moment
+function flash(button, text) {
+	const was = button.dataset.label || button.textContent;
+	button.dataset.label = was;
+	button.textContent = text;
+	setTimeout(() => {
+		button.textContent = was;
+	}, 1500);
+}
+
+async function copyText(button, text) {
+	try {
+		await navigator.clipboard.writeText(text);
+		flash(button, "Copied");
+	} catch (e) {
+		flash(button, "Could not copy");
+	}
+}
+
+export function setupRunLog() {
+	const dialog = $("run-log-dialog");
+	$("run-log-close").onclick = () => dialog.close();
+	dialog.onclick = (event) => {
+		if (event.target === dialog) {
+			dialog.close();
+		}
+	};
+	dialog.onclose = () => {
+		clearTimeout(shownLog.timer);
+		shownLog.id = null;
+		if (state.view === "imports") {
+			navigate("imports");
+		}
+	};
+	$("run-log-copy").onclick = () => copyText($("run-log-copy"), logText(shownLog.run));
+	$("run-log-link").onclick = () => copyText($("run-log-link"), `${window.location.origin}/library#imports/${shownLog.run.id}`);
+	$("run-log-download").onclick = () => {
+		const run = shownLog.run;
+		const a = el("a");
+		a.href = URL.createObjectURL(new Blob([logText(run)], { type: "text/plain" }));
+		a.download = `import-${run.importer}-${run.id}.log`;
+		a.click();
+		setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+	};
 }
 
 function runRow(run, everyone, now) {
@@ -284,13 +381,16 @@ function runRow(run, everyone, now) {
 		el("td", "nowrap", run.dry_run ? "Dry run" : "Run"),
 		el("td", `nowrap ${statusClass}`, STATUS[run.status] || run.status),
 		timeCell(run, started, now),
-		said(run),
+		el("td", "", said(run)),
 	);
-	if (everyone) {
-		const logs = el("td", "nowrap");
-		logs.appendChild(executionLink(run));
-		cells.push(logs);
-	}
+	// all it said, in a dialog of the page: every user's own runs, an admin's everyone's
+	const log = el("button", "text", "Log");
+	log.type = "button";
+	log.title = "All this run said, each line with its time; it follows a run that goes on";
+	log.onclick = () => openRunLog(run.id).catch((e) => showError(e.message));
+	const logCell = el("td", "nowrap");
+	logCell.appendChild(log);
+	cells.push(logCell);
 	tr.append(...cells);
 	return tr;
 }
@@ -326,7 +426,7 @@ function scheduleTick(going) {
 
 function runsHead(everyone, timeLabel) {
 	const tr = el("tr");
-	const labels = ["Started (UTC)", ...(everyone ? ["User id", "User"] : []), "Importer", "Kind", "Status", timeLabel, "What it did", ...(everyone ? ["Job"] : [])];
+	const labels = ["Started (UTC)", ...(everyone ? ["User id", "User"] : []), "Importer", "Kind", "Status", timeLabel, "What it did", "Log"];
 	tr.append(...labels.map((label) => el("th", "", label)));
 	return tr;
 }

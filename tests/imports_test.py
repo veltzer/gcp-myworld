@@ -5,7 +5,10 @@ YouTube that is faked: connecting, importing playlists, and that a second
 run adds nothing and changes nothing.
 """
 
+import dataclasses
 import datetime
+import logging
+import re
 import urllib.parse
 from typing import Any
 
@@ -21,6 +24,13 @@ from myworld.models import ROLE_ADMIN, ImportRun, User, YouTubeConnection, YouTu
 from tests.conftest import sign_in
 
 REFRESH = "refresh-token-of-alice"
+
+
+def unstamped(log: str) -> str:
+    """ A run's log without the time of each line ("10:04:05 Sleeping" -> "Sleeping"), each line having one. """
+    lines = log.split("\n")
+    assert all(re.match(r"\d\d:\d\d:\d\d ", line) for line in lines), log
+    return "\n".join(line[9:] for line in lines)
 
 
 class FakeYouTube:
@@ -234,7 +244,7 @@ def test_importing_playlists_adds_each_video_once_and_again_adds_nothing(app: we
     done = run(app, ["PLmusic", "PLtalks"])
     assert done["status"] == "done"
     assert done["counts"] == {"YouTube videos added": 4, "of them YouTube no longer has": 1}
-    assert done["log"] == "Music: 3 videos\nTalks: 2 videos"
+    assert unstamped(done["log"]) == "Music: 3 videos\nTalks: 2 videos"
     have = videos(engine)
     assert sorted(have) == ["vidGone0001", "vidMusic001", "vidMusic002", "vidTalks001"]
     song = have["vidMusic001"]
@@ -333,7 +343,7 @@ def test_a_failing_import_is_rolled_back_and_kept_as_failed(app: webtest.TestApp
     monkeypatch.setattr(youtube, "api_get", failing)
     failed = run(app, ["PLmusic"])
     assert (failed["status"], failed["counts"]) == ("failed", {})
-    assert failed["log"].endswith("Failed: YouTube answered 403 to videos: quota exceeded")
+    assert unstamped(failed["log"]).endswith("Failed: YouTube answered 403 to videos: quota exceeded")
     assert videos(engine) == {}
     assert app.get("/api/import-runs").json["ended"][0]["status"] == "failed"
 
@@ -452,7 +462,7 @@ def test_youtube_details_fills_in_the_videos_that_have_none(app: webtest.TestApp
     done = post(False)
     assert done["status"] == "done"
     assert done["counts"] == {"YouTube videos given YouTube's details": 2}
-    assert done["log"] == "2 videos without YouTube's details"
+    assert unstamped(done["log"]) == "2 videos without YouTube's details"
     have = videos(engine)
     assert (have["vidMusic001"].name, have["vidMusic001"].rating, have["vidMusic001"].channel, have["vidMusic001"].duration) == ("My name", 7, "Band", 3723)
     assert (have["vidTalks001"].channel, have["vidTalks001"].duration) == ("Mine", 60)
@@ -504,7 +514,7 @@ def test_a_job_that_cannot_be_started_fails_the_run(app: webtest.TestApp, engine
     monkeypatch.setattr(jobs, "dispatcher", lambda _engine: refusing)
     failed = run(app, ["LLalice"])
     assert failed["status"] == "failed"
-    assert failed["log"] == "Failed: its job could not be started: Cloud Run answered 403: permission denied"
+    assert unstamped(failed["log"]) == "Failed: its job could not be started: Cloud Run answered 403: permission denied"
     assert videos(engine) == {}
 
 
@@ -514,12 +524,12 @@ def test_runs_going_and_ended_and_ones_whose_jobs_stopped(app: webtest.TestApp, 
     now = core.utcnow()
     alive = queue(engine, owner, "running", heartbeat_at=now, started_at=now)
     waiting = queue(engine, owner, "queued", started_at=now)
-    died = queue(engine, owner, "running", heartbeat_at=now - datetime.timedelta(seconds=core.STALE_SECONDS + 5), started_at=now, log="Sleeping")
+    died = queue(engine, owner, "running", heartbeat_at=now - datetime.timedelta(seconds=core.STALE_SECONDS + 5), started_at=now, log="10:00:00 Sleeping")
     never = queue(engine, owner, "queued", started_at=now - datetime.timedelta(seconds=core.QUEUED_SECONDS + 5))
     runs = app.get("/api/import-runs").json
     assert [r["id"] for r in runs["running"]] == [waiting, alive]
     assert [(r["id"], r["status"]) for r in runs["ended"]] == [(never, "failed"), (died, "failed")]
-    logs = {r["id"]: r["log"] for r in runs["ended"]}
+    logs = {r["id"]: unstamped(r["log"]) for r in runs["ended"]}
     assert logs[died].startswith("Sleeping\nFailed: its job stopped answering")
     assert logs[never] == "Failed: its job never started"
     assert runs["everyone"] is False
@@ -560,7 +570,7 @@ def test_the_sleep_importer_is_an_admins_only(app: webtest.TestApp, engine: Engi
     second = app.post_json("/api/importers/sleep/runs", {"params": {}}, status=202).json
     assert first["id"] != second["id"]
     assert (first["status"], first["counts"]) == ("done", {"seconds slept": 2})
-    assert first["log"] == "Sleeping for 2 seconds\n1 of 2 seconds\n2 of 2 seconds\nWoke up"
+    assert unstamped(first["log"]) == "Sleeping for 2 seconds\n1 of 2 seconds\n2 of 2 seconds\nWoke up"
 
 
 def test_a_user_may_start_so_many_runs_a_month_and_an_admin_any_number(app: webtest.TestApp, engine: Engine, fake: FakeYouTube, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -600,7 +610,7 @@ def test_a_running_job_says_it_is_alive_and_what_it_did_so_far(app: webtest.Test
             beat.stopping.wait(0.01)
     finally:
         beat.stop()
-    assert (record.log, record.counts) == ("Sleeping for 300 seconds", {"seconds slept": 30})
+    assert (unstamped(record.log), record.counts) == ("Sleeping for 300 seconds", {"seconds slept": 30})
     assert record.heartbeat_at is not None and record.heartbeat_at > record.started_at.replace(tzinfo=None) - datetime.timedelta(seconds=1)
 
 
@@ -641,3 +651,38 @@ def test_a_cloud_run_jobs_execution_is_asked_for_with_the_run_id(monkeypatch: py
     monkeypatch.setattr(jobs.requests, "post", lambda *_args, **_kwargs: Answer(403, {"error": "denied"}))
     with pytest.raises(core.ImporterError, match="Cloud Run answered 403"):
         dispatch(43)
+
+
+def test_a_runs_log_is_its_users_and_an_admins(app: webtest.TestApp, engine: Engine) -> None:
+    sign_in(app, "bob")
+    sign_in(app)
+    owner = alice(engine).id
+    with Session(engine) as session:
+        bob_id = session.scalars(select(User.id).where(User.email == "bob@example.com")).one()
+    mine = queue(engine, owner, "done", started_at=core.utcnow(), log="10:00:00 Sleeping")
+    theirs = queue(engine, bob_id, "done", started_at=core.utcnow())
+    one = app.get(f"/api/import-runs/{mine}").json
+    assert (one["id"], one["log"]) == (mine, "10:00:00 Sleeping")
+    assert "owner" not in one
+    app.get(f"/api/import-runs/{theirs}", status=404)
+    app.get("/api/import-runs/999999", status=404)
+    make_admin(engine, "alice@example.com")
+    assert app.get(f"/api/import-runs/{theirs}").json["owner"] == {"id": bob_id, "email": "bob@example.com"}
+
+
+def test_what_goes_wrong_in_a_run_is_in_its_log(app: webtest.TestApp, engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
+    def broken(_session: Session, _owner: User, _params: dict[str, Any], report: core.Report) -> None:
+        report.say("Starting")
+        logging.getLogger("some.library").warning("retrying %s", "once")
+        raise ZeroDivisionError("a bug")
+
+    monkeypatch.setitem(core.IMPORTERS, "sleep", dataclasses.replace(sleep.IMPORTER, run=broken))
+    sign_in(app)
+    make_admin(engine, "alice@example.com")
+    started = app.post_json("/api/importers/sleep/runs", {"params": {}}, status=202).json
+    log = unstamped(app.get(f"/api/import-runs/{started['id']}").json["log"]).split("\n")
+    assert log[:2] == ["Starting", "WARNING: retrying once"]
+    # the traceback, then why it failed, last (the runs table shows the last line)
+    assert any("ZeroDivisionError: a bug" in line for line in log[2:-1])
+    assert any("in broken" in line for line in log)
+    assert log[-1] == "Failed: ZeroDivisionError: a bug"

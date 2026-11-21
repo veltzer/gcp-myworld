@@ -2373,14 +2373,25 @@ button.text.check-toggle {
 	color: var(--fail);
 }
 
-.importer-log {
-	max-height: 12rem;
-	overflow: auto;
-	margin: 0.25rem 0 0;
-	color: var(--ink);
-	font-size: 0.85rem;
-	white-space: pre-wrap;
+/* an import run's log: wide, its lines as said, scrolled within */
+.run-log-dialog {
+	width: min(60rem, calc(100vw - 2rem));
 }
+
+.run-log {
+	height: min(60vh, 36rem);
+	overflow: auto;
+	margin: 0.5rem 0 0;
+	padding: 0.5rem 0.75rem;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--surface-2);
+	color: var(--ink);
+	font-size: 0.8rem;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
 
 .import-runs td.pass {
 	color: var(--pass);

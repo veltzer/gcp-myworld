@@ -22,6 +22,7 @@ import datetime
 import logging
 import os
 import threading
+import traceback
 from collections import Counter
 from collections.abc import Callable
 from typing import Any
@@ -76,8 +77,17 @@ class Param:
     single: bool = False
 
 
+def stamped(line: str) -> str:
+    """ A line of a run's log, with the time (UTC) it was said: "10:04:05 Countries". """
+    return f"{utcnow():%H:%M:%S} {line}"
+
+
 class Report:
-    """ What an import did: counts of what it did ("YouTube videos added": 3) and lines it said. """
+    """
+    What an import did: counts of what it did ("YouTube videos added": 3)
+    and the lines it said, each with its time: the run's log, which the
+    Imports page shows (its Log), as it goes and after.
+    """
 
     def __init__(self) -> None:
         self.counts: Counter[str] = Counter()
@@ -87,7 +97,28 @@ class Report:
         self.counts[what] += n
 
     def say(self, line: str) -> None:
-        self.lines.append(line)
+        self.lines.append(stamped(line))
+
+
+class _Captured(logging.Handler):
+    """
+    While a run goes: the warnings and errors logged in its thread (the
+    importer's, a library's, an exception's traceback) go into its log too,
+    so the Imports page shows all of it, not only what the importer said.
+    """
+
+    def __init__(self, report: Report) -> None:
+        super().__init__(logging.WARNING)
+        self.report = report
+        self.thread = threading.get_ident()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if record.thread != self.thread:
+            return
+        self.report.say(f"{record.levelname}: {record.getMessage()}")
+        if record.exc_info and record.exc_info[1] is not None:
+            for line in "".join(traceback.format_exception(record.exc_info[1])).rstrip().splitlines():
+                self.report.say(f"  {line}")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -202,7 +233,7 @@ def start(session: Session, owner: User, importer: Importer, given: Any, dry_run
         logger.exception("the job of import run %s could not be started", run_id)
         session.execute(
             update(ImportRun).where(ImportRun.id == run_id, ImportRun.status == "queued")
-            .values(status="failed", log=f"Failed: its job could not be started: {e}", finished_at=utcnow())
+            .values(status="failed", log=stamped(f"Failed: its job could not be started: {e}"), finished_at=utcnow())
         )
         session.commit()
     else:
@@ -266,6 +297,8 @@ def execute(engine: Engine, run_id: int) -> None:
         status = "done"
         beat = _Heartbeat(engine, run_id, report)
         beat.start()
+        captured = _Captured(report)
+        logging.getLogger().addHandler(captured)
         try:
             if importer is None or owner is None:
                 raise ImporterError(f"there is no importer {record.importer} any more")
@@ -287,6 +320,7 @@ def execute(engine: Engine, run_id: int) -> None:
             status = "failed"
             report.say(f"Failed: {type(e).__name__}: {e}")
         finally:
+            logging.getLogger().removeHandler(captured)
             beat.stop()
         session.rollback()
         session.execute(
@@ -303,11 +337,11 @@ def settle(session: Session) -> None:
     now = utcnow()
     session.execute(
         update(ImportRun).where(ImportRun.status == "running", ImportRun.heartbeat_at < now - datetime.timedelta(seconds=STALE_SECONDS))
-        .values(status="failed", log=ImportRun.log + "\nFailed: its job stopped answering (it died, ran out of time or was cancelled)", finished_at=now)
+        .values(status="failed", log=ImportRun.log + "\n" + stamped("Failed: its job stopped answering (it died, ran out of time or was cancelled)"), finished_at=now)
     )
     session.execute(
         update(ImportRun).where(ImportRun.status == "queued", ImportRun.started_at < now - datetime.timedelta(seconds=QUEUED_SECONDS))
-        .values(status="failed", log="Failed: its job never started", finished_at=now)
+        .values(status="failed", log=stamped("Failed: its job never started"), finished_at=now)
     )
     session.commit()
 

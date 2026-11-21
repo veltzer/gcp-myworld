@@ -897,6 +897,19 @@
 				</div>
 			</form>
 		</dialog>
+		<!-- an import run's log, opened from its Log on the Imports page (or its address, #imports/<id>);
+		     it follows a run that goes on -->
+		<dialog id="run-log-dialog" class="dialog run-log-dialog" aria-labelledby="run-log-title">
+			<h2 id="run-log-title"></h2>
+			<p id="run-log-facts" class="settings-hint"></p>
+			<pre id="run-log-text" class="run-log"></pre>
+			<div class="dialog-actions">
+				<button type="button" class="text" id="run-log-copy" title="Copy the log, with what the run was, to paste it anywhere">Copy</button>
+				<button type="button" class="text" id="run-log-download" title="Save the log as a text file">Download</button>
+				<button type="button" class="text" id="run-log-link" title="Copy this log's address: it opens it for whoever may see the run (its user, an admin)">Copy link</button>
+				<button type="button" id="run-log-close">Close</button>
+			</div>
+		</dialog>
 		<dialog id="connections-dialog" class="dialog" aria-labelledby="connections-title">
 			<h2 id="connections-title"></h2>
 			<div id="connections-body" class="connections"></div>

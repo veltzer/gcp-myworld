@@ -37,7 +37,15 @@ The job marks the run `running`, and every 10 seconds says it is alive
 `done` or `failed`. A run whose job stopped saying it is alive for two
 minutes (it died, ran out of time, or was cancelled) is failed, and so is
 one queued for ten minutes whose job never started. `execution` names the
-Cloud Run execution; an admin's list links to its logs.
+Cloud Run execution.
+
+Every run has its log, kept with it (`import_runs.log`): each line the
+importer said, with the time (UTC) it said it, and the warnings and errors
+logged in the run's thread, a crash's traceback too, so nothing is only in
+Cloud Logging. Its Log on the Imports page opens it in a dialog, which
+follows a run that goes on, with Copy, Download (a text file) and Copy link:
+the address `#imports/<id>` opens that log for whoever may see the run (its
+user, or an admin).
 
 The page looks again every three seconds while a run is going.
 
@@ -210,6 +218,8 @@ GOOGLE_CLIENT_ID=<gcp_oauth_client_id> GOOGLE_CLIENT_SECRET="$(pass show keys/go
   and `execution`. For an admin they are everyone's, each with `owner`
   (`id`, `email`), and `everyone` is true. Runs whose jobs stopped are
   failed first. `limit` as above.
+- `GET /api/import-runs/<id>`: one run, as above, with its whole log: the
+  user's own, or anyone's for an admin (with `owner`); 404 otherwise.
 - `GET /youtube/status`: whether connecting is set up, whether the user
   connected, and the channel connected.
 

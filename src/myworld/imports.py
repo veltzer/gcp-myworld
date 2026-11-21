@@ -110,6 +110,22 @@ def api_run(name: str) -> flask.Response:
     return flask.make_response(flask.jsonify(importers.run_json(record)), 202)
 
 
+@bp.route("/api/import-runs/<int:run_id>", methods=["GET"])
+@auth.login_required
+def api_run_one(run_id: int) -> flask.Response:
+    """
+    One run, with its whole log: what its Log on the Imports page shows,
+    and looks at again while it goes. The signed-in user's own, or anyone's
+    for an admin (with whose it is); 404 for anyone else.
+    """
+    importers.settle(flask.g.db)
+    admin = flask.g.user.role == ROLE_ADMIN
+    record = flask.g.db.get(ImportRun, run_id)
+    if record is None or (record.owner_id != flask.g.user.id and not admin):
+        raise ApiError(404, "no such import run")
+    return flask.jsonify(importers.run_json(record, flask.g.db.get(User, record.owner_id) if admin else None))
+
+
 @bp.route("/api/import-runs", methods=["GET"])
 @auth.login_required
 def api_runs() -> flask.Response:

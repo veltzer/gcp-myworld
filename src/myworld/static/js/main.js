@@ -10,7 +10,7 @@ import { nav, setupFreshness, startHistory } from "./history.js";
 import { fillStatuses, loadEntries, selectKind, state } from "./library.js";
 import { setupAddDialog } from "./locks.js";
 import { localizedValues } from "./names.js";
-import { selectImports } from "./imports.js";
+import { openRunLog, selectImports, setupRunLog } from "./imports.js";
 import { setupPager } from "./paging.js";
 import { readsValues } from "./readings.js";
 import { selectSchema } from "./schema.js";
@@ -34,6 +34,7 @@ export async function libraryPage() {
 	}
 	setupAccountMenu(user);
 	setupSettings(user);
+	setupRunLog();
 	setupSidebar();
 	$("logout").onclick = async () => {
 		await fetch("/auth/logout", { method: "POST" });
@@ -122,6 +123,10 @@ async function route(requested) {
 		await selectStats();
 	} else if (requested === "imports") {
 		await selectImports();
+	} else if (/^imports\/\d+$/.test(requested)) {
+		// a run's log, by its address
+		await selectImports();
+		await openRunLog(Number(requested.split("/")[1]));
 	} else if (requested === "users" && isAdmin()) {
 		await selectUsers();
 	} else if (requested === "checks" && isAdmin()) {
