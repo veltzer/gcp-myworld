@@ -119,6 +119,10 @@ export async function selectSchema() {
 	await fillTypeFilter("schema");
 	updateTools();
 	$("world-count").textContent = "";
+	// the browser saves it: the answer says it is a file (Content-Disposition), so the page stays
+	$("schema-dump").onclick = () => {
+		window.location.href = "/api/admin/dump";
+	};
 	const schema = await api("/api/schema");
 	if (state.view !== "schema") {
 		return;

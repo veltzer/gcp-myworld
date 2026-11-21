@@ -17,6 +17,17 @@ locally) through `GET /api/schema`.
   the top: a column the code has and the database lacks (a
   `scripts/migrate.sh` step still to run), one the database has and the
   code does not (left behind), and whole tables either way.
+- **Download a dump of the database:** the whole database, every table
+  and every account's rows, images too, as SQL, gzipped
+  (`myworld-<when>.sql.gz`, `GET /api/admin/dump`, admins only, 403 for
+  anyone else). In production it is `pg_dump --no-owner --no-privileges`
+  (the image installs Debian's `postgresql-client`, the server's major
+  version), connected through the app's own Cloud SQL socket and
+  credentials, which go to it in its environment, never on its command
+  line; locally, sqlite's own dump. It is made as it downloads and kept
+  nowhere. To load it: `gunzip -c myworld-<when>.sql.gz | psql <empty
+  database>`. A dump that cannot start says why; one that fails midway is
+  cut short, which `gunzip` reports (and the app logs).
 
 Other tools read the same catalog for documentation outside the app:
 SchemaSpy and SchemaCrawler make HTML pages and diagrams of a whole

@@ -176,6 +176,11 @@
 			</section>
 			<section id="schema-view" class="schema" hidden>
 				<p id="schema-summary" class="checks-intro"></p>
+				<!-- a copy of the whole database, as SQL (gzipped), for an admin to keep or load elsewhere -->
+				<p class="schema-dump">
+					<button type="button" id="schema-dump" title="Every table and every account's rows, images too, as SQL: gunzip -c the file | psql an empty database">Download a dump of the database</button>
+					<span class="settings-hint">All of it, as SQL, gzipped; made as it downloads, kept nowhere else.</span>
+				</p>
 				<ul id="schema-drift" class="schema-drift" hidden></ul>
 				<h2 class="schema-heading">How the tables point at each other</h2>
 				<div id="schema-diagram" class="schema-diagram"></div>

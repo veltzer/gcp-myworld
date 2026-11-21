@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from myworld import (
     admin,
     auth,
+    dump,
     enumerations,
     imports,
     locales,
@@ -136,5 +137,6 @@ def create_app(engine: Engine | None = None, mail: verification.Mailer | None = 
     app.register_blueprint(pictures.bp)
     app.register_blueprint(stats.bp)
     app.register_blueprint(imports.bp)
+    app.register_blueprint(dump.bp)
     app.register_blueprint(youtube.bp)
     return app

@@ -6,6 +6,12 @@ FROM python:3.14-slim
 
 RUN pip install --no-cache-dir uv
 
+# pg_dump, for an admin's copy of the database (myworld.dump): Debian's, the
+# same major version as the Cloud SQL server (Postgres 17)
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends postgresql-client \
+	&& rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Install dependencies before copying the code so code-only changes reuse

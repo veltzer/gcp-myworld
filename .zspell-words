@@ -10,6 +10,7 @@ CPU
 California
 Cyrillic
 Dana
+Debian
 Fernet
 GeoNames
 Goodreads
@@ -55,6 +56,8 @@ gcp
 gif
 github
 gmail
+gunzip
+gz
 gzipped
 hostname
 hostnames
@@ -71,6 +74,7 @@ neighbour
 oauth
 png
 postgresql
+psql
 pycountry
 repo
 sql
