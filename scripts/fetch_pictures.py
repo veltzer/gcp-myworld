@@ -37,10 +37,12 @@ Wikipedia's search finds; --title "profession:Lecturer=en:Lecture" and
 --file "profession:Lecturer=..." point it elsewhere.
 
 A place's photo ("Tmuna Theater", in Tel Aviv) is that of the first article
-about somewhere (a hall, a club, a park) that names its city and shares a
-word of its name, among the one its name is and those Wikipedia's search
-finds for it with its city; --title "place:Heichal HaTarbut=en:Charles
-Bronfman Auditorium" points it at another.
+about somewhere (a hall, a club, a park, a museum) that names its city and
+shares a word of its name, among the one its name is and those Wikipedia's
+search finds for it with its city; --title "place:Heichal HaTarbut=en:Charles
+Bronfman Auditorium" points it at another. A place without a website is
+given its official website (Wikidata's P856) from the first such article
+that has one (--all: replacing the one it has).
 
 A person's photo is taken only for someone with a profession (a performer,
 a book author, a lecturer: people one may find in an encyclopedia; a friend
@@ -60,8 +62,10 @@ run it through the proxy: scripts/with_cloud_db.sh scripts/fetch_pictures.py.
 """
 
 import argparse
+import functools
 import hashlib
 import json
+import math
 import os
 import re
 import sys
@@ -69,6 +73,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -98,6 +103,9 @@ from myworld.models import (
 USER_AGENT = "myworld-pictures/1.0 (+https://github.com/veltzer/gcp-myworld)"
 SUMMARY = "https://{lang}.wikipedia.org/api/rest_v1/page/summary/"
 WIKIDATA = "https://www.wikidata.org/wiki/Special:EntityData/"
+WIKIDATA_API = "https://www.wikidata.org/w/api.php"
+# how far from its city (or from itself, when it is on the map) a Wikidata item may be and still be the place
+NEAR_KM = 25
 API = "https://{lang}.wikipedia.org/w/api.php"
 # what an article about a band or a musician says it is about
 MUSIC = re.compile(
@@ -144,6 +152,7 @@ def get(url: str) -> bytes:
         return response.read()
 
 
+@functools.cache
 def summary(title: str, lang: str = "en") -> dict[str, Any] | None:
     try:
         found: dict[str, Any] = json.loads(get(SUMMARY.format(lang=lang) + urllib.parse.quote(title.replace(" ", "_"))))
@@ -188,10 +197,15 @@ def file_info(name: str, lang: str = "en") -> dict[str, str] | None:
     }
 
 
+@functools.cache
+def wikidata_entity(item: str) -> dict[str, Any]:
+    entity: dict[str, Any] = json.loads(get(f"{WIKIDATA}{item}.json"))["entities"][item]
+    return entity
+
+
 def wikidata_file(item: str, prop: str) -> str | None:
-    """ The Commons file of a Wikidata item's property (P18 image, P41 flag), or None. """
-    entity = json.loads(get(f"{WIKIDATA}{item}.json"))["entities"][item]
-    claims = entity.get("claims", {}).get(prop, [])
+    """ The string value of a Wikidata item's property (P18 image, P41 flag: a Commons file; P856 official website: a URL), or None. """
+    claims = wikidata_entity(item).get("claims", {}).get(prop, [])
     for claim in claims:
         value = claim.get("mainsnak", {}).get("datavalue", {}).get("value")
         if isinstance(value, str):
@@ -274,20 +288,21 @@ def group_picture(group: Group, overrides: dict[str, tuple[str, str]]) -> tuple[
     return None
 
 
-def place_picture(place: Place, overrides: dict[str, tuple[str, str]]) -> tuple[dict[str, Any], str] | None:
+def place_articles(place: Place, overrides: dict[str, tuple[str, str]]) -> Iterator[dict[str, Any]]:
     """
-    (article, file) for a place: --title's article, else the first article
-    about somewhere (a hall, a club, a park) that names the place's city,
-    among the one its name is ("Tmuna Theater"; "Hangar 11" of "Hangar 11,
-    Tel-Aviv port") and those Wikipedia's search finds for it with its
-    city, with a free photo. A place with no city is not guessed at.
+    The articles that are about a place: --title's alone, else each article
+    about somewhere (a hall, a club, a park, a museum) that names the place's
+    city, among the one its name is ("Tmuna Theater"; "Hangar 11" of "Hangar
+    11, Tel-Aviv port") and those Wikipedia's search finds for it with its
+    city. A place with no city is not guessed at.
     """
     pointed = named(overrides, "place", place.name)
     if pointed is not None:
-        chosen = picture(pointed, False)
-        return (pointed, chosen) if chosen and free(pointed, chosen) else None
+        yield pointed
+        return
     if place.city is None:
-        return None
+        return
+    seen: set[str] = set()
     head = place.name.split(",")[0].strip()
     for title in dict.fromkeys([place.name, head, *search(f"{head} {place.city.name}", limit=3)]):
         found = summary(title)
@@ -298,12 +313,82 @@ def place_picture(place: Place, overrides: dict[str, tuple[str, str]]) -> tuple[
         words = [word for word in re.findall(r"\w{4,}", head.lower()) if word not in place.city.name.lower()]
         if not VENUE.search(text[:400]) or place.city.name not in text or not any(word in found["title"].lower() for word in words):
             continue
-        chosen = picture(found, False)
-        if chosen and free(found, chosen):
-            return found, chosen
+        seen.add(found.get("wikibase_item", ""))
+        yield found
+    # then Wikidata's items of that name with no English article: one that shares a word of its name
+    # and is on the map near it (within NEAR_KM of the place, or else of its city)
+    latitude, longitude = (place.latitude, place.longitude) if place.latitude is not None and place.longitude is not None else (place.city.latitude, place.city.longitude)
+    if latitude is None or longitude is None:
+        return
+    here = (latitude, longitude)
+    words = [word for word in re.findall(r"\w{4,}", head.lower()) if word not in place.city.name.lower()]
+    for item in wikidata_search(head):
+        if item in seen:
+            continue
+        entity = wikidata_entity(item)
+        names = [entity.get("labels", {}).get("en", {}).get("value", ""), *(alias["value"] for alias in entity.get("aliases", {}).get("en", []))]
+        where = wikidata_coordinates(entity)
+        if not any(word in name.lower() for name in names for word in words) or where is None or km(here, where) > NEAR_KM:
+            continue
+        seen.add(item)
+        yield {"title": f"{names[0] or item} (Wikidata {item})", "wikibase_item": item, "lang": "en", "type": "standard"}
+
+
+@functools.cache
+def wikidata_search(query: str, limit: int = 5) -> list[str]:
+    """ The Wikidata items whose English label or alias matches query, best first. """
+    params = urllib.parse.urlencode({"action": "wbsearchentities", "search": query, "language": "en", "type": "item", "limit": limit, "format": "json"})
+    return [hit["id"] for hit in json.loads(get(f"{WIKIDATA_API}?{params}")).get("search", [])]
+
+
+def wikidata_coordinates(entity: dict[str, Any]) -> tuple[float, float] | None:
+    """ Where a Wikidata item is (P625), or None. """
+    for claim in entity.get("claims", {}).get("P625", []):
+        value = claim.get("mainsnak", {}).get("datavalue", {}).get("value")
+        if isinstance(value, dict) and "latitude" in value:
+            return float(value["latitude"]), float(value["longitude"])
     return None
 
 
+def km(a: tuple[float, float], b: tuple[float, float]) -> float:
+    """ How far apart two points on Earth are, in kilometres. """
+    lat1, lon1, lat2, lon2 = map(math.radians, (*a, *b))
+    h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+    return 2 * 6371 * math.asin(math.sqrt(h))
+
+
+def place_picture(place: Place, overrides: dict[str, tuple[str, str]]) -> tuple[dict[str, Any], str] | None:
+    """
+    (article, file) for a place: the first of its articles (place_articles)
+    with a free photo; an item with no English article, its Hebrew article's.
+    """
+    for found in place_articles(place, overrides):
+        chosen = picture(found, False)
+        if chosen and free(found, chosen):
+            return found, chosen
+        item = found.get("wikibase_item")
+        hebrew = wikidata_entity(item).get("sitelinks", {}).get("hewiki", {}).get("title") if item and "originalimage" not in found else None
+        lead = summary(hebrew, "he") if hebrew else None
+        chosen = picture(lead, False) if lead else None
+        # a lead photo may be any picture of the kind (a jazz club's article, a photo of some jazz):
+        # taken only when its file names the place, in English or in Hebrew
+        names = [word for word in re.findall(r"\w{4,}", place.name.split(",")[0].lower())] + ([hebrew.replace(" ", "_").lower()] if hebrew else [])
+        if lead and chosen and any(name in chosen.lower().replace(" ", "_") for name in names) and free(lead, chosen):
+            return lead, chosen
+    return None
+
+
+def place_website(place: Place, overrides: dict[str, tuple[str, str]]) -> tuple[dict[str, Any], str] | None:
+    """ (article, URL) for a place: the official website (Wikidata's P856) of the first of its articles that has one. """
+    for found in place_articles(place, overrides):
+        item = found.get("wikibase_item")
+        url = wikidata_file(item, "P856") if item else None
+        if url and url.startswith(("http://", "https://")):
+            return found, url
+    return None
+
+
+@functools.cache
 def search(query: str, lang: str = "en", limit: int = 5) -> list[str]:
     """ The titles Wikipedia's search finds for query, best first. """
     params = urllib.parse.urlencode({"action": "query", "list": "search", "srsearch": query, "srlimit": limit, "format": "json"})
@@ -438,9 +523,19 @@ def main() -> int:
         ]
         admin = session.scalar(select(User.id).where(User.role == ROLE_ADMIN).order_by(User.id).limit(1))
         for row in rows:
+            what = f"{kind_of(row)} {row.id}, {row.name}"
+            # a place without a website is given its official one, from the article about it
+            if isinstance(row, Place) and (not row.website or args.all):
+                site = place_website(row, overrides)
+                if site is None:
+                    print(f"MISS  {what}: no website")
+                else:
+                    print(f"site  {what}: {site[0]['title']} -> {site[1]}")
+                    if not args.dry_run:
+                        row.website = site[1][:1000]
+                        session.commit()
             if (bool(row.photos) if isinstance(row, Person) else row.image_id is not None) and not args.all:
                 continue
-            what = f"{kind_of(row)} {row.id}, {row.name}"
             whose = ""
             if f"{kind_of(row)}:{row.name}" in files:
                 chosen = files[f"{kind_of(row)}:{row.name}"]
