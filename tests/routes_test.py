@@ -8,9 +8,11 @@ from typing import Any
 
 import pytest
 import webtest
+from sqlalchemy.engine import Engine
 
+from myworld.models import is_shared
 from myworld.world import VIEWS
-from tests.conftest import sign_in
+from tests.conftest import sign_in, sign_in_admin
 
 # what a row is called after its edit, where the edit does not say a name
 NAMED = {"people": "Dana Levi", "chess-games": "me vs Deeper Blue"}
@@ -18,7 +20,6 @@ NAMED = {"people": "Dana Levi", "chess-games": "me vs Deeper Blue"}
 # the least a row of each page can be added with, and what an edit changes it to
 MINIMAL: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
     "concert-visits": ({"name": "Jarrett"}, {"name": "Jarrett Trio"}),
-    "museum-visits": ({"name": "Prado"}, {"name": "Museo del Prado"}),
     "audio-courses": ({"name": "Logic"}, {"name": "Logic 101"}),
     "youtube-videos": ({"youtube_id": "dQw4w9WgXcQ", "name": "A song"}, {"youtube_id": "dQw4w9WgXcQ", "name": "That song"}),
     # a game is added by its text and named by its players: an edit that sends another text renames it
@@ -32,6 +33,8 @@ MINIMAL: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
     "groups": ({"name": "Trio"}, {"name": "The Trio"}),
     "cities": ({"name": "Haifa"}, {"name": "Hefa"}),
     "countries": ({"name": "Israel"}, {"name": "State of Israel"}),
+    "place-kinds": ({"name": "Lecture hall"}, {"name": "Auditorium"}),
+    "visit-types": ({"name": "Lecture"}, {"name": "Talk"}),
 }
 
 
@@ -40,26 +43,28 @@ def test_every_view_is_tried() -> None:
 
 
 @pytest.mark.parametrize("path", sorted(VIEWS))
-def test_add_edit_delete(app: webtest.TestApp, path: str) -> None:
-    sign_in(app)
+def test_add_edit_delete(app: webtest.TestApp, engine: Engine, path: str) -> None:
+    # what everyone shares is changed by an admin
+    sign_in_admin(app, engine)
     first, changed = MINIMAL[path]
-    assert app.get(f"/api/{path}").json == []
+    # (place kinds and visit types start with those there always are)
+    there = [row["id"] for row in app.get(f"/api/{path}").json]
     added = app.post_json(f"/api/{path}", first, status=201).json
     assert added["name"] == first.get("name", added["name"])
-    assert [row["id"] for row in app.get(f"/api/{path}").json] == [added["id"]]
+    assert sorted(row["id"] for row in app.get(f"/api/{path}").json) == sorted([*there, added["id"]])
     edited = app.put_json(f"/api/{path}/{added['id']}", changed).json
     assert edited["id"] == added["id"]
     wanted = changed.get("name", NAMED.get(path))
     assert edited["name"] == wanted
-    assert [row["name"] for row in app.get(f"/api/{path}").json] == [wanted]
+    assert wanted in [row["name"] for row in app.get(f"/api/{path}").json]
     app.delete(f"/api/{path}/{added['id']}", status=204)
-    assert app.get(f"/api/{path}").json == []
+    assert [row["id"] for row in app.get(f"/api/{path}").json] == there
     # gone is gone: neither edited nor deleted again
     app.put_json(f"/api/{path}/{added['id']}", changed, status=404)
     app.delete(f"/api/{path}/{added['id']}", status=404)
 
 
-@pytest.mark.parametrize("path", sorted(VIEWS))
+@pytest.mark.parametrize("path", sorted(path for path, view in VIEWS.items() if not is_shared(view.model)))
 def test_a_row_is_its_owners(app: webtest.TestApp, path: str) -> None:
     sign_in(app)
     first, changed = MINIMAL[path]
@@ -75,13 +80,14 @@ def test_a_row_is_its_owners(app: webtest.TestApp, path: str) -> None:
 
 
 @pytest.mark.parametrize("path", sorted(VIEWS))
-def test_a_body_is_a_json_object(app: webtest.TestApp, path: str) -> None:
-    sign_in(app)
+def test_a_body_is_a_json_object(app: webtest.TestApp, engine: Engine, path: str) -> None:
+    sign_in_admin(app, engine)
+    there = app.get(f"/api/{path}").json
     assert app.post_json(f"/api/{path}", ["Jarrett"], status=400).json == {"error": "expected a JSON object"}
     assert app.post(f"/api/{path}", "name=Jarrett", status=400).json == {"error": "expected a JSON object"}
     # nothing was added by a body that was refused
     assert app.post_json(f"/api/{path}", {}, status=400).json["error"]
-    assert app.get(f"/api/{path}").json == []
+    assert app.get(f"/api/{path}").json == there
 
 
 @pytest.mark.parametrize("path", sorted(VIEWS))
@@ -141,30 +147,51 @@ def test_a_precision_replaces_another(app: webtest.TestApp) -> None:
         assert (concert["date"], concert["date_precision"]) == (date, precision)
 
 
+@pytest.mark.parametrize("path", sorted(path for path, view in VIEWS.items() if is_shared(view.model)))
+def test_only_an_admin_changes_what_everyone_shares(app: webtest.TestApp, engine: Engine, path: str) -> None:
+    sign_in_admin(app, engine, sub="the-admin")
+    first, changed = MINIMAL[path]
+    added = app.post_json(f"/api/{path}", first, status=201).json
+    sign_in(app)
+    # everyone sees it
+    assert added["id"] in [row["id"] for row in app.get(f"/api/{path}").json]
+    forbidden = {"error": "this is shared by everyone: only an admin may change it"}
+    assert app.post_json(f"/api/{path}", changed, status=403).json == forbidden
+    assert app.put_json(f"/api/{path}/{added['id']}", changed, status=403).json == forbidden
+    assert app.delete(f"/api/{path}/{added['id']}", status=403).json == forbidden
+
+
+def test_a_users_rows_point_at_shared_ones(app: webtest.TestApp, engine: Engine) -> None:
+    sign_in_admin(app, engine, sub="the-admin")
+    barby = app.post_json("/api/places", {"name": "Barby"}, status=201).json["id"]
+    haifa = app.post_json("/api/cities", {"name": "Haifa"}, status=201).json["id"]
+    sign_in(app)
+    concert = app.post_json("/api/concert-visits", {"name": "Jarrett", "place_id": barby}, status=201).json
+    assert concert["place"]["name"] == "Barby"
+    acme = app.post_json("/api/organizations", {"name": "ACME", "headquarters_id": haifa}, status=201).json
+    assert acme["headquarters"]["name"] == "Haifa"
+    # a shared place shows the user's own concerts there, not another account's
+    sign_in(app, sub="someone-else")
+    [place] = [p for p in app.get("/api/places").json if p["id"] == barby]
+    assert place["concerts"] == []
+
+
 def test_what_a_row_points_at_is_the_users_own(app: webtest.TestApp) -> None:
     sign_in(app, sub="someone-else")
     theirs = {
-        "place": app.post_json("/api/places", {"name": "Barby"}, status=201).json["id"],
-        "city": app.post_json("/api/cities", {"name": "Haifa"}, status=201).json["id"],
-        "country": app.post_json("/api/countries", {"name": "Israel"}, status=201).json["id"],
         "person": app.post_json("/api/people", {"first_name": "Dana"}, status=201).json["id"],
         "device": app.post_json("/api/devices", {"name": "Phone"}, status=201).json["id"],
         "type": app.post_json("/api/organization-types", {"name": "Company"}, status=201).json["id"],
     }
     sign_in(app)
     for path, body, error in (
-        ("concert-visits", {"name": "Jarrett", "place_id": theirs["place"]}, "place_id: unknown place"),
         ("concert-visits", {"name": "Jarrett", "people": [theirs["person"]]}, "people: unknown person"),
         ("concert-visits", {"name": "Jarrett", "people": "Dana"}, "people: expected a list of ids"),
         ("concert-visits", {"name": "Jarrett", "people": [True]}, "people: expected a list of ids"),
-        ("places", {"name": "Zappa", "city_id": theirs["city"]}, "city_id: unknown city"),
-        ("museum-visits", {"name": "Prado", "city_id": theirs["city"]}, "city_id: unknown city"),
-        ("cities", {"name": "Eilat", "country_id": theirs["country"]}, "country_id: unknown country"),
-        ("organizations", {"name": "ACME", "headquarters_id": theirs["city"]}, "headquarters_id: unknown city"),
         ("organizations", {"name": "ACME", "type_id": theirs["type"]}, "type_id: unknown type"),
         ("audio-courses", {"name": "Logic", "device_id": theirs["device"]}, "device_id: unknown device"),
-        ("places", {"name": "Zappa", "city_id": "Haifa"}, "city_id: expected a number"),
-        ("places", {"name": "Zappa", "city_id": 999999}, "city_id: unknown city"),
+        ("organizations", {"name": "ACME", "city_id": "Haifa"}, "city_id: expected a number"),
+        ("organizations", {"name": "ACME", "city_id": 999999}, "city_id: unknown city"),
     ):
         assert app.post_json(f"/api/{path}", body, status=400).json == {"error": error}, (path, body)
         assert app.get(f"/api/{path}").json == []
@@ -176,11 +203,10 @@ def test_what_a_row_points_at_is_the_users_own(app: webtest.TestApp) -> None:
     ("countries", {"name": "Israel"}, "Israel is already in Countries"),
     ("cities", {"name": "Haifa"}, "Haifa is already in Cities"),
     ("organizations", {"name": "ACME"}, "ACME is already in Organizations"),
-    ("museum-visits", {"name": "Prado"}, "Prado is already in Museums: add the visit to it"),
     ("youtube-videos", {"youtube_id": "dQw4w9WgXcQ", "name": "A song"}, "that video is in your list already"),
 ])
-def test_what_is_there_is_not_added_again(app: webtest.TestApp, path: str, body: dict[str, Any], error: str) -> None:
-    sign_in(app)
+def test_what_is_there_is_not_added_again(app: webtest.TestApp, engine: Engine, path: str, body: dict[str, Any], error: str) -> None:
+    sign_in_admin(app, engine)
     first = app.post_json(f"/api/{path}", body, status=201).json
     assert app.post_json(f"/api/{path}", body, status=409).json == {"error": error}
     # saved again as it is, a row does not clash with itself
@@ -188,8 +214,8 @@ def test_what_is_there_is_not_added_again(app: webtest.TestApp, path: str, body:
     assert len(app.get(f"/api/{path}").json) == 1
 
 
-def test_a_region_is_a_row_its_cities_share(app: webtest.TestApp) -> None:
-    sign_in(app)
+def test_a_region_is_a_row_its_cities_share(app: webtest.TestApp, engine: Engine) -> None:
+    sign_in_admin(app, engine)
     usa = app.post_json("/api/countries", {"name": "USA"}, status=201).json["id"]
     canada = app.post_json("/api/countries", {"name": "Canada"}, status=201).json["id"]
     assert app.get("/api/regions").json == []
@@ -213,10 +239,9 @@ def test_a_region_is_a_row_its_cities_share(app: webtest.TestApp) -> None:
     assert "Texas" in [region["name"] for region in app.get("/api/regions").json]
     app.delete(f"/api/cities/{austin['id']}", status=204)
     assert [region["name"] for region in app.get("/api/regions").json] == ["Minnesota"]
-    # each account has its own
+    # they are everyone's
     sign_in(app, sub="someone-else")
-    assert app.get("/api/regions").json == []
-    app.get("/api/regions", status=200)
+    assert [region["name"] for region in app.get("/api/regions").json] == ["Minnesota"]
 
 
 def test_regions_need_a_session(app: webtest.TestApp) -> None:

@@ -81,6 +81,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from myworld.models import (
+    ROLE_ADMIN,
     City,
     Country,
     Device,
@@ -90,6 +91,7 @@ from myworld.models import (
     PersonPhoto,
     PersonType,
     Place,
+    User,
     make_engine,
 )
 
@@ -434,6 +436,7 @@ def main() -> int:
             *(session.scalars(select(Person).where(Person.types.any()).order_by(Person.id).options(selectinload(Person.names))) if args.only in (None, "people") else []),
             *(session.scalars(select(Place).order_by(Place.id).options(selectinload(Place.city))) if args.only in (None, "places") else []),
         ]
+        admin = session.scalar(select(User.id).where(User.role == ROLE_ADMIN).order_by(User.id).limit(1))
         for row in rows:
             if (bool(row.photos) if isinstance(row, Person) else row.image_id is not None) and not args.all:
                 continue
@@ -474,9 +477,11 @@ def main() -> int:
                 continue
             sha256 = hashlib.sha256(data).hexdigest()
             filename = f"{kind_of(row)}-{row.id}-{sha256[:16]}.{EXTENSIONS[content_type]}"
-            image = session.scalars(select(Image).where(Image.owner_id == row.owner_id, Image.filename == filename)).first()
+            # a shared row's picture (a place's, a city's, a country's flag) is kept as the first admin's
+            owner = getattr(row, "owner_id", None) or admin
+            image = session.scalars(select(Image).where(Image.owner_id == owner, Image.filename == filename)).first()
             if image is None:
-                image = Image(owner_id=row.owner_id, filename=filename, content_type=content_type, sha256=sha256, data=data)
+                image = Image(owner_id=owner, filename=filename, content_type=content_type, sha256=sha256, data=data)
                 session.add(image)
                 session.flush()
             if isinstance(row, Person):

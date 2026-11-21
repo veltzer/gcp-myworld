@@ -8,27 +8,31 @@ import datetime
 from typing import Any
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld import checks
 from myworld.checks import common, core
 from myworld.models import (
+    MUSEUM_KIND,
+    MUSEUM_VISIT,
     AudioCourse,
     City,
     Concert,
     Country,
     Device,
     Group,
-    Museum,
-    MuseumVisit,
     Organization,
     Person,
     PersonType,
     Place,
+    PlaceKind,
     Read,
     User,
     UserWork,
+    Visit,
+    VisitType,
     Work,
     YouTubeVideo,
 )
@@ -73,7 +77,7 @@ def test_every_module_registered_its_checks() -> None:
     for dataset in checks.DATASETS:
         assert any(c.dataset == dataset for c in checks.CHECKS.values()), dataset
     # the ones made by a function, once for each page
-    for name in ("places-credits", "people-credits", "museum-near-city", "group-websites", "device-duplicates", "book-covers", "relation-type-used"):
+    for name in ("places-credits", "people-credits", "place-near-city", "group-websites", "device-duplicates", "book-covers", "relation-type-used"):
         assert name in checks.CHECKS, name
     assert all(c.description and c.title and c.noun for c in checks.CHECKS.values())
 
@@ -95,14 +99,14 @@ def fixture_world(engine: Engine) -> Any:
         alice, bob = User(email="alice@example.com"), User(email="bob@example.com")
         session.add_all([alice, bob])
         session.flush()
-        france = Country(owner_id=alice.id, name="France")
-        paris = City(owner_id=alice.id, name="Paris", country=france)
-        nowhere = City(owner_id=alice.id, name="Nowhere")
-        louvre = Museum(owner_id=alice.id, name="Louvre", city=paris, visits=[MuseumVisit()])
+        # shared: no account's
+        france = Country(name="France")
+        paris = City(name="Paris", country=france)
+        nowhere = City(name="Nowhere")
         book = Work(owner_id=alice.id, kind="book", title="Dune", creator="Frank Herbert")
         session.add_all([
-            france, paris, nowhere, louvre, book,
-            Place(owner_id=alice.id, name="Olympia", city=paris), Place(owner_id=alice.id, name="A field"),
+            france, paris, nowhere, book,
+            Place(name="Olympia", city=paris), Place(name="A field"),
             Concert(owner_id=alice.id, name="Jarrett"), AudioCourse(owner_id=alice.id, name="Logic"), YouTubeVideo(owner_id=alice.id, youtube_id="dQw4w9WgXcQ", name="A song"),
             Person(owner_id=alice.id, first_name="Dana", surname="Levi"), Person(owner_id=alice.id, first_name="Avi", surname="Cohen"),
             Person(owner_id=bob.id, first_name="Zed"), Person(owner_id=alice.id, first_name="Avi", surname="Adler"),
@@ -110,6 +114,11 @@ def fixture_world(engine: Engine) -> Any:
             Device(owner_id=alice.id, name="Phone"), PersonType(owner_id=alice.id, name="Pianist"),
         ])
         session.flush()
+        # a museum (a shared place of the kind Museum) and alice's visit to it
+        museum = session.scalars(select(PlaceKind).where(PlaceKind.name == MUSEUM_KIND)).one()
+        louvre = Place(name="Louvre", city=paris, kinds=[museum])
+        visited = session.scalars(select(VisitType).where(VisitType.name == MUSEUM_VISIT)).one()
+        session.add_all([louvre, Visit(owner_id=alice.id, place=louvre, type=visited)])
         session.add(UserWork(owner_id=alice.id, work_id=book.id, reads=[Read()]))
         session.commit()
         yield session
@@ -117,13 +126,11 @@ def fixture_world(engine: Engine) -> Any:
 
 @pytest.mark.parametrize(("model", "subject", "link"), [
     (Concert, "Jarrett (concert 1, account 1)", "concerts/1"),
-    (Museum, "Louvre (museum 1, account 1)", "museums/1"),
-    (MuseumVisit, "Louvre (museum visit 1, account 1)", "museums/1"),
+    (Visit, "Louvre (museum visit 1, account 1)", "museums/3"),
     (AudioCourse, "Logic (audio course 1, account 1)", "audio-courses/1"),
     (YouTubeVideo, "A song (YouTube video 1, account 1)", "youtube/1"),
     (Organization, "ACME (organization 1, account 1)", "organizations/1"),
     (Group, "Trio (group 1, account 1)", "groups/1"),
-    (Country, "France (country 1, account 1)", "countries/1"),
     (Device, "Phone (device 1, account 1)", "devices/1"),
     (PersonType, "Pianist (profession 1, account 1)", "person-types/1"),
 ])
@@ -132,11 +139,15 @@ def test_a_problem_says_what_it_is_about(world: Session, model: Any, subject: st
     assert core.problem(row, "is wrong") == core.Problem(subject, "is wrong", link, 1)
 
 
+def test_a_problem_with_a_shared_row_is_no_accounts(world: Session) -> None:
+    assert core.problem(world.get(Country, 1), "is wrong") == core.Problem("France (country 1, shared)", "is wrong", "countries/1", None)
+
+
 def test_a_problem_tells_a_place_with_its_city(world: Session) -> None:
     told = {p.subject for p in (core.problem(row, "x") for row in core.rows(world, Place))}
-    assert told == {"Olympia, Paris (place 1, account 1)", "A field (place 2, account 1)"}
+    assert told == {"Olympia, Paris (place 1, shared)", "A field (place 2, shared)", "Louvre, Paris (place 3, shared)"}
     told = {p.subject for p in (core.problem(row, "x") for row in core.rows(world, City))}
-    assert told == {"Paris, France (city 1, account 1)", "Nowhere (city 2, account 1)"}
+    assert told == {"Paris, France (city 1, shared)", "Nowhere (city 2, shared)"}
     entry = core.entries_of(world, "book")[0]
     assert core.problem(entry, "x") == core.Problem(f"Dune (book {entry.work_id}, account 1)", "x", f"book/{entry.work_id}", 1)
     assert core.entries_of(world, "film") == []
@@ -163,7 +174,7 @@ def test_twice(world: Session) -> None:
 
 def test_ids_and_dated(world: Session) -> None:
     assert core.ids(world, Place.city_id) == {1}
-    assert core.ids(world, Place.city_id, Museum.city_id, City.country_id) == {1}
+    assert core.ids(world, Place.city_id, City.country_id) == {1}
     assert core.ids(world, Organization.city_id) == set()
     concert = world.get(Concert, 1)
     assert concert is not None and not core.dated(concert)

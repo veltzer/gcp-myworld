@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 import webtest
@@ -20,6 +21,8 @@ from myworld import checks
 from myworld.checks import logo_problems
 from myworld.models import (
     KINDS,
+    MUSEUM_KIND,
+    MUSEUM_VISIT,
     ROLE_ADMIN,
     AudioCourse,
     Base,
@@ -31,18 +34,19 @@ from myworld.models import (
     Group,
     Image,
     Login,
-    Museum,
-    MuseumVisit,
     Organization,
     Person,
     PersonPhoto,
     PersonType,
     Place,
+    PlaceKind,
     Read,
     Region,
     RelationType,
     User,
     UserWork,
+    Visit,
+    VisitType,
     Work,
     WorkTitle,
     YouTubeVideo,
@@ -85,7 +89,7 @@ def test_bad_logo(data: bytes, wanted: str) -> None:
 
 
 def test_every_check_describes_itself() -> None:
-    assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "people-known", "museum-dates", "museum-visits", "organization-locations", "museum-addresses", "museum-locations", "museum-company",
+    assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "people-known", "museum-dates", "museum-visit-places", "organization-locations", "museum-addresses", "museum-locations", "museum-company",
         "audio-course-lecturers", "audio-course-devices", "audio-course-status", "audio-course-reviews",
         "audio-course-covers", "audio-course-links", "audio-course-stalled", "audio-course-duplicates"} <= set(checks.CHECKS)
     for chosen in checks.CHECKS.values():
@@ -193,27 +197,45 @@ def test_organization_addresses(engine: Engine) -> None:
     assert {p.message for p in result.problems} == {"has no address"}
 
 
+def museum(session: Session, name: str, **columns: Any) -> Place:
+    """ A museum: a shared place of the kind Museum. """
+    kind = session.scalars(select(PlaceKind).where(PlaceKind.name == MUSEUM_KIND)).one()
+    return Place(name=name, kinds=[kind], **columns)
+
+
+def visit(session: Session, owner_id: int, place: Place | None, **columns: Any) -> Visit:
+    """ A user's museum visit to place. """
+    kind = session.scalars(select(VisitType).where(VisitType.name == MUSEUM_VISIT)).one()
+    return Visit(owner_id=owner_id, place=place, type=kind, **columns)
+
+
 def test_museum_dates(engine: Engine) -> None:
     with Session(engine) as session:
         alice = User(email="alice@example.com")
         session.add(alice)
         session.flush()
+        louvre, tate, moma, uffizi = (museum(session, name) for name in ("Louvre", "Tate", "MoMA", "Uffizi"))
+        # one no one visited yet has no visit to date
+        session.add_all([louvre, tate, moma, uffizi, museum(session, "Prado")])
+        session.flush()
         session.add_all([
             # any one precision is a date
-            Museum(owner_id=alice.id, name="Louvre", visits=[MuseumVisit(date_ymd=datetime.date(2019, 5, 1)), MuseumVisit(date_my="06-2018")]),
-            Museum(owner_id=alice.id, name="Tate", visits=[MuseumVisit(date_y=2015)]),
-            Museum(owner_id=alice.id, name="MoMA", visits=[MuseumVisit(date_utcz=datetime.datetime(2020, 1, 2, 15, 0))]),
-            Museum(owner_id=alice.id, name="Uffizi", visits=[MuseumVisit()]),
-            # one not visited yet has no visit to date
-            Museum(owner_id=alice.id, name="Prado"),
+            visit(session, alice.id, louvre, date_ymd=datetime.date(2019, 5, 1)), visit(session, alice.id, louvre, date_my="06-2018"),
+            visit(session, alice.id, tate, date_y=2015),
+            visit(session, alice.id, moma, date_utcz=datetime.datetime(2020, 1, 2, 15, 0)),
+            visit(session, alice.id, uffizi),
+            # and a visit to a place that is no museum, or to none (an admin deleted it)
+            visit(session, alice.id, Place(name="A club"), date_y=2001), visit(session, alice.id, None, date_y=2002),
         ])
         session.commit()
         result = checks.CHECKS["museum-dates"].run(session)
-        visited = checks.CHECKS["museum-visits"].run(session)
-    # every museum has a visit
-    assert (visited.checked, [(p.subject, p.message) for p in visited.problems]) == (5, [("Prado (museum 5, account 1)", "has no visit")])
-    assert result.checked == 5
-    assert [(p.subject.split(" (")[0], p.message, p.link) for p in result.problems] == [("Uffizi", "has no date", "museums/4")]
+        places = checks.CHECKS["museum-visit-places"].run(session)
+    assert result.checked == 7
+    assert [(p.subject, p.message, p.link) for p in result.problems] == [("Uffizi (museum visit 5, account 1)", "has no date", f"museums/{uffizi.id}")]
+    assert [(p.subject, p.message) for p in places.problems] == [
+        ("A club (museum visit 6, account 1)", "is to A club, which is not of the kind Museum"),
+        ("No place (museum visit 7, account 1)", "is to no place"),
+    ]
 
 
 def test_locations(engine: Engine) -> None:
@@ -224,17 +246,19 @@ def test_locations(engine: Engine) -> None:
         session.add_all([
             Organization(owner_id=alice.id, name="Acme", latitude=32.8, longitude=35.0),
             Organization(owner_id=alice.id, name="Lost"),
-            Museum(owner_id=alice.id, name="Louvre", street="Rue de Rivoli", postcode="75001", latitude=48.86, longitude=2.34),
-            Museum(owner_id=alice.id, name="Prado", street="Calle de Ruiz de Alarcón 23"),
-            Museum(owner_id=alice.id, name="Tate", street=" "),
+            museum(session, "Louvre", street="Rue de Rivoli", postcode="75001", latitude=48.86, longitude=2.34),
+            museum(session, "Prado", street="Calle de Ruiz de Alarcón 23"),
+            museum(session, "Tate", street=" "),
+            # a place that is no museum is no museum's problem
+            Place(name="A field"),
         ])
         session.commit()
         organizations = checks.CHECKS["organization-locations"].run(session)
         addresses = checks.CHECKS["museum-addresses"].run(session)
         locations = checks.CHECKS["museum-locations"].run(session)
     assert [p.subject for p in organizations.problems] == ["Lost (organization 2, account 1)"]
-    assert [p.subject for p in addresses.problems] == ["Tate (museum 3, account 1)"]
-    assert [p.subject for p in locations.problems] == ["Prado (museum 2, account 1)", "Tate (museum 3, account 1)"]
+    assert [p.subject for p in addresses.problems] == ["Tate (place 3, shared)"]
+    assert [p.subject for p in locations.problems] == ["Prado (place 2, shared)", "Tate (place 3, shared)"]
 
 
 def test_museum_company(engine: Engine) -> None:
@@ -244,16 +268,16 @@ def test_museum_company(engine: Engine) -> None:
         session.flush()
         friend = Person(owner_id=alice.id, first_name="Dana")
         session.add_all([
-            Museum(owner_id=alice.id, name="Louvre", visits=[MuseumVisit(people=[friend])]),
-            Museum(owner_id=alice.id, name="Prado", visits=[MuseumVisit(alone=True)]),
-            Museum(owner_id=alice.id, name="Tate", visits=[MuseumVisit()]),
-            Museum(owner_id=alice.id, name="Uffizi", visits=[MuseumVisit(alone=True, people=[friend])]),
+            visit(session, alice.id, museum(session, "Louvre"), people=[friend]),
+            visit(session, alice.id, museum(session, "Prado"), alone=True),
+            visit(session, alice.id, museum(session, "Tate")),
+            visit(session, alice.id, museum(session, "Uffizi"), alone=True, people=[friend]),
         ])
         session.commit()
         result = checks.CHECKS["museum-company"].run(session)
     assert result.checked == 4
     # the ids follow the order the session flushes in, so only the names are compared
-    assert [(p.subject.split(" (")[0], p.message) for p in result.problems] == [
+    assert sorted((p.subject.split(" (")[0], p.message) for p in result.problems) == [
         ("Tate", "has no one in With and is not marked alone"),
         ("Uffizi", "is marked alone but has people in With"),
     ]
@@ -555,7 +579,7 @@ def test_concerts(engine: Engine) -> None:
         session.flush()
         band = Person(owner_id=alice.id, first_name="The Band")
         photo = Image(owner_id=alice.id, filename="p.jpg", content_type="image/jpeg", sha256="0" * 64, data=b"\xff\xd8")
-        barby = Place(owner_id=alice.id, name="Barby", city=City(owner_id=alice.id, name="Tel Aviv"))
+        barby = Place(name="Barby", city=City(name="Tel Aviv"))
         good = {"place": barby, "performers": [band], "image": photo}
         session.add_all([
             # every rule kept
@@ -613,14 +637,14 @@ def test_places(engine: Engine) -> None:
         alice = User(email="alice@example.com")
         session.add(alice)
         session.flush()
-        tel_aviv = City(owner_id=alice.id, name="Tel Aviv", country=Country(owner_id=alice.id, name="Israel"))
-        barby = Place(owner_id=alice.id, name="Barby", city=tel_aviv, latitude=32.05, longitude=34.76)
+        tel_aviv = City(name="Tel Aviv", country=Country(name="Israel"))
+        barby = Place(name="Barby", city=tel_aviv, latitude=32.05, longitude=34.76)
         session.add_all([
             # every rule kept: something happened there, a city and a country, on the map
             Concert(owner_id=alice.id, name="Show", place=barby),
             # each of these breaks rules
-            Place(owner_id=alice.id, name="Somewhere"),
-            Place(owner_id=alice.id, name="barby ", city=tel_aviv, latitude=1, longitude=1),
+            Place(name="Somewhere"),
+            Place(name="barby ", city=tel_aviv, latitude=1, longitude=1),
         ])
         session.commit()
 
@@ -718,10 +742,10 @@ def test_more_checks(engine: Engine) -> None:
         photo = Image(owner_id=me, filename="p.jpg", content_type="image/jpeg", sha256="1" * 64, data=b"\xff\xd8")
         session.add(photo)
         session.flush()
-        france, israel = Country(owner_id=me, name="France"), Country(owner_id=me, name="Israel")
-        paris = City(owner_id=me, name="Paris", country=france, region_row=Region(owner_id=me, name="Île-de-France", country=france), latitude=48.86, longitude=2.35)
-        lyon = City(owner_id=me, name="Lyon", country=france, latitude=45.76, longitude=4.84)
-        haifa = City(owner_id=me, name="Haifa", country=israel)
+        france, israel = Country(name="France"), Country(name="Israel")
+        paris = City(name="Paris", country=france, region_row=Region(name="Île-de-France", country=france), latitude=48.86, longitude=2.35)
+        lyon = City(name="Lyon", country=france, latitude=45.76, longitude=4.84)
+        haifa = City(name="Haifa", country=israel)
         author = PersonType(owner_id=me, name="Book Author")
         dana = Person(owner_id=me, first_name="Dana", types=[author], photos=[PersonPhoto(image_id=photo.id, image_source="https://commons.wikimedia.org/x", image_license="CC0", image_author="Ann")])
         twin = Person(owner_id=me, first_name="dana ", types=[author], photos=[PersonPhoto(image_id=photo.id, image_source="https://commons.wikimedia.org/y")])
@@ -732,12 +756,13 @@ def test_more_checks(engine: Engine) -> None:
         works = {title: Work(owner_id=me, kind="book", title=title, creator="x", original_locale=original) for title, original in (("Dune", "en"), ("The Joke", "cs"), ("Esau", "he"), ("Wanted", "en"))}
         session.add_all(works.values())
         session.flush()
+        louvre = museum(session, "Louvre", city=paris, street="Rue de Rivoli", image_id=photo.id, website="https://louvre.fr", latitude=48.86, longitude=2.34)
+        other = museum(session, " louvre", city=paris, street="Quai", website="louvre", latitude=43.3, longitude=5.37)
         session.add_all([
-            Museum(owner_id=me, name="Louvre", city=paris, image_id=photo.id, url="https://louvre.fr", latitude=48.86, longitude=2.34, visits=[MuseumVisit(rating=9, review="grand")]),
-            Museum(owner_id=me, name=" louvre", city=paris, url="louvre", latitude=43.3, longitude=5.37, visits=[MuseumVisit(rating=8), MuseumVisit()]),
-            Museum(owner_id=me, name="Nowhere"),
-            Place(owner_id=me, name="Olympia", city=paris, street="28 Boulevard des Capucines", image_id=photo.id, image_source="https://x.org/o", image_license="CC BY", image_author="Bo", website="https://olympiahall.com/x"),
-            Place(owner_id=me, name="A lawn", city=lyon, remark="Location approximate: the town.", image_id=photo.id, image_license="CC BY", website="www.lawn.fr"),
+            louvre, other, museum(session, "Nowhere", street="Nowhere 1"),
+            visit(session, me, louvre, rating=9, review="grand"), visit(session, me, other, rating=8), visit(session, me, other),
+            Place(name="Olympia", city=paris, street="28 Boulevard des Capucines", image_id=photo.id, image_source="https://x.org/o", image_license="CC BY", image_author="Bo", website="https://olympiahall.com/x"),
+            Place(name="A lawn", city=lyon, image_id=photo.id, image_license="CC BY", website="www.lawn.fr"),
             Organization(owner_id=me, name="Acme", city=paris), Organization(owner_id=me, name="ACME"), Organization(owner_id=me, name="Solo", city=haifa),
             Concert(owner_id=me, name="Alone", alone=True, review="fine"),
             Concert(owner_id=me, name="Together", people=[dana]),
@@ -757,13 +782,13 @@ def test_more_checks(engine: Engine) -> None:
         def who(name: str) -> list[str]:
             return [subject for subject, _ in found(name)]
 
-        assert who("museum-photos") == [" louvre", "Nowhere"]
+        assert who("museum-photos") == [" louvre, Paris", "Nowhere"]
         assert who("museum-cities") == ["Nowhere"]
         assert found("museum-ratings") == [(" louvre", "has no review"), (" louvre", "has no rating and no review")]
-        assert who("museum-duplicates") == [" louvre", "Louvre"]
+        assert who("museum-duplicates") == [" louvre, Paris", "Louvre, Paris"]
         assert who("place-addresses") == ["A lawn, Lyon"]
-        assert who("place-photos") == []
-        assert who("place-exact-locations") == ["A lawn, Lyon"]
+        # a museum is a place
+        assert who("place-photos") == [" louvre, Paris", "Nowhere"]
         # Lone has no profession: no photo is asked of them; but they are linked to nothing (the user's own row may be)
         assert who("people-photos") == []
         assert who("people-duplicates") == ["Dana", "dana "]
@@ -780,7 +805,7 @@ def test_more_checks(engine: Engine) -> None:
         assert found("places-credits") == [("A lawn, Lyon", "has a photo credited with no source")]
         assert found("people-credits") == [("dana ", "has a photo credited with no license")]
         # the second Louvre is in Marseille by its pin
-        assert [(subject, message.split(" km ")[1]) for subject, message in found("museum-near-city")] == [(" louvre", "from Paris, the city it is in")]
-        assert who("place-near-city") == [] and who("organization-near-city") == []
-        assert who("museum-websites") == [" louvre"] and who("place-websites") == ["A lawn, Lyon"]
-        assert checks.CHECKS["museum-websites"].description and checks.CHECKS["places-credits"].description and checks.CHECKS["museum-near-city"].description
+        assert [(subject, message.split(" km ")[1]) for subject, message in found("place-near-city")] == [(" louvre, Paris", "from Paris, the city it is in")]
+        assert who("organization-near-city") == []
+        assert who("place-websites") == [" louvre, Paris", "A lawn, Lyon"]
+        assert checks.CHECKS["place-websites"].description and checks.CHECKS["places-credits"].description and checks.CHECKS["place-near-city"].description

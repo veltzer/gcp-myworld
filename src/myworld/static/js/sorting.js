@@ -6,7 +6,7 @@ import { $ } from "./core.js";
 import { renderEntries, state } from "./library.js";
 import { MAPPED } from "./map.js";
 import { pagerOff, renderWorld } from "./paging.js";
-import { WORLDS } from "./worlds.js";
+import { WORLDS, canChange } from "./worlds.js";
 
 // view -> the fields it can be sorted by: [key, label, value of an item, first direction].
 // The first field is the default. A view with none still shows the (disabled) control.
@@ -220,7 +220,10 @@ export function updateTools() {
 	button.setAttribute("aria-label", button.title);
 	// the stats, imports, users and checks pages have nothing to search or add: both stay, disabled
 	$("world-search").disabled = PAGES.has(state.view);
-	$("fab").disabled = PAGES.has(state.view);
+	// a shared page (places, cities, ...) is added to by admins only: the button stays, disabled for anyone else
+	const shared = !canChange(state.view);
+	$("fab").disabled = PAGES.has(state.view) || shared;
+	$("fab").title = shared ? "Shared by everyone: only an admin adds to it" : "Add";
 	const cards = state.view in CARDS || state.view in state.config.kinds;
 	for (const layout of $("layouts").querySelectorAll("button")) {
 		layout.disabled = !cards || (layout.dataset.layout === "map" && !MAPPED.has(state.view));

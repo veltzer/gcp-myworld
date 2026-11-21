@@ -25,9 +25,9 @@ from myworld.models import (
     concert_performers,
     group_members,
     library_entry_authors,
-    museum_companions,
     person_organizations,
     person_type_links,
+    visit_companions,
 )
 
 
@@ -154,12 +154,12 @@ def check_people_duplicates(session: Session) -> Result:
 def check_people_used(session: Session) -> Result:
     """
     Every person, of every account, is someone to something: went along to
-    a concert or a museum, performed, wrote a book, lectured a course, is in
+    a concert or a visit (a museum, ...), performed, wrote a book, lectured a course, is in
     a group or at an organization, or is related to someone. The user's own
     row is theirs whatever it is linked to.
     """
     used = ids(
-        session, concert_companions.c.person_id, concert_performers.c.person_id, museum_companions.c.person_id, library_entry_authors.c.person_id,
+        session, concert_companions.c.person_id, concert_performers.c.person_id, visit_companions.c.person_id, library_entry_authors.c.person_id,
         audio_course_lecturers.c.person_id, group_members.c.person_id, person_organizations.c.person_id, PersonRelation.person_id, PersonRelation.other_id,
     )
     people = rows(session, Person)

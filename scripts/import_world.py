@@ -86,7 +86,10 @@ from myworld import names as naming
 from myworld.addresses import parse_address
 from myworld.cities import city_key, country_name, parse_location
 from myworld.models import (
+    CONCERT_VENUE_KIND,
     DEFAULT_LOCALE,
+    MUSEUM_KIND,
+    MUSEUM_VISIT,
     AudioCourse,
     City,
     Concert,
@@ -95,8 +98,6 @@ from myworld.models import (
     Device,
     Group,
     Image,
-    Museum,
-    MuseumVisit,
     Organization,
     OrganizationType,
     Owning,
@@ -108,10 +109,13 @@ from myworld.models import (
     PersonRelationType,
     PersonType,
     Place,
+    PlaceKind,
     Read,
     RelationType,
     User,
     UserWork,
+    Visit,
+    VisitType,
     Work,
     WorkTitle,
     YouTubeVideo,
@@ -122,11 +126,11 @@ from myworld.models import (
     group_members,
     library_entry_authors,
     make_engine,
-    museum_companions,
     organization_relation_types,
     person_organizations,
     person_type_links,
     region_for,
+    visit_companions,
 )
 
 DATE_FIELDS = {"date_utcz", "date_ymd", "date_my", "date_y", "date_timezone"}
@@ -470,11 +474,20 @@ def find_owner(session: Session, email: str, subject: str | None) -> User:
     return users[0]
 
 
-# what the full import deletes and makes again, so what an account must not have unless it is replaced on purpose
+# what the full import deletes and makes again, so what an account must not have unless it is replaced on purpose;
+# the shared rows (countries, cities, places) are everyone's: never deleted, found again or added
 REPLACED_MODELS = (
-    AudioCourse, YouTubeVideo, Device, Concert, Place, Group, Museum, Person, Organization, City, Country,
+    AudioCourse, YouTubeVideo, Device, Concert, Visit, Group, Person, Organization,
     OrganizationType, PersonType, RelationType, PersonRelationType, PersonOrganizationType, Image,
 )
+
+
+def _shared_image_ids(session: Session) -> set[int]:
+    """ The images shared rows show: kept whoever uploaded them (a full import replaces only an account's own). """
+    found: set[int] = set()
+    for model in (Place, City, Country):
+        found |= {image_id for image_id in session.scalars(select(model.image_id)) if image_id is not None}
+    return found
 
 
 def existing_rows(session: Session, owner: User) -> dict[str, int]:
@@ -513,9 +526,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     session.execute(delete(concert_performers).where(concert_performers.c.concert_id.in_(concerts_of_owner)))
     session.execute(delete(concert_groups).where(concert_groups.c.concert_id.in_(concerts_of_owner)))
     session.execute(delete(group_members).where(group_members.c.group_id.in_(select(Group.id).where(Group.owner_id == owner.id))))
-    visits_of_owner = select(MuseumVisit.id).where(MuseumVisit.museum_id.in_(select(Museum.id).where(Museum.owner_id == owner.id)))
-    session.execute(delete(museum_companions).where(museum_companions.c.museum_id.in_(visits_of_owner)))
-    session.execute(delete(MuseumVisit).where(MuseumVisit.museum_id.in_(select(Museum.id).where(Museum.owner_id == owner.id))))
+    session.execute(delete(visit_companions).where(visit_companions.c.visit_id.in_(select(Visit.id).where(Visit.owner_id == owner.id))))
     session.execute(delete(audio_course_lecturers).where(
         audio_course_lecturers.c.audio_course_id.in_(select(AudioCourse.id).where(AudioCourse.owner_id == owner.id)),
     ))
@@ -539,8 +550,10 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     for entry in session.scalars(select(UserWork).where(UserWork.owner_id == owner.id, UserWork.image_id.is_not(None))):
         entry.image_id = None
     session.flush()
+    shared_images = _shared_image_ids(session)
     for model in REPLACED_MODELS:
-        session.execute(delete(model).where(model.owner_id == owner.id))
+        doomed = delete(model).where(model.owner_id == owner.id)
+        session.execute(doomed.where(model.id.not_in(shared_images)) if model is Image and shared_images else doomed)
     session.flush()
 
     images: dict[str, Image] = {}
@@ -654,11 +667,12 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
             performers=performers(item),
             event=item.get("event", ""),
             genre=item.get("genre", ""),
-            place=place(item.get("venue", ""), item.get("city", ""), item.get("country", "")),
+            place=(at := place(item.get("venue", ""), item.get("city", ""), item.get("country", ""))),
             tickets=item.get("tickets"),
             broadcast=bool(item.get("broadcast", False)),
             review=item.get("review", ""),
-            remark=item.get("remark", ""),
+            # what is known of the place but not on it (a shared place has no remark): the concert says it
+            remark="\n".join(filter(None, (item.get("remark", ""), place.notes.get(at) if at else ""))),
             image=image(image_dir / item["image"], required=True) if "image" in item else None,
             image_source=item.get("image_source", ""),
             image_license=item.get("image_license", ""),
@@ -667,21 +681,32 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
             **_dates(item),
         ))
 
-    # a museum is one row whatever the times it was visited: its city, its website and its photo
-    # are those of its first (lowest internal_id) visit, and every item is a visit of it
-    museums: dict[str, Museum] = {}
+    # a museum is a shared place of the kind Museum, one whatever the times it was visited: found
+    # again by its name and city, or made with the city, website and photo of its first (lowest
+    # internal_id) visit; every item is a visit of the account, of the type Museum visit
+    museum_kind = session.scalars(select(PlaceKind).where(PlaceKind.name == MUSEUM_KIND)).one()
+    museum_visit = session.scalars(select(VisitType).where(VisitType.name == MUSEUM_VISIT)).one()
+    museums: dict[str, Place] = {}
     for item in sorted(museum_items, key=lambda item: item["internal_id"]):
         if item["name"] not in museums:
-            museums[item["name"]] = Museum(
-                owner_id=owner.id,
-                name=item["name"],
-                city=city(item.get("city", ""), "", ""),
-                url=item.get("url", ""),
-                image=image(image_dir / f"museum-{item['internal_id']}.jpg", required=False),
-            )
-            session.add(museums[item["name"]])
+            where = city(item.get("city", ""), "", "")
+            found = place.find(item["name"], where)
+            if found is None:
+                found = Place(name=item["name"], city=where, website=item.get("url", ""))
+                photo = image(image_dir / f"museum-{item['internal_id']}.jpg", required=False)
+                if photo is not None:
+                    session.flush()
+                    found.image_id = photo.id
+                session.add(found)
+                place.remember(found)
+            if museum_kind not in found.kinds:
+                found.kinds.append(museum_kind)
+            museums[item["name"]] = found
     for item in museum_items:
-        museums[item["name"]].visits.append(MuseumVisit(
+        session.add(Visit(
+            owner_id=owner.id,
+            place=museums[item["name"]],
+            type=museum_visit,
             rating=item.get("rating"),
             review=item.get("review", ""),
             remark=item.get("remark", ""),
@@ -1230,19 +1255,20 @@ def _address(address: str, remark: str, city: City | None, cities: Cities) -> di
 
 class Cities:
     """
-    owner's cities and countries: city(name, region, country) is the city of
-    that name in that country (however spaced or hyphenated), made the first
-    time it is named, with its country; a city named without a country is the
-    one city of that name there is, if there is one. None for no name.
+    The cities and countries (shared, everyone's): city(name, region,
+    country) is the city of that name in that country (however spaced or
+    hyphenated), made the first time it is named, with its country; a city
+    named without a country is the one city of that name there is, if there
+    is one. None for no name.
     """
 
     def __init__(self, session: Session, owner: User) -> None:
         self.session = session
         self.owner = owner
-        self.countries = {c.name.casefold(): c for c in session.scalars(select(Country).where(Country.owner_id == owner.id))}
+        self.countries = {c.name.casefold(): c for c in session.scalars(select(Country))}
         self.cities = {
             city_key(c.name, c.country.name if c.country else ""): c
-            for c in session.scalars(select(City).where(City.owner_id == owner.id).options(selectinload(City.country)))
+            for c in session.scalars(select(City).options(selectinload(City.country)))
         }
 
     def country(self, name: str) -> Country | None:
@@ -1250,7 +1276,7 @@ class Cities:
         if not name:
             return None
         if name.casefold() not in self.countries:
-            self.countries[name.casefold()] = Country(owner_id=self.owner.id, name=name, remark="")
+            self.countries[name.casefold()] = Country(name=name)
             self.session.add(self.countries[name.casefold()])
         return self.countries[name.casefold()]
 
@@ -1265,7 +1291,7 @@ class Cities:
         key = city_key(name, country)
         if key not in self.cities:
             land = self.country(country)
-            self.cities[key] = City(owner_id=self.owner.id, name=name, region_row=region_for(self.session, self.owner.id, region, land), country=land, remark="")
+            self.cities[key] = City(name=name, region_row=region_for(self.session, region, land), country=land)
             self.session.add(self.cities[key])
         return self.cities[key]
 
@@ -1277,9 +1303,12 @@ class Cities:
 
 class Places:
     """
-    owner's places by name and city: place(venue, city, country) is the one
-    there, made the first time it is named; a concert with a city but no
-    venue is at a place named after the city, one with neither at none.
+    The places (shared, everyone's) by name and city: place(venue, city,
+    country) is the one there, made the first time it is named, of the kind
+    Concert venue; a concert with a city but no venue is at a place named
+    after the city, one with neither at none. What is known of a place but
+    cannot be on it (a shared place has no remark) is in notes, for the
+    concert to say.
     """
 
     def __init__(self, session: Session, owner: User, cities: Cities) -> None:
@@ -1289,9 +1318,18 @@ class Places:
         # keyed by the city object, which a new place's city is too before it has an id
         self.by_name: dict[tuple[str, int | None], Place] = {
             (p.name, id(p.city) if p.city else None): p
-            for p in session.scalars(select(Place).where(Place.owner_id == owner.id).options(selectinload(Place.city)))
+            for p in session.scalars(select(Place).options(selectinload(Place.city), selectinload(Place.kinds)))
         }
+        self.venue = session.scalars(select(PlaceKind).where(PlaceKind.name == CONCERT_VENUE_KIND)).one()
+        self.notes: dict[Place, str] = {}
         self.added = 0
+
+    def find(self, name: str, city: City | None) -> Place | None:
+        return self.by_name.get((name, id(city) if city is not None else None))
+
+    def remember(self, place: Place) -> None:
+        """ A place made elsewhere (a museum): found again by name and city; counted where it is made. """
+        self.by_name[(place.name, id(place.city) if place.city is not None else None)] = place
 
     def __call__(self, venue: str, city: str, country: str) -> Place | None:
         name = venue.strip() or city.strip()
@@ -1300,12 +1338,16 @@ class Places:
         where = self.cities(city, "", country)
         key = (name, id(where) if where is not None else None)
         if key not in self.by_name:
-            # a country with no city is kept in the remark: a place's country is its city's
-            remark = f"In {country_name(country)}; the city is not known." if where is None and country.strip() else ""
-            self.by_name[key] = Place(owner_id=self.owner.id, name=name, city=where, remark=remark)
+            self.by_name[key] = Place(name=name, city=where)
             self.session.add(self.by_name[key])
             self.added += 1
-        return self.by_name[key]
+        found = self.by_name[key]
+        if self.venue not in found.kinds:
+            found.kinds.append(self.venue)
+        # a country with no city is said by the concert: a place's country is its city's
+        if where is None and country.strip():
+            self.notes[found] = f"About the place: in {country_name(country)}; the city is not known."
+        return found
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[1] if __doc__ else None)

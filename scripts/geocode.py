@@ -51,7 +51,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from myworld.addresses import from_osm
-from myworld.models import City, Country, Museum, Organization, Place, make_engine
+from myworld.models import (
+    MUSEUM_KIND,
+    City,
+    Country,
+    Organization,
+    Place,
+    PlaceKind,
+    make_engine,
+)
 
 NOMINATIM = "https://nominatim.openstreetmap.org/search"
 USER_AGENT = "myworld-geocode/1.0 (+https://github.com/veltzer/gcp-myworld)"
@@ -205,10 +213,8 @@ def geocode_places(session: Session, every: bool) -> int:
         if not (place.street or place.neighbourhood or place.postcode) and not how.startswith("roughly"):
             place.street, place.neighbourhood, place.postcode = from_osm(parts, country)
         if how.startswith("roughly"):
-            # say so where it is seen: the card's remark
-            note = f"Location approximate: {how.removeprefix('roughly, ')}."
-            if note not in place.remark:
-                place.remark = f"{place.remark} {note}".strip()
+            # a shared place has no remark to say it on: the run says it
+            print(f"      {what}: the location is approximate ({how.removeprefix('roughly, ')})")
     return missed
 
 
@@ -268,7 +274,9 @@ def main() -> int:
     print(engine.url.render_as_string(hide_password=True))
     missed = 0
     with Session(engine) as session:
-        rows: list[Museum | Organization] = [*session.scalars(select(Museum).order_by(Museum.id)), *session.scalars(select(Organization).order_by(Organization.id))]
+        # the museums (places of the kind Museum) and organizations, by their street addresses
+        museums = select(Place).where(Place.kinds.any(PlaceKind.name == MUSEUM_KIND)).order_by(Place.id)
+        rows: list[Place | Organization] = [*session.scalars(museums), *session.scalars(select(Organization).order_by(Organization.id))]
         cache: dict[str, tuple[float, float, str, str] | None] = {}
         for row in rows:
             what = f"{type(row).__name__.lower()} {row.id}, {row.name}"

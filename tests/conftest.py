@@ -8,12 +8,12 @@ from typing import Any
 
 import pytest
 import webtest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 
 from myworld import auth, create_app
-from myworld.models import Base
+from myworld.models import ROLE_ADMIN, Base, Login, User
 
 FAKE_CLAIMS: dict[str, Any] = {
     "sub": "1234567890",
@@ -72,3 +72,10 @@ def sign_in(app: webtest.TestApp, sub: str = "1234567890") -> None:
     app.set_cookie("g_csrf_token", "csrf")
     response = app.post("/auth/login", {"credential": sub, "g_csrf_token": "csrf"})
     assert response.status_int == 302
+
+
+def sign_in_admin(app: webtest.TestApp, engine: Engine, sub: str = "1234567890") -> None:
+    """ Sign in, as an admin: the one who may change what everyone shares (countries, cities, places, ...). """
+    sign_in(app, sub)
+    with engine.begin() as connection:
+        connection.execute(update(User).where(User.id.in_(select(Login.owner_id).where(Login.subject == "google:" + sub))).values(role=ROLE_ADMIN))

@@ -5,9 +5,10 @@ served, and how the photos of a row that has several are kept.
 
 import pytest
 import webtest
+from sqlalchemy.engine import Engine
 
 from myworld import pictures
-from tests.conftest import sign_in
+from tests.conftest import sign_in, sign_in_admin
 
 JPEG = b"\xff\xd8\xff\xe0" + b"0" * 32
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 32
@@ -83,10 +84,10 @@ def test_an_image_is_its_owners_and_is_not_sent_twice(app: webtest.TestApp) -> N
     app.get(url, status=404)
 
 
-def test_a_picture_is_the_users_own(app: webtest.TestApp) -> None:
+def test_a_picture_is_the_users_own(app: webtest.TestApp, engine: Engine) -> None:
     sign_in(app, sub="someone-else")
     theirs = app.post("/api/images", upload_files=[("file", "a.jpg", JPEG)], status=201).json["id"]
-    sign_in(app)
+    sign_in_admin(app, engine)
     mine = app.post("/api/images", upload_files=[("file", "a.jpg", JPEG)], status=201).json["id"]
     assert app.post_json("/api/places", {"name": "Barby", "image_id": theirs}, status=400).json == {"error": "image_id: unknown image"}
     assert app.post_json("/api/places", {"name": "Barby", "image_id": "one"}, status=400).json == {"error": "image_id: expected a number"}
@@ -103,9 +104,21 @@ def test_a_picture_is_the_users_own(app: webtest.TestApp) -> None:
         assert app.post_json("/api/people", {"first_name": "Dana", "photos": photos}, status=400).json == {"error": error}, photos
 
 
-@pytest.mark.parametrize("path", ["cities", "people"])
-def test_photos_keep_their_order_and_their_credit(app: webtest.TestApp, path: str) -> None:
+def test_a_shared_rows_picture_is_seen_by_everyone(app: webtest.TestApp, engine: Engine) -> None:
+    sign_in_admin(app, engine, sub="the-admin")
+    photo = app.post("/api/images", upload_files=[("file", "a.jpg", JPEG)], status=201).json["id"]
+    logo = app.post("/api/images", upload_files=[("file", "b.jpg", JPEG + b"1")], status=201).json["id"]
+    app.post_json("/api/places", {"name": "Barby", "image_id": photo}, status=201)
+    app.post_json("/api/groups", {"name": "Trio", "image_id": logo}, status=201)
     sign_in(app)
+    # the place is everyone's, and so is its photo; the admin's own group's is theirs
+    app.get(f"/api/images/{photo}", status=200)
+    app.get(f"/api/images/{logo}", status=404)
+
+
+@pytest.mark.parametrize("path", ["cities", "people"])
+def test_photos_keep_their_order_and_their_credit(app: webtest.TestApp, engine: Engine, path: str) -> None:
+    sign_in_admin(app, engine)
     one, two, three = (app.post("/api/images", upload_files=[("file", f"{n}.jpg", JPEG + bytes([n]))]).json["id"] for n in range(3))
     name = {"name": "Haifa"} if path == "cities" else {"first_name": "Dana"}
 
@@ -131,10 +144,10 @@ def test_photos_keep_their_order_and_their_credit(app: webtest.TestApp, path: st
 
 @pytest.mark.parametrize(("path", "body"), [
     ("places", {"name": "Barby"}), ("groups", {"name": "Trio"}), ("countries", {"name": "Israel"}), ("concert-visits", {"name": "Jarrett"}),
-    ("museum-visits", {"name": "Prado"}), ("organizations", {"name": "ACME"}), ("audio-courses", {"name": "Logic"}),
+    ("organizations", {"name": "ACME"}), ("audio-courses", {"name": "Logic"}),
 ])
-def test_one_picture_replaced_or_taken_away(app: webtest.TestApp, path: str, body: dict[str, str]) -> None:
-    sign_in(app)
+def test_one_picture_replaced_or_taken_away(app: webtest.TestApp, engine: Engine, path: str, body: dict[str, str]) -> None:
+    sign_in_admin(app, engine)
     old = app.post("/api/images", upload_files=[("file", "old.jpg", JPEG)]).json["id"]
     row = app.post_json(f"/api/{path}", {**body, "image_id": old}, status=201).json
     assert row["image"] == f"/api/images/{old}"
@@ -149,8 +162,8 @@ def test_one_picture_replaced_or_taken_away(app: webtest.TestApp, path: str, bod
     app.get(f"/api/images/{new}", status=404)
 
 
-def test_a_picture_two_rows_show_is_kept_while_one_does(app: webtest.TestApp) -> None:
-    sign_in(app)
+def test_a_picture_two_rows_show_is_kept_while_one_does(app: webtest.TestApp, engine: Engine) -> None:
+    sign_in_admin(app, engine)
     image = app.post("/api/images", upload_files=[("file", "a.jpg", JPEG)]).json["id"]
     place = app.post_json("/api/places", {"name": "Barby", "image_id": image}, status=201).json
     group = app.post_json("/api/groups", {"name": "Trio", "image_id": image}, status=201).json

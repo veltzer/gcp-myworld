@@ -5,7 +5,8 @@ import { state } from "./library.js";
 import { rerender } from "./sorting.js";
 import { showRow } from "./views.js";
 
-// view -> [page title, API path, singular, sidebar label]; the rows are the signed-in user's own
+// view -> [page title, API path, singular, sidebar label]; the rows are the signed-in user's own,
+// but on the shared pages (SHARED_VIEWS), whose rows are everyone's
 export const WORLDS = {
 	concerts: ["My Concerts", "/api/concert-visits", "concert", "Concerts"],
 	museums: ["My Museums", "/api/museum-visits", "museum", "Museums"],
@@ -15,6 +16,9 @@ export const WORLDS = {
 	places: ["Places", "/api/places", "place", "Places"],
 	cities: ["Cities", "/api/cities", "city", "Cities"],
 	countries: ["Countries", "/api/countries", "country", "Countries"],
+	// what a place is (museum, concert venue, ...) and what a visit was (museum visit, ...)
+	"place-kinds": ["Place kinds", "/api/place-kinds", "place kind", "Place kinds"],
+	"visit-types": ["Visit types", "/api/visit-types", "visit type", "Visit types"],
 	people: ["People", "/api/people", "person", "People"],
 	groups: ["Groups", "/api/groups", "group", "Groups"],
 	organizations: ["Organizations", "/api/organizations", "organization", "Organizations"],
@@ -28,6 +32,19 @@ export const WORLDS = {
 	// the locales table: the languages a title, a name, a reading or a copy owned can be in
 	locales: ["Languages", "/api/locales", "language", "Languages"],
 };
+
+// The pages whose rows are shared by everyone: the same for every account, with nothing personal
+// on them, changed by admins only (the server refuses anyone else). The sidebar lists them apart.
+export const SHARED_VIEWS = new Set(["places", "cities", "countries", "place-kinds", "visit-types", "locales"]);
+
+export function isAdmin() {
+	return state.config.user?.role === "admin";
+}
+
+// whether the signed-in user may add, change and delete the rows of view
+export function canChange(view) {
+	return !SHARED_VIEWS.has(view) || isAdmin();
+}
 
 // views whose rows have a type -> the view of their enumeration
 export const TYPED = { people: "person-types", organizations: "organization-types" };

@@ -169,10 +169,11 @@ function checkCard(check) {
 }
 
 // What a problem is about: a link to the row when it has a place in the app
-// and is the viewer's own (the app opens only those), plain text otherwise.
+// and is the viewer's own or shared (owner null: the app opens those), plain text otherwise.
 function problemSubject(problem) {
 	const match = problem.link.match(/^([a-z-]+)\/(\d+)$/);
-	if (!match || problem.owner !== state.config.user.id || !(match[1] in WORLDS || match[1] in state.config.kinds)) {
+	const theirs = problem.owner === null || problem.owner === state.config.user.id;
+	if (!match || !theirs || !(match[1] in WORLDS || match[1] in state.config.kinds)) {
 		return el("span", "check-subject", problem.subject);
 	}
 	const a = el("a", "check-subject", problem.subject);

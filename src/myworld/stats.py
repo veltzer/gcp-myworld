@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from myworld import auth
 from myworld.models import (
     KINDS,
+    MUSEUM_VISIT,
     STATUSES,
     AudioCourse,
     ChessGame,
@@ -22,7 +23,6 @@ from myworld.models import (
     Group,
     Image,
     Locale,
-    Museum,
     Organization,
     OrganizationType,
     Person,
@@ -30,10 +30,14 @@ from myworld.models import (
     PersonRelationType,
     PersonType,
     Place,
+    PlaceKind,
     RelationType,
     UserWork,
+    Visit,
+    VisitType,
     YouTubeVideo,
     concert_performers,
+    is_shared,
 )
 from myworld.world import date_json
 
@@ -87,7 +91,9 @@ def api_stats() -> flask.Response:
     me = flask.g.user.id
 
     def count(model: Any) -> int:
-        return db.scalar(select(func.count()).select_from(model).where(model.owner_id == me)) or 0
+        """ The user's rows of model; every row of a shared one (everyone's). """
+        query = select(func.count()).select_from(model)
+        return db.scalar(query if is_shared(model) else query.where(model.owner_id == me)) or 0
 
     library = []
     # where the user is with each: the status of the reading it goes by
@@ -97,8 +103,10 @@ def api_stats() -> flask.Response:
         by_status = {label: counts[status] for status, label in STATUSES.items() if counts[status]}
         library.append({"kind": kind, "label": plural, "total": sum(by_status.values()), "by_status": by_status})
     concerts = db.execute(select(Concert).where(Concert.owner_id == me)).scalars().all()
-    museums = db.execute(select(Museum).where(Museum.owner_id == me).options(selectinload(Museum.visits))).scalars().all()
-    visits = [visit for museum in museums for visit in museum.visits]
+    visits = db.execute(
+        select(Visit).join(VisitType).where(Visit.owner_id == me, VisitType.name == MUSEUM_VISIT)
+    ).scalars().all()
+    museums = {visit.place_id for visit in visits if visit.place_id is not None}
     people = db.execute(select(Person).where(Person.owner_id == me).options(selectinload(Person.types))).scalars().all()
     organizations = db.execute(
         select(Organization).where(Organization.owner_id == me).options(selectinload(Organization.type), selectinload(Organization.relations))
@@ -138,6 +146,8 @@ def api_stats() -> flask.Response:
         "people": len(people),
         "organizations": len(organizations),
         "places": count(Place),
+        "place_kinds": count(PlaceKind),
+        "visit_types": count(VisitType),
         "cities": count(City),
         "countries": count(Country),
         "groups": count(Group),

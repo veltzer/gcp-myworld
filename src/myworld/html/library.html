@@ -187,6 +187,8 @@
 				</table>
 			</section>
 			<section id="world-view" hidden>
+				<!-- on a shared page (places, cities, ...): that everyone sees these rows, and who may change them -->
+				<p id="shared-note" class="shared-note" hidden></p>
 				<div id="cards" class="cards"></div>
 				<div id="world-map" class="world-map" hidden></div>
 			</section>
@@ -332,30 +334,11 @@
 				</div>
 			</form>
 			<form id="museum-form" class="dialog-form" hidden>
+				<!-- the museum is shared (a place of the kind Museum, on the Places page): only your visits to it are yours -->
 				<div class="row">
-					<label title="The museum" class="wide">Name <input name="name" required placeholder="e.g. Louvre"></label>
-					<label title="Add a new one on the Cities page">City <select name="city_id" data-picker="cities" data-placeholder="Type a city" title="Add a new one on the Cities page"></select></label>
+					<label title="The museum you went to: one of the museums on the Places page. They are shared by everyone; an admin adds a new one there" class="wide">Museum <select name="place_id" data-picker="places" data-kind="Museum" data-fixed data-placeholder="Type a museum" title="The museum you went to: one of the museums on the Places page. They are shared by everyone; an admin adds a new one there"></select></label>
 				</div>
-				<div class="row">
-					<label title="One line, as written there: street and number, building, floor; or directions where there is no street" class="wide">Street <input name="street" placeholder="Ibn Gabirol 30, 88 7th Avenue South, 1-2-3 Ginza" title="One line, as written there: street and number, building, floor; or directions where there is no street"></label>
-					<label title="A neighbourhood, ward or district: Sarona, Greenwich Village">Neighbourhood <input name="neighbourhood" title="A neighbourhood, ward or district: Sarona, Greenwich Village"></label>
-					<label title="The postal code of the address">Postcode <input name="postcode"></label>
-				</div>
-				<div class="row">
-					<label title="The museum's latitude in decimal degrees, north positive: where it is on the map">Latitude <input name="latitude" type="number" step="any" min="-90" max="90"></label>
-					<label title="The museum's longitude in decimal degrees, east positive: where it is on the map">Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
-				</div>
-				<div class="row">
-					<label title="The museum's own website" class="wide">Website <input name="url" type="url" placeholder="https://"></label>
-				</div>
-				<div class="row">
-					<label title="A picture of the museum. + adds one, in place of the one it has; − takes it away" class="wide">Photo <span class="chips pictures" id="museum-pictures" data-pictures="one" data-what="photo"></span></label>
-				</div>
-				<div class="adder" data-picture-adder hidden>
-					<div class="row">
-						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Photo file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
-					</div>
-				</div>
+				<p class="settings-hint">The museum itself (its address, website and photo) is shared by everyone: an admin changes it on the Places page. Your visits are yours.</p>
 				<div class="row">
 					<!-- every time you went there: its day, your rating and review of it, and who you went with belong to each visit -->
 					<label title="Every time you went to the museum, each with its day, your rating and who you went with. + adds a visit, the pencil changes one, − takes it away" class="wide">Visits <span class="chips" id="museum-visits"></span></label>
@@ -629,9 +612,6 @@
 					<label title="The city's longitude in decimal degrees, east positive: where it is on the map">Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
 				</div>
 				<div class="row">
-					<label title="Anything else worth keeping about the city" class="wide">Remark <input name="remark"></label>
-				</div>
-				<div class="row">
 					<label title="The city's photos: the first is the one its card shows. + adds a photo, − takes one away" class="wide">Photos <span class="chips pictures" id="city-pictures" data-pictures="many" data-what="photo"></span></label>
 				</div>
 				<div class="adder" data-picture-adder hidden>
@@ -660,9 +640,6 @@
 					<label title="The country's longitude in decimal degrees, east positive: where it is on the map">Longitude <input name="longitude" type="number" step="any" min="-180" max="180"></label>
 				</div>
 				<div class="row">
-					<label title="Anything else worth keeping about the country" class="wide">Remark <input name="remark"></label>
-				</div>
-				<div class="row">
 					<label title="The country's flag. + adds one, in place of the one it has; − takes it away" class="wide">Flag <span class="chips pictures" id="country-pictures" data-pictures="one" data-what="flag"></span></label>
 				</div>
 				<div class="adder" data-picture-adder hidden>
@@ -674,6 +651,27 @@
 					<label title="The page the flag comes from, for the credit shown with it" class="wide">Flag source <input name="image_source" type="url" placeholder="Where it comes from"></label>
 					<label title="The license the picture is under, e.g. CC BY-SA 4.0, for the credit shown with it">License <input name="image_license" placeholder="CC BY-SA 4.0"></label>
 					<label title="Who made the picture, for the credit shown with it">Author <input name="image_author"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<!-- the shared lists of names: what a place is, what a visit was -->
+			<form id="place-kind-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="A kind of place: Museum, Concert venue, Lecture hall" class="wide">Name <input name="name" required placeholder="Lecture hall"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="visit-type-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="A type of visit: Museum visit, ..." class="wide">Name <input name="name" required placeholder="Lecture"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
@@ -699,7 +697,7 @@
 					<label title="The place's own website" class="wide">Website <input name="website" type="url" placeholder="https://"></label>
 				</div>
 				<div class="row">
-					<label title="Anything else worth keeping about the place" class="wide">Remark <input name="remark"></label>
+					<label title="What the place is: a museum, a concert venue, ... any number of them; the kinds are on the Place kinds page" class="wide">Kinds <select multiple data-chips="place-kinds" data-field="kinds" data-placeholder="Type a kind: Museum, Concert venue"><option value=""></option></select></label>
 				</div>
 				<div class="row">
 					<label title="A picture of the place. + adds one, in place of the one it has; − takes it away" class="wide">Photo <span class="chips pictures" id="place-pictures" data-pictures="one" data-what="photo"></span></label>

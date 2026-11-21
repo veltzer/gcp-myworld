@@ -2829,3 +2829,36 @@ body.sidebar-folded .sidebar {
 .youtube-facts .value {
 	white-space: nowrap;
 }
+
+/* what everyone shares, apart from what is the user's own: its sidebar group and the note on its pages */
+.side-group.shared {
+	margin-top: 0.5rem;
+	padding-top: 0.5rem;
+	border-top: 1px dashed var(--line);
+}
+
+.side-group.shared .side-heading {
+	display: flex;
+	align-items: center;
+	gap: 0.3rem;
+	color: var(--accent);
+}
+
+.side-group.shared .side-heading svg {
+	width: 0.9rem;
+	height: 0.9rem;
+	fill: currentcolor;
+}
+
+.shared-note {
+	margin: 0 0 0.75rem;
+	padding: 0.5rem 0.75rem;
+	border-left: 3px solid var(--accent);
+	border-radius: 4px;
+	background: var(--accent-soft);
+	font-size: 0.9rem;
+}
+
+.shared-note[hidden] {
+	display: none;
+}

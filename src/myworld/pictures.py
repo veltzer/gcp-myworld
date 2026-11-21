@@ -23,7 +23,6 @@ from myworld.models import (
     Device,
     Group,
     Image,
-    Museum,
     Organization,
     PersonPhoto,
     PersonType,
@@ -56,12 +55,29 @@ def picture_json(row: Pictured) -> dict[str, Any]:
     return {"image": image_url(row.image_id), "image_source": row.image_source, "image_license": row.image_license, "image_author": row.image_author}
 
 
+def _shared_images() -> Any:
+    """ The images shared rows show (a place's photo, a city's, a country's flag): everyone sees them, whoever uploaded them. """
+    return select(Place.image_id).where(Place.image_id.is_not(None)).union(
+        select(City.image_id).where(City.image_id.is_not(None)),
+        select(CityPhoto.image_id),
+        select(Country.image_id).where(Country.image_id.is_not(None)),
+    )
+
+
+def _may_see(image: Image | None) -> bool:
+    """ The user's own image, or one a shared row shows. """
+    if image is None:
+        return False
+    return image.owner_id == flask.g.user.id or image.id in set(flask.g.db.scalars(_shared_images()))
+
+
 @bp.route("/api/images/<int:image_id>", methods=["GET"])
 @auth.login_required
 def api_image(image_id: int) -> werkzeug.Response:
     image = flask.g.db.get(Image, image_id)
-    if image is None or image.owner_id != flask.g.user.id:
+    if not _may_see(image):
         return flask.Response(status=404)
+    assert image is not None
     response = flask.Response(image.data, mimetype=image.content_type)
     response.headers["Cache-Control"] = f"private, max-age={IMAGE_MAX_AGE}"
     # the imported logos are SVG: opened on their own they must not run scripts on this origin
@@ -84,8 +100,8 @@ def owned_image(body: dict[str, Any]) -> int | None:
     image_id = opt_int(body, "image_id", 1, 2**31 - 1)
     if image_id is None:
         return None
-    image = flask.g.db.get(Image, image_id)
-    if image is None or image.owner_id != flask.g.user.id:
+    # the user's own, or one a shared row shows already (sent back as it was, by an admin changing that row)
+    if not _may_see(flask.g.db.get(Image, image_id)):
         raise ApiError(400, "image_id: unknown image")
     return image_id
 
@@ -96,6 +112,7 @@ def owned_images(key: str, values: list[Any]) -> list[int]:
     if len(ids) != len(values) or len(set(ids)) != len(ids):
         raise ApiError(400, f"{key}: expected a list of image ids, each once")
     found = set(flask.g.db.scalars(select(Image.id).where(Image.owner_id == flask.g.user.id, Image.id.in_(ids)))) if ids else set()
+    found |= set(ids) & set(flask.g.db.scalars(_shared_images()))
     if len(found) != len(ids):
         raise ApiError(400, f"{key}: unknown image")
     return ids
@@ -156,7 +173,6 @@ def drop_unused_images() -> None:
     """ Photos and logos nothing shows any more (replaced or deleted) go too. """
     db = flask.g.db
     used = select(Concert.image_id).where(Concert.image_id.is_not(None)).union(
-        select(Museum.image_id).where(Museum.image_id.is_not(None)),
         select(Organization.image_id).where(Organization.image_id.is_not(None)),
         select(AudioCourse.image_id).where(AudioCourse.image_id.is_not(None)),
         select(UserWork.image_id).where(UserWork.image_id.is_not(None)),

@@ -4,14 +4,15 @@ import { $, api, showError } from "./core.js";
 import { selectKind, state } from "./library.js";
 import { markActive } from "./paging.js";
 import { selectWorld } from "./views.js";
-import { WORLDS, el } from "./worlds.js";
+import { SHARED_VIEWS, WORLDS, el } from "./worlds.js";
 
-// the sidebar's groups of views (the library's kinds come first, from the config)
-// The library kinds (books) come first in Datasets, ahead of these
+// the sidebar's groups of views: first what is the user's own (the library's kinds, from the config, ahead
+// of the rest), then what everyone shares (SHARED_VIEWS), apart, under a heading of its own
 const NAV_GROUPS = [
-	["Datasets", ["concerts", "museums", "audio-courses", "youtube", "chess", "places", "cities", "countries"]],
-	["People", ["people", "groups", "organizations"]],
-	["Types", ["organization-types", "person-types", "relation-types", "person-relation-types", "person-organization-types", "devices", "locales"]],
+	["Yours", ["concerts", "museums", "audio-courses", "youtube", "chess"]],
+	["Your people", ["people", "groups", "organizations"]],
+	["Your types", ["organization-types", "person-types", "relation-types", "person-relation-types", "person-organization-types", "devices"]],
+	["Shared by everyone", ["places", "cities", "countries", "place-kinds", "visit-types", "locales"]],
 ];
 
 function sideLink(label, key, open) {
@@ -26,9 +27,17 @@ function sideLink(label, key, open) {
 	return a;
 }
 
-function sideGroup(heading, links) {
-	const group = el("div", "side-group");
-	group.append(el("h2", "side-heading", heading), ...links);
+// a globe (Material "public"): what everyone shares
+const SHARED_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>';
+
+function sideGroup(heading, links, shared = false) {
+	const group = el("div", shared ? "side-group shared" : "side-group");
+	const title = el("h2", "side-heading", heading);
+	if (shared) {
+		title.insertAdjacentHTML("afterbegin", SHARED_ICON);
+		title.title = "The same rows for every account, with nothing personal on them; only an admin changes them";
+	}
+	group.append(title, ...links);
 	return group;
 }
 
@@ -45,7 +54,7 @@ export function renderKinds() {
 			const a = sideLink(WORLDS[view][3], view, () => selectWorld(view).catch((e) => showError(e.message)));
 			a.dataset.world = view;
 			return a;
-		})]));
+		})], views.every((view) => SHARED_VIEWS.has(view))));
 		nav.append(...groups);
 	}
 	markActive();
@@ -70,6 +79,7 @@ export async function loadCounts() {
 		places: "places", cities: "cities", countries: "countries", people: "people", groups: "groups", organizations: "organizations", "organization-types": "organization_types",
 		"person-types": "person_types", "relation-types": "relation_types", "person-relation-types": "person_relation_types",
 		"person-organization-types": "person_organization_types", devices: "devices", locales: "locales",
+		"place-kinds": "place_kinds", "visit-types": "visit_types",
 	};
 	for (const [view, key] of Object.entries(keys)) {
 		setCount(view, stats[key]);

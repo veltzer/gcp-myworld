@@ -259,6 +259,17 @@ row as the library ones, with Concerts the page a sign-in lands on. They
 are private to their owner: every row carries an `owner_id`, every query
 filters on it, and another account sees nothing, images included.
 
+Some data is shared instead: countries, regions, cities, places (with
+their kinds: museum, concert venue, ...), the visit types and the
+languages are the same rows for every account, with nothing personal on
+them (no remark, no rating), and only an admin adds, changes or deletes
+them (403 for anyone else). The sidebar lists them apart, under "Shared by
+everyone", and their pages say so; for anyone but an admin their + and
+their dialogs' Save, Delete and pencils stay in place, disabled. A user's
+rows point into them: a concert to its place, a visit to the place
+visited, an organization to its city. The images a shared row shows are
+seen by everyone, whoever uploaded them.
+
 Everything is added and edited in the same dialog: the + button at the
 lower right adds to whatever tab is open, and clicking any card or row
 opens it for editing, with a Delete that asks twice. A library entry's
@@ -406,20 +417,26 @@ first `companies` tables to `organizations`, then making
   concert's `performers` are people too (ids and names), its `groups` the
   groups (bands) that performed (ids and names, written as a list of ids), and its `place`
   is where it was (id, name, city and country; written as `place_id`).
-  `/api/museum-visits` lists the museums (`museum_sites`), each once
-  whatever the times it was visited (a name is a museum once in a city:
-  409 for a second), with its `city`, `address`, `latitude` and
-  `longitude` (`maps.md`), `url`, `image` and its `visits`
-  (`museum_visits`), the latest first: each with its `id`, date, `rating`,
-  `review`, `remark`, `tickets`, `people` and `alone` (true when the user
-  went alone, which is never sent with people). The museum's own `date`,
-  `rating` and `people` are those of its latest visit, the latest rating
-  given and everyone it was ever visited with: what its card, the sorting
-  and the filters go by. Written, `visits` is all the visits of the
-  museum: one with the `id` of a visit it has is that visit, changed; the
-  others are new; those not sent are gone; not sent at all, they stay. A
-  museum may have no visit yet. In the dialog the Visits box lists them,
-  each with a red pencil, a red − and one red + to add another.
+  `/api/museum-visits` lists the museums the user visited: shared places
+  of the kind Museum, each once whatever the times it was visited (its
+  `id` is the place's), with its `city`, `address`, `latitude` and
+  `longitude` (`maps.md`), `url` (the place's website), `image` and the
+  user's `visits` to it (`visits` of the type Museum visit), the latest
+  first: each with its `id`, date, `rating`, `review`, `remark`,
+  `tickets`, `people` and `alone` (true when the user went alone, which is
+  never sent with people). The museum's own `date`, `rating` and `people`
+  are those of its latest visit, the latest rating given and everyone it
+  was ever visited with: what its card, the sorting and the filters go by.
+  `POST /api/museum-visits` with `place_id` (a place of the kind Museum)
+  and `visits` adds the visits to a museum the user has none of yet (409
+  otherwise); `PUT /api/museum-visits/<place id>` with `visits` is all the
+  user's visits to it: one with the `id` of a visit they had is that visit,
+  changed; the others are new; those not sent are gone (all of them: it
+  leaves their Museums). `DELETE` deletes the user's visits to it. The
+  museum itself is shared: an admin changes it on the Places page. In the
+  dialog the museum is picked from the museums of Places, and the Visits
+  box lists the visits, each with a red pencil, a red − and one red + to
+  add another.
 - `GET /api/youtube-videos`: the YouTube videos watched, newest first (the
   watch history, with no dates, after), with `youtube_id`, rating,
   review, `device` (id and name), `watched_at`, and what YouTube says
@@ -717,17 +734,23 @@ The Imports page and its API are in `imports.md`.
   nothing is, and an entry deleted takes its work with it. Its
   authors are the user's people, in `library_entry_authors` (by the
   entry's `owner_id` and `work_id`, and `person_id`).
-- Every table that holds an account's rows says whose they are in
-  `owner_id` (or through the rows it links), and none is shared; only
-  `locales`, the list of languages an admin keeps, is the same for all:
-    - `concert_visits`, `museum_visits`, `audio_courses`, `youtube_videos`,
-  `chess_games`: one row per thing done (see "Concerts, museums, people and
-  organizations"). A chess game keeps its text whole (`pgn`), and beside it
-  what is listed and sorted by, read out of that text; one recorded
-  without its moves has no text, only `opponent` and `outcome`.
-    - `places` (where things happened: a concert's `place_id` points to
-  one), `cities` (places, museum visits and organizations point to the one
-  they are in) and `countries` (a city points to its own), `groups` (named groups of people: a band), `people`,
+- The shared tables have no `owner_id`: the same rows for every account,
+  changed by admins only (`is_shared` in `models.py`):
+    - `locales`, the list of languages.
+    - `countries`, `regions`, `cities` (places and organizations point to
+  the one they are in) and `places` (a museum, a hall, a club: a concert's
+  `place_id` points to one, and a visit's), with their kinds in
+  `place_kind_links` to `place_kinds` ("Museum", "Concert venue", ...).
+    - `visit_types` ("Museum visit", ...).
+- Every other table that holds an account's rows says whose they are in
+  `owner_id` (or through the rows it links):
+    - `concert_visits`, `visits` (a visit to a place, of a type: the
+  museum visits), `audio_courses`, `youtube_videos`, `chess_games`: one
+  row per thing done (see "Concerts, museums, people and organizations").
+  A chess game keeps its text whole (`pgn`), and beside it what is listed
+  and sorted by, read out of that text; one recorded without its moves has
+  no text, only `opponent` and `outcome`.
+    - `groups` (named groups of people: a band), `people`,
   `organizations`, `images`.
     - `disabled_checks`: the database checks an admin turned off for
   themselves (see `checks.md`).
@@ -739,7 +762,7 @@ The Imports page and its API are in `imports.md`.
     - `person_relations`: one person's relation to another (`person_id`
   is `relation_type_id` of `other_id`).
     - link tables, named `<row>_<what it links to>`: `concert_companions`
-  and `museum_companions` (who the user went with),
+  and `visit_companions` (who the user went with),
   `concert_performers`, `concert_groups`, `group_members`, `audio_course_lecturers`, `library_entry_authors`,
   `person_organizations`, `person_type_links`,
   `organization_relation_types`.

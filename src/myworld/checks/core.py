@@ -18,8 +18,6 @@ from myworld.models import (
     Country,
     Device,
     Group,
-    Museum,
-    MuseumVisit,
     Organization,
     OrganizationType,
     Person,
@@ -27,10 +25,14 @@ from myworld.models import (
     PersonRelationType,
     PersonType,
     Place,
+    PlaceKind,
     RelationType,
     UserWork,
+    Visit,
+    VisitType,
     Work,
     YouTubeVideo,
+    is_shared,
 )
 
 
@@ -86,6 +88,8 @@ DATASETS: dict[str, str] = {
     "places": "Places",
     "cities": "Cities",
     "countries": "Countries",
+    "place-kinds": "Place kinds",
+    "visit-types": "Visit types",
     "organizations": "Organizations",
     "organization-types": "Org types",
     "person-types": "Professions",
@@ -140,7 +144,6 @@ def one_of(dataset: str) -> str:
 # what a row is called in a problem, and the page of the app it is on
 SUBJECTS: dict[type, tuple[str, str]] = {
     Concert: ("concert", "concerts"),
-    Museum: ("museum", "museums"),
     AudioCourse: ("audio course", "audio-courses"),
     YouTubeVideo: ("YouTube video", "youtube"),
     Person: ("person", "people"),
@@ -149,6 +152,8 @@ SUBJECTS: dict[type, tuple[str, str]] = {
     Place: ("place", "places"),
     City: ("city", "cities"),
     Country: ("country", "countries"),
+    PlaceKind: ("place kind", "place-kinds"),
+    VisitType: ("visit type", "visit-types"),
     OrganizationType: (one_of("organization-types"), "organization-types"),
     PersonType: (one_of("person-types"), "person-types"),
     RelationType: (one_of("relation-types"), "relation-types"),
@@ -159,18 +164,20 @@ SUBJECTS: dict[type, tuple[str, str]] = {
 
 
 def rows[T](session: Session, model: type[T]) -> list[T]:
-    """ Every row of a model, of every account: by account, then by name, then as added. """
+    """ Every row of a model, of every account: by account (a shared model has none), then by name, then as added. """
     table: Any = model
     name = (table.first_name, table.surname) if model is Person else (table.name,)
-    return list(session.scalars(select(table).order_by(table.owner_id, *name, table.id)))
+    owner = () if is_shared(model) else (table.owner_id,)
+    return list(session.scalars(select(table).order_by(*owner, *name, table.id)))
 
 
 def problem(row: Any, message: str) -> Problem:
     """ What is wrong with a row, told as every check tells it: "Barby, Tel Aviv (place 12, account 1)", and where the row is in the app. """
-    if isinstance(row, MuseumVisit):
-        # a visit is found at its museum
-        museum = row.museum
-        return Problem(f"{museum.name} (museum visit {row.id}, account {museum.owner_id})", message, f"museums/{museum.id}", museum.owner_id)
+    if isinstance(row, Visit):
+        # a visit is found at its museum (a place), on the account's Museums page
+        place = row.place
+        name = place.name if place else "No place"
+        return Problem(f"{name} ({row.type.name.lower()} {row.id}, account {row.owner_id})", message, f"museums/{place.id}" if place else "", row.owner_id)
     if isinstance(row, UserWork):
         kind = row.work.kind
         return Problem(f"{row.work.title} ({KINDS[kind][0].lower()} {row.work_id}, account {row.owner_id})", message, f"{kind}/{row.work_id}", row.owner_id)
@@ -181,6 +188,9 @@ def problem(row: Any, message: str) -> Problem:
         name = f"{name}, {row.city.name}"
     if isinstance(row, City) and row.country:
         name = f"{name}, {row.country.name}"
+    if is_shared(type(row)):
+        # everyone's: any admin opens it
+        return Problem(f"{name} ({noun} {row.id}, shared)", message, f"{view}/{row.id}", None)
     return Problem(f"{name} ({noun} {row.id}, account {row.owner_id})", message, f"{view}/{row.id}", row.owner_id)
 
 

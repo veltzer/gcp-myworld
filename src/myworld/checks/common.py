@@ -25,12 +25,12 @@ from myworld.models import (
     Country,
     Device,
     Group,
-    Museum,
     Organization,
     Person,
     PersonPhoto,
     PersonType,
     Place,
+    is_shared,
 )
 
 # what has a picture with a credit, by the page it is on: (model, what the picture is called, the link to a row)
@@ -60,7 +60,8 @@ def _credit_checks(dataset: str, model: Any, what: str) -> None:
 
     @check(f"{dataset}-credits", f"Every credited {what} of {page} says its source and license", f"{what}s with a credit", dataset)
     def run(session: Session) -> Result:
-        rows = session.scalars(select(model).where(model.image_id.is_not(None)).order_by(model.owner_id, model.name, model.id)).all()
+        owner = () if is_shared(model) else (model.owner_id,)
+        rows = session.scalars(select(model).where(model.image_id.is_not(None)).order_by(*owner, model.name, model.id)).all()
         pictures = [(row, row.image_source, row.image_license, row.image_author) for row in rows]
         if model is City:
             # a city's further photos, each with its own credit
@@ -138,9 +139,6 @@ def _near_city_check(dataset: str, model: Any, noun: str) -> None:
 _near_city_check("places", Place, "place")
 
 
-_near_city_check("museums", Museum, "museum")
-
-
 _near_city_check("organizations", Organization, "organization")
 
 
@@ -166,9 +164,6 @@ def _website_check(dataset: str, model: Any, noun: str, column: str) -> None:
 
 
 _website_check("places", Place, "place", "website")
-
-
-_website_check("museums", Museum, "museum", "url")
 
 
 _website_check("groups", Group, "group", "website")

@@ -241,8 +241,12 @@ def test_regions_become_rows(url: str) -> None:
         # the old code can still add a city, without the new column and without the text
         connection.execute(text("INSERT INTO cities (id, owner_id, name, country_id, remark) VALUES (7, 1, 'Haifa', 2, '')"))
     engine.dispose()
-    # 0004, after it: the text goes
-    assert run(url, "upgrade").stdout.strip() == f"migrated from 0003 to {SCHEMA_REVISION}"
+    # 0004, after it: the text goes (and 0011 makes the two accounts' USA, and their Texas, one)
+    assert run(url, "upgrade").stdout.strip().splitlines() == [
+        "0011: countries ('USA',) kept once (row 1; row 3 merged into it)",
+        "0011: regions ('Texas', 1) kept once (row 1; row 4 merged into it)",
+        f"migrated from 0003 to {SCHEMA_REVISION}",
+    ]
     engine = create_engine(url)
     assert "region" not in {column["name"] for column in inspect(engine).get_columns("cities")}
     with Session(engine) as session:
@@ -319,3 +323,61 @@ def test_a_default_is_written_for_every_database() -> None:
         for number, line in enumerate(path.read_text(encoding="UTF8").splitlines(), 1):
             if "sa.Boolean()" in line and "server_default" in line:
                 assert "server_default=sa.false()" in line or "server_default=sa.true()" in line, f"{path.name}:{number}: {line.strip()}"
+
+
+def test_museums_become_places_and_their_visits_visits(url: str) -> None:
+    """ 0011 and 0012: countries, cities and places are everyone's; a museum is a place of the kind Museum, a museum visit a visit. """
+    alembic(url, "upgrade", "0010")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(text("INSERT INTO locales (code, name, script, position) VALUES ('en', 'English', 'Latin', 0)"))
+        for user in (1, 2):
+            connection.execute(text("INSERT INTO users (id, email, name, picture, created_at, role) VALUES (:id, :email, '', '', '2026-01-01', 'user')"), {"id": user, "email": f"{user}@example.com"})
+        connection.execute(text("INSERT INTO people (id, owner_id, first_name, surname, description) VALUES (1, 1, 'Dana', '', '')"))
+        # both accounts have France and Paris; the first a club with a remark and a concert there, and the Louvre, visited twice
+        for country, owner in ((1, 1), (2, 2)):
+            connection.execute(text("INSERT INTO countries (id, owner_id, name, remark) VALUES (:id, :owner, 'France', '')"), {"id": country, "owner": owner})
+            connection.execute(text("INSERT INTO cities (id, owner_id, name, country_id, remark) VALUES (:id, :owner, 'Paris', :id, '')"), {"id": country, "owner": owner})
+        connection.execute(text(
+            "INSERT INTO places (id, owner_id, name, city_id, website, remark, street, neighbourhood, postcode, image_source, image_license, image_author)"
+            " VALUES (1, 1, 'New Morning', 1, '', 'Location approximate.', '', '', '', '', '', '')"
+        ))
+        connection.execute(text(
+            "INSERT INTO concert_visits (id, owner_id, name, event, genre, place_id, broadcast, alone, review, remark, image_source, image_license, image_author, date_my, date_timezone)"
+            " VALUES (1, 1, 'Jarrett', '', '', 1, false, true, '', 'Great', '', '', '', '', '')"
+        ))
+        connection.execute(text(
+            "INSERT INTO museum_sites (id, owner_id, name, city_id, url, street, neighbourhood, postcode) VALUES (1, 1, 'Louvre', 1, 'https://louvre.fr', 'Rue de Rivoli', '', '')"
+        ))
+        for visit, rating in ((1, 9), (2, 7)):
+            connection.execute(text(
+                "INSERT INTO museum_visits (id, museum_id, rating, review, remark, alone, date_y, date_my, date_timezone) VALUES (:id, 1, :rating, '', 'mine', false, 2010, '', '')"
+            ), {"id": visit, "rating": rating})
+        connection.execute(text("INSERT INTO museum_companions (museum_id, person_id) VALUES (1, 1)"))
+    engine.dispose()
+    said = run(url, "upgrade").stdout.strip().splitlines()
+    assert said == [
+        "0011: countries ('France',) kept once (row 1; row 2 merged into it)",
+        "0011: cities ('Paris', None, 1) kept once (row 1; row 2 merged into it)",
+        f"migrated from 0010 to {SCHEMA_REVISION}; user 1 made the first admin",
+    ]
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        places = connection.execute(text(
+            "SELECT p.name, p.website, k.name FROM places p JOIN place_kind_links l ON l.place_id = p.id JOIN place_kinds k ON k.id = l.kind_id ORDER BY p.name"
+        )).all()
+        assert places == [("Louvre", "https://louvre.fr", "Museum"), ("New Morning", "", "Concert venue")]
+        visits = connection.execute(text(
+            "SELECT v.owner_id, p.name, t.name, v.rating, v.remark FROM visits v JOIN places p ON p.id = v.place_id JOIN visit_types t ON t.id = v.type_id ORDER BY v.id"
+        )).all()
+        assert visits == [(1, "Louvre", "Museum visit", 9, "mine"), (1, "Louvre", "Museum visit", 7, "mine")]
+        assert connection.execute(text("SELECT visit_id, person_id FROM visit_companions")).all() == [(1, 1)]
+        # the club's remark is the concert's now
+        assert connection.execute(text("SELECT remark FROM concert_visits")).scalar() == "Great\nAbout the place: Location approximate."
+        assert connection.execute(text("SELECT count(*) FROM countries")).scalar() == 1
+    tables_now = tables(url)
+    assert not {"museum_sites", "museum_visits", "museum_companions"} & tables_now
+    for table in ("countries", "regions", "cities", "places"):
+        assert "owner_id" not in {column["name"] for column in inspect(engine).get_columns(table)}, table
+    engine.dispose()
+    assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"

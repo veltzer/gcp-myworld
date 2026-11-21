@@ -5,6 +5,7 @@ The concerts, museums, people and organizations: the import script and the API.
 import gzip
 import json
 from pathlib import Path
+from typing import Any
 
 import fetch_book_details
 import fix_languages
@@ -27,16 +28,16 @@ from myworld.models import (
     Cover,
     Image,
     Locale,
-    Museum,
-    MuseumVisit,
     Organization,
     OrganizationType,
     Person,
     PersonName,
     PersonType,
+    Place,
     Read,
     User,
     UserWork,
+    Visit,
     Work,
     WorkTitle,
     YouTubeVideo,
@@ -44,7 +45,7 @@ from myworld.models import (
     library_entry_authors,
     person_organizations,
 )
-from tests.conftest import sign_in
+from tests.conftest import sign_in, sign_in_admin
 
 PEOPLE = """
 items:
@@ -279,7 +280,8 @@ def owner(session: Session, email: str = "alice@example.com") -> User:
 
 @pytest.fixture(name="imported")
 def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> webtest.TestApp:
-    sign_in(app)
+    # an admin: what the import adds to what everyone shares (cities, places), the tests change too
+    sign_in_admin(app, engine)
     with Session(engine) as session:
         counts = import_world.import_world(session, owner(session), write_source(tmp_path))
         session.commit()
@@ -373,11 +375,15 @@ def test_groups(imported: webtest.TestApp) -> None:
 
 
 def test_places(imported: webtest.TestApp) -> None:
-    [hall] = imported.get("/api/places").json
-    # a place with a country but no city keeps the country in its remark
-    assert (hall["name"], hall["city"], hall["remark"], [c["name"] for c in hall["concerts"]]) == (
-        "The Hall", None, "In Israel; the city is not known.", ["The Band"],
-    )
+    # the concert's place, a concert venue, and the museums, places of the kind Museum
+    places = {p["name"]: p for p in imported.get("/api/places").json}
+    assert sorted(places) == ["No Photo Museum", "The Hall", "The Louvre"]
+    hall = places["The Hall"]
+    assert (hall["city"], [k["name"] for k in hall["kinds"]], [c["name"] for c in hall["concerts"]]) == (None, ["Concert venue"], ["The Band"])
+    assert [k["name"] for k in places["The Louvre"]["kinds"]] == ["Museum"]
+    # a place with a country but no city: the concert says the country (a shared place has no remark)
+    band = next(c for c in imported.get("/api/concert-visits").json if c["name"] == "The Band")
+    assert band["remark"].endswith("About the place: in Israel; the city is not known.")
     # Israel and Tel Aviv came with the import (Acme is there)
     israel = next(c for c in imported.get("/api/countries").json if c["name"] == "Israel")
     tel_aviv = next(c for c in imported.get("/api/cities").json if c["name"] == "Tel Aviv")
@@ -403,7 +409,8 @@ def test_places(imported: webtest.TestApp) -> None:
     # deleting a place keeps its concerts, with no place
     imported.delete(f"/api/places/{barby['id']}", status=204)
     assert next(c for c in imported.get("/api/concert-visits").json if c["name"] == "Late Show")["place"] is None
-    assert imported.get("/api/stats").json["places"] == 2
+    # the hall, the two museums and Haifa's Barby
+    assert imported.get("/api/stats").json["places"] == 4
 
 
 def test_parsing_locations() -> None:
@@ -514,18 +521,48 @@ def test_a_museum_has_its_visits(imported: webtest.TestApp) -> None:
     assert [p["name"] for p in louvre["people"]] == ["Bob Buddy"]
     # a visit is added, one is changed and one taken away: sent, visits are all of them
     kept = dict(first, people=[p["id"] for p in first["people"]], rating=10)
-    changed = imported.put_json(f"/api/museum-visits/{louvre['id']}", {"name": "The Louvre", "visits": [kept, {"date": "2024-03", "alone": True, "review": "crowded"}]}).json
+    changed = imported.put_json(f"/api/museum-visits/{louvre['id']}", {"visits": [kept, {"date": "2024-03", "alone": True, "review": "crowded"}]}).json
     assert [(v["date"], v["rating"], v["alone"], v["review"] == "crowded") for v in changed["visits"]] == [("2024-03", None, True, True), (first["date"], 10, False, False)]
     assert changed["visits"][1]["id"] == first["id"] and changed["rating"] == 10
-    # not sent, they stay; a visit of another museum, or one sent twice, is no visit of this one
-    assert len(imported.put_json(f"/api/museum-visits/{louvre['id']}", {"name": "The Louvre"}).json["visits"]) == 2
-    imported.put_json(f"/api/museum-visits/{louvre['id']}", {"name": "The Louvre", "visits": [{"id": museums[0]["visits"][0]["id"]}]}, status=400)
-    imported.put_json(f"/api/museum-visits/{louvre['id']}", {"name": "The Louvre", "visits": [{"id": first["id"]}, {"id": first["id"]}]}, status=400)
-    # a museum is listed once: its name again (in the same city) is refused, and one may have no visit yet
-    imported.post_json("/api/museum-visits", {"name": "The Louvre"}, status=409)
-    assert imported.put_json(f"/api/museum-visits/{louvre['id']}", {"name": "The Louvre", "visits": []}).json["visits"] == []
+    # visits are what is sent; a visit of another museum, or one sent twice, is no visit of this one
+    imported.put_json(f"/api/museum-visits/{louvre['id']}", {}, status=400)
+    imported.put_json(f"/api/museum-visits/{louvre['id']}", {"visits": [{"id": museums[0]["visits"][0]["id"]}]}, status=400)
+    imported.put_json(f"/api/museum-visits/{louvre['id']}", {"visits": [{"id": first["id"]}, {"id": first["id"]}]}, status=400)
+    # a museum is in the user's Museums once: adding visits to it again is refused (they are added to it)
+    imported.post_json("/api/museum-visits", {"place_id": louvre["id"], "visits": [{}]}, status=409)
+    # the museum itself is shared: what is sent of it is not the user's to change
+    again = [dict(v, people=[p["id"] for p in v["people"]]) for v in changed["visits"]]
+    renamed = imported.put_json(f"/api/museum-visits/{louvre['id']}", {"name": "Le Louvre", "visits": again}).json
+    assert renamed["name"] == "The Louvre"
+    # its visits taken away, it leaves the user's Museums, and stays a place, everyone's
+    imported.put_json(f"/api/museum-visits/{louvre['id']}", {"visits": []})
+    assert [m["name"] for m in imported.get("/api/museum-visits").json] == ["No Photo Museum"]
+    assert "The Louvre" in [p["name"] for p in imported.get("/api/places").json]
     stats = imported.get("/api/stats").json
-    assert (stats["museums"], stats["museum_visits"]) == (2, 1)
+    assert (stats["museums"], stats["museum_visits"]) == (1, 1)
+    # and deleting a museum from Museums deletes the user's visits only
+    imported.delete(f"/api/museum-visits/{museums[0]['id']}", status=204)
+    assert imported.get("/api/museum-visits").json == []
+    assert "No Photo Museum" in [p["name"] for p in imported.get("/api/places").json]
+
+
+def test_a_museum_visit_is_to_a_museum(imported: webtest.TestApp, engine: Engine) -> None:
+    hall = next(p for p in imported.get("/api/places").json if p["name"] == "The Hall")
+    # a place that is no museum is not visited as one: an admin says it is one first
+    error = imported.post_json("/api/museum-visits", {"place_id": hall["id"], "visits": [{}]}, status=400).json["error"]
+    assert error == "The Hall is not a museum (a place of the kind Museum): an admin can say it is, on the Places page"
+    imported.post_json("/api/museum-visits", {"visits": [{}]}, status=400)
+    imported.post_json("/api/museum-visits", {"place_id": 9999, "visits": [{}]}, status=400)
+    imported.put_json(f"/api/museum-visits/{hall['id']}", {"visits": []}, status=400)
+    imported.put_json("/api/museum-visits/9999", {"visits": []}, status=404)
+    kinds = {k["name"]: k["id"] for k in imported.get("/api/place-kinds").json}
+    imported.put_json(f"/api/places/{hall['id']}", {"name": "The Hall", "kinds": [kinds["Concert venue"], kinds["Museum"]]})
+    added = imported.post_json("/api/museum-visits", {"place_id": hall["id"], "visits": [{"date": "2020", "rating": 7}]}, status=201).json
+    assert (added["id"], added["rating"]) == (hall["id"], 7)
+    # another account's visits are theirs
+    sign_in(imported, sub="someone-else")
+    assert imported.get("/api/museum-visits").json == []
+    imported.put_json(f"/api/museum-visits/{hall['id']}", {"visits": [{"id": added["visits"][0]["id"]}]}, status=400)
 
 
 def test_audio_courses(imported: webtest.TestApp) -> None:
@@ -1245,7 +1282,8 @@ def test_reimport_replaces(imported: webtest.TestApp, engine: Engine, tmp_path: 
     with Session(engine) as session:
         import_world.import_world(session, owner(session), tmp_path, replace=True)
         session.commit()
-        for model, count in ((Concert, 3), (Museum, 2), (MuseumVisit, 3), (AudioCourse, 2), (Person, 8), (Organization, 3), (Image, 7)):
+        # the shared rows (places, the museums among them) are found again, not added twice
+        for model, count in ((Concert, 3), (Place, 3), (Visit, 3), (AudioCourse, 2), (Person, 8), (Organization, 3), (Image, 7)):
             assert session.scalar(select(func.count()).select_from(model)) == count
         assert session.scalar(select(func.count()).select_from(concert_companions)) == 3
         assert session.scalar(select(func.count()).select_from(person_organizations)) == 3
@@ -1348,10 +1386,16 @@ def test_person_with_no_name(imported: webtest.TestApp) -> None:
     imported.put_json(f"/api/people/{guide['id']}", {"description": " "}, status=400)
 
 
+def a_museum(app: webtest.TestApp, name: str, **columns: Any) -> int:
+    """ A museum, as an admin adds it to the Places page: a place of the kind Museum; its id. """
+    kinds = {k["name"]: k["id"] for k in app.get("/api/place-kinds").json}
+    return app.post_json("/api/places", {"name": name, "kinds": [kinds["Museum"]], **columns}, status=201).json["id"]
+
+
 def test_add_museum_and_person(imported: webtest.TestApp) -> None:
     person = imported.post_json("/api/people", {"first_name": "Carol", "description": "Zed"}, status=201).json
     museum = imported.post_json("/api/museum-visits", {
-        "name": "Prado", "visits": [{"date": "2012", "rating": 9, "people": [person["id"]]}],
+        "place_id": a_museum(imported, "Prado"), "visits": [{"date": "2012", "rating": 9, "people": [person["id"]]}],
     }, status=201).json
     assert (museum["date"], museum["rating"]) == ("2012", 9)
     assert museum["visits"][0]["with"] == ["Carol"]
@@ -1359,27 +1403,28 @@ def test_add_museum_and_person(imported: webtest.TestApp) -> None:
 
 
 def test_museum_alone(imported: webtest.TestApp) -> None:
-    [alone] = imported.post_json("/api/museum-visits", {"name": "Prado", "visits": [{"alone": True}]}, status=201).json["visits"]
+    [alone] = imported.post_json("/api/museum-visits", {"place_id": a_museum(imported, "Prado"), "visits": [{"alone": True}]}, status=201).json["visits"]
     assert alone["alone"] is True
     assert alone["with"] == []
-    assert imported.post_json("/api/museum-visits", {"name": "Tate", "visits": [{}]}, status=201).json["visits"][0]["alone"] is False
+    assert imported.post_json("/api/museum-visits", {"place_id": a_museum(imported, "Tate"), "visits": [{}]}, status=201).json["visits"][0]["alone"] is False
     # alone with company is a contradiction
     person = imported.post_json("/api/people", {"first_name": "Carol"}, status=201).json
-    imported.post_json("/api/museum-visits", {"name": "Uffizi", "visits": [{"alone": True, "people": [person["id"]]}]}, status=400)
+    imported.post_json("/api/museum-visits", {"place_id": a_museum(imported, "Uffizi"), "visits": [{"alone": True, "people": [person["id"]]}]}, status=400)
 
 
 def test_addresses_and_coordinates(imported: webtest.TestApp) -> None:
     spain = imported.post_json("/api/countries", {"name": "Spain"}, status=201).json
     madrid = imported.post_json("/api/cities", {"name": "Madrid", "country_id": spain["id"]}, status=201).json
-    museum = imported.post_json("/api/museum-visits", {
-        "name": "Prado", "street": "Calle de Ruiz de Alarcón 23", "neighbourhood": "Retiro", "postcode": "28014", "city_id": madrid["id"],
-        "latitude": "40.4138", "longitude": -3.6921,
-    }, status=201).json
+    prado = a_museum(
+        imported, "Prado", street="Calle de Ruiz de Alarcón 23", neighbourhood="Retiro", postcode="28014", city_id=madrid["id"], latitude="40.4138", longitude=-3.6921,
+    )
+    museum = imported.post_json("/api/museum-visits", {"place_id": prado, "visits": [{}]}, status=201).json
     # the parts, and the address in one line with the city and its country
     assert (museum["street"], museum["neighbourhood"], museum["postcode"]) == ("Calle de Ruiz de Alarcón 23", "Retiro", "28014")
     assert (museum["address"], museum["latitude"], museum["longitude"]) == ("Calle de Ruiz de Alarcón 23, Retiro, Madrid 28014, Spain", 40.4138, -3.6921)
     # a dialog with the coordinates cleared leaves the place off the map
-    cleared = imported.put_json(f"/api/museum-visits/{museum['id']}", dict(museum, city_id=madrid["id"], latitude="", longitude="")).json
+    place = next(p for p in imported.get("/api/places").json if p["id"] == prado)
+    cleared = imported.put_json(f"/api/places/{prado}", dict(place, city_id=madrid["id"], kinds=[k["id"] for k in place["kinds"]], latitude="", longitude="")).json
     assert (cleared["latitude"], cleared["longitude"]) == (None, None)
     organization = imported.post_json("/api/organizations", {"name": "Glil", "street": "Kibbutz Glil Yam", "latitude": 32.15556, "longitude": 34.82361}, status=201).json
     assert (organization["latitude"], organization["longitude"]) == (32.15556, 34.82361)

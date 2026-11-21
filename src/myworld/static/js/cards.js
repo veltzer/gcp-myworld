@@ -124,9 +124,12 @@ function placeCard(item) {
 	linksDetail(list, "City", "cities", item.city ? [item.city] : []);
 	detail(list, "Address", item.address);
 	// how many concerts were there, always shown (0 too), then which
+	// what it is (museum, concert venue, ...), each a link to its row of Place kinds
+	linksDetail(list, "Kinds", "place-kinds", item.kinds);
 	detail(list, "Concerts", String(item.concerts.length));
 	linksDetail(list, "Seen there", "concerts", item.concerts);
-	detail(list, "Remark", item.remark);
+	// the user's own visits there (museum visits, ...), always counted
+	detail(list, "Your visits", String(item.visits));
 	websiteButton(card, item.website);
 	return card;
 }
@@ -152,7 +155,6 @@ function cityCard(item) {
 	linksDetail(list, "Museums", "museums", item.museums);
 	linksDetail(list, "Organizations", "organizations", item.organizations);
 	linksDetail(list, "Headquarters of", "organizations", item.headquarters_of);
-	detail(list, "Remark", item.remark);
 	photoCredit(body, item);
 	return card;
 }
@@ -162,7 +164,6 @@ function countryCard(item) {
 	const { card, body, list } = cardShell(item, `${item.cities.length.toLocaleString()} ${item.cities.length === 1 ? "city" : "cities"}`, "logo");
 	cornerOf(card).appendChild(placeButton(item));
 	linksDetail(list, "Cities", "cities", item.cities);
-	detail(list, "Remark", item.remark);
 	photoCredit(body, item, "Flag");
 	return card;
 }
@@ -316,6 +317,8 @@ export const CARDS = {
 	places: placeCard,
 	cities: cityCard,
 	countries: countryCard,
+	"place-kinds": sharedNameCard,
+	"visit-types": sharedNameCard,
 	groups: groupCard,
 	organizations: organizationCard,
 	people: personCard,
@@ -422,6 +425,14 @@ function localeCard(item) {
 	detail(list, "Script", item.script);
 	// always shown, 0 too
 	detail(list, "Used by", String(item.count));
+	return card;
+}
+
+// A row of a shared list of names (place kinds, visit types): how many places are of it, or how many of
+// the user's visits
+function sharedNameCard(item) {
+	const { card, list } = cardShell(item, "");
+	detail(list, state.view === "place-kinds" ? "Places" : "Your visits", String(item.count));
 	return card;
 }
 

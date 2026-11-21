@@ -7,9 +7,17 @@ work (status, rating, dates, notes) lives in its UserWork row, apart from what
 the work is, so that works can be shared later.
 Adding a new kind of work is a matter of adding it to KINDS.
 
-Concerts, museum visits, the people they were shared with and the
-organizations those people work at are a second, separate part: each row
-belongs to one user (owner_id) and is never shared. A person may be linked
+Concerts, visits (to museums, ...), the people they were shared with and
+the organizations those people work at are a second, separate part: each
+row belongs to one user (owner_id) and is never shared.
+
+Some data is shared instead: the same rows for every account, which
+everyone sees and only admins change, with nothing personal on them (no
+remark, no rating). A shared table has no owner_id (is_shared): the
+languages (locales), countries, regions, cities, places and their kinds
+(place_kinds), and the types of visit (visit_types). A user's rows point
+into them: a concert to its place, a visit to the place visited, an
+organization to its city. A person may be linked
 to several organizations, each link of a kind ("Worked at", "Studied at":
 person_organizations, PersonOrganization).
 Their photos live in the images table, so the database alone holds all of it.
@@ -233,6 +241,11 @@ def _fill_locales(target: Table, connection: Connection, **_: Any) -> None:
         {"code": code, "name": name, "script": script, "position": position, "native": LOCALE_NATIVE.get(code, "")}
         for position, (code, name, script) in enumerate(SEED_LOCALES)
     ])
+
+
+def is_shared(model: Any) -> bool:
+    """ Whether model's rows are everyone's (no owner_id): seen by every account, changed by admins only. """
+    return "owner_id" not in model.__table__.c
 
 
 class Work(Base):
@@ -521,12 +534,20 @@ concert_companions = Table(
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
 )
 
-# who the user went to a museum with, on one visit (museum_id is the visit's id: the column keeps its old name)
-museum_companions = Table(
-    "museum_companions",
+# who the user went with, on one visit (of any type: a museum visit, ...)
+visit_companions = Table(
+    "visit_companions",
     Base.metadata,
-    Column("museum_id", ForeignKey("museum_visits.id", ondelete="CASCADE"), primary_key=True),
+    Column("visit_id", ForeignKey("visits.id", ondelete="CASCADE"), primary_key=True),
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
+)
+
+# the kinds of a place (a museum, a concert venue, ...): any number of them
+place_kind_links = Table(
+    "place_kind_links",
+    Base.metadata,
+    Column("place_id", ForeignKey("places.id", ondelete="CASCADE"), primary_key=True),
+    Column("kind_id", ForeignKey("place_kinds.id", ondelete="CASCADE"), primary_key=True),
 )
 
 # who was on stage, as people (with: concert_companions is who the user went with)
@@ -677,8 +698,8 @@ class Person(Base):
             if other.locale == locale:
                 return other.name
         return self.name
-    museum_visits: Mapped[list[MuseumVisit]] = relationship(
-        secondary=museum_companions, back_populates="people",
+    visits: Mapped[list[Visit]] = relationship(
+        secondary=visit_companions, back_populates="people",
     )
     lectured: Mapped[list[AudioCourse]] = relationship(
         secondary=audio_course_lecturers, back_populates="lecturers",
@@ -868,14 +889,15 @@ class _Addressed:
 
 
 class Country(_Pictured, _Located, Base):
-    """ A country; cities point to the one they are in. A name is a country once. """
+    """
+    A country; cities point to the one they are in. A name is a country
+    once. Shared: the same for every account, kept by admins (SHARED).
+    """
     __tablename__ = "countries"
-    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_country_name"),)
+    __table_args__ = (UniqueConstraint("name", name="uq_country_name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     cities: Mapped[list[City]] = relationship(back_populates="country")
 
@@ -885,28 +907,27 @@ class Region(Base):
     A region of a country: a state, a province, a district ("California",
     "Ontario", "Tel Aviv District"). The cities in it point to it; it is a
     name once in a country, made when a city first says it and gone with
-    the last city that does.
+    the last city that does. Shared, as cities are.
     """
     __tablename__ = "regions"
-    __table_args__ = (UniqueConstraint("owner_id", "name", "country_id", name="uq_region_name"),)
+    __table_args__ = (UniqueConstraint("name", "country_id", name="uq_region_name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     country_id: Mapped[int | None] = mapped_column(ForeignKey("countries.id", ondelete="SET NULL"), nullable=True, index=True)
     country: Mapped[Country | None] = relationship()
     cities: Mapped[list[City]] = relationship(back_populates="region_row")
 
 
-def region_for(session: Session, owner_id: int, name: str, country: Country | None) -> Region | None:
-    """ The owner's region of that name in that country, made (and added to the session) when there is none yet; None for no name. """
+def region_for(session: Session, name: str, country: Country | None) -> Region | None:
+    """ The region of that name in that country, made (and added to the session) when there is none yet; None for no name. """
     name = name.strip()
     if not name:
         return None
-    for region in session.scalars(select(Region).where(Region.owner_id == owner_id, Region.name == name)):
+    for region in session.scalars(select(Region).where(Region.name == name)):
         if region.country is country:
             return region
-    region = Region(owner_id=owner_id, name=name, country=country)
+    region = Region(name=name, country=country)
     session.add(region)
     return region
 
@@ -915,15 +936,14 @@ class City(_Pictured, _Located, Base):
     """
     A city (or a town, a village, a kibbutz): name, region (a state or
     province, where addresses name one: a row of regions) and the country
-    it is in (the Countries page). Places, museum visits and organizations
-    point to the city they are in. A name is a city once in each region of
-    a country.
+    it is in (the Countries page). Places and organizations point to the
+    city they are in. A name is a city once in each region of a country.
+    Shared: the same for every account, kept by admins (SHARED).
     """
     __tablename__ = "cities"
-    __table_args__ = (UniqueConstraint("owner_id", "name", "region_id", "country_id", name="uq_city_name"),)
+    __table_args__ = (UniqueConstraint("name", "region_id", "country_id", name="uq_city_name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     region_id: Mapped[int | None] = mapped_column(ForeignKey("regions.id", ondelete="SET NULL"), nullable=True, index=True)
     region_row: Mapped[Region | None] = relationship(back_populates="cities")
@@ -934,13 +954,11 @@ class City(_Pictured, _Located, Base):
     def region(self) -> str:
         """ The name of its region, "" when it says none. """
         return self.region_row.name if self.region_row is not None else ""
-    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     # its photos after the first (image_id and its credit), in the order they were added
     more_photos: Mapped[list[CityPhoto]] = relationship(cascade="all, delete-orphan", order_by=lambda: CityPhoto.id)  # pylint: disable=used-before-assignment
 
     places: Mapped[list[Place]] = relationship(back_populates="city")
-    museums: Mapped[list[Museum]] = relationship(back_populates="city")
     organizations: Mapped[list[Organization]] = relationship(back_populates="city", foreign_keys=lambda: Organization.city_id)
     # the organizations whose headquarters are here
     headquarters_of: Mapped[list[Organization]] = relationship(back_populates="headquarters", foreign_keys=lambda: Organization.headquarters_id)
@@ -1007,28 +1025,101 @@ class _Dated:
     date_timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="")
 
 
-class Place(_Pictured, _Addressed, Base):
+class PlaceKind(Base):
     """
-    Where something happened: a hall, a club, a park ("Tmuna Theater", in
-    the city Tel Aviv). A concert points to the place it was at. The same
-    name may be a place in two cities, but only once in each. It may have
-    a photo, with its credit.
+    What a place is: "Museum", "Concert venue", ... A place is of any
+    number of them. Shared, kept by admins (SHARED).
     """
-    __tablename__ = "places"
-    __table_args__ = (UniqueConstraint("owner_id", "name", "city_id", name="uq_place_name"),)
+    __tablename__ = "place_kinds"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+
+    places: Mapped[list[Place]] = relationship(secondary=place_kind_links, back_populates="kinds")
+
+
+# the kinds of place and the types of visit there always are: the Museums page lists the visits of
+# MUSEUM_VISIT, each to a place of MUSEUM_KIND; a concert's place is of CONCERT_VENUE_KIND
+MUSEUM_KIND = "Museum"
+CONCERT_VENUE_KIND = "Concert venue"
+MUSEUM_VISIT = "Museum visit"
+SEED_PLACE_KINDS = (MUSEUM_KIND, CONCERT_VENUE_KIND)
+SEED_VISIT_TYPES = (MUSEUM_VISIT,)
+
+
+@event.listens_for(PlaceKind.__table__, "after_create")
+def _fill_place_kinds(target: Table, connection: Connection, **_: Any) -> None:
+    connection.execute(insert(target), [{"name": name} for name in SEED_PLACE_KINDS])
+
+
+class Place(_Pictured, _Addressed, _Located, Base):
+    """
+    A place: a museum, a hall, a club, a park ("Tmuna Theater", in the city
+    Tel Aviv), of its kinds (place_kinds). A concert points to the place it
+    was at, and a visit to the place visited. The same name may be a place
+    in two cities, but only once in each. It may have a photo, with its
+    credit. Shared: the same for every account, kept by admins (SHARED);
+    what a user thinks of it is in their visits.
+    """
+    __tablename__ = "places"
+    __table_args__ = (UniqueConstraint("name", "city_id", name="uq_place_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(300), nullable=False)
     # the city it is in (the Cities page)
     city_id: Mapped[int | None] = mapped_column(ForeignKey("cities.id", ondelete="SET NULL"), nullable=True, index=True)
     city: Mapped[City | None] = relationship(back_populates="places")
-    latitude: Mapped[float | None] = mapped_column(Double, nullable=True)
-    longitude: Mapped[float | None] = mapped_column(Double, nullable=True)
     website: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
+    kinds: Mapped[list[PlaceKind]] = relationship(secondary=place_kind_links, back_populates="places", order_by=lambda: PlaceKind.name)
     concerts: Mapped[list[Concert]] = relationship(back_populates="place")
+    visits: Mapped[list[Visit]] = relationship(back_populates="place")
+
+
+class VisitType(Base):
+    """
+    What a visit was: "Museum visit", ... more with time. Shared, kept by
+    admins (SHARED).
+    """
+    __tablename__ = "visit_types"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+
+    visits: Mapped[list[Visit]] = relationship(back_populates="type")
+
+
+@event.listens_for(VisitType.__table__, "after_create")
+def _fill_visit_types(target: Table, connection: Connection, **_: Any) -> None:
+    connection.execute(insert(target), [{"name": name} for name in SEED_VISIT_TYPES])
+
+
+class Visit(_Dated, Base):
+    """
+    A user's visit to a place, of a type (a museum visit, ...): when, what
+    they thought of it, and who they went with. The user's own, of a place
+    that is everyone's.
+    """
+    __tablename__ = "visits"
+    __table_args__ = (
+        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_visit_rating_range"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # the place visited (the Places page); a place an admin deleted leaves its visits with none
+    place_id: Mapped[int | None] = mapped_column(ForeignKey("places.id", ondelete="SET NULL"), nullable=True, index=True)
+    place: Mapped[Place | None] = relationship(back_populates="visits")
+    type_id: Mapped[int] = mapped_column(ForeignKey("visit_types.id", ondelete="RESTRICT"), nullable=False, index=True)
+    type: Mapped[VisitType] = relationship(back_populates="visits")
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    review: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    tickets: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # went alone: no one is missing from people, there was no one; never true with people
+    alone: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+
+    people: Mapped[list[Person]] = relationship(secondary=visit_companions, back_populates="visits")
 
 
 class Concert(_Pictured, _Dated, Base):
@@ -1076,50 +1167,6 @@ class Group(_Pictured, Base):
 
     members: Mapped[list[Person]] = relationship(secondary=group_members, back_populates="groups", order_by=lambda: Person.id)
     concerts: Mapped[list[Concert]] = relationship(secondary=concert_groups, back_populates="groups")
-
-
-class Museum(_Addressed, _Located, Base):
-    """
-    A museum: its name, where it is, its website and its photo. A name is a
-    museum once in each city. The times the user went there are its visits
-    (museum_visits), any number of them, none for one not visited yet.
-    """
-    __tablename__ = "museum_sites"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(300), nullable=False)
-    # the city it is in (the Cities page)
-    city_id: Mapped[int | None] = mapped_column(ForeignKey("cities.id", ondelete="SET NULL"), nullable=True, index=True)
-    city: Mapped[City | None] = relationship(back_populates="museums")
-    url: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
-    image: Mapped[Image | None] = relationship()
-
-    # in the order they were added
-    visits: Mapped[list[MuseumVisit]] = relationship(
-        back_populates="museum", cascade="all, delete-orphan", order_by=lambda: MuseumVisit.id,  # pylint: disable=used-before-assignment
-    )
-
-
-class MuseumVisit(_Dated, Base):
-    """ One visit to a museum: when, what the user thought of it, and who they went with. """
-    __tablename__ = "museum_visits"
-    __table_args__ = (
-        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_museum_rating_range"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    museum_id: Mapped[int] = mapped_column(ForeignKey("museum_sites.id", ondelete="CASCADE"), nullable=False, index=True)
-    museum: Mapped[Museum] = relationship(back_populates="visits")
-    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    review: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    tickets: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # went alone: no one is missing from people, there was no one; never true with people
-    alone: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
-
-    people: Mapped[list[Person]] = relationship(secondary=museum_companions, back_populates="museum_visits")
 
 
 class Device(_Pictured, Base):
@@ -1359,7 +1406,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0010"
+SCHEMA_REVISION = "0012"
 
 
 def prepare_schema(engine: Engine) -> None:

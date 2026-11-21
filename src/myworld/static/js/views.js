@@ -13,7 +13,7 @@ import { closeSidebarOnPhone } from "./sidebar.js";
 import { rerender, setupSort, updateTools } from "./sorting.js";
 import { selectStats } from "./stats.js";
 import { isAdmin, selectUsers } from "./users.js";
-import { WORLDS, fetchWorld, setupLayouts, slug, worldCache } from "./worlds.js";
+import { SHARED_VIEWS, WORLDS, el, fetchWorld, setupLayouts, slug, worldCache } from "./worlds.js";
 
 // hash: where the address bar points, the view itself unless one of its rows is wanted
 export async function selectWorld(view, hash = view) {
@@ -24,6 +24,7 @@ export async function selectWorld(view, hash = view) {
 	showSection("world-view");
 	markActive();
 	updateTools();
+	showShared(view);
 	showError("");
 	$("world-search").value = "";
 	if (!worldCache[view]) {
@@ -43,6 +44,15 @@ export async function selectWorld(view, hash = view) {
 		renderWorld();
 	}
 	await reloadWorld(view);
+}
+
+// On a shared page, that everyone sees the same rows, and who may change them
+function showShared(view) {
+	const note = $("shared-note");
+	note.hidden = !SHARED_VIEWS.has(view);
+	note.replaceChildren(el("strong", "", "Shared by everyone. "), isAdmin()
+		? "Every account sees these same rows, with nothing personal on them. As an admin you add, change and delete them."
+		: "Every account sees these same rows, with nothing personal on them; only an admin adds, changes or deletes them.");
 }
 
 // Fetch a view again and redraw it if it is still on screen, keeping the

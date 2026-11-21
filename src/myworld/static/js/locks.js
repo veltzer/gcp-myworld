@@ -9,7 +9,7 @@ import { loadEntries, state } from "./library.js";
 import { prepareNames } from "./names.js";
 import { refreshWorld } from "./views.js";
 import { prepareVisits } from "./visits.js";
-import { TYPED, WORLDS, el, slug } from "./worlds.js";
+import { TYPED, WORLDS, canChange, el, slug } from "./worlds.js";
 
 // What a dialog shows of something that exists is there to read: every box that
 // holds a value is locked, and the red pencil beside it lets it be changed; the
@@ -114,9 +114,8 @@ export function lockFields(form, existing) {
 		const [control] = lockControls(box);
 		const filled = control.type === "checkbox" || (control.tomselect ? control.tomselect.items.length > 0 : control.value !== "");
 		setLocked(box, existing && filled);
-		if ("fixed" in control.dataset) {
-			box.querySelector(".lock-edit").disabled = true;
-		}
+		// a fixed one (a museum visit's museum) is never changed: its pencil stays, disabled
+		box.querySelector(".lock-edit").disabled = "fixed" in control.dataset;
 	}
 }
 
@@ -153,9 +152,12 @@ export async function openDialog(listed) {
 		if (form.elements.device_id) {
 			await fillTypes(form.elements.device_id, "devices");
 		}
-		// single pickers over a view (a concert's place, a city, a country): its rows, by the view's label
+		// single pickers over a view (a concert's place, a city, a country): its rows, by the view's label;
+		// data-kind keeps the places of one kind (a museum visit's museum: the places of the kind Museum)
 		for (const select of form.querySelectorAll("select[data-picker]")) {
-			setPickerRows(select, await worldList(select.dataset.picker), PICKER_LABELS[select.dataset.picker] || ((row) => row.name));
+			const kind = select.dataset.kind;
+			const rows = (await worldList(select.dataset.picker)).filter((row) => !kind || row.kinds?.some((k) => k.name === kind));
+			setPickerRows(select, rows, PICKER_LABELS[select.dataset.picker] || ((row) => row.name));
 		}
 		resetForm(form);
 		if (view === "organizations" && !item) {
@@ -197,6 +199,19 @@ export async function openDialog(listed) {
 	}
 	preparePictures(form, item);
 	lockFields(form, Boolean(item));
+	// a shared row (a place, a city, ...) is everyone's: one who is no admin reads it and changes nothing,
+	// every control in its place, disabled
+	const readOnly = Boolean(world) && !canChange(view);
+	if (readOnly) {
+		for (const pencil of form.querySelectorAll(".lock-edit")) {
+			pencil.disabled = true;
+		}
+		$("dialog-title").textContent = `${noun[0].toUpperCase()}${noun.slice(1)}: shared by everyone, only an admin changes it`;
+	}
+	const submit = form.querySelector("button[type=submit]");
+	submit.disabled = readOnly;
+	submit.title = readOnly ? "Shared by everyone: only an admin changes it" : "";
+	remove.disabled = readOnly;
 	// another view was opened while the lists loaded: its dialog is not this one
 	if (state.view !== view) {
 		return;

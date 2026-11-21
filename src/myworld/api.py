@@ -10,6 +10,8 @@ from typing import Any
 import flask
 from sqlalchemy import select
 
+from myworld.models import is_shared
+
 
 class ApiError(Exception):
     def __init__(self, status: int, message: str) -> None:
@@ -90,36 +92,42 @@ def opt_date(body: dict[str, Any], key: str) -> datetime.date | None:
         raise ApiError(400, f"{key}: expected a date as YYYY-MM-DD") from e
 
 
+def _theirs(model: Any, row: Any) -> bool:
+    """ Whether the signed-in user may point at row: their own, or a shared row (everyone's). """
+    return is_shared(model) or row.owner_id == flask.g.user.id
+
+
 def owned[T](model: type[T], row_id: int) -> T:
-    """ The user's own row row_id of model: the one an address names (404 when it is not theirs). """
+    """ The user's own row row_id of model (or a shared one): the one an address names (404 when there is none for them). """
     row: Any = flask.g.db.get(model, row_id)
-    if row is None or row.owner_id != flask.g.user.id:
+    if row is None or not _theirs(model, row):
         raise ApiError(404, "no such entry")
     return row
 
 
 def owned_ref[T](body: dict[str, Any], key: str, model: type[T], what: str) -> T | None:
-    """ body[key], the id of one of the user's own rows of model (what names it in the error), as that row; None when none is sent. """
+    """ body[key], the id of one of the user's own rows of model (or of a shared one; what names it in the error), as that row; None when none is sent. """
     row_id = opt_int(body, key, 1, 2**31 - 1)
     if row_id is None:
         return None
     row: Any = flask.g.db.get(model, row_id)
-    if row is None or row.owner_id != flask.g.user.id:
+    if row is None or not _theirs(model, row):
         raise ApiError(400, f"{key}: unknown {what}")
     return row
 
 
 def owned_list[T](body: dict[str, Any], key: str, model: type[T]) -> list[T]:
-    """ body[key], a list of ids of the user's own rows of model, as those rows. """
+    """ body[key], a list of ids of the user's own rows of model (or of shared ones), as those rows. """
     ids = body.get(key) or []
     if not isinstance(ids, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
         raise ApiError(400, f"{key}: expected a list of ids")
     if not ids:
         return []
     table: Any = model
-    rows = flask.g.db.execute(
-        select(table).where(table.owner_id == flask.g.user.id, table.id.in_(ids))
-    ).scalars().all()
+    query = select(table).where(table.id.in_(ids))
+    if not is_shared(model):
+        query = query.where(table.owner_id == flask.g.user.id)
+    rows = flask.g.db.execute(query).scalars().all()
     if len(rows) != len(set(ids)):
         raise ApiError(400, f"{key}: unknown {model.__name__.lower()}")
     return list(rows)

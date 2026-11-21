@@ -1,10 +1,13 @@
 """
-JSON API for what the signed-in user keeps: concerts, museums and their
-visits, audio courses, YouTube videos, chess games, people, organizations, places, groups,
-cities and countries. For each: what a row looks like as JSON, how a request
-body is applied to it, and the routes that list, add, edit and delete it.
-Every query is filtered by owner_id, so a user only ever sees, and only ever
-links to, their own rows.
+JSON API for what the signed-in user keeps: concerts, their museum visits,
+audio courses, YouTube videos, chess games, people, organizations and
+groups; and for what everyone shares: places (and their kinds), visit
+types, cities and countries. For each: what a row looks like as JSON, how a
+request body is applied to it, and the routes that list, add, edit and
+delete it. A user's rows are filtered by owner_id, so a user only ever
+sees, and only ever links to, their own rows and the shared ones; a shared
+row is changed by admins only, and says nothing personal (what a user
+thinks of a place is in their visits).
 """
 
 import dataclasses
@@ -31,8 +34,11 @@ from myworld.api import (
 )
 from myworld.models import (
     DEFAULT_LOCALE,
+    MUSEUM_KIND,
+    MUSEUM_VISIT,
     RATING_MAX,
     RATING_MIN,
+    ROLE_ADMIN,
     YOUTUBE_ID_LENGTH,
     AudioCourse,
     ChessGame,
@@ -42,8 +48,6 @@ from myworld.models import (
     Country,
     Device,
     Group,
-    Museum,
-    MuseumVisit,
     Organization,
     OrganizationType,
     Person,
@@ -55,9 +59,13 @@ from myworld.models import (
     PersonRelationType,
     PersonType,
     Place,
+    PlaceKind,
     Region,
     RelationType,
+    Visit,
+    VisitType,
     YouTubeVideo,
+    is_shared,
     region_for,
 )
 from myworld.pictures import (
@@ -106,7 +114,7 @@ def _names(people: list[Person]) -> list[str]:
     return sorted(shown_name(p) for p in people)
 
 
-def _refs(rows: list[Person] | list[Organization] | list[PersonType] | list[RelationType] | list[Group] | list[Concert] | list[Place] | list[City] | list[Museum]) -> list[dict[str, Any]]:
+def _refs(rows: list[Person] | list[Organization] | list[PersonType] | list[RelationType] | list[Group] | list[Concert] | list[Place] | list[City] | list[PlaceKind]) -> list[dict[str, Any]]:
     """ Names with the ids the People and Organizations views link to, each row once (a person may be linked to one organization twice). """
     unique = {row.id: row for row in rows}.values()
     return sorted(({"id": row.id, "name": _name(row)} for row in unique), key=lambda ref: ref["name"])
@@ -154,16 +162,24 @@ def country_json(country: Country) -> dict[str, Any]:
         **picture_json(country),
         "latitude": country.latitude,
         "longitude": country.longitude,
-        "remark": country.remark,
         "cities": _refs(country.cities),
     }
 
 
-def _address_parts(row: Place | Museum | Organization) -> dict[str, str]:
+def _mine[R](rows: list[R]) -> list[R]:
+    """ Of a shared row's rows (a city's organizations, a place's concerts), the signed-in user's own. """
+    return [row for row in rows if getattr(row, "owner_id", None) == flask.g.user.id]
+
+
+def _of_kind(places: list[Place], kind: str) -> list[Place]:
+    return [place for place in places if any(k.name == kind for k in place.kinds)]
+
+
+def _address_parts(row: Place | Organization) -> dict[str, str]:
     return {"street": row.street, "neighbourhood": row.neighbourhood, "postcode": row.postcode}
 
 
-def _apply_address(row: Place | Museum | Organization, body: dict[str, Any]) -> None:
+def _apply_address(row: Place | Organization, body: dict[str, Any]) -> None:
     row.street = text(body, "street")
     row.neighbourhood = text(body, "neighbourhood")
     row.postcode = text(body, "postcode")
@@ -181,17 +197,17 @@ def city_json(city: City) -> dict[str, Any]:
         "photos": [photo_json(photo) for photo in ([city] if city.image_id is not None else []) + city.more_photos],
         "latitude": city.latitude,
         "longitude": city.longitude,
-        "remark": city.remark,
         "places": _refs(city.places),
-        "museums": _refs(city.museums),
-        "organizations": _refs(city.organizations),
-        "headquarters_of": _refs(city.headquarters_of),
+        "museums": _refs(_of_kind(city.places, MUSEUM_KIND)),
+        # the user's own organizations there: another account's are theirs
+        "organizations": _refs(_mine(city.organizations)),
+        "headquarters_of": _refs(_mine(city.headquarters_of)),
     }
 
 
 def place_json(place: Place) -> dict[str, Any]:
-    # the concerts that were there, newest first
-    concerts = _newest_first([{"id": c.id, "name": c.name, **date_json(c)} for c in place.concerts])
+    # the user's concerts that were there, newest first, and how many times they visited it
+    concerts = _newest_first([{"id": c.id, "name": c.name, **date_json(c)} for c in _mine(place.concerts)])
     return {
         **_place_ref(place),
         # the address in one line, and its parts (the city carries region and country)
@@ -200,9 +216,10 @@ def place_json(place: Place) -> dict[str, Any]:
         "latitude": place.latitude,
         "longitude": place.longitude,
         "website": place.website,
-        "remark": place.remark,
+        "kinds": _refs(place.kinds),
         **picture_json(place),
         "concerts": [{"id": c["id"], "name": c["name"]} for c in concerts],
+        "visits": len(_mine(place.visits)),
     }
 
 
@@ -219,7 +236,7 @@ def group_json(group: Group) -> dict[str, Any]:
     }
 
 
-def _visit_json(visit: MuseumVisit) -> dict[str, Any]:
+def _visit_json(visit: Visit) -> dict[str, Any]:
     return {
         "id": visit.id,
         **date_json(visit),
@@ -234,21 +251,24 @@ def _visit_json(visit: MuseumVisit) -> dict[str, Any]:
     }
 
 
-def museum_json(museum: Museum) -> dict[str, Any]:
+def museum_json(museum: Place, mine: list[Visit]) -> dict[str, Any]:
+    """ A museum (a shared place) with the signed-in user's visits to it, as their Museums page shows it: its id is the place's. """
     # the visits, the latest first (one with no date last)
-    visits = sorted((_visit_json(visit) for visit in museum.visits), key=lambda visit: (visit["date_sort"], visit["id"]), reverse=True)
+    visits = sorted((_visit_json(visit) for visit in mine), key=lambda visit: (visit["date_sort"], visit["id"]), reverse=True)
     rated = [visit["rating"] for visit in visits if visit["rating"] is not None]
-    people = {person.id: person for visit in museum.visits for person in visit.people}
+    people = {person.id: person for visit in mine for person in visit.people}
     return {
         "id": museum.id,
         "name": museum.name,
+        # the shared place it is: what the dialog's museum picker shows
+        "place": _place_ref(museum),
         "city": city_ref(museum.city),
         # the address in one line, and its parts (the city carries region and country)
         "address": museum.address,
         **_address_parts(museum),
         "latitude": museum.latitude,
         "longitude": museum.longitude,
-        "url": museum.url,
+        "url": museum.website,
         "image": image_url(museum.image_id),
         "visits": visits,
         # what its card, the sorting and the filters go by: when it was last visited, the rating
@@ -497,14 +517,103 @@ def api_chess_game(row_id: int) -> flask.Response:
     })
 
 
+def _museum_visit_type() -> VisitType:
+    found = flask.g.db.scalars(select(VisitType).where(VisitType.name == MUSEUM_VISIT)).first()
+    if found is None:
+        raise ApiError(500, f"there is no visit type {MUSEUM_VISIT!r}")
+    return found
+
+
+def _museum_visits(place_id: int | None = None) -> dict[Place, list[Visit]]:
+    """ The signed-in user's museum visits, by the museum (a place) each was to. """
+    query = (
+        select(Visit).join(VisitType).where(Visit.owner_id == flask.g.user.id, VisitType.name == MUSEUM_VISIT, Visit.place_id.is_not(None))
+        .options(selectinload(Visit.people), selectinload(Visit.place).selectinload(Place.city).selectinload(City.country))
+        .order_by(Visit.id)
+    )
+    if place_id is not None:
+        query = query.where(Visit.place_id == place_id)
+    by_place: dict[Place, list[Visit]] = {}
+    for visit in flask.g.db.scalars(query):
+        assert visit.place is not None
+        by_place.setdefault(visit.place, []).append(visit)
+    return by_place
+
+
 @bp.route("/api/museum-visits", methods=["GET"])
 @auth.login_required
 def api_museums() -> flask.Response:
-    query = select(Museum).where(Museum.owner_id == flask.g.user.id).options(
-        selectinload(Museum.visits).selectinload(MuseumVisit.people), selectinload(Museum.city).selectinload(City.country),
-    )
-    museums = flask.g.db.execute(query).scalars().all()
-    return flask.jsonify(_newest_first([museum_json(m) for m in museums]))
+    """ The museums the user visited (shared places), each with their visits to it. """
+    return flask.jsonify(_newest_first([museum_json(place, visits) for place, visits in _museum_visits().items()]))
+
+
+def _museum(body: dict[str, Any] | None, place_id: int | None = None) -> Place:
+    """ The museum a request is about: the place of place_id (a route's) or body's place_id, which must be a museum. """
+    place = flask.g.db.get(Place, place_id) if place_id is not None else owned_ref(body or {}, "place_id", Place, "place")
+    if place is None:
+        raise ApiError(404 if place_id is not None else 400, "no such museum" if place_id is not None else "place_id: choose the museum")
+    if not any(kind.name == MUSEUM_KIND for kind in place.kinds):
+        raise ApiError(400, f"{place.name} is not a museum (a place of the kind {MUSEUM_KIND}): an admin can say it is, on the Places page")
+    return place
+
+
+def _apply_museum_visits(place: Place, had: list[Visit], body: dict[str, Any]) -> list[Visit]:
+    """
+    visits, sent, are all the user's visits to the museum: one with the id of
+    a visit they had is that visit, changed; the others are new, and those
+    they had that are not sent are gone.
+    """
+    sent = body.get("visits")
+    if not isinstance(sent, list) or not all(isinstance(item, dict) for item in sent):
+        raise ApiError(400, "visits: expected a list of visits")
+    by_id = {visit.id: visit for visit in had}
+    kind = _museum_visit_type()
+    visits: list[Visit] = []
+    for item in sent:
+        visit_id = item.get("id")
+        if visit_id is not None and (visit_id not in by_id or visit_id in {visit.id for visit in visits}):
+            raise ApiError(400, "visits: unknown visit")
+        visit = by_id[visit_id] if visit_id is not None else Visit(owner_id=flask.g.user.id, place=place, type=kind)
+        _apply_visit(visit, item)
+        visits.append(visit)
+        flask.g.db.add(visit)
+    for visit in had:
+        if visit not in visits:
+            flask.g.db.delete(visit)
+    return visits
+
+
+@bp.route("/api/museum-visits", methods=["POST"])
+@auth.login_required
+def api_museum_add() -> tuple[flask.Response, int]:
+    """ The user's visits to a museum they have none of yet: {"place_id": ..., "visits": [...]}. """
+    body = json_body()
+    place = _museum(body)
+    if _museum_visits(place.id):
+        raise ApiError(409, f"{place.name} is in your Museums already: add the visit to it")
+    visits = _apply_museum_visits(place, [], body)
+    flask.g.db.commit()
+    return flask.jsonify(museum_json(place, visits)), 201
+
+
+@bp.route("/api/museum-visits/<int:place_id>", methods=["PUT"])
+@auth.login_required
+def api_museum_update(place_id: int) -> flask.Response:
+    """ All the user's visits to the museum place_id: {"visits": [...]}. The museum itself is shared: an admin changes it on the Places page. """
+    place = _museum(None, place_id)
+    visits = _apply_museum_visits(place, _museum_visits(place.id).get(place, []), json_body())
+    flask.g.db.commit()
+    return flask.jsonify(museum_json(place, visits))
+
+
+@bp.route("/api/museum-visits/<int:place_id>", methods=["DELETE"])
+@auth.login_required
+def api_museum_delete(place_id: int) -> flask.Response:
+    """ The user's visits to the museum place_id; the museum stays, everyone's. """
+    for visit in _museum_visits(place_id).get(flask.g.db.get(Place, place_id), []):
+        flask.g.db.delete(visit)
+    flask.g.db.commit()
+    return flask.Response(status=204)
 
 
 @bp.route("/api/people", methods=["GET"])
@@ -547,7 +656,9 @@ def api_organizations() -> flask.Response:
 @bp.route("/api/places", methods=["GET"])
 @auth.login_required
 def api_places() -> flask.Response:
-    query = select(Place).where(Place.owner_id == flask.g.user.id).options(selectinload(Place.concerts), selectinload(Place.city).selectinload(City.country)).order_by(Place.name, Place.id)
+    query = select(Place).options(
+        selectinload(Place.concerts), selectinload(Place.visits), selectinload(Place.kinds), selectinload(Place.city).selectinload(City.country),
+    ).order_by(Place.name, Place.id)
     places = flask.g.db.execute(query).scalars().all()
     return flask.jsonify([place_json(p) for p in places])
 
@@ -564,9 +675,9 @@ def api_groups() -> flask.Response:
 @auth.login_required
 def api_cities() -> flask.Response:
     query = (
-        select(City).where(City.owner_id == flask.g.user.id)
+        select(City)
         .options(
-            selectinload(City.places), selectinload(City.museums), selectinload(City.organizations), selectinload(City.headquarters_of), selectinload(City.country),
+            selectinload(City.places).selectinload(Place.kinds), selectinload(City.organizations), selectinload(City.headquarters_of), selectinload(City.country),
         )
         .order_by(City.name, City.id)
     )
@@ -576,8 +687,8 @@ def api_cities() -> flask.Response:
 @bp.route("/api/regions", methods=["GET"])
 @auth.login_required
 def api_regions() -> flask.Response:
-    """ The regions the user's cities say, each with its country and its cities: what the city form offers. """
-    query = select(Region).where(Region.owner_id == flask.g.user.id).options(selectinload(Region.cities), selectinload(Region.country)).order_by(Region.name, Region.id)
+    """ The regions the cities say, each with its country and its cities: what the city form offers. """
+    query = select(Region).options(selectinload(Region.cities), selectinload(Region.country)).order_by(Region.name, Region.id)
     return flask.jsonify([
         {"id": region.id, "name": region.name, "country": country_ref(region.country), "cities": _refs(region.cities)}
         for region in flask.g.db.execute(query).scalars().all()
@@ -587,7 +698,7 @@ def api_regions() -> flask.Response:
 @bp.route("/api/countries", methods=["GET"])
 @auth.login_required
 def api_countries() -> flask.Response:
-    query = select(Country).where(Country.owner_id == flask.g.user.id).options(selectinload(Country.cities)).order_by(Country.name)
+    query = select(Country).options(selectinload(Country.cities)).order_by(Country.name)
     return flask.jsonify([country_json(c) for c in flask.g.db.execute(query).scalars().all()])
 
 
@@ -597,7 +708,7 @@ def api_countries() -> flask.Response:
 
 
 
-def _apply_dates(row: Concert | MuseumVisit | AudioCourse | YouTubeVideo, body: dict[str, Any]) -> None:
+def _apply_dates(row: Concert | Visit | AudioCourse | YouTubeVideo, body: dict[str, Any]) -> None:
     """
     The date as typed: YYYY, YYYY-MM or YYYY-MM-DD, stored at that precision,
     or nothing. date_timezone is where it happened (an IANA name). A date
@@ -674,12 +785,11 @@ def _apply_concert(concert: Concert, body: dict[str, Any]) -> None:
 
 def _apply_country(country: Country, body: dict[str, Any]) -> None:
     name = text(body, "name", required=True)
-    clash = flask.g.db.execute(select(Country.id).where(Country.owner_id == flask.g.user.id, Country.name == name, Country.id != country.id)).first()
+    clash = flask.g.db.execute(select(Country.id).where(Country.name == name, Country.id != country.id)).first()
     if clash is not None:
         raise ApiError(409, f"{name} is already in Countries")
     country.name = name
     country.latitude, country.longitude = coordinates(body)
-    country.remark = text(body, "remark")
     apply_picture(country, body)
 
 
@@ -691,10 +801,10 @@ def _apply_city(city: City, body: dict[str, Any]) -> None:
     name = text(body, "name", required=True)
     country = owned_ref(body, "country_id", Country, "country")
     # its region, by name: the row of that name in that country, made when a city first says it
-    region = region_for(flask.g.db, flask.g.user.id, text(body, "region"), country)
+    region = region_for(flask.g.db, text(body, "region"), country)
     clash = flask.g.db.execute(
         select(City.id).where(
-            City.owner_id == flask.g.user.id, City.name == name,
+            City.name == name,
             City.region_id == region.id if region is not None and region.id is not None else City.region_id.is_(None),
             City.country_id == country.id if country else City.country_id.is_(None), City.id != city.id,
         )
@@ -704,7 +814,6 @@ def _apply_city(city: City, body: dict[str, Any]) -> None:
         raise ApiError(409, f"{name}{', ' + country.name if country else ''} is already in Cities")
     city.name, city.region_row, city.country = name, region, country
     city.latitude, city.longitude = coordinates(body)
-    city.remark = text(body, "remark")
     if "photos" in body:
         # all its photos, replacing those it had: the first is the one its card shows
         # (cities.image_id and its credit), the others follow it
@@ -720,7 +829,7 @@ def _apply_place(place: Place, body: dict[str, Any]) -> None:
     city = owned_ref(body, "city_id", City, "city")
     clash = flask.g.db.execute(
         select(Place.id).where(
-            Place.owner_id == flask.g.user.id, Place.name == name, Place.city_id == city.id if city else Place.city_id.is_(None), Place.id != place.id,
+            Place.name == name, Place.city_id == city.id if city else Place.city_id.is_(None), Place.id != place.id,
         )
     ).first()
     if clash is not None:
@@ -730,7 +839,7 @@ def _apply_place(place: Place, body: dict[str, Any]) -> None:
     _apply_address(place, body)
     place.latitude, place.longitude = coordinates(body)
     place.website = text(body, "website")
-    place.remark = text(body, "remark")
+    place.kinds = owned_list(body, "kinds", PlaceKind)
     apply_picture(place, body)
 
 
@@ -748,7 +857,7 @@ def _apply_group(group: Group, body: dict[str, Any]) -> None:
     apply_picture(group, body)
 
 
-def _apply_visit(visit: MuseumVisit, body: dict[str, Any]) -> None:
+def _apply_visit(visit: Visit, body: dict[str, Any]) -> None:
     visit.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
     visit.review = text(body, "review")
     visit.remark = text(body, "remark")
@@ -760,40 +869,23 @@ def _apply_visit(visit: MuseumVisit, body: dict[str, Any]) -> None:
     _apply_dates(visit, body)
 
 
-def _apply_museum(museum: Museum, body: dict[str, Any]) -> None:
-    name = text(body, "name", required=True)
-    city = owned_ref(body, "city_id", City, "city")
-    clash = flask.g.db.execute(
-        select(Museum.id).where(
-            Museum.owner_id == flask.g.user.id, Museum.name == name, Museum.city_id == city.id if city else Museum.city_id.is_(None), Museum.id != museum.id,
-        )
-    ).first()
-    if clash is not None:
-        raise ApiError(409, f"{name}{', ' + city.name if city else ''} is already in Museums: add the visit to it")
-    museum.name = name
-    museum.city = city
-    _apply_address(museum, body)
-    museum.latitude, museum.longitude = coordinates(body)
-    museum.url = text(body, "url")
-    apply_image(museum, body)
-    # visits, sent, are all the visits of the museum: one with the id of a visit it has is
-    # that visit, changed; the others are new, and those it had that are not sent are gone.
-    # Not sent, they stay
-    if "visits" not in body:
-        return
-    sent = body["visits"]
-    if not isinstance(sent, list) or not all(isinstance(item, dict) for item in sent):
-        raise ApiError(400, "visits: expected a list of visits")
-    had = {visit.id: visit for visit in museum.visits}
-    visits = []
-    for item in sent:
-        visit_id = item.get("id")
-        if visit_id is not None and (visit_id not in had or visit_id in {visit.id for visit in visits}):
-            raise ApiError(400, "visits: unknown visit")
-        visit = had[visit_id] if visit_id is not None else MuseumVisit()
-        _apply_visit(visit, item)
-        visits.append(visit)
-    museum.visits = visits
+def place_kind_json(kind: PlaceKind) -> dict[str, Any]:
+    return {"id": kind.id, "name": kind.name, "count": len(kind.places)}
+
+
+def visit_type_json(kind: VisitType) -> dict[str, Any]:
+    # how many visits are of it: the signed-in user's
+    return {"id": kind.id, "name": kind.name, "count": len(_mine(kind.visits))}
+
+
+def _apply_named(model: type[PlaceKind | VisitType], what: str) -> Callable[[Any, dict[str, Any]], None]:
+    """ How a body is applied to a shared list of names (place kinds, visit types): a name once in it. """
+    def apply(row: Any, body: dict[str, Any]) -> None:
+        name = text(body, "name", required=True)
+        if flask.g.db.execute(select(model.id).where(model.name == name, model.id != row.id)).first() is not None:
+            raise ApiError(409, f"{name} is already in {what}")
+        row.name = name
+    return apply
 
 
 def _stamp(body: dict[str, Any], key: str, current: datetime.datetime | None) -> datetime.datetime | None:
@@ -1123,10 +1215,9 @@ class _View:
 
 
 # the path of a view (/api/<path>) -> the view
+# (museum-visits, a museum with the user's visits to it, has routes of its own above)
 VIEWS: dict[str, _View] = {
     "concert-visits": _View(Concert, _apply_concert, concert_json),
-    # a museum, with its visits
-    "museum-visits": _View(Museum, _apply_museum, museum_json),
     "audio-courses": _View(AudioCourse, _apply_audio_course, audio_course_json),
     "youtube-videos": _View(YouTubeVideo, _apply_youtube_video, youtube_video_json),
     "chess-games": _View(ChessGame, _apply_chess_game, chess_game_json),
@@ -1136,11 +1227,29 @@ VIEWS: dict[str, _View] = {
     "groups": _View(Group, _apply_group, group_json),
     "cities": _View(City, _apply_city, city_json),
     "countries": _View(Country, _apply_country, country_json),
+    "place-kinds": _View(PlaceKind, _apply_named(PlaceKind, "Place kinds"), place_kind_json),
+    "visit-types": _View(VisitType, _apply_named(VisitType, "Visit types"), visit_type_json),
 }
+
+
+@bp.route("/api/<any('place-kinds', 'visit-types'):what>", methods=["GET"])
+@auth.login_required
+def api_shared_names(what: str) -> flask.Response:
+    view = VIEWS[what]
+    rows = flask.g.db.scalars(select(view.model).order_by(view.model.name))
+    return flask.jsonify([view.json(row) for row in rows])
+
+
+def _may_change(model: type[Any]) -> None:
+    """ A shared row is everyone's: only an admin adds, changes or deletes one. """
+    if is_shared(model) and flask.g.user.role != ROLE_ADMIN:
+        raise ApiError(403, "this is shared by everyone: only an admin may change it")
+
+
 def drop_unused_regions() -> None:
     """ A region no city says any more (its last city moved, or was deleted) goes too. """
     used = select(City.region_id).where(City.region_id.is_not(None))
-    for region in flask.g.db.scalars(select(Region).where(Region.owner_id == flask.g.user.id, Region.id.not_in(used))):
+    for region in flask.g.db.scalars(select(Region).where(Region.id.not_in(used))):
         flask.g.db.delete(region)
 
 
@@ -1152,7 +1261,8 @@ WHAT = f"<any({', '.join(repr(path) for path in VIEWS)}):what>"
 @auth.login_required
 def api_world_add(what: str) -> tuple[flask.Response, int]:
     view = VIEWS[what]
-    row = view.model(owner_id=flask.g.user.id)
+    _may_change(view.model)
+    row = view.model() if is_shared(view.model) else view.model(owner_id=flask.g.user.id)
     view.apply(row, json_body())
     flask.g.db.add(row)
     flask.g.db.commit()
@@ -1163,6 +1273,7 @@ def api_world_add(what: str) -> tuple[flask.Response, int]:
 @auth.login_required
 def api_world_update(what: str, row_id: int) -> flask.Response:
     view = VIEWS[what]
+    _may_change(view.model)
     row = owned(view.model, row_id)
     view.apply(row, json_body())
     # a picture taken away or replaced goes, with its image; so does a region no city says any more
@@ -1178,6 +1289,7 @@ def api_world_update(what: str, row_id: int) -> flask.Response:
 def api_world_delete(what: str, row_id: int) -> flask.Response:
     # the ORM also removes the row's links (to people, to organizations, to concerts and museums);
     # the concerts at a deleted place are kept, with no place
+    _may_change(VIEWS[what].model)
     flask.g.db.delete(owned(VIEWS[what].model, row_id))
     flask.g.db.flush()
     drop_unused_images()

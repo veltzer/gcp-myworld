@@ -315,18 +315,8 @@ const WORLD_BODIES = {
 		if (visits === null) {
 			throw new Error("A visit's rating or tickets is not a number: put it right");
 		}
-		return {
-			name: value("name"),
-			city_id: value("city_id"),
-			street: value("street"),
-			neighbourhood: value("neighbourhood"),
-			postcode: value("postcode"),
-			latitude: value("latitude"),
-			longitude: value("longitude"),
-			url: value("url"),
-			visits,
-			...(await pictureBody(form)),
-		};
+		// the museum is a shared place: only which one, and the user's visits to it
+		return { place_id: value("place_id"), visits };
 	},
 	groups: async (form) => ({
 		name: form.elements.name.value,
@@ -343,16 +333,17 @@ const WORLD_BODIES = {
 			country_id: value("country_id"),
 			latitude: value("latitude"),
 			longitude: value("longitude"),
-			remark: value("remark"),
 			// all its photos, each with its credit: the first is the one its card shows
 			photos: (await pictures(form)).map((photo) => ({
 				image_id: photo.id, image_source: photo.image_source || "", image_license: photo.image_license || "", image_author: photo.image_author || "",
 			})),
 		};
 	},
+	"place-kinds": async (form) => ({ name: form.elements.name.value }),
+	"visit-types": async (form) => ({ name: form.elements.name.value }),
 	countries: async (form) => {
 		const value = (name) => form.elements[name].value;
-		return { name: value("name"), latitude: value("latitude"), longitude: value("longitude"), remark: value("remark"), ...(await pictureFields(form)) };
+		return { name: value("name"), latitude: value("latitude"), longitude: value("longitude"), ...(await pictureFields(form)) };
 	},
 	places: async (form) => {
 		const value = (name) => form.elements[name].value;
@@ -365,7 +356,7 @@ const WORLD_BODIES = {
 			latitude: value("latitude"),
 			longitude: value("longitude"),
 			website: value("website"),
-			remark: value("remark"),
+			kinds: chosen(form, "kinds"),
 			...(await pictureFields(form)),
 		};
 	},

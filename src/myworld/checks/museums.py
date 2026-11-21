@@ -1,5 +1,6 @@
 """
-Checks of the museums and of the visits to them.
+Checks of the museums (shared places of the kind Museum) and of the users'
+visits to them (visits of the type Museum visit).
 """
 
 from sqlalchemy import select
@@ -14,22 +15,24 @@ from myworld.checks.core import (
     twice,
 )
 from myworld.models import (
-    Museum,
-    MuseumVisit,
-    museum_companions,
+    MUSEUM_KIND,
+    MUSEUM_VISIT,
+    Place,
+    Visit,
+    VisitType,
+    visit_companions,
 )
 
 
-def _visits(session: Session) -> list[MuseumVisit]:
-    """ Every visit of every museum, by its museum and then as added. """
-    return [visit for museum in rows(session, Museum) for visit in museum.visits]
+def _museums(session: Session) -> list[Place]:
+    """ Every museum: the places of the kind Museum, by name and then as added. """
+    return [place for place in rows(session, Place) if any(kind.name == MUSEUM_KIND for kind in place.kinds)]
 
 
-@check("museum-visits", "Every museum has a visit", "museums", "museums")
-def check_museum_visits(session: Session) -> Result:
-    """ Every museum, of every account, has at least one visit: when you went, what you thought of it and who you went with. """
-    museums = rows(session, Museum)
-    return Result(checked=len(museums), problems=[problem(museum, "has no visit") for museum in museums if not museum.visits])
+def _visits(session: Session) -> list[Visit]:
+    """ Every museum visit, of every account: by account, then as added. """
+    query = select(Visit).join(VisitType).where(VisitType.name == MUSEUM_VISIT).order_by(Visit.owner_id, Visit.id)
+    return list(session.scalars(query))
 
 
 @check("museum-dates", "Every museum visit has a date", "museum visits", "museums")
@@ -44,17 +47,30 @@ def check_museum_dates(session: Session) -> Result:
     return Result(checked=len(visits), problems=problems)
 
 
+@check("museum-visit-places", "Every museum visit is to a museum", "museum visits", "museums")
+def check_museum_visit_places(session: Session) -> Result:
+    """ Every museum visit, of every account, is to a place of the kind Museum: not to none (an admin deleted it), nor to a place that is no museum. """
+    visits = _visits(session)
+    problems = []
+    for visit in visits:
+        if visit.place is None:
+            problems.append(problem(visit, "is to no place"))
+        elif not any(kind.name == MUSEUM_KIND for kind in visit.place.kinds):
+            problems.append(problem(visit, f"is to {visit.place.name}, which is not of the kind {MUSEUM_KIND}"))
+    return Result(checked=len(visits), problems=problems)
+
+
 @check("museum-addresses", "Every museum has an address", "museums", "museums")
 def check_museum_addresses(session: Session) -> Result:
-    """ Every museum, of every account, has its street address. """
-    museums = rows(session, Museum)
+    """ Every museum has its street address. """
+    museums = _museums(session)
     return Result(checked=len(museums), problems=[problem(museum, "has no address") for museum in museums if not museum.street.strip()])
 
 
 @check("museum-locations", "Every museum is on the map", "museums", "museums")
 def check_museum_locations(session: Session) -> Result:
-    """ Every museum, of every account, has a latitude and a longitude (scripts/geocode.py finds them from the address). """
-    museums = rows(session, Museum)
+    """ Every museum has a latitude and a longitude (scripts/geocode.py finds them from the address). """
+    museums = _museums(session)
     problems = [problem(museum, "has no latitude and longitude") for museum in museums if museum.latitude is None or museum.longitude is None]
     return Result(checked=len(museums), problems=problems)
 
@@ -66,7 +82,7 @@ def check_museum_company(session: Session) -> Result:
     with or is marked "I went alone", so an empty With is never a gap
     nobody filled in; and none is both.
     """
-    with_people = set(session.scalars(select(museum_companions.c.museum_id)))
+    with_people = set(session.scalars(select(visit_companions.c.visit_id)))
     visits = _visits(session)
     problems = []
     for visit in visits:
@@ -79,15 +95,15 @@ def check_museum_company(session: Session) -> Result:
 
 @check("museum-photos", "Every museum has a photo", "museums", "museums")
 def check_museum_photos(session: Session) -> Result:
-    """ Every museum, of every account, has a photo. """
-    museums = rows(session, Museum)
+    """ Every museum has a photo. """
+    museums = _museums(session)
     return Result(checked=len(museums), problems=[problem(museum, "has no photo") for museum in museums if museum.image_id is None])
 
 
 @check("museum-cities", "Every museum is in a city", "museums", "museums")
 def check_museum_cities(session: Session) -> Result:
-    """ Every museum, of every account, says which city it is in (the Cities page). """
-    museums = rows(session, Museum)
+    """ Every museum says which city it is in (the Cities page). """
+    museums = _museums(session)
     return Result(checked=len(museums), problems=[problem(museum, "has no city") for museum in museums if museum.city_id is None])
 
 
@@ -105,6 +121,6 @@ def check_museum_ratings(session: Session) -> Result:
 
 @check("museum-duplicates", "No museum is listed twice", "museums", "museums")
 def check_museum_duplicates(session: Session) -> Result:
-    """ No account has two museums of the same name in the same city (ignoring case and spaces): a second visit is a visit of the first. """
-    museums = rows(session, Museum)
-    return Result(checked=len(museums), problems=twice(museums, lambda m: (m.owner_id, squashed(m.name), m.city_id or 0), "name and city"))
+    """ No two museums have the same name in the same city (ignoring case and spaces). """
+    museums = _museums(session)
+    return Result(checked=len(museums), problems=twice(museums, lambda m: (squashed(m.name), m.city_id or 0), "name and city"))
