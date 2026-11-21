@@ -99,7 +99,7 @@ export function renderWorld() {
 	$("cards").replaceChildren(...(map ? [] : page.map(CARDS[view])));
 	$("world-map").hidden = !map;
 	// "Audio courses" -> "audio courses"; a name with capitals inside ("YouTube videos") stays
-	const title = WORLDS[view][0].replace(/^My /, "");
+	const title = WORLDS[view][0].replace(/^(My|Your) /, "");
 	const what = /^.+[A-Z]/.test(title) ? title : title.toLowerCase();
 	const counted = COUNTS[view];
 	setCount(view, counted ? counted(items)[0] : items.length);

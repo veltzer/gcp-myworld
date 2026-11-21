@@ -19,6 +19,7 @@ from myworld.models import (
     AudioBook,
     AudioCourse,
     Device,
+    EpisodeHeard,
     Organization,
     OrganizationType,
     PersonOrganization,
@@ -26,7 +27,6 @@ from myworld.models import (
     PersonRelation,
     PersonRelationType,
     PersonType,
-    PodcastEpisode,
     RelationType,
     YouTubeVideo,
     organization_relation_types,
@@ -95,4 +95,4 @@ _enumeration_checks("person-relation-types", PersonRelationType, lambda session:
 _enumeration_checks("person-organization-types", PersonOrganizationType, lambda session: ids(session, PersonOrganization.relation_type_id))
 
 
-_enumeration_checks("devices", Device, lambda session: ids(session, AudioCourse.device_id, AudioBook.device_id, PodcastEpisode.device_id, YouTubeVideo.device_id))
+_enumeration_checks("devices", Device, lambda session: ids(session, AudioCourse.device_id, AudioBook.device_id, EpisodeHeard.device_id, YouTubeVideo.device_id))

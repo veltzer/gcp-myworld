@@ -49,10 +49,12 @@ checkout of the site's history that has them.
 
 Podcasts come from data/yaml/podcasts.yaml: each podcast with its cover
 (static/images/podcast-<internal_id>.jpg) and the episodes of it heard
-(chapters), each as its feed says it and when, where and on what it was
-heard. A podcast is found again by its name and an episode by its feed's
-guid, so --podcasts adds only what is missing and can run again; the full
-import includes them when the source has the file.
+(chapters), each as its feed says it, go to the shared podcasts and
+episodes (found again by the podcast's name and the episode's guid); the
+user's rating and review of a podcast to their podcasts heard, and when,
+where and on what each episode was heard to their episodes heard. Only
+what is missing is added, so --podcasts can run again; the full import
+includes them when the source has the file.
 
 The full import (no mode flag) replaces everything the user had in these
 tables, in one transaction. It is meant for an empty account: when the
@@ -121,6 +123,7 @@ from myworld.models import (
     Country,
     Cover,
     Device,
+    EpisodeHeard,
     Group,
     Image,
     Organization,
@@ -137,6 +140,7 @@ from myworld.models import (
     PlaceKind,
     Podcast,
     PodcastEpisode,
+    PodcastHeard,
     Read,
     RelationType,
     User,
@@ -512,7 +516,7 @@ def find_owner(session: Session, email: str, subject: str | None) -> User:
 # what the full import deletes and makes again, so what an account must not have unless it is replaced on purpose;
 # the shared rows (countries, cities, places) are everyone's: never deleted, found again or added
 REPLACED_MODELS = (
-    AudioCourse, AudioBook, PodcastEpisode, Podcast, YouTubeVideo, Device, Concert, Visit, Group, Person, Organization,
+    AudioCourse, AudioBook, EpisodeHeard, PodcastHeard, YouTubeVideo, Device, Concert, Visit, Group, Person, Organization,
     OrganizationType, PersonType, RelationType, PersonRelationType, PersonOrganizationType, Image,
 )
 
@@ -520,7 +524,7 @@ REPLACED_MODELS = (
 def _shared_image_ids(session: Session) -> set[int]:
     """ The images shared rows show: kept whoever uploaded them (a full import replaces only an account's own). """
     found: set[int] = set()
-    for model in (Place, City, Country):
+    for model in (Place, Podcast, City, Country):
         found |= {image_id for image_id in session.scalars(select(model.image_id)) if image_id is not None}
     return found
 
@@ -1265,25 +1269,27 @@ def _published(value: str, where: str) -> datetime.datetime:
 
 def import_podcasts(session: Session, owner: User, source: Path) -> dict[str, int]:
     """
-    Add owner's podcasts (podcasts.yaml) with their covers
-    (static/images/podcast-<internal_id>.jpg) and the episodes of them heard:
-    a podcast is found again by its name, an episode in it by its feed's
-    guid, and only what owner does not have yet is added, so it runs again
-    safely and keeps what was edited. Does not commit.
+    Add the podcasts of podcasts.yaml to the shared ones, with their covers
+    (static/images/podcast-<internal_id>.jpg) and the episodes heard, and
+    owner's listening to them: a podcast is found again by its name and an
+    episode in it by its feed's guid (both shared, everyone's), and owner's
+    podcast heard (rating, review) and episodes heard (when, where, on what
+    device) are added where owner has none yet. Only what is missing is
+    added, so it runs again safely and keeps what was edited. Does not commit.
     """
     path = _podcasts_path(source)
     if not path.exists():
         raise WorldImportError(f"{path} is not there ({NOT_KEPT})")
     items = _items(source, "podcasts", PODCAST_FIELDS)
     image_dir = source / "static" / "images"
-    have = {p.name: p for p in session.scalars(select(Podcast).where(Podcast.owner_id == owner.id).options(selectinload(Podcast.episodes)))}
+    have = {p.name: p for p in session.scalars(select(Podcast).options(selectinload(Podcast.heard), selectinload(Podcast.episodes).selectinload(PodcastEpisode.heard)))}
     device = Devices(session, owner)
-    counts = {"podcasts added": 0, "podcast episodes added": 0, "covers added": 0}
+    counts = {"podcasts added": 0, "podcast episodes added": 0, "covers added": 0, "podcasts heard added": 0, "episodes heard added": 0}
     for item in items:
         name = str(item["name"]).strip()
         podcast = have.get(name)
         if podcast is None:
-            podcast = Podcast(owner_id=owner.id, name=name, url=item.get("url", ""), rss_feed=item.get("rss_feed", ""), rating=item.get("rating"), review=item.get("review", ""))
+            podcast = Podcast(name=name, url=item.get("url", ""), rss_feed=item.get("rss_feed", ""))
             session.add(podcast)
             have[name] = podcast
             counts["podcasts added"] += 1
@@ -1292,34 +1298,44 @@ def import_podcasts(session: Session, owner: User, source: Path) -> dict[str, in
             data = cover.read_bytes()
             podcast.image = Image(owner_id=owner.id, filename=cover.name, content_type="image/jpeg", sha256=hashlib.sha256(data).hexdigest(), data=data)
             counts["covers added"] += 1
-        heard = {e.guid for e in podcast.episodes}
+        if not any(row.owner_id == owner.id for row in podcast.heard):
+            podcast.heard.append(PodcastHeard(owner_id=owner.id, rating=item.get("rating"), review=item.get("review", "")))
+            counts["podcasts heard added"] += 1
+        episodes = {e.guid: e for e in podcast.episodes if e.guid}
         for chapter in item.get("chapters", []):
             unknown = set(chapter) - PODCAST_EPISODE_FIELDS
             where = f"{path}: {name!r}, {chapter.get('title')!r}"
             if unknown:
                 raise WorldImportError(f"{where} has fields this import does not know: {sorted(unknown)}")
             guid = str(chapter["guid"]) if chapter.get("guid") else None
-            if guid is not None and guid in heard:
+            episode = episodes.get(guid) if guid is not None else None
+            if episode is None:
+                episode = PodcastEpisode(
+                    name=str(chapter["title"]),
+                    description=str(chapter.get("description", "")),
+                    published_utcz=_published(str(chapter["pubDate"]), where) if chapter.get("pubDate") else None,
+                    number=chapter.get("episode"),
+                    duration=chapter.get("duration"),
+                    episode_type=str(chapter.get("episodeType", "")),
+                    explicit=str(chapter.get("explicit", "")),
+                    enclosure_url=str(chapter.get("enclosure_url", "")),
+                    image_url=str(chapter.get("image", "")),
+                    author=str(chapter.get("author", "")),
+                    guid=guid,
+                )
+                podcast.episodes.append(episode)
+                if guid is not None:
+                    episodes[guid] = episode
+                counts["podcast episodes added"] += 1
+            if any(heard.owner_id == owner.id for heard in episode.heard):
                 continue
-            podcast.episodes.append(PodcastEpisode(
+            episode.heard.append(EpisodeHeard(
                 owner_id=owner.id,
-                name=str(chapter["title"]),
-                description=str(chapter.get("description", "")),
-                published_utcz=_published(str(chapter["pubDate"]), where) if chapter.get("pubDate") else None,
-                number=chapter.get("episode"),
-                duration=chapter.get("duration"),
-                episode_type=str(chapter.get("episodeType", "")),
-                explicit=str(chapter.get("explicit", "")),
-                enclosure_url=str(chapter.get("enclosure_url", "")),
-                image_url=str(chapter.get("image", "")),
-                author=str(chapter.get("author", "")),
-                guid=guid,
                 listened_at=str(chapter.get("location", "")),
                 device=device(str(chapter.get("device", ""))),
                 **_dates({**chapter, "name": chapter.get("title")}),
             ))
-            heard.add(guid)
-            counts["podcast episodes added"] += 1
+            counts["episodes heard added"] += 1
     session.flush()
     return {**counts, "devices added": device.added}
 

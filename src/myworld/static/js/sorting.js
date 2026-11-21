@@ -6,7 +6,7 @@ import { $ } from "./core.js";
 import { renderEntries, state } from "./library.js";
 import { MAPPED } from "./map.js";
 import { pagerOff, renderWorld } from "./paging.js";
-import { WORLDS, canChange, sharedLockedWhy } from "./worlds.js";
+import { FILTERED_VIEWS, WORLDS, canChange, sharedLockedWhy } from "./worlds.js";
 
 // view -> the fields it can be sorted by: [key, label, value of an item, first direction].
 // The first field is the default. A view with none still shows the (disabled) control.
@@ -55,14 +55,29 @@ const SORTS = {
 		["source_rating", "Rating there", (b) => b.source_rating, "desc"],
 	],
 	podcasts: [
+		["name", "Name", (p) => p.name, "asc"],
+		// the newest episode's publishing
+		["published", "Latest episode", (p) => p.published, "desc"],
+		["episodes", "Episodes", (p) => p.episodes, "desc"],
+		["heard", "Heard", (p) => p.heard, "desc"],
+	],
+	"podcast-episodes": [
+		["published", "Published", (e) => e.published, "desc"],
+		["name", "Title", (e) => e.name, "asc"],
+		["podcast", "Podcast", (e) => e.podcast?.name, "asc"],
+		["number", "Number", (e) => e.number, "asc"],
+		["duration", "Length", (e) => e.duration, "desc"],
+		["heard", "Heard", (e) => e.heard?.date_sort ?? null, "desc"],
+	],
+	"podcasts-heard": [
 		// when an episode of it was last heard
 		["date", "Last heard", (p) => p.date_sort, "desc"],
 		["name", "Name", (p) => p.name, "asc"],
 		["rating", "Rating", (p) => p.rating, "desc"],
-		["episodes", "Episodes", (p) => p.episodes, "desc"],
+		["episodes", "Episodes heard", (p) => p.episodes.length, "desc"],
 		["duration", "Time heard", (p) => p.duration, "desc"],
 	],
-	"podcast-episodes": [
+	"episodes-heard": [
 		["date", "Heard", (e) => e.date_sort, "desc"],
 		["name", "Title", (e) => e.name, "asc"],
 		["podcast", "Podcast", (e) => e.podcast?.name, "asc"],
@@ -257,8 +272,10 @@ export function updateTools() {
 	$("world-search").disabled = PAGES.has(state.view);
 	// a shared page (places, cities, ...) is added to by admins only: the button stays, disabled for anyone else
 	const shared = !canChange(state.view);
-	$("fab").disabled = PAGES.has(state.view) || shared;
-	$("fab").title = shared ? sharedLockedWhy() : "Add";
+	// a page of shared data filtered for the user (Your podcasts) is added to elsewhere: the button stays, disabled
+	const filtered = FILTERED_VIEWS[state.view];
+	$("fab").disabled = PAGES.has(state.view) || shared || Boolean(filtered);
+	$("fab").title = shared ? sharedLockedWhy() : filtered || "Add";
 	const cards = state.view in CARDS || state.view in state.config.kinds;
 	for (const layout of $("layouts").querySelectorAll("button")) {
 		layout.disabled = !cards || (layout.dataset.layout === "map" && !MAPPED.has(state.view));

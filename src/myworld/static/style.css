@@ -1357,6 +1357,11 @@ button.danger {
 	margin-right: 1rem;
 }
 
+/* one kept whole (a label and its short value) is a box of its own: the line breaks between such, never inside */
+.layout-list .world-details li.nowrap {
+	display: inline-block;
+}
+
 .layout-list .world-card.is-cover .world-image {
 	width: 4.5rem;
 	max-height: none;
@@ -2642,6 +2647,22 @@ body.sidebar-folded .sidebar {
 	flex: 1;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+
+/* shared data filtered for the user (Your podcasts) */
+.side-filter {
+	display: inline-flex;
+	color: var(--accent);
+}
+
+.side-filter svg {
+	width: 0.9rem;
+	height: 0.9rem;
+	fill: currentcolor;
+}
+
+.side-link.active .side-filter {
+	color: #fff;
 }
 
 .side-count {

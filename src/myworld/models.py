@@ -1258,7 +1258,7 @@ class Device(_Pictured, Base):
     audio_courses: Mapped[list[AudioCourse]] = relationship(back_populates="device")
     audio_books: Mapped[list[AudioBook]] = relationship(back_populates="device")
     youtube_videos: Mapped[list[YouTubeVideo]] = relationship(back_populates="device")
-    podcast_episodes: Mapped[list[PodcastEpisode]] = relationship(back_populates="device")
+    episodes_heard: Mapped[list[EpisodeHeard]] = relationship(back_populates="device")
 
 
 class AudioCourse(_Dated, Base):
@@ -1373,49 +1373,41 @@ class AudioBook(_Dated, Base):
 
 class Podcast(Base):
     """
-    A podcast the user listens to: its name, its page, its RSS feed, the
-    cover, and what the user thinks of it (rating, review). The episodes
-    heard are PodcastEpisode rows; a podcast with episodes is not deleted.
-    Imported from veltzer.github.io's podcasts.yaml (scripts/import_world.py
-    --podcasts), found again by its name.
+    A podcast: its name, its page, its RSS feed and its cover. Shared: the
+    same for every account, kept by admins (SHARED), its episodes brought
+    from its feed by the Podcast feeds importer (an admin's). What a user
+    thinks of it is their PodcastHeard; a podcast someone heard is not
+    deleted.
     """
     __tablename__ = "podcasts"
-    __table_args__ = (
-        UniqueConstraint("owner_id", "name", name="uq_podcast_name"),
-        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_podcast_rating_range"),
-    )
+    __table_args__ = (UniqueConstraint("name", name="uq_podcast_name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     # its page ("https://therestishistory.com/club"), and its feed, which says its episodes
     url: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     rss_feed: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    review: Mapped[str] = mapped_column(Text, nullable=False, default="")
     image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
     image: Mapped[Image | None] = relationship()
     episodes: Mapped[list[PodcastEpisode]] = relationship(back_populates="podcast", cascade="all, delete-orphan", passive_deletes=True)
+    heard: Mapped[list[PodcastHeard]] = relationship(back_populates="podcast", passive_deletes=True)
 
 
-class PodcastEpisode(_Dated, Base):
+class PodcastEpisode(Base):
     """
-    An episode of a podcast the user heard; the date (_Dated) is when. What
-    the podcast's feed says of it, every field as the feed gives it (title,
+    An episode of a podcast, every field as its feed gives it (title,
     description, when published, its number, length, type, explicit, the
-    audio's and the image's addresses, author, guid), and, as an audio course
-    has them, where it was heard and on what device, and the user's own
-    rating and review. An episode is in a podcast once, by its feed's guid.
+    audio's and the image's addresses, author, guid). Shared, kept by admins
+    (SHARED): who heard it, when, where and what they thought is their
+    EpisodeHeard. An episode is in a podcast once, by its feed's guid.
     """
     __tablename__ = "podcast_episodes"
     __table_args__ = (
         # an episode typed in by hand may have no guid (NULLs never clash)
         UniqueConstraint("podcast_id", "guid", name="uq_podcast_episode_guid"),
-        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_podcast_episode_rating_range"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     podcast_id: Mapped[int] = mapped_column(ForeignKey("podcasts.id", ondelete="CASCADE", name="fk_podcast_episodes_podcast_id"), nullable=False, index=True)
     podcast: Mapped[Podcast] = relationship(back_populates="episodes")
     # the feed's: title, description, pubDate (in UTC), episode (its number), duration
@@ -1432,13 +1424,53 @@ class PodcastEpisode(_Dated, Base):
     image_url: Mapped[str] = mapped_column(String(2000), nullable=False, default="")
     author: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     guid: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    # the user's own
+    heard: Mapped[list[EpisodeHeard]] = relationship(back_populates="episode", passive_deletes=True)
+
+
+class PodcastHeard(Base):
+    """
+    A podcast (a shared one) the user listens to, and what they think of it:
+    their rating and review. The user's own; the episodes of it they heard
+    are their EpisodeHeard rows. A podcast is in a user's once.
+    """
+    __tablename__ = "podcasts_heard"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "podcast_id", name="uq_podcast_heard"),
+        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_podcast_heard_rating_range"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # a podcast someone heard is not deleted (RESTRICT)
+    podcast_id: Mapped[int] = mapped_column(ForeignKey("podcasts.id", ondelete="RESTRICT", name="fk_podcasts_heard_podcast_id"), nullable=False, index=True)
+    podcast: Mapped[Podcast] = relationship(back_populates="heard")
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    review: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class EpisodeHeard(_Dated, Base):
+    """
+    An episode (a shared one) the user heard; the date (_Dated) is when.
+    Where it was heard and on what device, as an audio course has them, and
+    the user's own rating and review. An episode is in a user's once.
+    """
+    __tablename__ = "episodes_heard"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "episode_id", name="uq_episode_heard"),
+        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_episode_heard_rating_range"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # an episode someone heard is not deleted (RESTRICT)
+    episode_id: Mapped[int] = mapped_column(ForeignKey("podcast_episodes.id", ondelete="RESTRICT", name="fk_episodes_heard_episode_id"), nullable=False, index=True)
+    episode: Mapped[PodcastEpisode] = relationship(back_populates="heard")
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     review: Mapped[str] = mapped_column(Text, nullable=False, default="")
     # where it was heard ("Night Walks"), and on what: one of the user's own devices
     listened_at: Mapped[str] = mapped_column(String(100), nullable=False, default="")
-    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id", ondelete="SET NULL", name="fk_podcast_episodes_device_id"), nullable=True)
-    device: Mapped[Device | None] = relationship(back_populates="podcast_episodes")
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id", ondelete="SET NULL", name="fk_episodes_heard_device_id"), nullable=True)
+    device: Mapped[Device | None] = relationship(back_populates="episodes_heard")
 
 
 # a YouTube video id: 11 characters of the URL-safe base64 alphabet
@@ -1688,7 +1720,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0023"
+SCHEMA_REVISION = "0025"
 
 
 def prepare_schema(engine: Engine) -> None:

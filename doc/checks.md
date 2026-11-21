@@ -150,18 +150,14 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `audio-book-duplicates`: no account has two audio books of the same
   title and subtitle.
 
-### Podcasts (`podcasts`)
+### Your podcasts (`podcasts-heard`)
 
-- `podcast-covers`: every podcast has a cover.
-- `podcast-reviews`: every podcast has your own rating and a review.
-- `podcast-episodes-heard`: every podcast has an episode heard.
+- `podcast-reviews`: every podcast in Your podcasts (one you heard an
+  episode of) has your own rating and a review.
 
-### Podcast episodes (`podcast-episodes`)
+### Episodes heard (`episodes-heard`)
 
-- `podcast-episode-dates`: every podcast episode has the date it was
-  heard.
-- `podcast-episode-duplicates`: no podcast has two episodes of the same
-  title.
+- `episode-heard-dates`: every episode heard has the date it was heard.
 
 ### YouTube (`youtube`)
 
@@ -208,6 +204,17 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `place-websites`: every place's website is a web address.
 - `places-credits`: every photo of a place that has a credit says its
   source and its license (its author only when one is known).
+
+### Podcasts (`podcasts`, shared)
+
+- `podcast-covers`: every podcast has a cover.
+- `podcast-feeds`: every podcast has its RSS feed, which the Podcast feeds
+  importer brings its episodes from.
+
+### Podcast episodes (`podcast-episodes`, shared)
+
+- `podcast-episode-guids`: every episode has its id in the feed (guid): one
+  typed in without it is not found in the feed again.
 
 ### Cities (`cities`)
 

@@ -50,6 +50,7 @@ from myworld.models import (
     Country,
     Currency,
     Device,
+    EpisodeHeard,
     Group,
     Organization,
     OrganizationType,
@@ -65,6 +66,7 @@ from myworld.models import (
     PlaceKind,
     Podcast,
     PodcastEpisode,
+    PodcastHeard,
     Region,
     RelationType,
     Visit,
@@ -396,29 +398,27 @@ def _ref(row: Any) -> dict[str, Any] | None:
 
 
 def podcast_json(podcast: Podcast) -> dict[str, Any]:
-    heard = sorted((date_json(e)["date_sort"] for e in podcast.episodes), reverse=True)
+    """ A podcast, shared, with how many of its episodes the signed-in user heard. """
+    mine = [heard for heard in podcast.heard if heard.owner_id == flask.g.user.id]
     return {
         "id": podcast.id,
         "name": podcast.name,
         "url": podcast.url,
         "rss_feed": podcast.rss_feed,
-        "rating": podcast.rating,
-        "review": podcast.review,
         "image": image_url(podcast.image_id),
-        # the episodes heard: how many, how long all of them are (seconds), and when the last was
+        # its episodes, as its feed has them: how many, the newest's publishing
         "episodes": len(podcast.episodes),
-        "duration": sum(e.duration or 0 for e in podcast.episodes),
-        "date_sort": heard[0] if heard else "",
+        "published": max((_stamp_json(e.published_utcz) for e in podcast.episodes), default=""),
+        # the user listens to it (Podcasts heard), and heard so many of its episodes
+        "listened": bool(mine),
+        "heard": sum(1 for e in podcast.episodes for heard in e.heard if heard.owner_id == flask.g.user.id),
     }
 
 
-def podcast_episode_json(episode: PodcastEpisode) -> dict[str, Any]:
+def _episode_fields(episode: PodcastEpisode) -> dict[str, Any]:
+    """ What the feed says of an episode, as an episode's card and a heard one's show it. """
     return {
-        "id": episode.id,
-        "name": episode.name,
         "podcast": _ref(episode.podcast),
-        **date_json(episode),
-        "date_timezone": episode.date_timezone,
         "description": episode.description,
         "published": _stamp_json(episode.published_utcz),
         "number": episode.number,
@@ -429,13 +429,58 @@ def podcast_episode_json(episode: PodcastEpisode) -> dict[str, Any]:
         "image_url": episode.image_url,
         "author": episode.author,
         "guid": episode.guid or "",
-        "rating": episode.rating,
-        "review": episode.review,
-        "listened_at": episode.listened_at,
-        "device": _ref(episode.device),
         # the audio itself, and the podcast's cover
         "url": episode.enclosure_url,
         "image": image_url(episode.podcast.image_id) if episode.podcast else None,
+    }
+
+
+def podcast_episode_json(episode: PodcastEpisode, mine: EpisodeHeard | None = None) -> dict[str, Any]:
+    """ An episode, shared; heard, the signed-in user's hearing of it (mine), when said, or else looked for. """
+    if mine is None:
+        mine = next((heard for heard in episode.heard if heard.owner_id == flask.g.user.id), None)
+    return {
+        "id": episode.id,
+        "name": episode.name,
+        **_episode_fields(episode),
+        "heard": None if mine is None else {"id": mine.id, **date_json(mine)},
+    }
+
+
+def podcast_heard_json(row: PodcastHeard) -> dict[str, Any]:
+    """ A podcast the user listens to: what they think of it, and the episodes of it they heard, the latest first. """
+    podcast = row.podcast
+    heard = sorted(
+        (h for e in podcast.episodes for h in e.heard if h.owner_id == row.owner_id),
+        key=lambda h: (date_json(h)["date_sort"], _stamp_json(h.episode.published_utcz)), reverse=True,
+    )
+    return {
+        "id": row.id,
+        "name": podcast.name,
+        "podcast": _ref(podcast),
+        "url": podcast.url,
+        "image": image_url(podcast.image_id),
+        "rating": row.rating,
+        "review": row.review,
+        # the episodes heard (each its hearing's id and the episode's name), how long all of them are (seconds), when the last was
+        "episodes": [{"id": h.id, "name": h.episode.name} for h in heard],
+        "duration": sum(h.episode.duration or 0 for h in heard),
+        "date_sort": date_json(heard[0])["date_sort"] if heard else "",
+    }
+
+
+def episode_heard_json(row: EpisodeHeard) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "name": row.episode.name,
+        "episode": _ref(row.episode),
+        **_episode_fields(row.episode),
+        **date_json(row),
+        "date_timezone": row.date_timezone,
+        "rating": row.rating,
+        "review": row.review,
+        "listened_at": row.listened_at,
+        "device": _ref(row.device),
     }
 
 
@@ -605,19 +650,46 @@ def api_audio_books() -> flask.Response:
 @bp.route("/api/podcasts", methods=["GET"])
 @auth.login_required
 def api_podcasts() -> flask.Response:
-    podcasts = flask.g.db.scalars(select(Podcast).where(Podcast.owner_id == flask.g.user.id).options(selectinload(Podcast.episodes))).all()
-    # the one heard last first
-    return flask.jsonify(_newest_first([podcast_json(p) for p in podcasts]))
+    """ Every podcast (shared), by name. """
+    query = select(Podcast).options(selectinload(Podcast.heard), selectinload(Podcast.episodes).selectinload(PodcastEpisode.heard)).order_by(Podcast.name)
+    return flask.jsonify([podcast_json(p) for p in flask.g.db.scalars(query)])
 
 
 @bp.route("/api/podcast-episodes", methods=["GET"])
 @auth.login_required
 def api_podcast_episodes() -> flask.Response:
-    query = select(PodcastEpisode).where(PodcastEpisode.owner_id == flask.g.user.id).options(
-        selectinload(PodcastEpisode.podcast), selectinload(PodcastEpisode.device),
+    """ Every episode of every podcast (shared), the latest published first, each saying whether the user heard it. """
+    mine = {heard.episode_id: heard for heard in flask.g.db.scalars(select(EpisodeHeard).where(EpisodeHeard.owner_id == flask.g.user.id))}
+    query = select(PodcastEpisode).options(selectinload(PodcastEpisode.podcast)).order_by(PodcastEpisode.published_utcz.desc(), PodcastEpisode.id.desc())
+    return flask.jsonify([podcast_episode_json(e, mine.get(e.id)) for e in flask.g.db.scalars(query)])
+
+
+@bp.route("/api/podcasts-heard", methods=["GET"])
+@auth.login_required
+def api_podcasts_heard() -> flask.Response:
+    """
+    Your podcasts: the shared podcasts filtered to those the user heard an
+    episode of, each with their rating and review of it (their PodcastHeard,
+    which hearing an episode makes). One whose episodes heard were all
+    deleted is not listed, and keeps the rating and review for when one is
+    heard again.
+    """
+    heard_of = select(PodcastEpisode.podcast_id).join(EpisodeHeard).where(EpisodeHeard.owner_id == flask.g.user.id)
+    query = select(PodcastHeard).where(PodcastHeard.owner_id == flask.g.user.id, PodcastHeard.podcast_id.in_(heard_of)).options(
+        selectinload(PodcastHeard.podcast).selectinload(Podcast.episodes).selectinload(PodcastEpisode.heard).selectinload(EpisodeHeard.episode),
+    )
+    # the one heard last first
+    return flask.jsonify(_newest_first([podcast_heard_json(p) for p in flask.g.db.scalars(query)]))
+
+
+@bp.route("/api/episodes-heard", methods=["GET"])
+@auth.login_required
+def api_episodes_heard() -> flask.Response:
+    query = select(EpisodeHeard).where(EpisodeHeard.owner_id == flask.g.user.id).options(
+        selectinload(EpisodeHeard.episode).selectinload(PodcastEpisode.podcast), selectinload(EpisodeHeard.device),
     )
     # the latest heard first; of those heard the same day, the latest published first
-    episodes = [podcast_episode_json(e) for e in flask.g.db.scalars(query)]
+    episodes = [episode_heard_json(e) for e in flask.g.db.scalars(query)]
     return flask.jsonify(sorted(episodes, key=lambda e: (e["date_sort"], e["published"]), reverse=True))
 
 
@@ -876,7 +948,7 @@ def api_currencies() -> flask.Response:
 
 
 
-def _apply_dates(row: Concert | Visit | AudioCourse | AudioBook | PodcastEpisode | YouTubeVideo, body: dict[str, Any]) -> None:
+def _apply_dates(row: Concert | Visit | AudioCourse | AudioBook | EpisodeHeard | YouTubeVideo, body: dict[str, Any]) -> None:
     """
     The date as typed: YYYY, YYYY-MM or YYYY-MM-DD, stored at that precision,
     or nothing. date_timezone is where it happened (an IANA name). A date
@@ -1178,14 +1250,12 @@ def _web_link(body: dict[str, Any], key: str) -> str:
 
 def _apply_podcast(podcast: Podcast, body: dict[str, Any]) -> None:
     name = text(body, "name", required=True)
-    clash = flask.g.db.execute(select(Podcast.id).where(Podcast.owner_id == flask.g.user.id, Podcast.name == name, Podcast.id != podcast.id)).first()
+    clash = flask.g.db.execute(select(Podcast.id).where(Podcast.name == name, Podcast.id != podcast.id)).first()
     if clash is not None:
         raise ApiError(409, f"{name} is already in Podcasts")
     podcast.name = name
     podcast.url = _web_link(body, "url")
     podcast.rss_feed = _web_link(body, "rss_feed")
-    podcast.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
-    podcast.review = text(body, "review")
     apply_image(podcast, body)
 
 
@@ -1212,11 +1282,58 @@ def _apply_podcast_episode(episode: PodcastEpisode, body: dict[str, Any]) -> Non
     episode.enclosure_url = _web_link(body, "enclosure_url")
     episode.image_url = _web_link(body, "image_url")
     episode.author = text(body, "author")
-    episode.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
-    episode.review = text(body, "review")
-    episode.listened_at = text(body, "listened_at")
-    episode.device = owned_ref(body, "device_id", Device, "device")
-    _apply_dates(episode, body)
+
+
+def listening(owner_id: int, podcast: Podcast) -> PodcastHeard:
+    """ owner's PodcastHeard of podcast, made (and added) when they have none: an episode heard is of a podcast they listen to. """
+    found = next((row for row in podcast.heard if row.owner_id == owner_id), None)
+    if found is None:
+        found = PodcastHeard(owner_id=owner_id, podcast=podcast)
+    return found
+
+
+def _apply_podcast_heard(row: PodcastHeard, body: dict[str, Any]) -> None:
+    podcast = owned_ref(body, "podcast_id", Podcast, "podcast")
+    if podcast is None:
+        raise ApiError(400, "podcast_id: choose the podcast")
+    if row.id is None:
+        # Your podcasts are the podcasts the user heard an episode of: hearing one adds it
+        raise ApiError(409, f"{podcast.name} is in Your podcasts once you heard an episode of it: add the episode in Episodes heard")
+    clash = flask.g.db.execute(select(PodcastHeard.id).where(
+        PodcastHeard.owner_id == flask.g.user.id, PodcastHeard.podcast_id == podcast.id, PodcastHeard.id != row.id,
+    )).first()
+    if clash is not None:
+        raise ApiError(409, f"{podcast.name} is already in your Podcasts heard")
+    if row.podcast_id is not None and row.podcast_id != podcast.id and _heard_of(row):
+        raise ApiError(409, f"you heard episodes of {row.podcast.name}: it stays the podcast they are of")
+    row.podcast = podcast
+    row.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
+    row.review = text(body, "review")
+
+
+def _heard_of(row: PodcastHeard) -> int:
+    """ How many episodes of row's podcast its user heard. """
+    return len(flask.g.db.scalars(select(EpisodeHeard.id).join(PodcastEpisode).where(
+        EpisodeHeard.owner_id == row.owner_id, PodcastEpisode.podcast_id == row.podcast_id,
+    )).all())
+
+
+def _apply_episode_heard(row: EpisodeHeard, body: dict[str, Any]) -> None:
+    episode = owned_ref(body, "episode_id", PodcastEpisode, "episode")
+    if episode is None:
+        raise ApiError(400, "episode_id: choose the episode")
+    clash = flask.g.db.execute(select(EpisodeHeard.id).where(
+        EpisodeHeard.owner_id == flask.g.user.id, EpisodeHeard.episode_id == episode.id, EpisodeHeard.id != row.id,
+    )).first()
+    if clash is not None:
+        raise ApiError(409, f"{episode.name} is already in your Episodes heard")
+    row.episode = episode
+    row.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
+    row.review = text(body, "review")
+    row.listened_at = text(body, "listened_at")
+    row.device = owned_ref(body, "device_id", Device, "device")
+    _apply_dates(row, body)
+    flask.g.db.add(listening(flask.g.user.id, episode.podcast))
 
 
 YOUTUBE_ID = re.compile(rf"[A-Za-z0-9_-]{{{YOUTUBE_ID_LENGTH}}}")
@@ -1518,6 +1635,8 @@ VIEWS: dict[str, _View] = {
     "audio-books": _View(AudioBook, _apply_audio_book, audio_book_json),
     "podcasts": _View(Podcast, _apply_podcast, podcast_json),
     "podcast-episodes": _View(PodcastEpisode, _apply_podcast_episode, podcast_episode_json),
+    "podcasts-heard": _View(PodcastHeard, _apply_podcast_heard, podcast_heard_json),
+    "episodes-heard": _View(EpisodeHeard, _apply_episode_heard, episode_heard_json),
     "youtube-videos": _View(YouTubeVideo, _apply_youtube_video, youtube_video_json),
     "chess-games": _View(ChessGame, _apply_chess_game, chess_game_json),
     "people": _View(Person, _apply_person, person_json),
@@ -1591,9 +1710,13 @@ def api_world_delete(what: str, row_id: int) -> flask.Response:
     # the concerts at a deleted place are kept, with no place
     _may_change(VIEWS[what].model)
     row = owned(VIEWS[what].model, row_id)
-    # a podcast goes once none of its episodes is kept: they are what was heard
-    if isinstance(row, Podcast) and row.episodes:
-        raise ApiError(409, f"{row.name} has {len(row.episodes)} episodes heard: delete them first")
+    # what someone heard stays: a podcast someone listens to, an episode someone heard, a podcast heard with episodes heard
+    if isinstance(row, Podcast) and row.heard:
+        raise ApiError(409, f"{row.name} is listened to (Podcasts heard): it stays")
+    if isinstance(row, PodcastEpisode) and row.heard:
+        raise ApiError(409, f"{row.name} was heard (Episodes heard): it stays")
+    if isinstance(row, PodcastHeard) and _heard_of(row):
+        raise ApiError(409, f"you heard {_heard_of(row)} episodes of {row.podcast.name}: delete them first")
     flask.g.db.delete(row)
     flask.g.db.flush()
     drop_unused_images()

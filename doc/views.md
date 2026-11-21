@@ -31,10 +31,10 @@ with them. Renaming a view changes its address: the old one stops working
 A view shows only the owner's *own* data, and of that only what it enables:
 
 - the library kinds: books, films, ... (`/api/library-entries?kind=...`)
-- concerts, museum visits, audio courses, audio books, podcasts, podcast episodes, YouTube videos, chess games
+- concerts, museum visits, audio courses, audio books, your podcasts, episodes heard, YouTube videos, chess games
 - people, groups, organizations (with their types, for the type filter)
 
-The shared data (places, cities, countries, ...) is everyone's and is not a
+The shared data (places, podcasts, cities, countries, ...) is everyone's and is not a
 data set of a view. The cards of a view still name the places, cities and
 people their rows point to; such a link leads nowhere unless that data set is
 part of the view too (the visitor is told it is not).

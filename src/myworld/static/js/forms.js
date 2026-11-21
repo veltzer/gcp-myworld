@@ -298,15 +298,14 @@ const WORLD_BODIES = {
 			name: value("name"),
 			url: value("url"),
 			rss_feed: value("rss_feed"),
-			rating: value("rating"),
-			review: value("review"),
 			...(await pictureBody(form)),
 		};
 	},
-	"podcast-episodes": async (form) => {
-		const value = (name) => form.elements[name].value;
-		const body = Object.fromEntries(["podcast_id", "name", "number", "published", "duration", "episode_type", "explicit", "author", "description",
-			"enclosure_url", "image_url", "guid", "date", "rating", "review", "device_id", "listened_at"].map((name) => [name, value(name)]));
+	"podcast-episodes": async (form) => Object.fromEntries(["podcast_id", "name", "number", "published", "duration", "episode_type", "explicit", "author",
+		"description", "enclosure_url", "image_url", "guid"].map((name) => [name, form.elements[name].value])),
+	"podcasts-heard": async (form) => Object.fromEntries(["podcast_id", "rating", "review"].map((name) => [name, form.elements[name].value])),
+	"episodes-heard": async (form) => {
+		const body = Object.fromEntries(["episode_id", "date", "rating", "review", "device_id", "listened_at"].map((name) => [name, form.elements[name].value]));
 		return { ...body, date_timezone: state.editing?.date_timezone || where() };
 	},
 	youtube: async (form) => {

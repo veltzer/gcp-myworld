@@ -14,12 +14,16 @@ export const WORLDS = {
 	"audio-courses": ["Audio courses", "/api/audio-courses", "audio course", "Audio courses"],
 	// the books of the user's audio book libraries (Audible, ...)
 	"audio-books": ["Audio books", "/api/audio-books", "audio book", "Audio books"],
-	// the podcasts listened to, and the episodes of them heard
-	podcasts: ["Podcasts", "/api/podcasts", "podcast", "Podcasts"],
-	"podcast-episodes": ["Podcast episodes", "/api/podcast-episodes", "podcast episode", "Podcast episodes"],
+	// Your podcasts: the shared podcasts, filtered to those the user heard an episode of (with their rating and review);
+	// and the episodes of them heard
+	"podcasts-heard": ["Your podcasts", "/api/podcasts-heard", "podcast heard", "Your podcasts"],
+	"episodes-heard": ["Episodes heard", "/api/episodes-heard", "episode heard", "Episodes heard"],
 	youtube: ["YouTube videos", "/api/youtube-videos", "YouTube video", "YouTube"],
 	chess: ["Chess games", "/api/chess-games", "chess game", "Chess"],
 	places: ["Places", "/api/places", "place", "Places"],
+	// every podcast, and every episode of them its feed has
+	podcasts: ["Podcasts", "/api/podcasts", "podcast", "Podcasts"],
+	"podcast-episodes": ["Podcast episodes", "/api/podcast-episodes", "podcast episode", "Podcast episodes"],
 	cities: ["Cities", "/api/cities", "city", "Cities"],
 	countries: ["Countries", "/api/countries", "country", "Countries"],
 	currencies: ["Currencies", "/api/currencies", "currency", "Currencies"],
@@ -42,7 +46,13 @@ export const WORLDS = {
 
 // The pages whose rows are shared by everyone: the same for every account, with nothing personal
 // on them, changed by admins only (the server refuses anyone else). The sidebar lists them apart.
-export const SHARED_VIEWS = new Set(["places", "cities", "countries", "currencies", "place-kinds", "visit-types", "locales"]);
+export const SHARED_VIEWS = new Set(["places", "podcasts", "podcast-episodes", "cities", "countries", "currencies", "place-kinds", "visit-types", "locales"]);
+
+// The pages that are shared data filtered for the user, not rows of their own: view -> what they are.
+// The sidebar marks them with a filter; their rows come by what the user does elsewhere, so + stays, disabled.
+export const FILTERED_VIEWS = {
+	"podcasts-heard": "The shared Podcasts, filtered to the ones you heard an episode of: hearing an episode (Episodes heard) adds its podcast here",
+};
 
 export function isAdmin() {
 	return state.config.user?.role === "admin";
@@ -166,12 +176,18 @@ export function formatDate(item) {
 	}
 }
 
+// the longest value of a card kept on one line
+const VALUE_WHOLE = 40;
+
 export function detail(list, label, value) {
 	if (value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0)) {
 		return;
 	}
-	const li = el("li");
-	li.append(el("span", "label", label), Array.isArray(value) ? value.join(", ") : String(value));
+	const text = Array.isArray(value) ? value.join(", ") : String(value);
+	// a label with a short value (a date, a length, a place: "Last heard 2026-03-27") is never broken across lines;
+	// with a long text (a review) only the label is kept whole, and the text wraps
+	const li = el("li", text.length > VALUE_WHOLE ? "" : "nowrap");
+	li.append(el("span", "label nowrap", label), text);
 	list.appendChild(li);
 }
 

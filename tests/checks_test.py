@@ -32,6 +32,7 @@ from myworld.models import (
     Country,
     Device,
     DisabledCheck,
+    EpisodeHeard,
     Group,
     Image,
     Login,
@@ -43,6 +44,7 @@ from myworld.models import (
     PlaceKind,
     Podcast,
     PodcastEpisode,
+    PodcastHeard,
     Read,
     Region,
     RelationType,
@@ -374,18 +376,16 @@ def test_podcasts(engine: Engine) -> None:
         session.add(alice)
         session.flush()
         cover = Image(owner_id=alice.id, filename="p.jpg", content_type="image/jpeg", sha256="0" * 64, data=b"\xff\xd8")
-        good = Podcast(owner_id=alice.id, name="Good", rating=8, review="Fine", image=cover)
-        bare = Podcast(owner_id=alice.id, name="Bare")
-        session.add_all([good, bare])
-        heard = {"owner_id": alice.id, "podcast": good, "date_ymd": datetime.date(2026, 3, 22)}
+        good = Podcast(name="Good", rss_feed="https://feeds.example.com/good", image=cover)
+        bare = Podcast(name="Bare")
+        trailer = PodcastEpisode(podcast=good, name="Trailer", guid="g1")
+        typed = PodcastEpisode(podcast=good, name="Typed in")
+        session.add_all([good, bare, trailer, typed])
         session.add_all([
-            PodcastEpisode(name="Trailer", **heard),
-            # the same title in another podcast is another episode
-            PodcastEpisode(owner_id=alice.id, podcast=bare, name="Trailer", date_y=2026),
-            # each of these breaks one rule
-            PodcastEpisode(owner_id=alice.id, podcast=good, name="Undated"),
-            PodcastEpisode(name="Twice", **heard),
-            PodcastEpisode(name="twice ", **heard),
+            PodcastHeard(owner_id=alice.id, podcast=good),
+            PodcastHeard(owner_id=alice.id, podcast=bare),
+            EpisodeHeard(owner_id=alice.id, episode=trailer, date_ymd=datetime.date(2026, 3, 22)),
+            EpisodeHeard(owner_id=alice.id, episode=typed),
         ])
         session.commit()
 
@@ -393,15 +393,19 @@ def test_podcasts(engine: Engine) -> None:
             return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS[name].run(session).problems]
 
         assert found("podcast-covers") == [("Bare", "has no cover")]
-        assert found("podcast-reviews") == [("Bare", "has no rating and no review")]
-        assert found("podcast-episodes-heard") == []
-        assert found("podcast-episode-dates") == [("Undated", "has no date")]
-        duplicates = checks.CHECKS["podcast-episode-duplicates"].run(session).problems
-        assert [p.subject.split(" (")[0] for p in duplicates] == ["Twice", "twice "]
-        assert [p.link.split("/")[0] for p in duplicates] == ["podcast-episodes"] * 2
-        session.add(Podcast(owner_id=alice.id, name="Unheard", rating=5, review="Meant to", image=cover))
+        assert found("podcast-feeds") == [("Bare", "has no RSS feed")]
+        assert found("podcast-episode-guids") == [("Typed in", "has no id in the feed")]
+        assert found("episode-heard-dates") == [("Typed in", "has no date")]
+        problems = checks.CHECKS["episode-heard-dates"].run(session).problems
+        assert [(p.link.split("/")[0], p.subject.split(" (")[1]) for p in problems] == [("episodes-heard", f"episode heard {problems[0].link.split('/')[1]}, account {alice.id})")]
+        heard = session.scalars(select(PodcastHeard).where(PodcastHeard.podcast_id == good.id)).one()
+        # Bare has no episode heard: it is not in Your podcasts, whatever it says
+        assert found("podcast-reviews") == [("Good", "has no rating and no review")]
+        heard.rating, heard.review = 8, "Fine"
         session.commit()
-        assert found("podcast-episodes-heard") == [("Unheard", "has no episode heard")]
+        assert found("podcast-reviews") == []
+        # a shared row is told as everyone's
+        assert checks.CHECKS["podcast-covers"].run(session).problems[0].subject == f"Bare (podcast {bare.id}, shared)"
 
 
 def test_books(engine: Engine) -> None:

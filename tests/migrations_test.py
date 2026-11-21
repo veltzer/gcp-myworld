@@ -381,3 +381,46 @@ def test_museums_become_places_and_their_visits_visits(url: str) -> None:
         assert "owner_id" not in {column["name"] for column in inspect(engine).get_columns(table)}, table
     engine.dispose()
     assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"
+
+
+def test_podcasts_become_shared_and_what_was_heard_each_accounts(url: str) -> None:
+    """ 0024 and 0025: podcasts and their episodes are everyone's; each account's rating, review and hearing of them are its own. """
+    alembic(url, "upgrade", "0023")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        for user in (1, 2):
+            connection.execute(text("INSERT INTO users (id, email, name, picture, created_at, role) VALUES (:id, :email, '', '', '2026-01-01', 'user')"), {"id": user, "email": f"{user}@example.com"})
+        connection.execute(text("INSERT INTO devices (id, owner_id, name, description, image_source, image_license, image_author) VALUES (1, 1, 'Samsung S25', '', '', '', '')"))
+        connection.execute(text("INSERT INTO images (id, owner_id, filename, content_type, sha256, data) VALUES (1, 2, 'podcast-1.jpg', 'image/jpeg', '0', X'FFD8')"))
+        # both accounts have the podcast, the second with the cover; both heard its trailer, the first also episode 1
+        connection.execute(text("INSERT INTO podcasts (id, owner_id, name, url, rss_feed, rating, review, image_id) VALUES (1, 1, 'History', '', 'https://f', 7, 'So-so', NULL)"))
+        connection.execute(text("INSERT INTO podcasts (id, owner_id, name, url, rss_feed, rating, review, image_id) VALUES (2, 2, 'History', '', 'https://f', 9, 'Great', 1)"))
+        episode = (
+            "INSERT INTO podcast_episodes (id, owner_id, podcast_id, name, description, episode_type, explicit, enclosure_url, image_url, author, guid,"
+            " review, listened_at, device_id, date_ymd, date_my, date_timezone) VALUES (:id, :owner, :podcast, :name, '', '', '', '', '', '', :guid, :review, :where, :device, '2026-03-22', '', '')"
+        )
+        for row in (
+            {"id": 1, "owner": 1, "podcast": 1, "name": "Trailer", "guid": "g0", "review": "", "where": "Night Walks", "device": 1},
+            {"id": 2, "owner": 1, "podcast": 1, "name": "1. Greatness", "guid": "g1", "review": "Good", "where": "", "device": None},
+            {"id": 3, "owner": 2, "podcast": 2, "name": "Trailer", "guid": "g0", "review": "Short", "where": "Car", "device": None},
+        ):
+            connection.execute(text(episode), row)
+    engine.dispose()
+    said = run(url, "upgrade").stdout.strip().splitlines()
+    assert said == [
+        "0024: podcasts ('History',) kept once (row 1; row 2 merged into it)",
+        "0024: podcast_episodes (1, 'g0') kept once (row 1; row 3 merged into it)",
+        f"migrated from 0023 to {SCHEMA_REVISION}; user 1 made the first admin",
+    ]
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT id, name, rss_feed, image_id FROM podcasts")).all() == [(1, "History", "https://f", 1)]
+        assert connection.execute(text("SELECT id, podcast_id, name, guid FROM podcast_episodes ORDER BY id")).all() == [(1, 1, "Trailer", "g0"), (2, 1, "1. Greatness", "g1")]
+        assert connection.execute(text("SELECT owner_id, podcast_id, rating, review FROM podcasts_heard ORDER BY owner_id")).all() == [(1, 1, 7, "So-so"), (2, 1, 9, "Great")]
+        assert connection.execute(text("SELECT owner_id, episode_id, review, listened_at, device_id, date_ymd FROM episodes_heard ORDER BY owner_id, episode_id")).all() == [
+            (1, 1, "", "Night Walks", 1, "2026-03-22"), (1, 2, "Good", "", None, "2026-03-22"), (2, 1, "Short", "Car", None, "2026-03-22"),
+        ]
+    for table in ("podcasts", "podcast_episodes"):
+        assert "owner_id" not in {column["name"] for column in inspect(engine).get_columns(table)}, table
+    engine.dispose()
+    assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"

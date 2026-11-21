@@ -8,14 +8,16 @@ from typing import Any
 
 import pytest
 import webtest
+from sqlalchemy import select
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
 
-from myworld.models import is_shared
+from myworld.models import Podcast, PodcastEpisode, is_shared
 from myworld.world import VIEWS
 from tests.conftest import sign_in, sign_in_admin
 
 # what a row is called after its edit, where the edit does not say a name
-NAMED = {"people": "Dana Levi", "chess-games": "me vs Deeper Blue"}
+NAMED = {"people": "Dana Levi", "chess-games": "me vs Deeper Blue", "podcasts-heard": "Mindscape", "episodes-heard": "Trailer"}
 
 # the least a row of each page can be added with, and what an edit changes it to
 MINIMAL: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
@@ -25,6 +27,9 @@ MINIMAL: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
     "podcasts": ({"name": "Mindscape"}, {"name": "Mindscape 2"}),
     # and the podcast it is of, which minimal() adds first
     "podcast-episodes": ({"name": "Trailer"}, {"name": "The trailer"}),
+    # of a shared podcast, and of a shared episode, which minimal() adds first
+    "podcasts-heard": ({}, {"rating": 7}),
+    "episodes-heard": ({}, {"rating": 7, "listened_at": "Car"}),
     "youtube-videos": ({"youtube_id": "dQw4w9WgXcQ", "name": "A song"}, {"youtube_id": "dQw4w9WgXcQ", "name": "That song"}),
     # a game is added by its text and named by its players: an edit that sends another text renames it
     "chess-games": (
@@ -44,19 +49,39 @@ MINIMAL: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
 
 
 def minimal(app: webtest.TestApp, path: str) -> tuple[dict[str, Any], dict[str, Any]]:
-    """ MINIMAL[path], with what the row needs there to be first (an episode, its podcast) added to the signed-in account. """
+    """ MINIMAL[path], with what the row needs there to be first (an episode's podcast, the shared podcast or episode heard). """
     first, changed = MINIMAL[path]
-    if path == "podcast-episodes":
-        podcast = {"podcast_id": app.post_json("/api/podcasts", {"name": "Mindscape"}, status=201).json["id"]}
+    if path in ("podcast-episodes", "podcasts-heard"):
+        podcast = {"podcast_id": shared_episode(app).podcast_id}
         return {**first, **podcast}, {**changed, **podcast}
+    if path == "episodes-heard":
+        episode = {"episode_id": shared_episode(app).id}
+        return {**first, **episode}, {**changed, **episode}
     return first, changed
+
+
+def shared_episode(app: webtest.TestApp) -> PodcastEpisode:
+    """ The shared podcast Mindscape's episode Trailer, put there as an admin's Podcast feeds run would (once). """
+    flask_app: Any = app.app
+    with Session(flask_app.config["engine"], expire_on_commit=False) as session:
+        episode = session.scalars(select(PodcastEpisode).where(PodcastEpisode.name == "Trailer", PodcastEpisode.guid == "t1")).first()
+        if episode is None:
+            podcast = session.scalars(select(Podcast).where(Podcast.name == "Mindscape")).first() or Podcast(name="Mindscape")
+            episode = PodcastEpisode(podcast=podcast, name="Trailer", guid="t1")
+            session.add(episode)
+            session.commit()
+        return episode
 
 
 def test_every_view_is_tried() -> None:
     assert set(MINIMAL) == set(VIEWS)
 
 
-@pytest.mark.parametrize("path", sorted(VIEWS))
+# Your podcasts are added to by hearing an episode, not by adding one (test_your_podcasts)
+ADDED = sorted(path for path in VIEWS if path != "podcasts-heard")
+
+
+@pytest.mark.parametrize("path", ADDED)
 def test_add_edit_delete(app: webtest.TestApp, engine: Engine, path: str) -> None:
     # what everyone shares is changed by an admin
     sign_in_admin(app, engine)
@@ -78,7 +103,7 @@ def test_add_edit_delete(app: webtest.TestApp, engine: Engine, path: str) -> Non
     app.delete(f"/api/{path}/{added['id']}", status=404)
 
 
-@pytest.mark.parametrize("path", sorted(path for path, view in VIEWS.items() if not is_shared(view.model)))
+@pytest.mark.parametrize("path", [path for path in ADDED if not is_shared(VIEWS[path].model)])
 def test_a_row_is_its_owners(app: webtest.TestApp, path: str) -> None:
     sign_in(app)
     first, changed = minimal(app, path)
@@ -112,6 +137,26 @@ def test_signed_out(app: webtest.TestApp, path: str) -> None:
     app.delete(f"/api/{path}/1", status=401)
 
 
+def test_your_podcasts(app: webtest.TestApp) -> None:
+    """ The shared podcasts, filtered to those the user heard an episode of, with their rating and review. """
+    sign_in(app)
+    first, _ = minimal(app, "podcasts-heard")
+    error = "Mindscape is in Your podcasts once you heard an episode of it: add the episode in Episodes heard"
+    assert app.post_json("/api/podcasts-heard", first, status=409).json == {"error": error}
+    heard = app.post_json("/api/episodes-heard", minimal(app, "episodes-heard")[0], status=201).json
+    [mine] = app.get("/api/podcasts-heard").json
+    assert (mine["name"], [e["id"] for e in mine["episodes"]], mine["rating"]) == ("Mindscape", [heard["id"]], None)
+    app.put_json(f"/api/podcasts-heard/{mine['id']}", {**first, "rating": 7, "review": "Good"})
+    # with no episode heard it is not listed, and keeps what the user said of it for when one is heard again
+    app.delete(f"/api/episodes-heard/{heard['id']}", status=204)
+    assert app.get("/api/podcasts-heard").json == []
+    app.post_json("/api/episodes-heard", minimal(app, "episodes-heard")[0], status=201)
+    assert [(p["rating"], p["review"]) for p in app.get("/api/podcasts-heard").json] == [(7, "Good")]
+    sign_in(app, sub="someone-else")
+    assert app.get("/api/podcasts-heard").json == []
+    app.put_json(f"/api/podcasts-heard/{mine['id']}", first, status=404)
+
+
 def test_a_page_that_is_not_one(app: webtest.TestApp) -> None:
     sign_in(app)
     app.post_json("/api/unicorns", {"name": "Bob"}, status=404)
@@ -119,7 +164,7 @@ def test_a_page_that_is_not_one(app: webtest.TestApp) -> None:
     app.delete("/api/unicorns/1", status=404)
 
 
-@pytest.mark.parametrize("path", ["concert-visits", "audio-courses", "podcast-episodes", "youtube-videos"])
+@pytest.mark.parametrize("path", ["concert-visits", "audio-courses", "episodes-heard", "youtube-videos"])
 @pytest.mark.parametrize(("date", "precision", "sort"), [
     ("2003", "year", "2003"),
     ("2003-07", "month", "2003-07"),
@@ -165,7 +210,7 @@ def test_a_precision_replaces_another(app: webtest.TestApp) -> None:
 @pytest.mark.parametrize("path", sorted(path for path, view in VIEWS.items() if is_shared(view.model)))
 def test_only_an_admin_changes_what_everyone_shares(app: webtest.TestApp, engine: Engine, path: str) -> None:
     sign_in_admin(app, engine, sub="the-admin")
-    first, changed = MINIMAL[path]
+    first, changed = minimal(app, path)
     added = app.post_json(f"/api/{path}", first, status=201).json
     sign_in(app)
     # everyone sees it
@@ -179,7 +224,7 @@ def test_only_an_admin_changes_what_everyone_shares(app: webtest.TestApp, engine
 @pytest.mark.parametrize("path", sorted(path for path, view in VIEWS.items() if is_shared(view.model)))
 def test_an_admin_changes_shared_data_only_with_edit_shared_on(app: webtest.TestApp, engine: Engine, path: str) -> None:
     sign_in_admin(app, engine, sub="the-admin")
-    first, changed = MINIMAL[path]
+    first, changed = minimal(app, path)
     added = app.post_json(f"/api/{path}", first, status=201).json
     # an admin starts locked, so shared data is not changed by accident
     sign_in_admin(app, engine, sub="the-admin", edit_shared=False)
@@ -220,7 +265,6 @@ def test_what_a_row_points_at_is_the_users_own(app: webtest.TestApp) -> None:
         "person": app.post_json("/api/people", {"first_name": "Dana"}, status=201).json["id"],
         "device": app.post_json("/api/devices", {"name": "Phone"}, status=201).json["id"],
         "type": app.post_json("/api/organization-types", {"name": "Company"}, status=201).json["id"],
-        "podcast": app.post_json("/api/podcasts", {"name": "Mindscape"}, status=201).json["id"],
     }
     sign_in(app)
     for path, body, error in (
@@ -229,7 +273,7 @@ def test_what_a_row_points_at_is_the_users_own(app: webtest.TestApp) -> None:
         ("concert-visits", {"name": "Jarrett", "people": [True]}, "people: expected a list of ids"),
         ("organizations", {"name": "ACME", "type_id": theirs["type"]}, "type_id: unknown type"),
         ("audio-courses", {"name": "Logic", "device_id": theirs["device"]}, "device_id: unknown device"),
-        ("podcast-episodes", {"name": "Trailer", "podcast_id": theirs["podcast"]}, "podcast_id: unknown podcast"),
+        ("episodes-heard", {"episode_id": 999999}, "episode_id: unknown episode"),
         ("organizations", {"name": "ACME", "city_id": "Haifa"}, "city_id: expected a number"),
         ("organizations", {"name": "ACME", "city_id": 999999}, "city_id: unknown city"),
     ):

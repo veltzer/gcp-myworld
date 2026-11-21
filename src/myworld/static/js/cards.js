@@ -116,7 +116,7 @@ export function cityName(city) {
 }
 
 // how a single picker names the rows of a view
-export const PICKER_LABELS = { places: placeName, cities: cityName };
+export const PICKER_LABELS = { places: placeName, cities: cityName, "podcast-episodes": (row) => `${row.podcast?.name}: ${row.name}` };
 
 function placeCard(item) {
 	const { card, list } = cardShell(item, [item.city?.name, item.city?.country?.name].filter(Boolean).join(", "));
@@ -276,34 +276,64 @@ function audioBookCard(item) {
 	return card;
 }
 
+// a podcast, shared: its episodes as its feed has them, and how many of them the user heard
 function podcastCard(item) {
 	const { card, list } = cardShell(item, "", "cover");
-	if (item.rating !== null) {
-		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
-	}
-	detail(list, "Review", item.review);
 	// always said, 0 too
-	detail(list, "Episodes heard", String(item.episodes));
-	detail(list, "Time heard", item.duration ? formatDuration(item.duration) : "");
-	detail(list, "Last heard", item.date_sort);
+	detail(list, "Episodes", String(item.episodes));
+	detail(list, "Latest episode", item.published.slice(0, 10));
+	detail(list, "You heard", item.listened || item.heard ? String(item.heard) : "");
 	websiteButton(card, item.url);
 	return card;
 }
 
+// an episode, shared, as its feed says it; when the user heard it, a link to their hearing of it
 function podcastEpisodeCard(item) {
 	const { card, list } = cardShell(item, item.podcast?.name || "", "cover");
 	linksDetail(list, "Podcast", "podcasts", item.podcast ? [item.podcast] : []);
-	detail(list, "Heard", formatDate(item));
+	linksDetail(list, "You heard it", "episodes-heard", item.heard ? [{ id: item.heard.id, name: formatDate(item.heard) || "Yes" }] : []);
+	feedDetails(list, item);
+	websiteButton(card, item.url, "Listen");
+	return card;
+}
+
+function feedDetails(list, item) {
 	detail(list, "Number", item.number === null ? "" : String(item.number));
 	detail(list, "Published", item.published.slice(0, 10));
 	detail(list, "Length", formatDuration(item.duration));
+	detail(list, "About", item.description);
+}
+
+function rated(list, item) {
 	if (item.rating !== null) {
 		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
 	}
 	detail(list, "Review", item.review);
+}
+
+// a podcast the user listens to: what they think of it, and the episodes of it they heard, each a link to its hearing
+function podcastHeardCard(item) {
+	const { card, list } = cardShell(item, "", "cover");
+	linksDetail(list, "Podcast", "podcasts", item.podcast ? [item.podcast] : []);
+	rated(list, item);
+	// always said, 0 too
+	detail(list, "Episodes heard", String(item.episodes.length));
+	detail(list, "Time heard", item.duration ? formatDuration(item.duration) : "");
+	detail(list, "Last heard", item.date_sort);
+	linksDetail(list, "Episodes", "episodes-heard", item.episodes);
+	websiteButton(card, item.url);
+	return card;
+}
+
+function episodeHeardCard(item) {
+	const { card, list } = cardShell(item, item.podcast?.name || "", "cover");
+	linksDetail(list, "Podcast", "podcasts", item.podcast ? [item.podcast] : []);
+	linksDetail(list, "Episode", "podcast-episodes", item.episode ? [item.episode] : []);
+	detail(list, "Heard", formatDate(item));
+	rated(list, item);
 	detail(list, "Where", item.listened_at);
 	linksDetail(list, "Device", "devices", item.device ? [item.device] : []);
-	detail(list, "About", item.description);
+	feedDetails(list, item);
 	websiteButton(card, item.url, "Listen");
 	return card;
 }
@@ -401,6 +431,8 @@ export const CARDS = {
 	"audio-books": audioBookCard,
 	podcasts: podcastCard,
 	"podcast-episodes": podcastEpisodeCard,
+	"podcasts-heard": podcastHeardCard,
+	"episodes-heard": episodeHeardCard,
 	youtube: youtubeCard,
 	chess: chessCard,
 	places: placeCard,

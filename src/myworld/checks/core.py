@@ -18,6 +18,7 @@ from myworld.models import (
     Concert,
     Country,
     Device,
+    EpisodeHeard,
     Group,
     Organization,
     OrganizationType,
@@ -29,6 +30,7 @@ from myworld.models import (
     PlaceKind,
     Podcast,
     PodcastEpisode,
+    PodcastHeard,
     RelationType,
     UserWork,
     Visit,
@@ -85,13 +87,15 @@ DATASETS: dict[str, str] = {
     "museums": "Museum visits",
     "audio-courses": "Audio courses",
     "audio-books": "Audio books",
-    "podcasts": "Podcasts",
-    "podcast-episodes": "Podcast episodes",
+    "podcasts-heard": "Your podcasts",
+    "episodes-heard": "Episodes heard",
     "youtube": "YouTube",
     "chess": "Chess",
     "people": "People",
     "groups": "Groups",
     "places": "Places",
+    "podcasts": "Podcasts",
+    "podcast-episodes": "Podcast episodes",
     "cities": "Cities",
     "countries": "Countries",
     "currencies": "Currencies",
@@ -155,6 +159,8 @@ SUBJECTS: dict[type, tuple[str, str]] = {
     AudioBook: ("audio book", "audio-books"),
     Podcast: ("podcast", "podcasts"),
     PodcastEpisode: ("podcast episode", "podcast-episodes"),
+    PodcastHeard: ("podcast of yours", "podcasts-heard"),
+    EpisodeHeard: ("episode heard", "episodes-heard"),
     YouTubeVideo: ("YouTube video", "youtube"),
     Person: ("person", "people"),
     Organization: ("organization", "organizations"),
@@ -192,7 +198,8 @@ def problem(row: Any, message: str) -> Problem:
         kind = row.work.kind
         return Problem(f"{row.work.title} ({KINDS[kind][0].lower()} {row.work_id}, account {row.owner_id})", message, f"{kind}/{row.work_id}", row.owner_id)
     noun, view = SUBJECTS[type(row)]
-    name = row.name
+    # one heard is told by the name of what was heard
+    name = row.podcast.name if isinstance(row, PodcastHeard) else row.episode.name if isinstance(row, EpisodeHeard) else row.name
     # a place is told with its city and a city with its country: two may share a name
     if isinstance(row, Place) and row.city:
         name = f"{name}, {row.city.name}"
@@ -226,7 +233,7 @@ def squashed(name: str) -> str:
     return " ".join(name.casefold().split())
 
 
-def dated(course: AudioCourse | PodcastEpisode | YouTubeVideo | Concert) -> bool:
+def dated(course: AudioCourse | EpisodeHeard | YouTubeVideo | Concert) -> bool:
     """ Whether it has a date, at any precision: the day it was finished. """
     return course.date_utcz is not None or course.date_ymd is not None or bool(course.date_my) or course.date_y is not None
 

@@ -929,56 +929,80 @@ def test_audio_books_import_refuses_what_it_does_not_know(imported: webtest.Test
 
 
 def test_podcasts(imported: webtest.TestApp) -> None:
+    # the podcasts are shared: by name
     podcasts = imported.get("/api/podcasts").json
-    # the one heard last first
-    assert [p["name"] for p in podcasts] == ["The rest is history", "Mindscape"]
-    history, mindscape = podcasts
-    assert (history["url"], history["rss_feed"], history["rating"], history["review"]) == (
-        "https://therestishistory.com/club", "https://feeds.megaphone.fm/GLT4787413333", 7, "So-so podcast")
-    assert (history["episodes"], history["duration"], history["date_sort"]) == (2, 286 + 1975, "2026-03-27")
+    assert [p["name"] for p in podcasts] == ["Mindscape", "The rest is history"]
+    mindscape, history = podcasts
+    assert (history["url"], history["rss_feed"], history["episodes"], history["heard"], history["listened"]) == (
+        "https://therestishistory.com/club", "https://feeds.megaphone.fm/GLT4787413333", 2, 2, True)
+    assert "rating" not in history and history["published"] == "2020-11-02T02:00:00Z"
     assert imported.get(history["image"]).body == b"\xff\xd8history"
     assert (mindscape["episodes"], mindscape["image"]) == (1, None)
+    # and so are their episodes, the latest published first, each saying when the user heard it
     episodes = imported.get("/api/podcast-episodes").json
-    # the latest heard first; of a day, the latest published first
-    assert [e["name"] for e in episodes] == ["1. Greatness", "Welcome to the Mindscape Podcast!", "Trailer"]
-    greatness, welcome, trailer = episodes
+    assert [e["name"] for e in episodes] == ["1. Greatness", "Trailer", "Welcome to the Mindscape Podcast!"]
+    greatness, trailer, welcome = episodes
     # everything as the feed says it: pubDate in UTC
     assert (greatness["podcast"]["name"], greatness["published"], greatness["number"], greatness["duration"]) == ("The rest is history", "2020-11-02T02:00:00Z", 1, 1975)
     assert (greatness["episode_type"], greatness["explicit"], greatness["author"], greatness["guid"]) == ("full", "yes", "Goalhanger", "d64331b9")
     assert (greatness["enclosure_url"], greatness["url"], greatness["image_url"]) == ("https://pdst.fm/e/greatness.mp3", "https://pdst.fm/e/greatness.mp3", "https://megaphone.imgix.net/greatness.jpg")
-    assert (greatness["description"], greatness["date"], greatness["date_timezone"]) == ("How did certain people come to be called the Great?", "2026-03-27T10:00:00Z", "Asia/Jerusalem")
-    assert (greatness["listened_at"], greatness["device"]["name"], greatness["image"]) == ("Night Walks", "Samsung S25", history["image"])
+    assert (greatness["description"], greatness["image"], greatness["heard"]["date"]) == ("How did certain people come to be called the Great?", history["image"], "2026-03-27T10:00:00Z")
     # what a feed leaves out is empty; "false" is kept as the feed says it
-    assert (welcome["number"], welcome["author"], welcome["explicit"], welcome["listened_at"], welcome["image"]) == (None, "", "false", "", None)
+    assert (welcome["number"], welcome["author"], welcome["explicit"], welcome["image"]) == (None, "", "false", None)
     assert (trailer["episode_type"], trailer["image_url"], trailer["published"]) == ("trailer", "", "2020-10-28T13:00:00Z")
+    # the user's own: the podcasts they listen to, the one heard last first, with their rating and review and the episodes heard
+    heard = imported.get("/api/podcasts-heard").json
+    assert [(p["name"], p["rating"], p["review"]) for p in heard] == [("The rest is history", 7, "So-so podcast"), ("Mindscape", 8, "A very good podcast")]
+    assert ([e["name"] for e in heard[0]["episodes"]], heard[0]["duration"], heard[0]["date_sort"]) == (["1. Greatness", "Trailer"], 286 + 1975, "2026-03-27")
+    # and the episodes heard: the latest heard first; of a day, the latest published first
+    listened = imported.get("/api/episodes-heard").json
+    assert [e["name"] for e in listened] == ["1. Greatness", "Welcome to the Mindscape Podcast!", "Trailer"]
+    first = listened[0]
+    assert (first["episode"]["id"], first["date"], first["date_timezone"], first["listened_at"], first["device"]["name"]) == (
+        greatness["id"], "2026-03-27T10:00:00Z", "Asia/Jerusalem", "Night Walks", "Samsung S25")
+    assert (first["published"], first["duration"], first["image"]) == (greatness["published"], 1975, history["image"])
+    assert greatness["heard"]["id"] == first["id"]
 
 
 def test_edit_podcasts(imported: webtest.TestApp) -> None:
-    history = imported.get("/api/podcasts").json[0]
-    edited = imported.put_json(f"/api/podcasts/{history['id']}", dict(history, rating=8, review="Better than I said")).json
-    assert (edited["rating"], edited["review"], edited["image"], edited["episodes"]) == (8, "Better than I said", history["image"], 2)
+    history = imported.get("/api/podcasts").json[1]
+    edited = imported.put_json(f"/api/podcasts/{history['id']}", dict(history, url="https://therestishistory.com")).json
+    assert (edited["url"], edited["image"], edited["episodes"]) == ("https://therestishistory.com", history["image"], 2)
     imported.post_json("/api/podcasts", {"name": "The rest is history"}, status=409)
     imported.post_json("/api/podcasts", {"name": "x", "rss_feed": "feed"}, status=400)
-    # a podcast with episodes heard is not deleted: they are what was heard
+    # a podcast someone listens to stays, and so does an episode someone heard
     imported.delete(f"/api/podcasts/{history['id']}", status=409)
-    new = imported.post_json("/api/podcasts", {"name": "Hardcore History", "url": "https://www.dancarlin.com"}, status=201).json
     greatness = imported.get("/api/podcast-episodes").json[0]
+    imported.delete(f"/api/podcast-episodes/{greatness['id']}", status=409)
+    new = imported.post_json("/api/podcasts", {"name": "Hardcore History", "url": "https://www.dancarlin.com"}, status=201).json
     # the published moment sent back as shown is kept to the second
-    body = {**greatness, "podcast_id": greatness["podcast"]["id"], "device_id": greatness["device"]["id"], "rating": 9}
+    body = {**greatness, "podcast_id": greatness["podcast"]["id"], "author": "Goalhanger Films"}
     edited = imported.put_json(f"/api/podcast-episodes/{greatness['id']}", body).json
-    assert (edited["rating"], edited["published"], edited["guid"], edited["date"]) == (9, greatness["published"], "d64331b9", greatness["date"])
+    assert (edited["author"], edited["published"], edited["guid"]) == ("Goalhanger Films", greatness["published"], "d64331b9")
     # an episode is of a podcast, and in it once by its guid
     imported.post_json("/api/podcast-episodes", {"name": "x"}, status=400)
     imported.post_json("/api/podcast-episodes", {"name": "x", "podcast_id": greatness["podcast"]["id"], "guid": "d64331b9"}, status=409)
-    added = imported.post_json("/api/podcast-episodes", {"name": "Wrath of the Khans", "podcast_id": new["id"], "date": "2026-04-01", "published": "2006-04-01"}, status=201).json
-    assert (added["podcast"]["name"], added["date"], added["published"], added["guid"]) == ("Hardcore History", "2026-04-01", "2006-04-01T00:00:00Z", "")
-    imported.delete(f"/api/podcast-episodes/{added['id']}")
+    khans = imported.post_json("/api/podcast-episodes", {"name": "Wrath of the Khans", "podcast_id": new["id"], "published": "2006-04-01"}, status=201).json
+    assert (khans["podcast"]["name"], khans["published"], khans["guid"], khans["heard"]) == ("Hardcore History", "2006-04-01T00:00:00Z", "", None)
+    # hearing it puts its podcast in the user's Podcasts heard
+    heard = imported.post_json("/api/episodes-heard", {"episode_id": khans["id"], "date": "2026-04-01", "rating": 9}, status=201).json
+    assert (heard["name"], heard["podcast"]["name"], heard["date"], heard["rating"]) == ("Wrath of the Khans", "Hardcore History", "2026-04-01", 9)
+    imported.post_json("/api/episodes-heard", {"episode_id": khans["id"]}, status=409)
+    hardcore = next(p for p in imported.get("/api/podcasts-heard").json if p["name"] == "Hardcore History")
+    assert ([e["id"] for e in hardcore["episodes"]], hardcore["rating"]) == ([heard["id"]], None)
+    imported.put_json(f"/api/podcasts-heard/{hardcore['id']}", {"podcast_id": new["id"], "rating": 10, "review": "Long"})
+    imported.post_json("/api/podcasts-heard", {"podcast_id": new["id"]}, status=409)
+    # a podcast heard with episodes heard stays; without, it goes, and then the podcast may
+    imported.delete(f"/api/podcasts-heard/{hardcore['id']}", status=409)
+    imported.delete(f"/api/episodes-heard/{heard['id']}")
+    imported.delete(f"/api/podcasts-heard/{hardcore['id']}")
+    imported.delete(f"/api/podcast-episodes/{khans['id']}")
     imported.delete(f"/api/podcasts/{new['id']}")
 
 
 def test_podcasts_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
-    episode = imported.get("/api/podcast-episodes").json[0]
-    imported.put_json(f"/api/podcast-episodes/{episode['id']}", {**episode, "podcast_id": episode["podcast"]["id"], "review": "edited"})
+    heard = imported.get("/api/episodes-heard").json[0]
+    imported.put_json(f"/api/episodes-heard/{heard['id']}", {"episode_id": heard["episode"]["id"], "date": heard["date"], "review": "edited"})
     source = write_source(tmp_path / "again")
     yaml_file = source / "data" / "yaml" / "podcasts.yaml"
     # a new episode heard of a podcast there is: only it is added
@@ -991,10 +1015,18 @@ def test_podcasts_import_runs_again(imported: webtest.TestApp, engine: Engine, t
     with Session(engine) as session:
         counts = import_world.import_podcasts(session, owner(session), source)
         session.commit()
-    assert counts == {"podcasts added": 0, "podcast episodes added": 1, "covers added": 0, "devices added": 0}
-    episodes = imported.get("/api/podcast-episodes").json
-    assert episodes[0]["name"] == "1 | Carol Tavris"
-    assert next(e for e in episodes if e["id"] == episode["id"])["review"] == "edited"
+    assert counts == {"podcasts added": 0, "podcast episodes added": 1, "covers added": 0, "podcasts heard added": 0, "episodes heard added": 1, "devices added": 0}
+    listened = imported.get("/api/episodes-heard").json
+    assert listened[0]["name"] == "1 | Carol Tavris"
+    assert next(e for e in listened if e["id"] == heard["id"])["review"] == "edited"
+    # another account that heard the same: the shared podcasts and episodes are found, only its own hearing is added
+    with Session(engine) as session:
+        bob = User(email="bob@example.com")
+        session.add(bob)
+        session.flush()
+        counts = import_world.import_podcasts(session, bob, source)
+        session.commit()
+    assert counts == {"podcasts added": 0, "podcast episodes added": 0, "covers added": 0, "podcasts heard added": 2, "episodes heard added": 4, "devices added": 1}
 
 
 def test_podcasts_import_refuses_what_it_does_not_know(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
@@ -1953,7 +1985,7 @@ def test_stats(imported: webtest.TestApp) -> None:
     stats = imported.get("/api/stats").json
     assert (stats["concerts"], stats["museum_visits"], stats["museums"], stats["audio_courses"]) == (3, 3, 2, 2)
     assert (stats["people"], stats["organizations"], stats["images"]) == (8, 3, 9)
-    assert (stats["podcasts"], stats["podcast_episodes"]) == (2, 3)
+    assert (stats["podcasts"], stats["podcast_episodes"], stats["podcasts_heard"], stats["episodes_heard"]) == (2, 3, 2, 3)
     assert (stats["organization_types"], stats["person_types"]) == (7, 3)
     # Bob, Singer and The Band performed; Bob also went with the user, he counts once
     assert stats["performers"] == 3

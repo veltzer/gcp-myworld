@@ -3,7 +3,8 @@ A podcast's RSS feed: reading it (fetch_feed) and what it says
 (parse_feed): the podcast's page and cover, and each of its episodes with
 everything the feed gives of it (title, description, when published, its
 number, length, type, explicit, the audio's and the image's addresses,
-author, guid), oldest first. The importer of the episodes
+author, guid), oldest first. A description is kept as text: a feed's is
+often HTML, whose tags are dropped and entities read (plain). The importer of the episodes
 (myworld.importers.podcast_feeds) is built on it.
 
 A feed is anyone's address, read by the server: only http and https are
@@ -15,6 +16,7 @@ attacks, the "billion laughs").
 import dataclasses
 import datetime
 import email.utils
+import html.parser
 import math
 import xml.etree.ElementTree as ET
 
@@ -119,6 +121,32 @@ def published(value: str) -> datetime.datetime | None:
     return stamp.astimezone(datetime.UTC).replace(tzinfo=None)
 
 
+class _Text(html.parser.HTMLParser):
+    """ The text of some HTML: what a reader sees, its tags gone and its entities read; a paragraph or a line break a space. """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(data)
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        if tag in ("p", "br", "div", "li"):
+            self.parts.append(" ")
+
+
+def plain(text: str) -> str:
+    """ A description as text: a feed's is often HTML ("<p>How did <b>certain</b> people..."), which a card shows as it reads. """
+    if "<" not in text and "&" not in text:
+        return " ".join(text.split())
+    parser = _Text()
+    parser.feed(text)
+    parser.close()
+    return " ".join("".join(parser.parts).split())
+
+
 def _text(element: ET.Element, tag: str) -> str:
     found = element.find(tag)
     return found.text.strip() if found is not None and found.text else ""
@@ -133,7 +161,7 @@ def _episode(item: ET.Element) -> Episode:
     number = _text(item, f"{ITUNES}episode")
     return Episode(
         name=_text(item, "title") or _text(item, f"{ITUNES}title"),
-        description=_text(item, "description") or _text(item, f"{ITUNES}summary"),
+        description=plain(_text(item, "description") or _text(item, f"{ITUNES}summary")),
         published_utcz=published(_text(item, "pubDate")),
         number=int(number) if number.isdigit() else None,
         duration=duration_seconds(_text(item, f"{ITUNES}duration")),

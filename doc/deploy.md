@@ -461,24 +461,40 @@ first `companies` tables to `organizations`, then making
   `scripts/import_world.py --audio-books`, which adds the books the account does not have yet and
   refreshes what Audible changes on the rest (finished, how much was
   heard, the rating there, when bought, the cover's address), so it can run again after the site's data is.
-- `GET /api/podcasts`: the podcasts listened to, the one heard last first,
-  each with `url` (its page), `rss_feed`, the user's `rating` and
-  `review`, the cover as `image`, and of the episodes heard how many
-  (`episodes`), how long all of them are (`duration`, seconds) and when
-  the last was (`date_sort`). A name is in an account once (409); a
-  podcast with episodes heard is not deleted (409).
-- `GET /api/podcast-episodes`: the episodes heard, the latest first, each
-  with its `podcast` (id and name), the date heard, what its feed says of
-  it (`description`, `published` (UTC), `number`, `duration` (seconds),
+- `GET /api/podcasts` (shared, kept by admins): every podcast, by name,
+  with `url` (its page), `rss_feed`, the cover as `image`, how many
+  episodes it has (`episodes`), when the newest was published
+  (`published`), and whether the user listens to it (`listened`) and how
+  many of its episodes they heard (`heard`). A name is once in My World
+  (409); a podcast someone listens to is not deleted (409).
+- `GET /api/podcast-episodes` (shared, kept by admins, brought from the
+  feeds by the Podcast feeds importer): every episode, the latest published
+  first, each with its `podcast` (id and name), what its feed says of it
+  (`description`, `published` (UTC), `number`, `duration` (seconds),
   `episode_type`, `explicit`, `enclosure_url` (the audio, also `url`),
-  `image_url`, `author`, `guid`), the user's `rating` and `review`,
-  `listened_at` and `device`; `image` is the podcast's cover. An episode
-  is in its podcast once by its guid (409). Both were imported
-  (2026-11-21) from `podcasts.yaml` in `veltzer.github.io` (covers
+  `image_url`, `author`, `guid`), `image` (the podcast's cover) and `heard`:
+  the user's hearing of it (its id and date), or null. An episode is in its
+  podcast once by its guid (409); one someone heard is not deleted (409).
+- `GET /api/podcasts-heard` (Your podcasts): the shared podcasts filtered
+  to those the user heard an episode of, the one heard last first, each
+  with the user's `rating` and `review` of it (`podcasts_heard`, one per
+  podcast, made when an episode of it is first heard), the episodes heard
+  (`episodes`: the hearing's id and the episode's name, the latest first),
+  how long they are (`duration`) and when the last was (`date_sort`). It is
+  not added to (`POST` is 409: hearing an episode adds its podcast); one
+  whose episodes heard are all deleted is not listed and keeps its rating
+  and review, and is deleted only then (409 before).
+- `GET /api/episodes-heard`: the episodes the user heard, the latest first,
+  each with its `episode` and `podcast` (ids and names), what the feed says
+  of it (as above), the date heard, the user's `rating` and `review`,
+  `listened_at` and `device`. An episode is heard once (409). All four were
+  imported (2026-11-21) from `podcasts.yaml` in `veltzer.github.io` (covers
   `static/images/podcast-<internal_id>.jpg`) by
   `scripts/import_world.py --podcasts`, which adds only what is missing
   and can run again; the site no longer keeps the file (its git history
-  does).
+  does). Migrations 0024 (before the deploy) and 0025 (after it) made the
+  podcasts and episodes shared and moved what was each account's own to
+  `podcasts_heard` and `episodes_heard`.
 - `GET /api/youtube-videos`: the YouTube videos watched, newest first (the
   watch history, with no dates, after), with `youtube_id`, rating,
   review, `device` (id and name), `watched_at`, and what YouTube says
@@ -595,7 +611,7 @@ a person is written with `type_ids`, a list.
   (how it is related to the user: ids and names of relation types), status, website, location, address, `latitude` and `longitude`, the logo as
   `image`, and `people` (ids and names).
 - `POST` to the same paths adds,
-  `PUT /api/<concert-visits|museum-visits|audio-courses|audio-books|podcasts|podcast-episodes|youtube-videos|chess-games|places|groups|people|organizations>/<id>` replaces the fields,
+  `PUT /api/<concert-visits|museum-visits|audio-courses|audio-books|podcasts|podcast-episodes|podcasts-heard|episodes-heard|youtube-videos|chess-games|places|groups|people|organizations>/<id>` replaces the fields,
   `DELETE` removes. The date is sent as `YYYY`, `YYYY-MM` or
   `YYYY-MM-DD` (the add and edit forms pick it with a date picker and a Day, Month
   only or Year only choice, so it is always a real date); a date sent back exactly as it came keeps its stored
@@ -786,11 +802,16 @@ The Imports page and its API are in `imports.md`.
   `place_id` points to one, and a visit's), with their kinds in
   `place_kind_links` to `place_kinds` ("Museum", "Concert venue", ...).
     - `visit_types` ("Museum visit", ...).
+    - `podcasts` (name, page, RSS feed, cover) and `podcast_episodes`
+  (everything a podcast's feed says of an episode, brought by the Podcast
+  feeds importer): what a user heard and thinks of them is theirs, in
+  `podcasts_heard` and `episodes_heard`.
 - Every other table that holds an account's rows says whose they are in
   `owner_id` (or through the rows it links):
     - `concert_visits`, `visits` (a visit to a place, of a type: the
-  museum visits), `audio_courses`, `audio_books`, `podcasts` (and the
-  episodes of them heard, `podcast_episodes`), `youtube_videos`, `chess_games`: one
+  museum visits), `audio_courses`, `audio_books`, `podcasts_heard` (a
+  shared podcast the user listens to, with their rating and review) and
+  `episodes_heard` (a shared episode heard, when, where, on what), `youtube_videos`, `chess_games`: one
   row per thing done (see "Concerts, museums, people and organizations").
   A chess game keeps its text whole (`pgn`), and beside it what is listed
   and sorted by, read out of that text; one recorded without its moves has

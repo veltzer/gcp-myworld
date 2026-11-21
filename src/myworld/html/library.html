@@ -515,10 +515,6 @@
 					<label title="The address of the podcast's RSS feed, which lists its episodes" class="wide">RSS feed <input name="rss_feed" type="url" placeholder="https://"></label>
 				</div>
 				<div class="row">
-					<label title="Your rating of the podcast, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
-					<label title="What you think of the podcast, in your own words" class="wide">Review <input name="review"></label>
-				</div>
-				<div class="row">
 					<label title="The podcast's cover image. + adds one, in place of the one it has; − takes it away" class="wide">Cover <span class="chips pictures" id="podcast-pictures" data-pictures="one" data-what="cover"></span></label>
 				</div>
 				<div class="adder" data-picture-adder hidden>
@@ -538,15 +534,6 @@
 				</div>
 				<div class="row">
 					<label title="The episode's title, as its feed says it" class="wide">Title <input name="name" required></label>
-				</div>
-				<div class="row">
-					<label title="How much of the date you heard it is known">Heard <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
-					<label title="What you listened on, one of Devices; add a new one on the Devices page">Device <select name="device_id"></select></label>
-					<label title="Where you listened to it: on night walks, in the car, ...">Where <input name="listened_at" placeholder="e.g. Night Walks, Car"></label>
-				</div>
-				<div class="row">
-					<label title="Your rating of the episode, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
-					<label title="What you thought of the episode, in your own words" class="wide">Review <input name="review"></label>
 				</div>
 				<div class="row">
 					<label title="Its number in the podcast, as its feed says it">Number <input name="number" type="number" min="0"></label>
@@ -569,6 +556,39 @@
 				</div>
 				<div class="row">
 					<label title="The episode's id in its feed (guid): an episode is in a podcast once by it" class="wide">Id in the feed <input name="guid"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="podcast-heard-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="The podcast you listen to, one of Podcasts (shared): an admin adds a new one there" class="wide">Podcast <select name="podcast_id" data-picker="podcasts" data-placeholder="Type a podcast" title="The podcast you listen to, one of Podcasts (shared): an admin adds a new one there"></select></label>
+				</div>
+				<div class="row">
+					<label title="Your rating of the podcast, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
+					<label title="What you think of the podcast, in your own words" class="wide">Review <input name="review"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="episode-heard-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="The episode you heard, one of Podcast episodes (shared), as podcast: title" class="wide">Episode <select name="episode_id" data-picker="podcast-episodes" data-placeholder="Type an episode or its podcast" title="The episode you heard, one of Podcast episodes (shared), as podcast: title"></select></label>
+				</div>
+				<div class="row">
+					<label title="How much of the date you heard it is known">Heard <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
+					<label title="What you listened on, one of Devices; add a new one on the Devices page">Device <select name="device_id"></select></label>
+					<label title="Where you listened to it: on night walks, in the car, ...">Where <input name="listened_at" placeholder="e.g. Night Walks, Car"></label>
+				</div>
+				<div class="row">
+					<label title="Your rating of the episode, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
+					<label title="What you thought of the episode, in your own words" class="wide">Review <input name="review"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>

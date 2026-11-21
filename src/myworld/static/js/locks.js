@@ -282,7 +282,7 @@ export function setupAddDialog() {
 	$("audio-course-form").elements.rating.max = rating_max;
 	$("audio-book-form").elements.rating.min = rating_min;
 	$("audio-book-form").elements.rating.max = rating_max;
-	for (const id of ["podcast-form", "podcast-episode-form"]) {
+	for (const id of ["podcast-heard-form", "episode-heard-form"]) {
 		$(id).elements.rating.min = rating_min;
 		$(id).elements.rating.max = rating_max;
 	}

@@ -64,8 +64,9 @@ def picture_json(row: Pictured) -> dict[str, Any]:
 
 
 def _shared_images() -> Any:
-    """ The images shared rows show (a place's photo, a city's, a country's flag): everyone sees them, whoever uploaded them. """
+    """ The images shared rows show (a place's photo, a podcast's cover, a city's, a country's flag): everyone sees them, whoever uploaded them. """
     return select(Place.image_id).where(Place.image_id.is_not(None)).union(
+        select(Podcast.image_id).where(Podcast.image_id.is_not(None)),
         select(City.image_id).where(City.image_id.is_not(None)),
         select(CityPhoto.image_id),
         select(Country.image_id).where(Country.image_id.is_not(None)),

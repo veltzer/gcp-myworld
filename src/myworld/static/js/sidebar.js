@@ -4,15 +4,15 @@ import { $, VISIT, api, pageHref, showError } from "./core.js";
 import { selectKind, state } from "./library.js";
 import { markActive } from "./paging.js";
 import { selectWorld } from "./views.js";
-import { SHARED_VIEWS, WORLDS, el } from "./worlds.js";
+import { FILTERED_VIEWS, SHARED_VIEWS, WORLDS, el } from "./worlds.js";
 
 // the sidebar's groups of views: first what is the user's own (the library's kinds, from the config, ahead
 // of the rest), then what everyone shares (SHARED_VIEWS), apart, under a heading of its own
 const NAV_GROUPS = [
-	["Yours", ["concerts", "museums", "audio-courses", "audio-books", "podcasts", "podcast-episodes", "youtube", "chess"]],
+	["Yours", ["concerts", "museums", "audio-courses", "audio-books", "podcasts-heard", "episodes-heard", "youtube", "chess"]],
 	["Your people", ["people", "groups", "organizations"]],
 	["Your types", ["organization-types", "person-types", "relation-types", "person-relation-types", "person-organization-types", "devices"]],
-	["Shared by everyone", ["places", "cities", "countries", "currencies", "place-kinds", "visit-types", "locales"]],
+	["Shared by everyone", ["places", "podcasts", "podcast-episodes", "cities", "countries", "currencies", "place-kinds", "visit-types", "locales"]],
 ];
 
 function sideLink(label, key, open) {
@@ -24,6 +24,23 @@ function sideLink(label, key, open) {
 		closeSidebarOnPhone();
 		open();
 	};
+	return a;
+}
+
+// a funnel (Material "filter_alt"): shared data, filtered for the user
+const FILTER_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.25 5.61C6.27 8.2 10 13 10 13v6c0 .55.45 1 1 1h2c.55 0 1-.45 1-1v-6s3.72-4.8 5.74-7.39A.998.998 0 0 0 18.95 4H5.04c-.83 0-1.3.95-.79 1.61z"/></svg>';
+
+// a sidebar link of a view, marked with the filter when it is shared data filtered for the user
+function worldLink(view) {
+	const a = sideLink(WORLDS[view][3], view, () => selectWorld(view).catch((e) => showError(e.message)));
+	a.dataset.world = view;
+	if (view in FILTERED_VIEWS) {
+		const icon = el("span", "side-filter");
+		icon.innerHTML = FILTER_ICON;
+		icon.title = FILTERED_VIEWS[view];
+		a.querySelector(".side-label").after(icon);
+		a.title = FILTERED_VIEWS[view];
+	}
 	return a;
 }
 
@@ -52,11 +69,8 @@ export function renderKinds() {
 			a.dataset.kind = kind;
 			return a;
 		});
-		const groups = NAV_GROUPS.map(([heading, views], i) => sideGroup(heading, [...(i === 0 ? library : []), ...views.map((view) => {
-			const a = sideLink(WORLDS[view][3], view, () => selectWorld(view).catch((e) => showError(e.message)));
-			a.dataset.world = view;
-			return a;
-		})], views.every((view) => SHARED_VIEWS.has(view))));
+		const groups = NAV_GROUPS.map(([heading, views], i) => sideGroup(heading, [...(i === 0 ? library : []), ...views.map(worldLink)],
+			views.every((view) => SHARED_VIEWS.has(view))));
 		nav.append(...groups);
 	}
 	markActive();
@@ -93,7 +107,7 @@ export async function loadCounts() {
 		setCount(kind.kind, kind.total);
 	}
 	const keys = {
-		concerts: "concerts", museums: "museum_visits", "audio-courses": "audio_courses", "audio-books": "audio_books", podcasts: "podcasts", "podcast-episodes": "podcast_episodes", youtube: "youtube_videos", chess: "chess_games",
+		concerts: "concerts", museums: "museum_visits", "audio-courses": "audio_courses", "audio-books": "audio_books", "podcasts-heard": "podcasts_heard", "episodes-heard": "episodes_heard", podcasts: "podcasts", "podcast-episodes": "podcast_episodes", youtube: "youtube_videos", chess: "chess_games",
 		places: "places", cities: "cities", countries: "countries", currencies: "currencies", people: "people", groups: "groups", organizations: "organizations", "organization-types": "organization_types",
 		"person-types": "person_types", "relation-types": "relation_types", "person-relation-types": "person_relation_types",
 		"person-organization-types": "person_organization_types", devices: "devices", locales: "locales",

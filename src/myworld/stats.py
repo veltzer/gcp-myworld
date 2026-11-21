@@ -22,6 +22,7 @@ from myworld.models import (
     Country,
     Currency,
     Device,
+    EpisodeHeard,
     Group,
     Image,
     Locale,
@@ -148,6 +149,9 @@ def api_stats() -> flask.Response:
         "audio_books": count(AudioBook),
         "podcasts": count(Podcast),
         "podcast_episodes": count(PodcastEpisode),
+        # Your podcasts: those the user heard an episode of
+        "podcasts_heard": db.scalar(select(func.count(func.distinct(PodcastEpisode.podcast_id))).join(EpisodeHeard).where(EpisodeHeard.owner_id == me)) or 0,
+        "episodes_heard": count(EpisodeHeard),
         "youtube_videos": count(YouTubeVideo),
         "chess_games": len(chess_dates),
         "people": len(people),

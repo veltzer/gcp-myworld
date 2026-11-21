@@ -9,7 +9,7 @@ only their own runs; an admin sees everyone's, with the user's id and email.
 The importers are listed in two groups: Your importers (into the user's
 own data) and, for an admin, Admin importers: those that write the shared
 data, everyone's (`shared`), and the tests (`admin_only`). Only admins see
-and run either kind. Each importer is one line until it is clicked; then it
+and run either kind (see "Who runs which importer"). Each importer is one line until it is clicked; then it
 opens to say what it does, with its parameters and Dry run and Run.
 
 ## Runs go in the background
@@ -215,32 +215,79 @@ lists them, each genre's path from its top genre down. It takes no
 parameters, adds only, and needs Audible connected. It shares its writing
 with `scripts/import_world.py --audio-books` (`audible.store_library`).
 
-## Podcast feeds
+## Podcast feeds (an admin's)
 
-`podcast-feeds` reads the RSS feeds of the user's podcasts
-(`myworld.podcasts`): the ones picked in its first parameter, Podcasts, or
-every one with a feed when none is picked. It needs a podcast with its feed
-(Podcasts, Edit), and nothing to connect: feeds are public. Of each feed:
+`podcast-feeds` reads the RSS feeds of the podcasts (`myworld.podcasts`)
+into the shared data: the ones picked in its parameter, Podcasts, or every
+one with a feed when none is picked. It is `shared`, so only admins see and
+run it (see "Who runs which importer" for why that may change). It needs a
+podcast with its feed (Podcasts, Edit, by an admin), and nothing to
+connect: feeds are public. Of each feed:
 
-- An episode the user has, found by its feed's guid, is given what the feed
-  says of it (description, when published, number, length, type, explicit,
-  the audio's and the image's addresses, author) where it says nothing yet;
-  what is there, edited or not, is kept.
+- Every episode the podcast does not have yet (by the feed's guid) is
+  added, with everything the feed says of it. An item with no guid is left
+  out: there would be nothing to find it again by.
+- An episode it has is given what the feed says of it (description, when
+  published, number, length, type, explicit, the audio's and the image's
+  addresses, author) where it says nothing yet; what is there, edited or
+  not, is kept.
 - A podcast with no cover gets the feed's (its `itunes:image`, kept as
-  `podcast-feed-<id>.<ext>`), and one with no page gets the feed's `link`.
-- Its second parameter, Episodes to add (one of 1, 2, 3, 5, 10, 20, or none),
-  adds the next so many episodes of the feed after the last one the user
-  heard (by the feed's order, oldest first; from the first when none was
-  heard), as heard at the moment of the run, where, in what time zone and on
-  what device the last one heard was. This is what `veltzer.github.io`'s
-  `podcasts_add_chapters.py` did.
+  `podcast-feed-<id>.<ext>`, an image of the admin who ran it, which
+  everyone sees as the shared podcast's), and one with no page gets the
+  feed's `link`.
 
-An episode is added once (`uq_podcast_episode_guid`), so a run again adds
-nothing it added before, and one the feed no longer has stays. A feed that
-cannot be read is said in the log, counted, and skipped; the rest go on.
-Feeds are anyone's addresses, read by the server: only `http` and `https`, at
-most 30 MB, and parsed by `xml.etree`, which resolves no external entity
-(expat refuses entity expansion attacks).
+It never deletes or renames and keeps ids (an episode someone heard points
+at it): a run again adds only what the feed added since (`uq_podcast_episode_guid`),
+and an episode the feed no longer has stays. A feed that cannot be read is
+said in the log, counted, and skipped; the rest go on. Feeds are anyone's
+addresses, read by the server: only `http` and `https`, at most 30 MB, and
+parsed by `xml.etree`, which resolves no external entity (expat refuses
+entity expansion attacks).
+
+## Next podcast episodes
+
+`podcast-next`, every user's, marks episodes heard. Of each podcast picked
+(Podcasts, required: any podcast with episodes) it adds the next so many
+episodes (Episodes to add, one of 1, 2, 3, 5, 10, 20) after the last one the
+user heard, by the order they were published, or from the first when they
+heard none, to the user's Episodes heard: as heard at the moment of the
+run, where, in what time zone and on what device the last one heard was.
+The episodes skipped before the last one heard are not added. This is what
+`veltzer.github.io`'s `podcasts_add_chapters.py` did. The podcast is then in
+the user's Your podcasts. An episode is heard once (`uq_episode_heard`), so
+each run adds the next ones. It reads no feed: episodes the shared data
+does not have yet come with an admin's Podcast feeds run.
+
+## Who runs which importer
+
+Today the rule is simple: an importer that writes the shared data
+(`shared`) is seen and run by admins only, like the hand edits of shared
+data (`users.edit_shared`); every other importer writes only the signed-in
+user's own rows, and every user runs it, up to the month's runs.
+
+Podcast feeds shows where that rule may be too strict. It writes shared
+data, but only what a podcast's own public feed says, it only adds and
+fills empty fields, and it keeps ids, so a run cannot spoil what is there
+or anyone's history. Whoever runs it, the result is the same: there is no
+reason a user could not bring the new episodes of a podcast they listen to,
+and as it is, Next podcast episodes runs out of episodes until an admin
+runs the feeds. It stays admin-only for now. The open questions before
+opening it, or other shared importers like it, to every user:
+
+- Which shared importers are safe for anyone: those that only add and fill
+  from a source that is the same for everyone (a feed, GeoNames), unlike
+  hand edits, which can change or delete. That could be a flag of its own
+  on `Importer` (say `anyone`), apart from `shared`.
+- Which rows a user's run may touch: every podcast, or only those in their
+  Your podcasts; and whether a user may add a podcast (its name and feed)
+  at all, which is a hand edit of shared data today.
+- What a regular user's run costs: feeds are read by the server, so runs
+  count against the month's runs as any other, and a run over every feed
+  may be limited to the podcasts picked.
+- Whose a cover fetched from a feed is (`images.owner_id`): today the
+  admin's who ran it; for a user's run, theirs, though everyone sees it.
+- How the Imports page lists such an importer: with Your importers, saying
+  it writes shared data.
 
 ## Connecting Audible
 
