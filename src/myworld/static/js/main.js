@@ -1,6 +1,6 @@
 // The library page as a whole: starting it, and going where the address says.
 
-import { setupAccountMenu, setupSettings, showWho } from "./account.js";
+import { askUsername, setupAccountMenu, setupSettings, showWho } from "./account.js";
 import { selectChecks, setupViewChecks } from "./checks.js";
 import { $, api, applyTheme, showError } from "./core.js";
 import { dialogError, pictures, setupPictures } from "./dialog.js";
@@ -32,6 +32,8 @@ export async function libraryPage() {
 	if (user.picture) {
 		$("avatar").src = user.picture;
 	}
+	// the username first: a new account chooses it before anything else
+	await askUsername(user);
 	setupAccountMenu(user);
 	setupSettings(user);
 	setupRunLog();

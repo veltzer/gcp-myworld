@@ -123,6 +123,14 @@ ROLE_ADMIN = "admin"
 ROLES = (ROLE_USER, ROLE_ADMIN)
 
 
+# a username: 3 to 30 of lowercase letters, digits, ".", "-" and "_", starting with a letter
+USERNAME_MIN = 3
+USERNAME_MAX = 30
+USERNAME_PATTERN = rf"[a-z][a-z0-9._-]{{{USERNAME_MIN - 1},{USERNAME_MAX - 1}}}"
+# names no one may take: they would read as the site's own
+USERNAMES_RESERVED = frozenset({"admin", "administrator", "root", "system", "support", "help", "api", "app", "www", "myworld", "anonymous", "null", "none"})
+
+
 class User(Base):
     """
     A person with an account, one per email, who owns the data. They sign
@@ -134,10 +142,14 @@ class User(Base):
     reaches the same data; an address merely typed into a form gets nothing.
     """
     __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("username", name="uq_user_username"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # proven to be this person's by the provider of the login that made the account
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
+    # the name the account is known by, chosen by its user (USERNAME_PATTERN, lowercase): one account's
+    # alone; None until chosen (the app asks for it before anything else)
+    username: Mapped[str | None] = mapped_column(String(USERNAME_MAX), nullable=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     picture: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     # what the account may do on the site, one of ROLES: an admin can also see
@@ -1480,7 +1492,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0016"
+SCHEMA_REVISION = "0017"
 
 
 def prepare_schema(engine: Engine) -> None:

@@ -88,6 +88,37 @@ export function showWho(user) {
 	$("who-role").hidden = user.role !== "admin";
 }
 
+// A user with no username yet (a new account, or one from before usernames) chooses one before anything else:
+// the dialog cannot be put away until it is saved. Resolves once they have one.
+export function askUsername(user) {
+	if (user.username) {
+		return Promise.resolve();
+	}
+	const dialog = $("username-dialog");
+	const input = $("username-input");
+	const error = $("username-error");
+	// a start to change: the part of the email before the @, as a username may be
+	input.value = user.email.split("@")[0].toLowerCase().replace(/[^a-z0-9._-]/g, "").replace(/^[^a-z]+/, "");
+	dialog.oncancel = (event) => event.preventDefault();
+	dialog.showModal();
+	input.focus();
+	input.select();
+	return new Promise((resolve) => {
+		$("username-form").onsubmit = async (event) => {
+			event.preventDefault();
+			try {
+				const account = await api("/api/account/username", { method: "PUT", body: { username: input.value } });
+				user.username = account.username;
+				dialog.close();
+				resolve();
+			} catch (e) {
+				error.textContent = e.message;
+				error.hidden = false;
+			}
+		};
+	});
+}
+
 // The Settings button opens the settings dialog with the name ready to edit;
 // Cancel, Escape and the backdrop close it unsaved, Save sends the name, the preferred language and the theme
 export function setupSettings(user) {
@@ -97,6 +128,7 @@ export function setupSettings(user) {
 	name.maxLength = state.config.name_max_length;
 	const locale = $("settings-locale");
 	const theme = $("settings-theme");
+	const username = $("settings-username");
 	// an admin's lock on the shared data; one who is no admin sees it, disabled
 	const editShared = $("settings-edit-shared");
 	editShared.disabled = user.role !== "admin";
@@ -108,6 +140,7 @@ export function setupSettings(user) {
 	setupLocks(dialog);
 	$("settings-button").onclick = () => {
 		name.value = saved;
+		username.value = user.username || "";
 		locale.value = savedLocale;
 		theme.value = savedTheme;
 		editShared.checked = savedEditShared;
@@ -129,6 +162,9 @@ export function setupSettings(user) {
 		try {
 			const account = await api("/api/account/name", { method: "PUT", body: { name: name.value } });
 			saved = account.name;
+			if (username.value.toLowerCase() !== (user.username || "")) {
+				user.username = (await api("/api/account/username", { method: "PUT", body: { username: username.value } })).username;
+			}
 			showWho(account);
 			if (theme.value !== savedTheme) {
 				savedTheme = (await api("/api/account/theme", { method: "PUT", body: { theme: theme.value } })).theme;

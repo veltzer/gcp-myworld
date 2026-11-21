@@ -4,6 +4,7 @@ it talks to.
 """
 
 import os
+import re
 from typing import Any
 
 import flask
@@ -22,10 +23,15 @@ from myworld.models import (
     ROLE_ADMIN,
     STATUSES,
     THEMES,
+    USERNAME_MAX,
+    USERNAME_MIN,
+    USERNAME_PATTERN,
+    USERNAMES_RESERVED,
     Login,
     Person,
     PersonType,
     Read,
+    User,
     UserWork,
     Work,
     WorkTitle,
@@ -384,6 +390,8 @@ def _account_json(login: Login) -> dict[str, Any]:
         "id": user.id,
         "email": user.email,
         "name": user.name,
+        # the name the account is known by; None until chosen, and the app asks for it first
+        "username": user.username,
         "picture": user.picture,
         "role": user.role,
         # the language they prefer (Settings): what a book with several titles is shown by
@@ -413,6 +421,30 @@ def api_account_name() -> flask.Response:
     login = auth.current_login()
     assert login is not None
     login.user.name = name
+    flask.g.db.commit()
+    return flask.jsonify(_account_json(login))
+
+
+@bp.route("/api/account/username", methods=["PUT"])
+@auth.login_required
+def api_account_username() -> flask.Response:
+    """
+    The signed-in person chooses their username: 3 to 30 lowercase letters,
+    digits, ".", "-" and "_", starting with a letter (taken as typed, in
+    lowercase); one account's alone (409 when another has it), and none of
+    the names that would read as the site's own.
+    """
+    username = text(json_body(), "username").lower()
+    if not re.fullmatch(USERNAME_PATTERN, username):
+        raise ApiError(400, f"A username is {USERNAME_MIN} to {USERNAME_MAX} letters, digits, dots, dashes or underscores, starting with a letter.")
+    if username in USERNAMES_RESERVED:
+        raise ApiError(400, f"{username} is kept for the site: choose another")
+    login = auth.current_login()
+    assert login is not None
+    taken = flask.g.db.scalars(select(User.id).where(User.username == username, User.id != login.user.id)).first()
+    if taken is not None:
+        raise ApiError(409, f"{username} is taken: choose another")
+    login.user.username = username
     flask.g.db.commit()
     return flask.jsonify(_account_json(login))
 

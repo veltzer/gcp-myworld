@@ -878,6 +878,11 @@
 				<p class="settings-hint">
 					Shown in the top right corner, whichever way you sign in. Up to 60 characters.
 				</p>
+				<label title="The name your account is known by: 3 to 30 lowercase letters, digits, dots, dashes or underscores, starting with a letter; yours alone" for="settings-username">Username</label>
+				<input id="settings-username" name="username" type="text" maxlength="30" required autocomplete="username" pattern="[a-zA-Z][a-zA-Z0-9._\-]{2,29}">
+				<p class="settings-hint">
+					Yours alone: no other account has it.
+				</p>
 				<label title="The language you prefer: a book with titles in several languages, or a person with names in several, is shown by the one in it" for="settings-locale">Preferred language</label>
 				<select id="settings-locale" name="locale" data-locales></select>
 				<p class="settings-hint">
@@ -902,6 +907,21 @@
 				<p id="settings-error" class="warning" hidden></p>
 				<div class="dialog-actions">
 					<button type="button" class="text" id="settings-cancel">Cancel</button>
+					<button type="submit">Save</button>
+				</div>
+			</form>
+		</dialog>
+		<!-- a new account (or one from before usernames) chooses its username before anything else: it cannot be put away -->
+		<dialog id="username-dialog" class="dialog settings" aria-labelledby="username-title">
+			<form id="username-form">
+				<h2 id="username-title">Choose your username</h2>
+				<p class="settings-hint">
+					The name your account is known by, yours alone: 3 to 30 lowercase letters, digits, dots, dashes or underscores, starting with a letter.
+				</p>
+				<label title="The name your account is known by: 3 to 30 lowercase letters, digits, dots, dashes or underscores, starting with a letter; yours alone" for="username-input">Username</label>
+				<input id="username-input" name="username" type="text" maxlength="30" required autocomplete="username" pattern="[a-zA-Z][a-zA-Z0-9._\-]{2,29}" placeholder="dana.levi">
+				<p id="username-error" class="warning" hidden></p>
+				<div class="dialog-actions">
 					<button type="submit">Save</button>
 				</div>
 			</form>
