@@ -10,13 +10,13 @@ A regular user may start so many runs a month (core.runs_allowed).
 from typing import Any
 
 import flask
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from myworld import auth, importers, youtube
 from myworld.api import ApiError, json_body
 from myworld.checks import DATASETS
 from myworld.importers import jobs
-from myworld.models import IMPORT_ENDED, ROLE_ADMIN, ImportRun, User
+from myworld.models import IMPORT_ENDED, ROLE_ADMIN, ImportRun, User, utcnow
 
 bp = flask.Blueprint("imports", __name__)
 
@@ -110,6 +110,24 @@ def api_run(name: str) -> flask.Response:
     return flask.make_response(flask.jsonify(importers.run_json(record)), 202)
 
 
+@bp.route("/api/import-runs/clear", methods=["POST"])
+@auth.login_required
+def api_runs_clear() -> flask.Response:
+    """
+    Clear the runs that ended off the Imports page: the signed-in user's,
+    or everyone's for an admin (whose list is everyone's). A run going is
+    left alone. A cleared run is not deleted: it still counts against the
+    month's runs, and its log still opens by its address. {"cleared": n}.
+    """
+    importers.settle(flask.g.db)
+    query = update(ImportRun).where(ImportRun.status.in_(IMPORT_ENDED), ImportRun.cleared_at.is_(None))
+    if flask.g.user.role != ROLE_ADMIN:
+        query = query.where(ImportRun.owner_id == flask.g.user.id)
+    cleared = flask.g.db.execute(query.values(cleared_at=utcnow())).rowcount
+    flask.g.db.commit()
+    return flask.jsonify({"cleared": cleared})
+
+
 @bp.route("/api/import-runs/<int:run_id>", methods=["GET"])
 @auth.login_required
 def api_run_one(run_id: int) -> flask.Response:
@@ -140,7 +158,7 @@ def api_runs() -> flask.Response:
     if not admin:
         query = query.where(ImportRun.owner_id == flask.g.user.id)
     going = flask.g.db.execute(query.where(ImportRun.status.not_in(IMPORT_ENDED))).all()
-    ended = flask.g.db.execute(query.where(ImportRun.status.in_(IMPORT_ENDED)).limit(RUNS_SHOWN)).all()
+    ended = flask.g.db.execute(query.where(ImportRun.status.in_(IMPORT_ENDED), ImportRun.cleared_at.is_(None)).limit(RUNS_SHOWN)).all()
     shown = (lambda record, owner: importers.run_json(record, owner if admin else None))
     return flask.jsonify({
         "running": [shown(record, owner) for record, owner in going],

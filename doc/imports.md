@@ -47,6 +47,11 @@ follows a run that goes on, with Copy, Download (a text file) and Copy link:
 the address `#imports/<id>` opens that log for whoever may see the run (its
 user, or an admin).
 
+Clear, beside Ended, takes the runs that ended off the list (asking twice):
+a user's own, or everyone's for an admin. A run going is left alone. A
+cleared run is not deleted (`import_runs.cleared_at`): it still counts
+against the month's runs, and its log still opens by its address.
+
 The page looks again every three seconds while a run is going.
 
 ## How many runs
@@ -218,6 +223,8 @@ GOOGLE_CLIENT_ID=<gcp_oauth_client_id> GOOGLE_CLIENT_SECRET="$(pass show keys/go
   and `execution`. For an admin they are everyone's, each with `owner`
   (`id`, `email`), and `everyone` is true. Runs whose jobs stopped are
   failed first. `limit` as above.
+- `POST /api/import-runs/clear`: clears the runs that ended, the user's or
+  (an admin) everyone's: `{"cleared": n}`.
 - `GET /api/import-runs/<id>`: one run, as above, with its whole log: the
   user's own, or anyone's for an admin (with `owner`); 404 otherwise.
 - `GET /youtube/status`: whether connecting is set up, whether the user

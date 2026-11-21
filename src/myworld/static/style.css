@@ -2373,6 +2373,13 @@ button.text.check-toggle {
 	color: var(--fail);
 }
 
+/* the Ended heading, with its Clear beside it */
+.import-ended-heading {
+	display: flex;
+	align-items: baseline;
+	gap: 1rem;
+}
+
 /* an import run's log: wide, its lines as said, scrolled within */
 .run-log-dialog {
 	width: min(60rem, calc(100vw - 2rem));

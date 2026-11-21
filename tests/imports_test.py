@@ -686,3 +686,33 @@ def test_what_goes_wrong_in_a_run_is_in_its_log(app: webtest.TestApp, engine: En
     assert any("ZeroDivisionError: a bug" in line for line in log[2:-1])
     assert any("in broken" in line for line in log)
     assert log[-1] == "Failed: ZeroDivisionError: a bug"
+
+
+def test_clear_takes_ended_runs_off_the_list_but_they_still_count(app: webtest.TestApp, engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("IMPORT_RUNS_PER_MONTH", "3")
+    sign_in(app, "bob")
+    sign_in(app)
+    owner = alice(engine).id
+    with Session(engine) as session:
+        bob_id = session.scalars(select(User.id).where(User.email == "bob@example.com")).one()
+    done = queue(engine, owner, "done", started_at=core.utcnow())
+    failed = queue(engine, owner, "failed", started_at=core.utcnow())
+    going = queue(engine, owner, "running", started_at=core.utcnow(), heartbeat_at=core.utcnow())
+    theirs = queue(engine, bob_id, "done", started_at=core.utcnow())
+    assert app.post_json("/api/import-runs/clear", {}).json == {"cleared": 2}
+    runs = app.get("/api/import-runs").json
+    assert runs["ended"] == []
+    # a run going is left alone
+    assert [r["id"] for r in runs["running"]] == [going]
+    # still counted: three runs this month, of three
+    assert runs["limit"] == {"used": 3, "allowed": 3}
+    # and its log still opens by its address
+    assert app.get(f"/api/import-runs/{done}").json["id"] == done
+    assert app.get(f"/api/import-runs/{failed}").json["status"] == "failed"
+    # another user's runs are theirs: an admin's Clear is everyone's
+    sign_in(app, "bob")
+    assert [r["id"] for r in app.get("/api/import-runs").json["ended"]] == [theirs]
+    sign_in(app)
+    make_admin(engine, "alice@example.com")
+    assert app.post_json("/api/import-runs/clear", {}).json == {"cleared": 1}
+    assert app.get("/api/import-runs").json["ended"] == []

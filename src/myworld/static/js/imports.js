@@ -252,6 +252,33 @@ function said(run) {
 
 const STATUS = { queued: "Queued", running: "Running", done: "Done", failed: "Failed" };
 
+// Clear: the runs that ended off the list (the user's own; an admin's, everyone's), asking twice in the
+// button itself. A cleared run still counts against the month's runs, and its log opens by its address.
+function setupClear(count, everyone) {
+	const button = $("import-clear");
+	delete button.dataset.armed;
+	button.textContent = "Clear";
+	button.disabled = count === 0;
+	button.title = count === 0
+		? "No run that ended is listed"
+		: `Take the runs that ended off this list${everyone ? ", everyone's" : ""}: they still count against this month's runs`;
+	button.onclick = async () => {
+		if (!button.dataset.armed) {
+			button.dataset.armed = "1";
+			button.textContent = everyone ? "Clear everyone's ended runs?" : "Clear your ended runs?";
+			return;
+		}
+		button.disabled = true;
+		try {
+			await api("/api/import-runs/clear", { method: "POST", body: {} });
+			await refreshRuns();
+		} catch (e) {
+			showError(e.message);
+			button.disabled = false;
+		}
+	};
+}
+
 // ─── a run's log ─────────────────────────────────────────────────────────────
 
 // the run whose log is open, and the timer that looks at it again while it goes
@@ -453,6 +480,7 @@ function renderRuns({ running, ended, everyone, limit }) {
 	$("import-running-none").hidden = running.length !== 0;
 	$("import-ended").hidden = ended.length === 0;
 	$("import-ended-none").hidden = ended.length !== 0;
+	setupClear(ended.length, everyone);
 	// a run that ended since the last look, and kept what it did, shows in the sidebar's counts
 	if (ended.some((run) => goingIds.has(run.id) && run.status === "done" && !run.dry_run)) {
 		loadCounts().catch((e) => showError(e.message));

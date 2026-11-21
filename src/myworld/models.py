@@ -1431,6 +1431,9 @@ class ImportRun(Base):
     finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     # the Cloud Run Jobs execution doing it ("projects/.../executions/..."), "" when run in the app itself
     execution: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
+    # when it was cleared off the Imports page (its Clear): no longer listed, but still counted against
+    # the month's runs, and its log still opens by its address; None while it is listed
+    cleared_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 def database_url() -> str:
@@ -1465,7 +1468,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0013"
+SCHEMA_REVISION = "0014"
 
 
 def prepare_schema(engine: Engine) -> None:

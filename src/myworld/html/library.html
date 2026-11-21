@@ -163,8 +163,12 @@
 					<thead id="import-running-head"></thead>
 					<tbody id="import-running-rows"></tbody>
 				</table>
-				<h2 id="import-ended-title" class="schema-heading">Ended</h2>
-				<p id="import-ended-none" class="empty">No run has ended yet.</p>
+				<!-- Clear takes the runs that ended off the list (asking twice); disabled when none is listed -->
+				<div class="import-ended-heading">
+					<h2 id="import-ended-title" class="schema-heading">Ended</h2>
+					<button type="button" class="text danger" id="import-clear">Clear</button>
+				</div>
+				<p id="import-ended-none" class="empty">No run that ended is listed.</p>
 				<table id="import-ended" class="entries import-runs" hidden>
 					<thead id="import-ended-head"></thead>
 					<tbody id="import-ended-rows"></tbody>
