@@ -23,6 +23,8 @@
 	--surface-2: #eef0f3;
 	/* behind text over a logo */
 	--veil: rgb(255 255 255 / 85%);
+	/* links: the browser's own on light, a lighter blue on dark */
+	--link: LinkText;
 	/* the top bar's height: the sidebar starts under it */
 	--topbar: 3.5rem;
 	--sidebar: 13rem;
@@ -47,6 +49,7 @@
 		--surface: #1f2937;
 		--surface-2: #2b3544;
 		--veil: rgb(17 24 39 / 85%);
+		--link: #93c5fd;
 	}
 }
 
@@ -67,6 +70,11 @@
 	--surface: #1f2937;
 	--surface-2: #2b3544;
 	--veil: rgb(17 24 39 / 85%);
+	--link: #93c5fd;
+}
+
+a {
+	color: var(--link);
 }
 
 /* the pickers (Tom Select) come with light colors of their own */
@@ -2384,11 +2392,31 @@ button.text.check-toggle {
 /* ─── one place on a map ─────────────────────────────────────────────────── */
 
 /* the pin on a card, in its top right corner in every layout */
-.place-button {
+/* a card's icons, in its top right corner: its website, then its place on the map (or how a person is connected) */
+.card-corner {
 	position: absolute;
 	top: 0.35rem;
 	right: 0.35rem;
+	z-index: 1;
+	display: flex;
+	gap: 0.25rem;
+}
+
+.card-corner .icon-button {
 	background: var(--veil);
+}
+
+.website-button {
+	order: 1;
+}
+
+/* the title does not run under the corner's icons */
+.world-card:has(> .card-corner) .world-title {
+	padding-right: 4.25rem;
+}
+
+.place-button {
+	order: 2;
 }
 
 .place-dialog {

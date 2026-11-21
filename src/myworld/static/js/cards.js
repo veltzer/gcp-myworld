@@ -8,7 +8,7 @@ import { placeButton } from "./map.js";
 import { localeName } from "./names.js";
 import { showRow } from "./views.js";
 import { visitText } from "./visits.js";
-import { SIDES, detail, el, formatDate, linksDetail, slug, websiteDetail } from "./worlds.js";
+import { SIDES, cornerOf, detail, el, formatDate, linksDetail, slug, websiteButton } from "./worlds.js";
 
 // what the picture of the rows of the view shown is called ("photo", "logo", "flag": its dialog's
 // picture box says), "" for rows that never have one
@@ -120,14 +120,14 @@ export const PICKER_LABELS = { places: placeName, cities: cityName };
 
 function placeCard(item) {
 	const { card, list } = cardShell(item, [item.city?.name, item.city?.country?.name].filter(Boolean).join(", "));
-	card.appendChild(placeButton(item));
+	cornerOf(card).appendChild(placeButton(item));
 	linksDetail(list, "City", "cities", item.city ? [item.city] : []);
 	detail(list, "Address", item.address);
 	// how many concerts were there, always shown (0 too), then which
 	detail(list, "Concerts", String(item.concerts.length));
 	linksDetail(list, "Seen there", "concerts", item.concerts);
 	detail(list, "Remark", item.remark);
-	websiteDetail(list, item.website);
+	websiteButton(card, item.website);
 	return card;
 }
 
@@ -137,14 +137,14 @@ function groupCard(item) {
 	detail(list, "Members", String(item.members.length));
 	linksDetail(list, "Who", "people", item.members);
 	linksDetail(list, "Performed at", "concerts", item.concerts);
-	websiteDetail(list, item.website);
+	websiteButton(card, item.website);
 	photoCredit(body, item);
 	return card;
 }
 
 function cityCard(item) {
 	const { card, body, list } = cardShell(item, [item.region, item.country?.name].filter(Boolean).join(", "));
-	card.appendChild(placeButton(item));
+	cornerOf(card).appendChild(placeButton(item));
 	linksDetail(list, "Country", "countries", item.country ? [item.country] : []);
 	// what is in it, each always counted (0 too), then which
 	detail(list, "Places", String(item.places.length));
@@ -160,7 +160,7 @@ function cityCard(item) {
 // a country's picture is its flag, shown whole as a logo is
 function countryCard(item) {
 	const { card, body, list } = cardShell(item, `${item.cities.length.toLocaleString()} ${item.cities.length === 1 ? "city" : "cities"}`, "logo");
-	card.appendChild(placeButton(item));
+	cornerOf(card).appendChild(placeButton(item));
 	linksDetail(list, "Cities", "cities", item.cities);
 	detail(list, "Remark", item.remark);
 	photoCredit(body, item, "Flag");
@@ -169,7 +169,7 @@ function countryCard(item) {
 
 function museumCard(item) {
 	const { card, list } = cardShell(item, item.city?.name);
-	card.appendChild(placeButton(item));
+	cornerOf(card).appendChild(placeButton(item));
 	linksDetail(list, "City", "cities", item.city ? [item.city] : []);
 	detail(list, "Address", item.address);
 	// every time it was visited, the latest first: the day, the rating and the company of each
@@ -177,13 +177,13 @@ function museumCard(item) {
 	linksDetail(list, "With", "people", item.people);
 	detail(list, "Review", item.visits.map((visit) => visit.review).filter(Boolean).join("; "));
 	detail(list, "Remark", item.visits.map((visit) => visit.remark).filter(Boolean).join("; "));
-	websiteDetail(list, item.url);
+	websiteButton(card, item.url);
 	return card;
 }
 
 function organizationCard(item) {
 	const { card, list } = cardShell(item, item.location, "logo");
-	card.appendChild(placeButton(item));
+	cornerOf(card).appendChild(placeButton(item));
 	linksDetail(list, "Type", "organization-types", item.type ? [item.type] : []);
 	// the office's city, and where its headquarters are when elsewhere
 	linksDetail(list, "City", "cities", item.city ? [item.city] : []);
@@ -198,7 +198,7 @@ function organizationCard(item) {
 	// each with how they are linked: "Dana Cohen (Worked at)"
 	linksDetail(list, "Who", "people", item.person_links.map((link) => ({ id: link.person.id, name: link.name })));
 	detail(list, "Remark", item.remark);
-	websiteDetail(list, item.website);
+	websiteButton(card, item.website);
 	return card;
 }
 
@@ -217,7 +217,7 @@ function audioCourseCard(item) {
 	detail(list, "Review", item.review);
 	detail(list, "Where", item.listened_at);
 	linksDetail(list, "Device", "devices", item.device ? [item.device] : []);
-	websiteDetail(list, item.url);
+	websiteButton(card, item.url);
 	return card;
 }
 
@@ -278,7 +278,7 @@ function youtubeCard(item) {
 	detail(list, "Review", item.review);
 	detail(list, "Where", item.watched_at);
 	linksDetail(list, "Device", "devices", item.device ? [item.device] : []);
-	websiteDetail(list, `https://www.youtube.com/watch?v=${item.youtube_id}`);
+	websiteButton(card, `https://www.youtube.com/watch?v=${item.youtube_id}`, "On YouTube");
 	return card;
 }
 
@@ -302,7 +302,7 @@ function chessCard(item) {
 	detail(list, "Event", item.event);
 	detail(list, "Site", item.site);
 	detail(list, "Remark", item.remark);
-	websiteDetail(list, item.link);
+	websiteButton(card, item.link, "The game online");
 	return card;
 }
 
@@ -393,7 +393,7 @@ function connectionsButton(person) {
 
 function personCard(item) {
 	const { card, list } = cardShell(item, item.description);
-	card.appendChild(connectionsButton(item));
+	cornerOf(card).appendChild(connectionsButton(item));
 	// their names but the one shown (the one in the preferred language), each with its language
 	const others = [{ locale: "en", name: item.english_name }, ...item.names].filter((n) => n.name && n.name !== item.name);
 	detail(list, "Other names", others.map((n) => `${n.name} (${localeName(n.locale)})`).join("; "));
