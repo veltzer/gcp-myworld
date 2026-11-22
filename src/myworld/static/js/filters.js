@@ -124,13 +124,27 @@ const VALUE_FILTERS = {
 	},
 };
 
+// The views whose rows also have relations to the user, filtered by them
+// too, and the enumeration of those relations (organizations: Consulting,
+// Teaching, ...).
+const RELATED = { organizations: "relation-types" };
+
 // What a view is filtered by: what the button says with nothing picked, and
 // its groups ({key, heading, options: [{value, name, count}]}). Null: nothing to filter by.
 async function filterSpec(view) {
 	if (TYPED[view]) {
-		const types = await worldList(TYPED[view]);
-		const options = types.map((t) => ({ value: String(t.id), name: t.name, count: t.count }));
-		return { all: "All types", groups: [{ key: "type", heading: "", options: [...options, { value: "none", name: "No type", count: null }] }] };
+		const kinds = async (what, none) => {
+			const rows = await worldList(what);
+			return [...rows.map((t) => ({ value: String(t.id), name: t.name, count: t.count })), { value: "none", name: none, count: null }];
+		};
+		if (!RELATED[view]) {
+			return { all: "All types", groups: [{ key: "type", heading: "", options: await kinds(TYPED[view], "No type") }] };
+		}
+		const [types, relations] = await Promise.all([kinds(TYPED[view], "No type"), kinds(RELATED[view], "No relation")]);
+		return {
+			all: "All organizations",
+			groups: [{ key: "type", heading: "Type", options: types }, { key: "relation", heading: "Relation", options: relations }],
+		};
 	}
 	if (VALUE_FILTERS[view]) {
 		const rows = await worldList(view);
@@ -175,7 +189,11 @@ function filterValues(group, item) {
 	if (valued) {
 		return valued[2](item);
 	}
-	// a person has a list of types, an organization one
+	if (group === "relation") {
+		const relations = item.relations || [];
+		return relations.length ? relations.map((r) => String(r.id)) : ["none"];
+	}
+	// a person or an organization has a list of types
 	const types = item.types || [];
 	return types.length ? types.map((t) => String(t.id)) : ["none"];
 }
@@ -249,6 +267,7 @@ export async function fillTypeFilter(view) {
 // the filter groups a view has, by key
 const FILTER_GROUPS = {
 	type: (view) => Boolean(TYPED[view]),
+	relation: (view) => Boolean(RELATED[view]),
 	status: (view) => view in state.config.kinds,
 	cover: (view) => view in state.config.kinds,
 };

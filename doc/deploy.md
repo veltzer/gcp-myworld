@@ -334,7 +334,7 @@ inverse ("Child of"; a type without one, "Friend of", reads the same both
 ways). The person form adds and removes a person's own relations; the
 People list and Connections show both ways. The Relation types page,
 how an organization is related to the user, is Org relations in the sidebar. People and Organizations
-have a type filter next to the search; on a library kind (Books) the same control filters by status and by whether an entry has a
+have a type filter next to the search, and on Organizations it filters by relation too (Consulting: the companies consulted for), the two together; on a library kind (Books) the same control filters by status and by whether an entry has a
 cover, together (Done and No cover: the books read that have no cover).
 Other pages filter by values their rows have, each offered with how many
 rows have it (`VALUE_FILTERS` in `filters.js`): Chess by result, side and
