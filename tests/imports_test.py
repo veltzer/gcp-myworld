@@ -545,13 +545,16 @@ def test_each_user_sees_their_own_runs_and_an_admin_everyones(app: webtest.TestA
         bob_id = session.scalars(select(User.id).where(User.email == "bob@example.com")).one()
     mine = queue(engine, owner, "done", started_at=core.utcnow())
     theirs = queue(engine, bob_id, "done", started_at=core.utcnow())
+    with Session(engine) as session:
+        session.get_one(User, bob_id).username = "bob"
+        session.commit()
     assert [r["id"] for r in app.get("/api/import-runs").json["ended"]] == [mine]
     make_admin(engine, "alice@example.com")
     runs = app.get("/api/import-runs").json
     assert runs["everyone"] is True
     assert [(r["id"], r["owner"]) for r in runs["ended"]] == [
-        (theirs, {"id": bob_id, "email": "bob@example.com"}),
-        (mine, {"id": owner, "email": "alice@example.com"}),
+        (theirs, {"id": bob_id, "username": "bob", "email": "bob@example.com"}),
+        (mine, {"id": owner, "username": None, "email": "alice@example.com"}),
     ]
 
 
@@ -667,7 +670,7 @@ def test_a_runs_log_is_its_users_and_an_admins(app: webtest.TestApp, engine: Eng
     app.get(f"/api/import-runs/{theirs}", status=404)
     app.get("/api/import-runs/999999", status=404)
     make_admin(engine, "alice@example.com")
-    assert app.get(f"/api/import-runs/{theirs}").json["owner"] == {"id": bob_id, "email": "bob@example.com"}
+    assert app.get(f"/api/import-runs/{theirs}").json["owner"] == {"id": bob_id, "username": None, "email": "bob@example.com"}
 
 
 def test_what_goes_wrong_in_a_run_is_in_its_log(app: webtest.TestApp, engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:

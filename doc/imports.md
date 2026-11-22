@@ -341,7 +341,7 @@ Nothing needs setting up: there is no client to register with Amazon.
   and `ended`, the last 20 that ended, newest first; each with `status`,
   `counts` and `log` so far, `started_at`, `heartbeat_at`, `finished_at`
   and `execution`. For an admin they are everyone's, each with `owner`
-  (`id`, `email`), and `everyone` is true. Runs whose jobs stopped are
+  (`id`, `username`, `email`), and `everyone` is true. Runs whose jobs stopped are
   failed first. `limit` as above.
 - `POST /api/import-runs/clear`: deletes the runs that ended, the user's or
   (an admin) everyone's: `{"cleared": n}`.

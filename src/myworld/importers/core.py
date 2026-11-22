@@ -391,5 +391,5 @@ def run_json(record: ImportRun, owner: User | None = None) -> dict[str, Any]:
         "execution": record.execution,
     }
     if owner is not None:
-        out["owner"] = {"id": owner.id, "email": owner.email}
+        out["owner"] = {"id": owner.id, "username": owner.username, "email": owner.email}
     return out

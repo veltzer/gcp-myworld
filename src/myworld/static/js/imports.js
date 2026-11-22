@@ -482,7 +482,8 @@ function runRow(run, everyone, now) {
 	if (everyone) {
 		const who = el("td", "nowrap", run.owner.email);
 		who.title = `User ${run.owner.id}`;
-		cells.push(el("td", "nowrap", String(run.owner.id)), who);
+		// an account that chose no username yet has none
+		cells.push(el("td", "nowrap", String(run.owner.id)), el("td", "nowrap", run.owner.username || ""), who);
 	}
 	const statusClass = run.ended ? (run.status === "done" ? "pass" : "fail") : "going";
 	cells.push(
@@ -542,7 +543,7 @@ function scheduleTick(going) {
 
 function runsHead(everyone, timeLabel) {
 	const tr = el("tr");
-	const labels = ["Started (UTC)", ...(everyone ? ["User id", "User"] : []), "Importer", "Kind", "Status", timeLabel, "What it did", ""];
+	const labels = ["Started (UTC)", ...(everyone ? ["User id", "Username", "Email"] : []), "Importer", "Kind", "Status", timeLabel, "What it did", ""];
 	tr.append(...labels.map((label) => el("th", "", label)));
 	return tr;
 }
