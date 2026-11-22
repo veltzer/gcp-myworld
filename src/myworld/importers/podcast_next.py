@@ -1,6 +1,6 @@
 """
 The next episodes of a podcast, as heard: of each podcast chosen, the next
-so many of its episodes (shared, as the Podcast feeds importer brought them
+so many (or every one left) of its episodes (shared, as the Podcast feeds importer brought them
 from its feed, oldest first) after the last one the user heard, or from its
 first when they heard none, are added to their Episodes heard as heard now,
 where, in what time zone and on what device the last one heard was (what
@@ -28,8 +28,9 @@ from myworld.models import (
     utcnow,
 )
 
-# how many may be chosen
+# how many may be chosen; ALL is every one after the last heard
 NEXT_CHOICES = (1, 2, 3, 5, 10, 20)
+ALL = "all"
 
 
 def _with_episodes(session: Session) -> list[Podcast]:
@@ -41,7 +42,7 @@ def podcast_choices(session: Session, _owner: User) -> list[tuple[str, str]]:
 
 
 def count_choices(_session: Session, _owner: User) -> list[tuple[str, str]]:
-    return [(str(n), f"The next {n}" if n > 1 else "The next one") for n in NEXT_CHOICES]
+    return [(str(n), f"The next {n}" if n > 1 else "The next one") for n in NEXT_CHOICES] + [(ALL, "Every one left")]
 
 
 def unavailable(session: Session, _owner: User) -> str:
@@ -53,8 +54,8 @@ def in_order(episodes: list[PodcastEpisode]) -> list[PodcastEpisode]:
     return sorted(episodes, key=lambda e: (e.published_utcz is None, e.published_utcz or datetime.datetime.min, e.id))
 
 
-def add_next(session: Session, owner: User, podcast: Podcast, count: int) -> list[EpisodeHeard]:
-    """ The next count episodes of podcast after the last of it owner heard, added as heard now. """
+def add_next(session: Session, owner: User, podcast: Podcast, count: int | None) -> list[EpisodeHeard]:
+    """ The next count episodes of podcast after the last of it owner heard (every one when count is None), added as heard now. """
     episodes = in_order(podcast.episodes)
     mine = {heard.episode_id: heard for e in episodes for heard in e.heard if heard.owner_id == owner.id}
     positions = [i for i, e in enumerate(episodes) if e.id in mine]
@@ -79,7 +80,8 @@ def add_next(session: Session, owner: User, podcast: Podcast, count: int) -> lis
 
 def run(session: Session, owner: User, params: dict[str, Any], report: Report) -> None:
     chosen = set(params["podcasts"])
-    count = int(params["next"][0])
+    chosen_count = params["next"][0]
+    count = None if chosen_count == ALL else int(chosen_count)
     query = (select(Podcast).where(Podcast.id.in_([int(c) for c in chosen]))
              .options(selectinload(Podcast.heard), selectinload(Podcast.episodes).selectinload(PodcastEpisode.heard)).order_by(Podcast.name))
     for podcast in session.scalars(query):
@@ -96,7 +98,7 @@ IMPORTER = register(Importer(
     name="podcast-next",
     title="Next podcast episodes",
     description=(
-        "Adds the next episodes of the podcasts chosen, after the last one you heard of each (or from the first), to your "
+        "Adds the next episodes of the podcasts chosen (so many, or every one left), after the last one you heard of each (or from the first), to your "
         "Episodes heard, as heard now, where and on what device the last one was. Adds an episode once: each run adds the next ones."
     ),
     dataset="episodes-heard",
@@ -104,7 +106,7 @@ IMPORTER = register(Importer(
         Param(name="podcasts", title="Podcasts", kind="choices", choices=podcast_choices, required=True,
               description="The podcasts to add the next episodes of."),
         Param(name="next", title="Episodes to add", kind="choices", choices=count_choices, required=True, single=True,
-              description="How many of the episodes after the last one you heard to add, of each podcast."),
+              description="How many of the episodes after the last one you heard to add, of each podcast: Every one left adds them all, up to the newest."),
     ),
     run=run,
     unavailable=unavailable,

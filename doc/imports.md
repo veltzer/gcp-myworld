@@ -248,7 +248,8 @@ entity expansion attacks).
 
 `podcast-next`, every user's, marks episodes heard. Of each podcast picked
 (Podcasts, required: any podcast with episodes) it adds the next so many
-episodes (Episodes to add, one of 1, 2, 3, 5, 10, 20) after the last one the
+episodes (Episodes to add, one of 1, 2, 3, 5, 10, 20, or Every one left, up
+to the newest) after the last one the
 user heard, by the order they were published, or from the first when they
 heard none, to the user's Episodes heard: as heard at the moment of the
 run, where, in what time zone and on what device the last one heard was.

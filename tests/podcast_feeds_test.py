@@ -230,6 +230,16 @@ def test_from_the_first_when_none_was_heard_and_each_their_own(app: webtest.Test
     assert len(episodes(engine)) == 5
 
 
+def test_every_one_left(app: webtest.TestApp, engine: Engine, web: FakeWeb) -> None:
+    podcast = history(app, engine)
+    feeds(app)
+    sign_in(app, sub="someone")
+    next_heard(app, podcast, "1")
+    assert next_heard(app, podcast, "all")["counts"] == {"episodes heard added": 4}
+    assert [e.episode.guid for e in heard(engine)] == ["g1", "g2", "g3", "g4", "g5"]
+    assert next_heard(app, podcast, "all")["counts"] == {}
+
+
 def test_a_dry_run_keeps_nothing(app: webtest.TestApp, engine: Engine, web: FakeWeb) -> None:
     history(app, engine)
     record = feeds(app, dry_run=True)
