@@ -48,6 +48,17 @@ either file (My World keeps them now): a source without them imports no
 YouTube videos, and --youtube and --youtube-history read them from a
 checkout of the site's history that has them.
 
+Films come from data/yaml/video_features.yaml (each a time a film was
+watched: when, where, on what, with whom, the rating and review), their
+posters from static/images/movie-<imdb_id>.jpg, and the films still to see
+from ../data/json/movies_to_see.json (by IMDb id, with who recommended each
+and its genre). A film is shared, found again by its IMDb id; what Wikidata
+says of it (the title, the year, the directors) fills in what is missing.
+Each watch is the account's (one it has already, of the film on the same
+date, is left as it is); a film to see is a watch of the status Want to see,
+added when the account has none of that film. The people named are the
+account's own, matched by name exactly; --films can run again.
+
 Podcasts come from data/yaml/podcasts.yaml: each podcast with its cover
 (static/images/podcast-<internal_id>.jpg) and the episodes of it heard
 (chapters), each as its feed says it, go to the shared podcasts and
@@ -62,7 +73,7 @@ tables, in one transaction. It is meant for an empty account: when the
 account has any of these rows already it stops, since replacing them would
 lose every edit made in the app since the last import, unless
 --replace-everything is given with the account's email again. The --books,
---audio-books, --podcasts, --youtube-history and --only-types modes add to what is
+--audio-books, --podcasts, --films, --youtube-history and --only-types modes add to what is
 there and are safe to run again. Unknown fields in the YAML stop the import rather than being
 dropped, so nothing is lost on the way in.
 
@@ -108,7 +119,7 @@ import yaml
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.orm import Session, selectinload
 
-from myworld import audible, languages
+from myworld import audible, languages, movies
 from myworld import names as naming
 from myworld.addresses import parse_address
 from myworld.cities import city_key, country_name, parse_location
@@ -128,6 +139,8 @@ from myworld.models import (
     Cover,
     Device,
     EpisodeHeard,
+    Film,
+    FilmWatch,
     Group,
     Image,
     Organization,
@@ -158,6 +171,7 @@ from myworld.models import (
     concert_companions,
     concert_groups,
     concert_performers,
+    film_watch_companions,
     group_members,
     library_entry_authors,
     make_engine,
@@ -297,6 +311,10 @@ PODCAST_EPISODE_FIELDS = DATE_FIELDS | {
     "title", "description", "pubDate", "episode", "duration", "episodeType", "explicit", "enclosure_url", "image", "author", "guid", "location", "device",
 }
 YOUTUBE_FIELDS = DATE_FIELDS | {"id", "name", "rating", "review", "device", "location"}
+# video_features.yaml: a time a film was watched; the ids are its IMDb number ("0816692"), Wikidata item and Rotten Tomatoes page
+FILM_FIELDS = DATE_FIELDS | {"name", "imdb_id", "wikidata_id", "rotten_tomatoes_id", "location", "device", "rating", "review", "with"}
+# movies_to_see.json: a film to see, by its IMDb number, who recommended it and its genre
+FILM_TO_SEE_FIELDS = {"imdb_id", "recommended_by", "genre"}
 # the watch history: yt-dlp's names; status "missing" (with video_id) is a video YouTube no longer has
 YOUTUBE_HISTORY_FIELDS = {"title", "webpage_url", "channel", "categories", "duration", "upload_date", "view_count", "status", "video_id"}
 # rows per multi-row INSERT: 18 columns each stays well under PostgreSQL's 65,535 parameters
@@ -520,7 +538,7 @@ def find_owner(session: Session, email: str, subject: str | None) -> User:
 # what the full import deletes and makes again, so what an account must not have unless it is replaced on purpose;
 # the shared rows (countries, cities, places) are everyone's: never deleted, found again or added
 REPLACED_MODELS = (
-    AudioCourse, AudioBookListen, AudioBookHeard, EpisodeHeard, PodcastHeard, YouTubeVideo, Device, Concert, Visit, Group, Person, Organization,
+    AudioCourse, AudioBookListen, AudioBookHeard, EpisodeHeard, PodcastHeard, FilmWatch, YouTubeVideo, Device, Concert, Visit, Group, Person, Organization,
     OrganizationType, PersonType, RelationType, PersonRelationType, PersonOrganizationType, Image,
 )
 
@@ -528,7 +546,7 @@ REPLACED_MODELS = (
 def _shared_image_ids(session: Session) -> set[int]:
     """ The images shared rows show: kept whoever uploaded them (a full import replaces only an account's own). """
     found: set[int] = set()
-    for model in (Place, Podcast, AudioBookVersion, City, Country):
+    for model in (Place, Podcast, AudioBookVersion, Film, City, Country):
         found |= {image_id for image_id in session.scalars(select(model.image_id)) if image_id is not None}
     return found
 
@@ -555,7 +573,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
         what = ", ".join(f"{count} {table}" for table, count in existing.items())
         raise WorldImportError(
             f"the account has data already ({what}); the full import deletes it all and loses every edit made in the app."
-            f" Add only what is missing with --books, --audio-books, --podcasts, --youtube-history or --only-types, or pass --replace-everything {owner.email} to replace it anyway",
+            f" Add only what is missing with --books, --audio-books, --podcasts, --films, --youtube-history or --only-types, or pass --replace-everything {owner.email} to replace it anyway",
         )
     people_items = _items(source, "people", PERSON_FIELDS)
     organization_items = _items(source, "organizations", ORGANIZATION_FIELDS)
@@ -570,6 +588,9 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     session.execute(delete(concert_groups).where(concert_groups.c.concert_id.in_(concerts_of_owner)))
     session.execute(delete(group_members).where(group_members.c.group_id.in_(select(Group.id).where(Group.owner_id == owner.id))))
     session.execute(delete(visit_companions).where(visit_companions.c.visit_id.in_(select(Visit.id).where(Visit.owner_id == owner.id))))
+    session.execute(delete(film_watch_companions).where(
+        film_watch_companions.c.film_watch_id.in_(select(FilmWatch.id).where(FilmWatch.owner_id == owner.id)),
+    ))
     session.execute(delete(audio_course_lecturers).where(
         audio_course_lecturers.c.audio_course_id.in_(select(AudioCourse.id).where(AudioCourse.owner_id == owner.id)),
     ))
@@ -767,6 +788,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     has_videos = (source / "data" / "yaml" / "video_youtube.yaml").exists()
     videos = import_youtube(session, owner, source) if has_videos else {"YouTube videos": 0, "devices added": 0}
     history = import_youtube_history(session, owner, source) if _history_path(source).exists() else {"YouTube videos added": 0}
+    films = import_films(session, owner, source) if _films_path(source).exists() else {"films added": 0, "film watches added": 0, "posters added": 0, "devices added": 0}
     books = import_books(session, owner, source)
     typed = give_types(session, owner)
     return {
@@ -775,8 +797,9 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
         "concerts": len(concert_items), "places": place.added, "museums": len(museums), "museum visits": len(museum_items), "audio courses": courses["audio courses"],
         "audio books": audio_books["audio books added"],
         "podcasts": podcasts["podcasts added"], "podcast episodes": podcasts["podcast episodes added"],
-        "YouTube videos": videos["YouTube videos"] + history["YouTube videos added"], "devices": courses["devices added"] + audio_books["devices added"] + podcasts["devices added"] + videos["devices added"],
-        "books": books["books"], "images": len(images) + courses["images"] + audio_books["images"] + podcasts["covers added"] + books["covers"],
+        "films": films["films added"], "film watches": films["film watches added"],
+        "YouTube videos": videos["YouTube videos"] + history["YouTube videos added"], "devices": courses["devices added"] + audio_books["devices added"] + podcasts["devices added"] + films["devices added"] + videos["devices added"],
+        "books": books["books"], "images": len(images) + courses["images"] + audio_books["images"] + podcasts["covers added"] + films["posters added"] + books["covers"],
     }
 
 
@@ -1388,6 +1411,142 @@ def import_youtube(session: Session, owner: User, source: Path) -> dict[str, int
     return {"YouTube videos": len(items), "devices added": device.added}
 
 
+def _films_path(source: Path) -> Path:
+    return source / "data" / "yaml" / "video_features.yaml"
+
+
+def _films_to_see_path(source: Path) -> Path:
+    """ The films still to see: in the data repository beside the site's. """
+    return source.parent / "data" / "json" / "movies_to_see.json"
+
+
+def _imdb(value: Any, where: str) -> str:
+    """ An IMDb id as the films keep it ("tt0816692"), from the number the sources write ("0816692"). """
+    number = str(value).removeprefix("tt")
+    if not re.fullmatch(r"\d{7,9}", number):
+        raise WorldImportError(f"{where}: {value!r} is not an IMDb id")
+    return f"tt{number}"
+
+
+def _to_see_items(path: Path) -> list[dict[str, Any]]:
+    with path.open(encoding="UTF8") as fp:
+        items = json.load(fp)
+    if not isinstance(items, list):
+        raise WorldImportError(f"{path}: expected a list of films")
+    for item in items:
+        unknown = set(item) - FILM_TO_SEE_FIELDS
+        if unknown:
+            raise WorldImportError(f"{path}: {item.get('imdb_id')!r} has fields this import does not know: {sorted(unknown)}")
+    return items
+
+
+def import_films(session: Session, owner: User, source: Path) -> dict[str, int]:
+    """
+    Add the films of video_features.yaml and movies_to_see.json to the
+    shared ones, with their posters, and owner's watches of them: a film is
+    found again by its IMDb id (one there gets only the ids it lacks), and
+    what Wikidata says fills in the title, year and directors a film has
+    not. A watch is added unless owner has one of that film on that date; a
+    film to see unless owner has any watch of it. Safe to run again. Does
+    not commit.
+    """
+    path = _films_path(source)
+    if not path.exists():
+        raise WorldImportError(f"{path} is not there")
+    items = _items(source, "video_features", FILM_FIELDS)
+    to_see_path = _films_to_see_path(source)
+    to_see = _to_see_items(to_see_path) if to_see_path.exists() else []
+    image_dir = source / "static" / "images"
+    films = {f.imdb_id: f for f in session.scalars(select(Film).options(selectinload(Film.watches))) if f.imdb_id}
+    people: dict[str, list[Person]] = {}
+    for person in session.scalars(select(Person).where(Person.owner_id == owner.id).options(selectinload(Person.names))):
+        people.setdefault(naming.key(person.name), []).append(person)
+
+    def person(name: str, where: str) -> Person:
+        """ owner's one person called name: the import stops when there is none, or several. """
+        found = people.get(naming.key(name), [])
+        if len(found) != 1:
+            raise WorldImportError(f"{where}: {len(found) or 'no'} people of the account are called {name!r}" + ("; make the names differ first" if found else "; add them on the People page first"))
+        return found[0]
+
+    device = Devices(session, owner)
+    counts = {"films added": 0, "films filled from Wikidata": 0, "posters added": 0, "film watches added": 0, "films to see added": 0}
+
+    def film(imdb: str, name: str = "") -> Film:
+        found = films.get(imdb)
+        if found is None:
+            found = Film(name=name, imdb_id=imdb, genres=[], watches=[])
+            session.add(found)
+            films[imdb] = found
+            counts["films added"] += 1
+        if found.image_id is None and found.image is None:
+            poster = image_dir / f"movie-{imdb.removeprefix('tt')}.jpg"
+            if poster.exists():
+                data = poster.read_bytes()
+                found.image = Image(owner_id=owner.id, filename=poster.name, content_type="image/jpeg", sha256=hashlib.sha256(data).hexdigest(), data=data)
+                counts["posters added"] += 1
+        return found
+
+    for item in items:
+        where = f"{path}: {item['name']!r}"
+        watched = film(_imdb(item["imdb_id"], where), str(item["name"]).strip())
+        # only what the film lacks: what an admin typed in stays
+        if not watched.wikidata_id:
+            watched.wikidata_id = str(item.get("wikidata_id") or "")
+        if not watched.rotten_tomatoes_id:
+            watched.rotten_tomatoes_id = str(item.get("rotten_tomatoes_id") or "")
+        dates = _dates(item)
+        empty = {"date_utcz": None, "date_ymd": None, "date_my": "", "date_y": None}
+        if any(w.owner_id == owner.id and all((getattr(w, key) or empty[key]) == dates.get(key, empty[key]) for key in empty) for w in watched.watches):
+            continue
+        if len(set(item["with"])) != len(item["with"]):
+            raise WorldImportError(f"{where}: a name appears twice in with")
+        watched.watches.append(FilmWatch(
+            owner_id=owner.id,
+            status="done",
+            rating=item.get("rating"),
+            review=str(item.get("review") or ""),
+            watched_at=str(item.get("location") or ""),
+            device=device(str(item.get("device") or "")),
+            people=[person(name, where) for name in item["with"]],
+            **dates,
+        ))
+        counts["film watches added"] += 1
+    for item in to_see:
+        where = f"{to_see_path}: {item.get('imdb_id')!r}"
+        wanted = film(_imdb(item["imdb_id"], where))
+        genre = str(item.get("genre") or "").strip()
+        if genre and genre not in wanted.genres:
+            wanted.genres = [*wanted.genres, genre]
+        if any(w.owner_id == owner.id for w in wanted.watches):
+            continue
+        recommended = str(item.get("recommended_by") or "").strip()
+        wanted.watches.append(FilmWatch(owner_id=owner.id, status="wishlist", recommended_by=person(recommended, where) if recommended else None))
+        counts["films to see added"] += 1
+    # what Wikidata says of the films that lack a title, a year or directors (it is asked about those alone)
+    lacking = [f for f in films.values() if f.imdb_id and (not f.name or f.year is None or not f.directors or not f.wikidata_id)]
+    if lacking:
+        try:
+            said = movies.wikidata_films([f.imdb_id for f in lacking if f.imdb_id])
+        except (movies.MovieLookupError, OSError, ValueError, KeyError) as e:
+            raise WorldImportError(f"Wikidata: {e}") from e
+        for found in lacking:
+            facts = said.get(found.imdb_id or "")
+            if facts is None:
+                continue
+            before = (found.name, found.year, found.directors, found.wikidata_id)
+            found.name = found.name or facts["title"]
+            found.year = found.year if found.year is not None else facts["year"]
+            found.directors = found.directors or facts["directors"]
+            found.wikidata_id = found.wikidata_id or facts["wikidata_id"]
+            counts["films filled from Wikidata"] += before != (found.name, found.year, found.directors, found.wikidata_id)
+    nameless = [f.imdb_id for f in films.values() if not f.name]
+    if nameless:
+        raise WorldImportError(f"neither the sources nor Wikidata name the films {nameless}")
+    session.flush()
+    return {**counts, "devices added": device.added}
+
+
 def _history_path(source: Path) -> Path:
     return source / "static" / "data" / "youtube.json.gz"
 
@@ -1617,6 +1776,10 @@ def main() -> int:
         help="import only the podcasts and the episodes of them heard, adding what the account does not have yet; safe to run again",
     )
     parser.add_argument(
+        "--films", action="store_true",
+        help="import only the films watched and those to see (from ../data), adding what the account does not have yet; safe to run again",
+    )
+    parser.add_argument(
         "--youtube", action="store_true",
         help="import only the YouTube videos, adding them to what the account has (stops if it has YouTube videos already)",
     )
@@ -1653,6 +1816,8 @@ def main() -> int:
                 counts = import_audio_books(session, owner, args.source)
             elif args.podcasts:
                 counts = import_podcasts(session, owner, args.source)
+            elif args.films:
+                counts = import_films(session, owner, args.source)
             elif args.youtube:
                 counts = import_youtube(session, owner, args.source)
             elif args.audio_courses:

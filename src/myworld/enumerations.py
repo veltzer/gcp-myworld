@@ -16,6 +16,7 @@ from myworld.models import (
     AudioCourse,
     Device,
     EpisodeHeard,
+    FilmWatch,
     Organization,
     OrganizationType,
     Person,
@@ -56,10 +57,11 @@ def _type_links(what: str) -> Any:
     if what == "organization-types":
         return select(Organization.type_id.label("type_id")).where(Organization.owner_id == flask.g.user.id)
     if what == "devices":
-        # audio courses, audio book listens, episodes heard and YouTube videos point to a device
+        # audio courses, audio book listens, episodes heard, film watches and YouTube videos point to a device
         return select(AudioCourse.device_id.label("type_id")).where(AudioCourse.owner_id == flask.g.user.id).union_all(
             select(AudioBookListen.device_id.label("type_id")).where(AudioBookListen.owner_id == flask.g.user.id),
             select(EpisodeHeard.device_id.label("type_id")).where(EpisodeHeard.owner_id == flask.g.user.id),
+            select(FilmWatch.device_id.label("type_id")).where(FilmWatch.owner_id == flask.g.user.id),
             select(YouTubeVideo.device_id.label("type_id")).where(YouTubeVideo.owner_id == flask.g.user.id),
         )
     if what == "person-organization-types":

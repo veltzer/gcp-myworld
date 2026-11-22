@@ -283,7 +283,7 @@ export function setupAddDialog() {
 	$("museum-visit-rating").max = rating_max;
 	$("audio-course-form").elements.rating.min = rating_min;
 	$("audio-course-form").elements.rating.max = rating_max;
-	for (const id of ["audio-book-heard-form", "podcast-heard-form", "episode-heard-form"]) {
+	for (const id of ["audio-book-heard-form", "podcast-heard-form", "episode-heard-form", "film-watch-form"]) {
 		$(id).elements.rating.min = rating_min;
 		$(id).elements.rating.max = rating_max;
 	}

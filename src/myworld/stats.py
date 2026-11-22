@@ -25,6 +25,8 @@ from myworld.models import (
     Currency,
     Device,
     EpisodeHeard,
+    Film,
+    FilmWatch,
     Group,
     Image,
     Locale,
@@ -158,6 +160,10 @@ def api_stats() -> flask.Response:
         # Your podcasts: those the user heard an episode of
         "podcasts_heard": db.scalar(select(func.count(func.distinct(PodcastEpisode.podcast_id))).join(EpisodeHeard).where(EpisodeHeard.owner_id == me)) or 0,
         "episodes_heard": count(EpisodeHeard),
+        "films": count(Film),
+        # the films the user watched (each once, however many times), and every watch, the films still to see too
+        "films_watched": db.scalar(select(func.count(func.distinct(FilmWatch.film_id))).where(FilmWatch.owner_id == me, FilmWatch.status == "done")) or 0,
+        "film_watches": count(FilmWatch),
         "youtube_videos": count(YouTubeVideo),
         "chess_games": len(chess_dates),
         "people": len(people),

@@ -531,6 +531,27 @@ first `companies` tables to `organizations`, then making
   does). Migrations 0024 (before the deploy) and 0025 (after it) made the
   podcasts and episodes shared and moved what was each account's own to
   `podcasts_heard` and `episodes_heard`.
+- `GET /api/films` (shared, kept by admins): every film, by title, with
+  `year`, `directors`, `genres`, its ids (`imdb_id`, written as `tt0816692`,
+  its number or a link to it at IMDb; `tmdb_id`; `wikidata_id`, like
+  `Q13417189`; `rotten_tomatoes_id`, like `m/interstellar_2014`: each
+  checked, 400 otherwise), `url` (its IMDb page), its poster as `image`,
+  and `watches`: the user's watches of it (each its id, and its date or
+  status). A film is in My World once by its IMDb id (409); one someone
+  watched is not deleted (409).
+- `GET /api/film-watches`: each time the user watched a film, or means to
+  (`status`: `done` or `wishlist`, "Want to see"), the latest watched
+  first and those still to see last, each with what the film is (as
+  above), the date (at the precision known), `rating`, `review`,
+  `watched_at`, `device`, `people` (who with: ids, written as a list of
+  ids) and `recommended_by` (a person, written as `recommended_by_id`). A
+  film watched twice has two, each with its own rating and review.
+  Imported (2026-11-22) from `video_features.yaml` (posters
+  `static/images/movie-<imdb>.jpg`) in `veltzer.github.io` and the films to
+  see from `movies_to_see.json` in `data` by
+  `scripts/import_world.py --films`, which fills the title, year and directors a film lacks from
+  Wikidata and can run again. Migration 0031 (before the deploy) made the
+  tables and moved the film the library kept (Dune) into films.
 - `GET /api/youtube-videos`: the YouTube videos watched, newest first (the
   watch history, with no dates, after), with `youtube_id`, rating,
   review, `device` (id and name), `watched_at`, and what YouTube says
@@ -647,7 +668,7 @@ a person is written with `type_ids`, a list.
   (how it is related to the user: ids and names of relation types), status, website, location, address, `latitude` and `longitude`, the logo as
   `image`, and `people` (ids and names).
 - `POST` to the same paths adds,
-  `PUT /api/<concert-visits|museum-visits|audio-courses|audio-books|audio-book-versions|audio-books-heard|audio-book-listens|podcasts|podcast-episodes|podcasts-heard|episodes-heard|youtube-videos|chess-games|places|groups|people|organizations>/<id>` replaces the fields,
+  `PUT /api/<concert-visits|museum-visits|audio-courses|audio-books|audio-book-versions|audio-books-heard|audio-book-listens|podcasts|podcast-episodes|podcasts-heard|episodes-heard|films|film-watches|youtube-videos|chess-games|places|groups|people|organizations>/<id>` replaces the fields,
   `DELETE` removes. The date is sent as `YYYY`, `YYYY-MM` or
   `YYYY-MM-DD` (the add and edit forms pick it with a date picker and a Day, Month
   only or Year only choice, so it is always a real date); a date sent back exactly as it came keeps its stored

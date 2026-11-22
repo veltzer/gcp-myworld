@@ -8,9 +8,14 @@ TMDB knows the IMDb and Wikidata ids of a film but not the Rotten Tomatoes
 one; Wikidata does (property P1258), so the details call follows the
 Wikidata id when TMDB gives one. Needs TMDB_API_KEY (a v3 API key); the
 Wikidata call is anonymous.
+
+What Wikidata says of films by their IMDb ids (wikidata_films: the item,
+the English title, the year, the directors) fills in the films the
+importer brings that it has no more than an IMDb id of.
 """
 
 import os
+import re
 from typing import Any
 
 import requests
@@ -18,9 +23,10 @@ import requests
 TMDB_API = "https://api.themoviedb.org/3"
 TMDB_IMAGES = "https://image.tmdb.org/t/p/w92"
 WIKIDATA_ENTITY = "https://www.wikidata.org/wiki/Special:EntityData"
+WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
 ROTTEN_TOMATOES_PROPERTY = "P1258"
 HTTP_TIMEOUT = 10
-USER_AGENT = "myworld/0.0.1 (https://github.com/veltzer/myworld)"
+USER_AGENT = "myworld/0.0.1 (https://github.com/veltzer/gcp-myworld)"
 
 
 def api_key() -> str:
@@ -123,3 +129,60 @@ def details(tmdb_id: int) -> dict[str, Any]:
         "wikidata_id": wikidata_id,
         "rotten_tomatoes_id": rotten_tomatoes_id(wikidata_id) if wikidata_id else "",
     }
+
+
+# a film by its IMDb id (P345): its English title (or the one in every
+# language, "mul", which Wikidata keeps instead for many), the year it came out
+# (P577; a series, the year it started, P580) and its directors (P57)
+FILMS_QUERY = """
+SELECT ?imdb ?item ?itemLabel (MIN(YEAR(COALESCE(?date, ?start))) AS ?year) (GROUP_CONCAT(DISTINCT ?directorLabel; separator=", ") AS ?directors) WHERE {
+  VALUES ?imdb { %s }
+  ?item wdt:P345 ?imdb.
+  OPTIONAL { ?item wdt:P577 ?date. }
+  OPTIONAL { ?item wdt:P580 ?start. }
+  OPTIONAL { ?item wdt:P57 ?director. }
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en,mul". ?item rdfs:label ?itemLabel. ?director rdfs:label ?directorLabel. }
+}
+GROUP BY ?imdb ?item ?itemLabel
+"""
+IMDB_ID = re.compile(r"tt\d{7,9}")
+# how many films one query asks about
+FILMS_PER_QUERY = 100
+
+
+def sparql(query: str) -> list[dict[str, str]]:
+    """ The rows a Wikidata query answers, each its variables' values; the tests replace this. """
+    response = requests.get(
+        WIKIDATA_SPARQL, params={"query": query, "format": "json"}, headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT * 3,
+    )
+    if not response.ok:
+        raise MovieLookupError(f"Wikidata answered {response.status_code}")
+    return [{key: value["value"] for key, value in row.items()} for row in response.json()["results"]["bindings"]]
+
+
+def wikidata_films(imdb_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """
+    What Wikidata says of the films of imdb_ids ("tt0816692"): IMDb id ->
+    its item ("Q13417189"), title, year (None when not said) and directors
+    ("Joel Coen, Ethan Coen"). A film Wikidata does not know is left out.
+    """
+    wanted = sorted(set(imdb_ids))
+    for imdb in wanted:
+        if not IMDB_ID.fullmatch(imdb):
+            raise MovieLookupError(f"{imdb!r} is not an IMDb id")
+    found: dict[str, dict[str, Any]] = {}
+    for start in range(0, len(wanted), FILMS_PER_QUERY):
+        values = " ".join(f'"{imdb}"' for imdb in wanted[start:start + FILMS_PER_QUERY])
+        for row in sparql(FILMS_QUERY % values):
+            qid = row["item"].rsplit("/", 1)[-1]
+            # an item with no English title is labelled by its id: no title then
+            title = row.get("itemLabel", "")
+            year = row.get("year", "")
+            # two items with one IMDb id (rare): the first is kept
+            found.setdefault(row["imdb"], {
+                "wikidata_id": qid,
+                "title": "" if title == qid else title,
+                "year": int(year) if year.isdigit() else None,
+                "directors": ", ".join(d for d in row.get("directors", "").split(", ") if d and not re.fullmatch(r"Q\d+", d)),
+            })
+    return found

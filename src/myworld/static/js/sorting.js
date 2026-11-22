@@ -107,6 +107,20 @@ const SORTS = {
 		["duration", "Length", (e) => e.duration, "desc"],
 		["rating", "Rating", (e) => e.rating, "desc"],
 	],
+	films: [
+		["name", "Title", (f) => f.name, "asc"],
+		["year", "Year", (f) => f.year, "desc"],
+		["director", "Director", (f) => f.directors, "asc"],
+		["watched", "Watched", (f) => f.watches.length, "desc"],
+	],
+	"film-watches": [
+		["date", "Watched", (w) => w.date_sort, "desc"],
+		["name", "Title", (w) => w.name, "asc"],
+		["year", "Year", (w) => w.year, "desc"],
+		["director", "Director", (w) => w.directors, "asc"],
+		["rating", "Rating", (w) => w.rating, "desc"],
+		["status", "Status", (w) => w.status_name, "asc"],
+	],
 	youtube: [
 		["date", "Watched", (v) => v.date_sort, "desc"],
 		["name", "Name", (v) => v.name, "asc"],

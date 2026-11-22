@@ -87,6 +87,22 @@ const VALUE_FILTERS = {
 			["device", "Device", (e) => named(e.device)],
 		],
 	},
+	films: {
+		all: "All films",
+		groups: [
+			["genre", "Genre", (f) => f.genres],
+			["watched", "You watched it", (f) => [f.watches.length ? "Watched" : "Not watched"]],
+		],
+	},
+	"film-watches": {
+		all: "All film watches",
+		groups: [
+			["status", "Status", (w) => [w.status_name]],
+			["device", "Device", (w) => named(w.device)],
+			["where", "Where", (w) => (w.watched_at ? [w.watched_at] : [])],
+			["genre", "Genre", (w) => w.genres],
+		],
+	},
 	youtube: {
 		all: "All videos",
 		groups: [["device", "Device", (v) => named(v.device)]],

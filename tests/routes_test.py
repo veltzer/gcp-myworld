@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from myworld.models import (
     AudioBook,
     AudioBookVersion,
+    Film,
     Podcast,
     PodcastEpisode,
     is_shared,
@@ -26,6 +27,7 @@ from tests.conftest import sign_in, sign_in_admin
 NAMED = {
     "people": "Dana Levi", "chess-games": "me vs Deeper Blue", "podcasts-heard": "Mindscape", "episodes-heard": "Trailer",
     "audio-book-versions": "Free Will (MP3)", "audio-books-heard": "Free Will", "audio-book-listens": "Free Will",
+    "film-watches": "Interstellar",
 }
 
 # the least a row of each page can be added with, and what an edit changes it to
@@ -43,6 +45,9 @@ MINIMAL: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
     # of a shared podcast, and of a shared episode, which minimal() adds first
     "podcasts-heard": ({}, {"rating": 7}),
     "episodes-heard": ({}, {"rating": 7, "listened_at": "Car"}),
+    "films": ({"name": "Dune"}, {"name": "Dune: Part One", "year": 2021, "imdb_id": "tt1160419"}),
+    # of a shared film, which minimal() adds first
+    "film-watches": ({}, {"rating": 8, "watched_at": "Home"}),
     "youtube-videos": ({"youtube_id": "dQw4w9WgXcQ", "name": "A song"}, {"youtube_id": "dQw4w9WgXcQ", "name": "That song"}),
     # a game is added by its text and named by its players: an edit that sends another text renames it
     "chess-games": (
@@ -76,7 +81,22 @@ def minimal(app: webtest.TestApp, path: str) -> tuple[dict[str, Any], dict[str, 
     if path == "audio-book-listens":
         version = {"version_id": shared_version(app).id}
         return {**first, **version}, {**changed, **version}
+    if path == "film-watches":
+        film = {"film_id": shared_film(app).id}
+        return {**first, **film}, {**changed, **film}
     return first, changed
+
+
+def shared_film(app: webtest.TestApp) -> Film:
+    """ The shared film Interstellar, put there as an admin's import would (once). """
+    flask_app: Any = app.app
+    with Session(flask_app.config["engine"], expire_on_commit=False) as session:
+        film = session.scalars(select(Film).where(Film.imdb_id == "tt0816692")).first()
+        if film is None:
+            film = Film(name="Interstellar", year=2014, imdb_id="tt0816692", genres=[])
+            session.add(film)
+            session.commit()
+        return film
 
 
 def shared_version(app: webtest.TestApp) -> AudioBookVersion:
@@ -217,6 +237,36 @@ def test_your_audio_books(app: webtest.TestApp, engine: Engine) -> None:
     app.put_json(f"/api/audio-books-heard/{mine['id']}", first, status=404)
 
 
+def test_film_watches(app: webtest.TestApp, engine: Engine) -> None:
+    """ A film is shared; each time the user watched it, or means to, is theirs, and a film watched stays. """
+    sign_in(app)
+    first, _ = minimal(app, "film-watches")
+    person = app.post_json("/api/people", {"first_name": "Doron"}, status=201).json
+    seen = app.post_json("/api/film-watches", {**first, "date": "2020-12-31", "rating": 8, "review": "Good", "people": [person["id"]]}, status=201).json
+    again = app.post_json("/api/film-watches", {**first, "date": "2022-07-23", "rating": 9}, status=201).json
+    wanted = app.post_json("/api/film-watches", {**first, "status": "wishlist", "recommended_by_id": person["id"]}, status=201).json
+    assert (seen["name"], seen["year"], seen["url"], seen["with"]) == ("Interstellar", 2014, "https://www.imdb.com/title/tt0816692/", ["Doron"])
+    assert (wanted["status_name"], wanted["recommended_by"]) == ("Want to see", {"id": person["id"], "name": "Doron"})
+    # the latest watched first, the one still to see last
+    assert [w["id"] for w in app.get("/api/film-watches").json] == [again["id"], seen["id"], wanted["id"]]
+    [film] = app.get("/api/films").json
+    assert [w["name"] for w in film["watches"]] == ["2022-07-23", "2020-12-31", "Want to see"]
+    app.post_json("/api/film-watches", {**first, "status": "seen"}, status=400)
+    # a film someone watched stays; and two films are not one IMDb id
+    sign_in_admin(app, engine)
+    app.delete(f"/api/films/{first['film_id']}", status=409)
+    assert app.post_json("/api/films", {"name": "Interstellar", "imdb_id": "https://www.imdb.com/title/tt0816692/"}, status=409).json == {
+        "error": "imdb_id: tt0816692 is in Films already",
+    }
+    added = app.post_json("/api/films", {"name": "Dune", "imdb_id": "1160419", "genres": "science fiction, drama, drama", "wikidata_id": "Q60834962"}, status=201).json
+    assert (added["imdb_id"], added["genres"]) == ("tt1160419", ["science fiction", "drama"])
+    app.post_json("/api/films", {"name": "Dune", "rotten_tomatoes_id": "dune"}, status=400)
+    # the other account sees the film, and none of the watches
+    sign_in(app, sub="someone-else")
+    assert app.get("/api/film-watches").json == []
+    assert [f["watches"] for f in app.get("/api/films").json] == [[], []]
+
+
 def test_a_page_that_is_not_one(app: webtest.TestApp) -> None:
     sign_in(app)
     app.post_json("/api/unicorns", {"name": "Bob"}, status=404)
@@ -224,7 +274,7 @@ def test_a_page_that_is_not_one(app: webtest.TestApp) -> None:
     app.delete("/api/unicorns/1", status=404)
 
 
-@pytest.mark.parametrize("path", ["concert-visits", "audio-courses", "episodes-heard", "youtube-videos"])
+@pytest.mark.parametrize("path", ["concert-visits", "audio-courses", "episodes-heard", "film-watches", "youtube-videos"])
 @pytest.mark.parametrize(("date", "precision", "sort"), [
     ("2003", "year", "2003"),
     ("2003-07", "month", "2003-07"),

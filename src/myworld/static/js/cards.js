@@ -22,6 +22,9 @@ const NO_COVER_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 
 const NO_PHOTO_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3 7.2 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2h-3.2L15 3H9zm3 15c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5z"/><path d="M3 2 22 21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
 
 export function cardShell(item, subtitle, kind = "photo") {
+	// a poster is laid out as a cover is, and says "No poster" when there is none
+	const what = kind === "poster" ? "poster" : kind === "cover" ? "cover" : pictureName();
+	kind = kind === "poster" ? "cover" : kind;
 	const card = el("article", "world-card");
 	card.id = `${slug(state.view)}-${item.id}`;
 	card.title = item.name;
@@ -34,8 +37,7 @@ export function cardShell(item, subtitle, kind = "photo") {
 		card.appendChild(img);
 	} else if (kind === "cover" || pictureName()) {
 		// something that could have a picture and has none gets a blank one that says so plainly
-		// ("No cover", "No photo", "No logo", "No flag"), laid out in every layout like a real one
-		const what = kind === "cover" ? "cover" : pictureName();
+		// ("No cover", "No poster", "No photo", "No logo", "No flag"), laid out in every layout like a real one
 		card.classList.add("has-image", `is-${kind}`, "no-picture");
 		const slot = el("div", "world-image cover-slot");
 		const blank = el("div", kind === "cover" ? "cover-blank" : "cover-blank picture-blank");
@@ -116,7 +118,13 @@ export function cityName(city) {
 }
 
 // how a single picker names the rows of a view
-export const PICKER_LABELS = { places: placeName, cities: cityName, "podcast-episodes": (row) => `${row.podcast?.name}: ${row.name}` };
+export const PICKER_LABELS = {
+	places: placeName,
+	cities: cityName,
+	"podcast-episodes": (row) => `${row.podcast?.name}: ${row.name}`,
+	// two films may share a title: the year tells them apart
+	films: (row) => (row.year ? `${row.name} (${row.year})` : row.name),
+};
 
 function placeCard(item) {
 	const { card, list } = cardShell(item, [item.city?.name, item.city?.country?.name].filter(Boolean).join(", "));
@@ -263,8 +271,16 @@ const BOOK_CATALOGS = [
 	["wikidata_id", "Wikidata", (id) => `https://www.wikidata.org/wiki/${id}`],
 ];
 
-function catalogDetail(list, item) {
-	const found = BOOK_CATALOGS.filter(([key]) => item[key]);
+// a film's pages, the same way
+const FILM_CATALOGS = [
+	["imdb_id", "IMDb", (id) => `https://www.imdb.com/title/${id}/`],
+	["tmdb_id", "TMDB", (id) => `https://www.themoviedb.org/movie/${id}`],
+	["wikidata_id", "Wikidata", (id) => `https://www.wikidata.org/wiki/${id}`],
+	["rotten_tomatoes_id", "Rotten Tomatoes", (id) => `https://www.rottentomatoes.com/${id}`],
+];
+
+function catalogDetail(list, item, catalogs = BOOK_CATALOGS) {
+	const found = catalogs.filter(([key]) => item[key]);
 	if (found.length === 0) {
 		return;
 	}
@@ -397,6 +413,47 @@ function episodeHeardCard(item) {
 	return card;
 }
 
+// "2014 · Christopher Nolan": when a film came out and who directed it
+function filmLine(item) {
+	return [item.year, item.directors].filter(Boolean).join(" \u00b7 ");
+}
+
+// what a film is: who directed it, its genres, and its pages elsewhere
+function filmDetails(list, item) {
+	detail(list, "Year", item.year === null ? "" : String(item.year));
+	detail(list, "Directed by", item.directors);
+	detail(list, "Genres", item.genres.join(", "));
+	catalogDetail(list, item, FILM_CATALOGS);
+}
+
+// a film, shared; each time the user watched it (or means to), a link to that watch
+function filmCard(item) {
+	const { card, list } = cardShell(item, filmLine(item), "poster");
+	linksDetail(list, "You watched it", "film-watches", item.watches);
+	filmDetails(list, item);
+	websiteButton(card, item.url, "On IMDb");
+	return card;
+}
+
+// a time the user watched a film, or one they mean to see: when, where, on what, with whom, what they thought
+function filmWatchCard(item) {
+	const { card, list } = cardShell(item, filmLine(item), "poster");
+	linksDetail(list, "Film", "films", item.film ? [item.film] : []);
+	if (item.status === "done") {
+		detail(list, "Watched", formatDate(item) || "Yes");
+	} else {
+		detail(list, "Status", item.status_name);
+	}
+	rated(list, item);
+	detail(list, "Where", item.watched_at);
+	linksDetail(list, "Device", "devices", item.device ? [item.device] : []);
+	linksDetail(list, "With", "people", item.people);
+	linksDetail(list, "Recommended by", "people", item.recommended_by ? [item.recommended_by] : []);
+	filmDetails(list, item);
+	websiteButton(card, item.url, "On IMDb");
+	return card;
+}
+
 // 3725 -> "1:02:05", 391 -> "6:31"
 function formatDuration(seconds) {
 	if (seconds === null) {
@@ -508,6 +565,8 @@ export const CARDS = {
 	"podcast-episodes": podcastEpisodeCard,
 	"podcasts-heard": podcastHeardCard,
 	"episodes-heard": episodeHeardCard,
+	films: filmCard,
+	"film-watches": filmWatchCard,
 	youtube: youtubeCard,
 	chess: chessCard,
 	places: placeCard,

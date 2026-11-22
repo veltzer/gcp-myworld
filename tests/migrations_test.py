@@ -481,3 +481,34 @@ def test_audio_books_become_shared_each_in_versions_and_what_was_heard_each_acco
     assert not {"owner_id", "image_id"} & {column["name"] for column in inspect(engine).get_columns("audio_books")}
     engine.dispose()
     assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"
+
+
+def test_the_films_of_the_library_become_shared_films(url: str) -> None:
+    """ 0031: a film of library_works becomes a shared film, once by its IMDb id; one no library entry has goes from library_works. """
+    alembic(url, "upgrade", "0030")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(text("INSERT INTO locales (code, name, script, position) VALUES ('en', 'English', 'Latin', 0)"))
+        connection.execute(text("INSERT INTO users (id, email, name, picture, created_at, role) VALUES (1, '1@example.com', '', '', '2026-01-01', 'user')"))
+        work = (
+            "INSERT INTO library_works (id, owner_id, kind, title, creator, year, isbn, imdb_id, tmdb_id, rotten_tomatoes_id, goodreads_id, simania_id)"
+            " VALUES (:id, 1, :kind, :title, :creator, :year, '', :imdb, :tmdb, :rt, '', '')"
+        )
+        for row in (
+            # Dune is in no library; Solaris is in the account's, so it stays there too; a second Dune by the same IMDb id is one film
+            {"id": 1, "kind": "film", "title": "Dune", "creator": "Denis Villeneuve", "year": 2021, "imdb": "tt1160419", "tmdb": 438631, "rt": "m/dune_2021"},
+            {"id": 2, "kind": "film", "title": "Solaris", "creator": "Andrei Tarkovsky", "year": 1972, "imdb": "", "tmdb": None, "rt": ""},
+            {"id": 3, "kind": "film", "title": "Dune: Part One", "creator": "Denis Villeneuve", "year": 2021, "imdb": "tt1160419", "tmdb": None, "rt": ""},
+            {"id": 4, "kind": "book", "title": "Emma", "creator": "Jane Austen", "year": 1815, "imdb": "", "tmdb": None, "rt": ""},
+        ):
+            connection.execute(text(work), row)
+        connection.execute(text("INSERT INTO library_entries (owner_id, work_id, notes, updated_at) VALUES (1, 2, '', '2026-01-01')"))
+    engine.dispose()
+    run(url, "upgrade")
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT name, year, directors, imdb_id, tmdb_id, rotten_tomatoes_id FROM films ORDER BY id")).all() == [
+            ("Dune", 2021, "Denis Villeneuve", "tt1160419", 438631, "m/dune_2021"), ("Solaris", 1972, "Andrei Tarkovsky", None, None, "")]
+        assert connection.execute(text("SELECT id, kind FROM library_works ORDER BY id")).all() == [(2, "film"), (4, "book")]
+    engine.dispose()
+    assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"

@@ -23,6 +23,8 @@ from myworld.models import (
     Country,
     Device,
     EpisodeHeard,
+    Film,
+    FilmWatch,
     Group,
     Organization,
     OrganizationType,
@@ -94,6 +96,7 @@ DATASETS: dict[str, str] = {
     "audio-book-listens": "Audio book listens",
     "podcasts-heard": "Your podcasts",
     "episodes-heard": "Episodes heard",
+    "film-watches": "Film watches",
     "youtube": "YouTube",
     "chess": "Chess",
     "people": "People",
@@ -103,6 +106,7 @@ DATASETS: dict[str, str] = {
     "podcast-episodes": "Podcast episodes",
     "audio-books": "Audio books",
     "audio-book-versions": "Audio book versions",
+    "films": "Films",
     "cities": "Cities",
     "countries": "Countries",
     "currencies": "Currencies",
@@ -171,6 +175,8 @@ SUBJECTS: dict[type, tuple[str, str]] = {
     PodcastEpisode: ("podcast episode", "podcast-episodes"),
     PodcastHeard: ("podcast of yours", "podcasts-heard"),
     EpisodeHeard: ("episode heard", "episodes-heard"),
+    Film: ("film", "films"),
+    FilmWatch: ("film watch", "film-watches"),
     YouTubeVideo: ("YouTube video", "youtube"),
     Person: ("person", "people"),
     Organization: ("organization", "organizations"),
@@ -213,6 +219,8 @@ def problem(row: Any, message: str) -> Problem:
         name = row.podcast.name
     elif isinstance(row, EpisodeHeard):
         name = row.episode.name
+    elif isinstance(row, FilmWatch):
+        name = row.film.name
     elif isinstance(row, AudioBookHeard):
         name = row.book.name
     elif isinstance(row, AudioBookVersion):
@@ -254,7 +262,7 @@ def squashed(name: str) -> str:
     return " ".join(name.casefold().split())
 
 
-def dated(course: AudioCourse | EpisodeHeard | YouTubeVideo | Concert) -> bool:
+def dated(course: AudioCourse | EpisodeHeard | FilmWatch | YouTubeVideo | Concert) -> bool:
     """ Whether it has a date, at any precision: the day it was finished. """
     return course.date_utcz is not None or course.date_ymd is not None or bool(course.date_my) or course.date_y is not None
 

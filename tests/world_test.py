@@ -21,7 +21,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from myworld import addresses, checks, cities, languages, names, notes
+from myworld import addresses, checks, cities, languages, movies, names, notes
 from myworld.models import (
     SEED_LOCALES,
     AudioBook,
@@ -417,7 +417,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         session.commit()
     assert counts == {
         "people": 7, "organizations": 3, "organization types": 7, "relation types": 6, "person types": 3, "people with a profession": 4, "people related to the user": 2,
-        "concerts": 3, "places": 1, "museums": 2, "museum visits": 3, "audio courses": 2, "audio books": 4, "podcasts": 2, "podcast episodes": 3,
+        "concerts": 3, "places": 1, "museums": 2, "museum visits": 3, "audio courses": 2, "audio books": 4, "podcasts": 2, "podcast episodes": 3, "films": 0, "film watches": 0,
         "YouTube videos": 4, "devices": 4, "books": 3, "images": 9}
     return app
 
@@ -1064,6 +1064,87 @@ def test_podcasts_import_runs_again(imported: webtest.TestApp, engine: Engine, t
         counts = import_world.import_podcasts(session, bob, source)
         session.commit()
     assert counts == {"podcasts added": 0, "podcast episodes added": 0, "covers added": 0, "podcasts heard added": 2, "episodes heard added": 4, "devices added": 1}
+
+
+FILMS = """
+items:
+  - name: "Interstellar"
+    imdb_id: "0816692"
+    wikidata_id: "Q13417189"
+    rotten_tomatoes_id: "m/interstellar_2014"
+    date_utcz: "2020-12-31T00:24:52Z"
+    date_timezone: "Asia/Jerusalem"
+    location: "Home"
+    device: "Netflix"
+    rating: 8
+    review: "Without the love theme"
+    with: ["Alice Friend"]
+  - name: "Interstellar"
+    imdb_id: "0816692"
+    wikidata_id: "Q13417189"
+    rotten_tomatoes_id: "m/interstellar_2014"
+    date_utcz: "2022-07-23T04:02:43Z"
+    date_timezone: "Asia/Jerusalem"
+    location: "Home"
+    device: "Netflix"
+    rating: 9
+    review: "I like this one a lot"
+    with: []
+"""
+FILMS_TO_SEE = [{"recommended_by": "Alice Friend", "imdb_id": "0427312", "genre": "documentary"}]
+
+
+def write_films(source: Path) -> None:
+    (source / "data" / "yaml" / "video_features.yaml").write_text(FILMS, encoding="UTF8")
+    (source / "static" / "images" / "movie-0816692.jpg").write_bytes(b"\xff\xd8interstellar")
+    (source.parent / "data" / "json").mkdir(parents=True)
+    (source.parent / "data" / "json" / "movies_to_see.json").write_text(json.dumps(FILMS_TO_SEE), encoding="UTF8")
+
+
+def test_films_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    asked: list[str] = []
+
+    def sparql(query: str) -> list[dict[str, str]]:
+        asked.append(query)
+        return [
+            {"imdb": "tt0816692", "item": "http://www.wikidata.org/entity/Q13417189", "itemLabel": "Interstellar", "year": "2014", "directors": "Christopher Nolan"},
+            # no English title: labelled by its id
+            {"imdb": "tt0427312", "item": "http://www.wikidata.org/entity/Q1067409", "itemLabel": "Grizzly Man", "year": "2005", "directors": "Werner Herzog, Q42"},
+        ]
+
+    monkeypatch.setattr(movies, "sparql", sparql)
+    source = write_source(tmp_path / "site")
+    write_films(source)
+    with Session(engine) as session:
+        counts = import_world.import_films(session, owner(session), source)
+        session.commit()
+    assert counts == {"films added": 2, "films filled from Wikidata": 2, "posters added": 1, "film watches added": 2, "films to see added": 1, "devices added": 1}
+    watches = imported.get("/api/film-watches").json
+    assert [(w["name"], w["status"], w["rating"], w["with"], w["device"]["name"] if w["device"] else None) for w in watches] == [
+        ("Interstellar", "done", 9, [], "Netflix"),
+        ("Interstellar", "done", 8, ["Alice Friend"], "Netflix"),
+        ("Grizzly Man", "wishlist", None, [], None),
+    ]
+    assert watches[2]["recommended_by"]["name"] == "Alice Friend"
+    films = {f["name"]: f for f in imported.get("/api/films").json}
+    assert (films["Interstellar"]["year"], films["Interstellar"]["directors"], films["Interstellar"]["imdb_id"], films["Interstellar"]["rotten_tomatoes_id"]) == (
+        2014, "Christopher Nolan", "tt0816692", "m/interstellar_2014",
+    )
+    assert films["Interstellar"]["image"] and films["Grizzly Man"]["image"] is None
+    assert (films["Grizzly Man"]["directors"], films["Grizzly Man"]["genres"], films["Grizzly Man"]["wikidata_id"]) == ("Werner Herzog", ["documentary"], "Q1067409")
+    # what was edited stays; a run again adds nothing, and asks Wikidata of nothing (every film has all it says)
+    imported.put_json(f"/api/film-watches/{watches[0]['id']}", {"film_id": watches[0]["film"]["id"], "date": watches[0]["date"], "rating": 10})
+    asked.clear()
+    with Session(engine) as session:
+        counts = import_world.import_films(session, owner(session), source)
+        session.commit()
+    assert counts == {"films added": 0, "films filled from Wikidata": 0, "posters added": 0, "film watches added": 0, "films to see added": 0, "devices added": 0}
+    assert asked == []
+    assert imported.get("/api/film-watches").json[0]["rating"] == 10
+    # a name the account has no person of stops it
+    (source / "data" / "yaml" / "video_features.yaml").write_text(FILMS.replace('with: ["Alice Friend"]', 'with: ["Nobody Known"]').replace("2020-12-31", "2019-12-31"), encoding="UTF8")
+    with Session(engine) as session, pytest.raises(import_world.WorldImportError, match="no people of the account are called 'Nobody Known'"):
+        import_world.import_films(session, owner(session), source)
 
 
 def test_podcasts_import_refuses_what_it_does_not_know(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:

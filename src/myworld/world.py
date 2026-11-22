@@ -36,6 +36,7 @@ from myworld.api import (
 from myworld.models import (
     AUDIO_BOOK_KINDS,
     DEFAULT_LOCALE,
+    FILM_WATCH_STATUSES,
     MUSEUM_KIND,
     MUSEUM_VISIT,
     RATING_MAX,
@@ -54,6 +55,8 @@ from myworld.models import (
     Currency,
     Device,
     EpisodeHeard,
+    Film,
+    FilmWatch,
     Group,
     Organization,
     OrganizationType,
@@ -592,6 +595,85 @@ def youtube_video_json(video: YouTubeVideo) -> dict[str, Any]:
     }
 
 
+# a film's ids: (field, what a whole one is, an example)
+FILM_IDS = (
+    ("wikidata_id", re.compile(r"Q\d+"), "Q13417189"),
+    ("rotten_tomatoes_id", re.compile(r"(m|tv)/[A-Za-z0-9_-]+"), "m/interstellar_2014"),
+)
+IMDB_ID = re.compile(r"tt\d{7,9}")
+# the id inside what was typed: tt0816692, 0816692, or a link to the film at IMDb
+IMDB_TYPED = re.compile(r"(?:tt)?(\d{7,9})")
+
+
+def imdb_id(value: str) -> str:
+    """ A film's IMDb id ("tt0816692") from what was typed: the id, its number, or a link to the film at IMDb; "" for nothing. """
+    if not value:
+        return ""
+    found = IMDB_TYPED.search(value.rsplit("/title/", 1)[-1])
+    if found is None:
+        raise ApiError(400, "imdb_id: expected an id like tt0816692, or a link to the film at IMDb")
+    return f"tt{found.group(1)}"
+
+
+def _film_fields(film: Film) -> dict[str, Any]:
+    """ What a film is, as its card and a watch of it show it. """
+    return {
+        "film": _ref(film),
+        "year": film.year,
+        "directors": film.directors,
+        "genres": film.genres,
+        "imdb_id": film.imdb_id or "",
+        "tmdb_id": film.tmdb_id,
+        "wikidata_id": film.wikidata_id,
+        "rotten_tomatoes_id": film.rotten_tomatoes_id,
+        # its page at IMDb, and its poster
+        "url": f"https://www.imdb.com/title/{film.imdb_id}/" if film.imdb_id else "",
+        "image": image_url(film.image_id),
+    }
+
+
+def _watch_name(watch: FilmWatch) -> str:
+    """ What a watch is called in a list of a film's: the day it was watched, else its status. """
+    return _shown_date(watch) or FILM_WATCH_STATUSES.get(watch.status, watch.status)
+
+
+def _shown_date(row: Any) -> str:
+    """ The date as a card shows it: the day (of a timestamp too), the month or the year; "" for none. """
+    date = date_json(row)["date"]
+    return date[:10] if date else ""
+
+
+def film_json(film: Film, mine: list[FilmWatch] | None = None) -> dict[str, Any]:
+    """ A film, shared; the signed-in user's watches of it (mine), when said, or else looked for. """
+    if mine is None:
+        mine = [watch for watch in film.watches if watch.owner_id == flask.g.user.id]
+    return {
+        "id": film.id,
+        "name": film.name,
+        **_film_fields(film),
+        "watches": [{"id": w.id, "name": _watch_name(w)} for w in sorted(mine, key=lambda w: date_json(w)["date_sort"], reverse=True)],
+    }
+
+
+def film_watch_json(watch: FilmWatch) -> dict[str, Any]:
+    return {
+        "id": watch.id,
+        "name": watch.film.name,
+        **_film_fields(watch.film),
+        "status": watch.status,
+        "status_name": FILM_WATCH_STATUSES.get(watch.status, watch.status),
+        **date_json(watch),
+        "date_timezone": watch.date_timezone,
+        "rating": watch.rating,
+        "review": watch.review,
+        "watched_at": watch.watched_at,
+        "device": _ref(watch.device),
+        "recommended_by": None if watch.recommended_by is None else {"id": watch.recommended_by.id, "name": shown_name(watch.recommended_by)},
+        "with": _names(watch.people),
+        "people": _refs(watch.people),
+    }
+
+
 # what the list of games says of each: every column but the game's text, which only one game opened needs
 CHESS_LISTED = (
     ChessGame.id, ChessGame.date_utcz, ChessGame.date_ymd, ChessGame.date_my, ChessGame.date_y, ChessGame.date_timezone,
@@ -814,6 +896,27 @@ def api_episodes_heard() -> flask.Response:
     # the latest heard first; of those heard the same day, the latest published first
     episodes = [episode_heard_json(e) for e in flask.g.db.scalars(query)]
     return flask.jsonify(sorted(episodes, key=lambda e: (e["date_sort"], e["published"]), reverse=True))
+
+
+@bp.route("/api/films", methods=["GET"])
+@auth.login_required
+def api_films() -> flask.Response:
+    """ Every film (shared), by title, each with the user's watches of it. """
+    mine: dict[int, list[FilmWatch]] = {}
+    for watch in flask.g.db.scalars(select(FilmWatch).where(FilmWatch.owner_id == flask.g.user.id)):
+        mine.setdefault(watch.film_id, []).append(watch)
+    query = select(Film).order_by(Film.name, Film.year, Film.id)
+    return flask.jsonify([film_json(f, mine.get(f.id, [])) for f in flask.g.db.scalars(query)])
+
+
+@bp.route("/api/film-watches", methods=["GET"])
+@auth.login_required
+def api_film_watches() -> flask.Response:
+    query = select(FilmWatch).where(FilmWatch.owner_id == flask.g.user.id).options(
+        selectinload(FilmWatch.film), selectinload(FilmWatch.device), selectinload(FilmWatch.people), selectinload(FilmWatch.recommended_by),
+    )
+    # the latest watched first; the films still to see (no date) after them
+    return flask.jsonify(_newest_first([film_watch_json(w) for w in flask.g.db.scalars(query)]))
 
 
 @bp.route("/api/youtube-videos", methods=["GET"])
@@ -1071,7 +1174,7 @@ def api_currencies() -> flask.Response:
 
 
 
-def _apply_dates(row: Concert | Visit | AudioCourse | AudioBookListen | EpisodeHeard | YouTubeVideo, body: dict[str, Any]) -> None:
+def _apply_dates(row: Concert | Visit | AudioCourse | AudioBookListen | EpisodeHeard | FilmWatch | YouTubeVideo, body: dict[str, Any]) -> None:
     """
     The date as typed: YYYY, YYYY-MM or YYYY-MM-DD, stored at that precision,
     or nothing. date_timezone is where it happened (an IANA name). A date
@@ -1557,6 +1660,54 @@ def _apply_youtube_video(video: YouTubeVideo, body: dict[str, Any]) -> None:
     _apply_dates(video, body)
 
 
+def _apply_film(film: Film, body: dict[str, Any]) -> None:
+    name = text(body, "name", required=True)
+    imdb = imdb_id(text(body, "imdb_id"))
+    if imdb:
+        clash = flask.g.db.execute(select(Film.id).where(Film.imdb_id == imdb, Film.id != film.id)).first()
+        if clash is not None:
+            raise ApiError(409, f"imdb_id: {imdb} is in Films already")
+    genres = body.get("genres", [])
+    if isinstance(genres, str):
+        genres = genres.split(",")
+    if not isinstance(genres, list) or not all(isinstance(g, str) for g in genres):
+        raise ApiError(400, "genres: expected a list of names")
+    film.name = name
+    film.year = opt_int(body, "year", 1850, 2200)
+    film.directors = text(body, "directors")
+    film.genres = list(dict.fromkeys(g.strip() for g in genres if g.strip()))
+    film.imdb_id = imdb or None
+    film.tmdb_id = opt_int(body, "tmdb_id", 1, 2**31 - 1)
+    for key, pattern, example in FILM_IDS:
+        value = text(body, key)
+        if value and not pattern.fullmatch(value):
+            raise ApiError(400, f"{key}: expected an id like {example}")
+        setattr(film, key, value)
+    apply_image(film, body)
+
+
+def _apply_film_watch(watch: FilmWatch, body: dict[str, Any]) -> None:
+    film = owned_ref(body, "film_id", Film, "film")
+    if film is None:
+        raise ApiError(400, "film_id: choose the film")
+    status = text(body, "status") or "done"
+    if status not in FILM_WATCH_STATUSES:
+        raise ApiError(400, f"status: expected one of {', '.join(FILM_WATCH_STATUSES)}")
+    # what it points to is looked up first: the watch joins the film's (and the people's) last, once nothing is queried
+    device = owned_ref(body, "device_id", Device, "device")
+    recommended_by = owned_ref(body, "recommended_by_id", Person, "person")
+    people = _owned_people(body)
+    watch.status = status
+    watch.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
+    watch.review = text(body, "review")
+    watch.watched_at = text(body, "watched_at")
+    _apply_dates(watch, body)
+    watch.device = device
+    watch.recommended_by = recommended_by
+    watch.people = people
+    watch.film = film
+
+
 def _apply_chess_game(game: ChessGame, body: dict[str, Any]) -> None:
     """
     A game is added by its PGN, one game's, and says what it is itself; the
@@ -1830,6 +1981,8 @@ VIEWS: dict[str, _View] = {
     "podcast-episodes": _View(PodcastEpisode, _apply_podcast_episode, podcast_episode_json),
     "podcasts-heard": _View(PodcastHeard, _apply_podcast_heard, podcast_heard_json),
     "episodes-heard": _View(EpisodeHeard, _apply_episode_heard, episode_heard_json),
+    "films": _View(Film, _apply_film, film_json),
+    "film-watches": _View(FilmWatch, _apply_film_watch, film_watch_json),
     "youtube-videos": _View(YouTubeVideo, _apply_youtube_video, youtube_video_json),
     "chess-games": _View(ChessGame, _apply_chess_game, chess_game_json),
     "people": _View(Person, _apply_person, person_json),
@@ -1915,6 +2068,9 @@ def api_world_delete(what: str, row_id: int) -> flask.Response:
         raise ApiError(409, f"{row.name} was heard (Audio book listens): it stays")
     if isinstance(row, AudioBookVersion) and row.listens:
         raise ApiError(409, f"{version_name(row)} was heard (Audio book listens): it stays")
+    # and so does a film someone watched
+    if isinstance(row, Film) and row.watches:
+        raise ApiError(409, f"{row.name} was watched (Film watches): it stays")
     if isinstance(row, AudioBookHeard) and _listens_of(row):
         raise ApiError(409, f"you heard {row.book.name} ({_listens_of(row)} listens): delete them first")
     flask.g.db.delete(row)

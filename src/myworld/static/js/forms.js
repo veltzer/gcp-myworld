@@ -293,6 +293,15 @@ const WORLD_BODIES = {
 		const body = Object.fromEntries(["episode_id", "date", "rating", "review", "device_id", "listened_at"].map((name) => [name, form.elements[name].value]));
 		return { ...body, date_timezone: state.editing?.date_timezone || where() };
 	},
+	films: async (form) => ({
+		...Object.fromEntries(["name", "year", "directors", "genres", "imdb_id", "tmdb_id", "wikidata_id", "rotten_tomatoes_id"].map((name) => [name, form.elements[name].value])),
+		...(await pictureBody(form)),
+	}),
+	"film-watches": async (form) => ({
+		...Object.fromEntries(["film_id", "status", "date", "rating", "review", "device_id", "watched_at", "recommended_by_id"].map((name) => [name, form.elements[name].value])),
+		people: chosen(form, "people"),
+		date_timezone: state.editing?.date_timezone || where(),
+	}),
 	youtube: async (form) => {
 		const value = (name) => form.elements[name].value;
 		return {

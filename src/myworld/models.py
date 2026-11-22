@@ -621,6 +621,14 @@ audio_course_lecturers = Table(
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
 )
 
+# who a film was watched with: each one of the user's own people
+film_watch_companions = Table(
+    "film_watch_companions",
+    Base.metadata,
+    Column("film_watch_id", ForeignKey("film_watches.id", ondelete="CASCADE", name="fk_film_watch_companions_film_watch_id"), primary_key=True),
+    Column("person_id", ForeignKey("people.id", ondelete="CASCADE", name="fk_film_watch_companions_person_id"), primary_key=True),
+)
+
 # what a person is to the user: any number of their person types (a neighbor and a friend)
 person_type_links = Table(
     "person_type_links",
@@ -743,6 +751,11 @@ class Person(Base):
     lectured: Mapped[list[AudioCourse]] = relationship(
         secondary=audio_course_lecturers, back_populates="lecturers",
     )
+    # the films watched with them, and those they recommended
+    film_watches: Mapped[list[FilmWatch]] = relationship(
+        secondary=film_watch_companions, back_populates="people",
+    )
+    recommended: Mapped[list[FilmWatch]] = relationship(back_populates="recommended_by")
     # the library entries (books) they wrote
     wrote: Mapped[list[UserWork]] = relationship(
         secondary=library_entry_authors, back_populates="authors",
@@ -1259,6 +1272,7 @@ class Device(_Pictured, Base):
     audio_book_listens: Mapped[list[AudioBookListen]] = relationship(back_populates="device")
     youtube_videos: Mapped[list[YouTubeVideo]] = relationship(back_populates="device")
     episodes_heard: Mapped[list[EpisodeHeard]] = relationship(back_populates="device")
+    film_watches: Mapped[list[FilmWatch]] = relationship(back_populates="device")
 
 
 class AudioCourse(_Dated, Base):
@@ -1576,6 +1590,78 @@ class YouTubeVideo(_Dated, Base):
     unavailable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
 
 
+# where the user is with a film watch -> its name: watched, or one they mean to see
+FILM_WATCH_STATUSES: dict[str, str] = {
+    "done": "Watched",
+    "wishlist": "Want to see",
+}
+
+
+class Film(Base):
+    """
+    A film: its title, the year it came out, who directed it, its genres,
+    its poster and its ids on IMDb ("tt0816692"), The Movie Database,
+    Wikidata ("Q13417189") and Rotten Tomatoes ("m/interstellar_2014").
+    Shared: the same for every account, kept by admins (SHARED); each time a
+    user watched it, or means to, is their FilmWatch. A film is in My World
+    once by its IMDb id.
+    """
+    __tablename__ = "films"
+    __table_args__ = (
+        # NULLs never clash: a film typed in without its IMDb id
+        UniqueConstraint("imdb_id", name="uq_film_imdb_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # the title
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # as the source writes them: "Joel Coen, Ethan Coen"
+    directors: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    genres: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    wikidata_id: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    rotten_tomatoes_id: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    # its poster
+    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL", name="fk_films_image_id"), nullable=True)
+    image: Mapped[Image | None] = relationship()
+    watches: Mapped[list[FilmWatch]] = relationship(back_populates="film")
+
+
+class FilmWatch(_Dated, Base):
+    """
+    A time the user watched a film (a shared one), or one they mean to see
+    (status): when (the date, _Dated), where, on what (a device or a service:
+    "Netflix") and with whom, their rating and what they thought of it, and
+    who recommended it to them. A film watched twice has two, each with its
+    own rating and review.
+    """
+    __tablename__ = "film_watches"
+    __table_args__ = (
+        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_film_watch_rating_range"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE", name="fk_film_watches_owner_id"), nullable=False, index=True)
+    # a film someone watched is not deleted (RESTRICT)
+    film_id: Mapped[int] = mapped_column(ForeignKey("films.id", ondelete="RESTRICT", name="fk_film_watches_film_id"), nullable=False, index=True)
+    film: Mapped[Film] = relationship(back_populates="watches")
+    # one of FILM_WATCH_STATUSES
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="done", server_default="done")
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    review: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # where it was watched ("Home", "Cinemateque, Holon"), and on what: one of the user's own devices
+    watched_at: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id", ondelete="SET NULL", name="fk_film_watches_device_id"), nullable=True)
+    device: Mapped[Device | None] = relationship(back_populates="film_watches")
+    # who told the user to see it: one of their own people
+    recommended_by_id: Mapped[int | None] = mapped_column(ForeignKey("people.id", ondelete="SET NULL", name="fk_film_watches_recommended_by_id"), nullable=True)
+    recommended_by: Mapped[Person | None] = relationship(back_populates="recommended")
+    # who the user watched it with
+    people: Mapped[list[Person]] = relationship(secondary=film_watch_companions, back_populates="film_watches")
+
+
 class ChessGame(_Dated, Base):
     """
     A game of chess the user played; the date (_Dated) is when. Imported by
@@ -1784,7 +1870,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0030"
+SCHEMA_REVISION = "0031"
 
 
 def prepare_schema(engine: Engine) -> None:

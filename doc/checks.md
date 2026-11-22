@@ -161,6 +161,12 @@ By dataset: the key is the page's name in the app (`#book`) and what
 
 - `episode-heard-dates`: every episode heard has the date it was heard.
 
+### Film watches (`film-watches`)
+
+- `film-watch-dates`: every film watched says when.
+- `film-watch-reviews`: every film watched has the user's rating and
+  review.
+
 ### YouTube (`youtube`)
 
 - `youtube-ids`: every YouTube video id is one YouTube could have given
@@ -230,6 +236,13 @@ By dataset: the key is the page's name in the app (`#book`) and what
   Audible's, MP3 files a print edition's.
 - `audio-book-version-asins`: every Audible version has its ASIN, which the
   Audible library importer finds it again by and its page is linked by.
+
+### Films (`films`, shared)
+
+- `film-posters`: every film has its poster.
+- `film-imdb-ids`: every film has its IMDb id, which the importers find it
+  again by and its page is linked by.
+- `film-years`: every film says the year it came out.
 
 ### Cities (`cities`)
 
