@@ -464,14 +464,6 @@
 					<label title="The series it is part of, when it is" class="wide">Series <input name="series"></label>
 					<label title="Its place in the series: 1, 2, 0.5, ...">Number <input name="series_sequence"></label>
 				</div>
-				<div class="row">
-					<label title="The book's cover image. + adds one, in place of the one it has; − takes it away" class="wide">Cover <span class="chips pictures" id="audio-book-pictures" data-pictures="one" data-what="cover"></span></label>
-				</div>
-				<div class="adder" data-picture-adder hidden>
-					<div class="row">
-						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Cover file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
-					</div>
-				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
 					<button type="button" class="text cancel">Cancel</button>
@@ -496,6 +488,14 @@
 				</div>
 				<div class="row">
 					<label title="Audible: its genres, separated by commas, as Audible lists them: each genre's path from its top genre down, so a top genre comes again for each path" class="wide">Genres <input name="genres"></label>
+				</div>
+				<div class="row">
+					<label title="This version's cover: an Audible one's is Audible's, MP3 files' a print edition's. + adds one, in place of the one it has; − takes it away" class="wide">Cover <span class="chips pictures" id="audio-book-version-pictures" data-pictures="one" data-what="cover"></span></label>
+				</div>
+				<div class="adder" data-picture-adder hidden>
+					<div class="row">
+						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Cover file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					</div>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>

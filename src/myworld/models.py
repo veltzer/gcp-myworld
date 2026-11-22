@@ -1309,7 +1309,7 @@ AUDIO_BOOK_KINDS: dict[str, str] = {
 
 class AudioBook(Base):
     """
-    An audio book: its title, subtitle, authors, series and cover. Shared:
+    An audio book: its title, subtitle, authors and series. Shared:
     the same for every account, kept by admins (SHARED). It comes in versions
     (AudioBookVersion: an Audible one, MP3 files, ...), each with what is
     its own; what a user thinks of the book is their AudioBookHeard, and each
@@ -1328,8 +1328,6 @@ class AudioBook(Base):
     series: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     # its place in the series: "2", "0.5"
     series_sequence: Mapped[str] = mapped_column(String(20), nullable=False, default="")
-    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
-    image: Mapped[Image | None] = relationship()
     versions: Mapped[list[AudioBookVersion]] = relationship(back_populates="book", cascade="all, delete-orphan", order_by="AudioBookVersion.id")
     heard: Mapped[list[AudioBookHeard]] = relationship(back_populates="book")
 
@@ -1337,7 +1335,8 @@ class AudioBook(Base):
 class AudioBookVersion(Base):
     """
     One version of an audio book (shared, as the book is): the Audible one,
-    or MP3 files. Each says who reads it and how long it is; an Audible one
+    or MP3 files. Each has its own cover, and says who reads it and how long
+    it is; an Audible one
     also what Audible says of it (its ASIN, genres, rating there, when it
     came out, its cover's address), MP3 files how many parts they are. An
     Audible book is in My World once by its ASIN.
@@ -1365,10 +1364,13 @@ class AudioBookVersion(Base):
     source_rating: Mapped[float | None] = mapped_column(Double, nullable=True)
     source_ratings: Mapped[int | None] = mapped_column(Integer, nullable=True)
     released: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
-    # the address of its cover at Audible (the cover itself is the book's image)
+    # the address of its cover at Audible (the cover itself is image)
     cover_url: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     # MP3's: how many files (parts, discs) it comes in
     parts: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # its cover: an Audible one's is Audible's, MP3 files' a print edition's
+    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL", name="fk_audio_book_versions_image_id"), nullable=True)
+    image: Mapped[Image | None] = relationship()
     listens: Mapped[list[AudioBookListen]] = relationship(back_populates="version")
 
 
@@ -1776,7 +1778,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0027"
+SCHEMA_REVISION = "0029"
 
 
 def prepare_schema(engine: Engine) -> None:

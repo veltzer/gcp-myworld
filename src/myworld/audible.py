@@ -483,9 +483,9 @@ def store_library(session: Session, owner: User, items: list[dict[str, Any]], co
     The books of owner's Audible library (items, as library_item says
     them). Audio books are shared: a book's Audible version is found by its
     ASIN, or else the book by its title, subtitle and authors, or by its
-    title and authors when it has no subtitle (it is given Audible's), and a
-    version is added to it; or else the book is added, with its cover (cover(asin, cover_url):
-    the image's bytes, or None). Of a version there already, only what
+    title and authors when it has no subtitle (it is given Audible's), or
+    else the book is added; and the Audible version is added to it, with its
+    cover (cover(asin, cover_url): the image's bytes, or None). Of a version there already, only what
     Audible changes is refreshed (_version_values), so whatever was edited
     in the app stays; genres an earlier import kept each once only are given
     back as the library lists them. owner's listen of the version (and the
@@ -520,23 +520,22 @@ def store_library(session: Session, owner: User, items: list[dict[str, Any]], co
                 book = unsubtitled.pop((name, authors))
                 book.subtitle = subtitle
                 books[name, subtitle, authors] = book
+            filename = f"audible-{asin}.jpg"
+            image = stored.get(filename)
+            if image is None:
+                data = cover(asin, _text(item.get("cover_url")).strip())
+                if data is not None:
+                    image = Image(owner_id=owner.id, filename=filename, content_type="image/jpeg", sha256=hashlib.sha256(data).hexdigest(), data=data)
+                    session.add(image)
+                    stored[filename] = image
+                    images += 1
             if book is None:
-                filename = f"audible-{asin}.jpg"
-                image = stored.get(filename)
-                if image is None:
-                    data = cover(asin, _text(item.get("cover_url")).strip())
-                    if data is not None:
-                        image = Image(owner_id=owner.id, filename=filename, content_type="image/jpeg", sha256=hashlib.sha256(data).hexdigest(), data=data)
-                        session.add(image)
-                        stored[filename] = image
-                        images += 1
                 book = AudioBook(
                     name=name,
                     subtitle=subtitle,
                     authors=authors,
                     series=_text(item.get("series_title")).strip(),
                     series_sequence=_text(item.get("series_sequence")).strip(),
-                    image=image,
                 )
                 session.add(book)
                 books[name, subtitle, authors] = book
@@ -550,6 +549,7 @@ def store_library(session: Session, owner: User, items: list[dict[str, Any]], co
                 genres=_genres(item),
                 minutes=_optional(item.get("runtime_length_min"), int),
                 released=datetime.date.fromisoformat(release) if release else None,
+                image=image,
                 **_version_values(item),
             )
             session.add(version)

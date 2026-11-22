@@ -14,7 +14,7 @@ from sqlalchemy import select
 from myworld import auth
 from myworld.api import ApiError, opt_int, text
 from myworld.models import (
-    AudioBook,
+    AudioBookVersion,
     AudioCourse,
     City,
     CityPhoto,
@@ -67,7 +67,7 @@ def _shared_images() -> Any:
     """ The images shared rows show (a place's photo, a podcast's or audio book's cover, a city's, a country's flag): everyone sees them, whoever uploaded them. """
     return select(Place.image_id).where(Place.image_id.is_not(None)).union(
         select(Podcast.image_id).where(Podcast.image_id.is_not(None)),
-        select(AudioBook.image_id).where(AudioBook.image_id.is_not(None)),
+        select(AudioBookVersion.image_id).where(AudioBookVersion.image_id.is_not(None)),
         select(City.image_id).where(City.image_id.is_not(None)),
         select(CityPhoto.image_id),
         select(Country.image_id).where(Country.image_id.is_not(None)),
@@ -185,7 +185,7 @@ def drop_unused_images() -> None:
     used = select(Concert.image_id).where(Concert.image_id.is_not(None)).union(
         select(Organization.image_id).where(Organization.image_id.is_not(None)),
         select(AudioCourse.image_id).where(AudioCourse.image_id.is_not(None)),
-        select(AudioBook.image_id).where(AudioBook.image_id.is_not(None)),
+        select(AudioBookVersion.image_id).where(AudioBookVersion.image_id.is_not(None)),
         select(Podcast.image_id).where(Podcast.image_id.is_not(None)),
         select(UserWork.image_id).where(UserWork.image_id.is_not(None)),
         select(Cover.image_id),

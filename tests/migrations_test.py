@@ -465,11 +465,11 @@ def test_audio_books_become_shared_each_in_versions_and_what_was_heard_each_acco
     ]
     engine = create_engine(url)
     with engine.connect() as connection:
-        assert connection.execute(text("SELECT id, name, subtitle, authors, image_id FROM audio_books ORDER BY id")).all() == [
-            (1, "Letter", "", "Sam Harris", 1), (3, "Free Will", "", "Sam Harris", None)]
-        # Letter in two versions, Audible and MP3; Free Will's Audible version once, by its ASIN
-        assert connection.execute(text("SELECT id, book_id, kind, asin, narrators, minutes FROM audio_book_versions ORDER BY id")).all() == [
-            (1, 1, "audible", "B1", "Jordan Bridges", 115), (2, 1, "mp3", None, "", None), (3, 3, "audible", "B2", "Sam Harris", 60)]
+        assert connection.execute(text("SELECT id, name, subtitle, authors FROM audio_books ORDER BY id")).all() == [
+            (1, "Letter", "", "Sam Harris"), (3, "Free Will", "", "Sam Harris")]
+        # Letter in two versions, Audible and MP3; Free Will's Audible version once, by its ASIN; the cover Audible's (0028), the MP3 files' none
+        assert connection.execute(text("SELECT id, book_id, kind, asin, narrators, minutes, image_id FROM audio_book_versions ORDER BY id")).all() == [
+            (1, 1, "audible", "B1", "Jordan Bridges", 115, 1), (2, 1, "mp3", None, "", None, None), (3, 3, "audible", "B2", "Sam Harris", 60, None)]
         # each account's rating and review of a book once: of Letter, the MP3 row's, as the Audible one had none
         assert connection.execute(text("SELECT owner_id, book_id, rating, review FROM audio_books_heard ORDER BY owner_id, book_id")).all() == [
             (1, 1, 9, "Sharp"), (1, 3, None, ""), (2, 3, 6, "Short")]
@@ -478,6 +478,6 @@ def test_audio_books_become_shared_each_in_versions_and_what_was_heard_each_acco
         assert [tuple(row) for row in connection.execute(listens).all()] == [
             (1, 1, True, 100.0, "", None, None), (1, 2, True, None, "Night Walks", 1, datetime.date(2016, 5, 1) if url.startswith("postgresql") else "2016-05-01"),
             (1, 3, False, 12.5, "", None, None), (2, 3, True, 100.0, "", None, None)]
-    assert "owner_id" not in {column["name"] for column in inspect(engine).get_columns("audio_books")}
+    assert not {"owner_id", "image_id"} & {column["name"] for column in inspect(engine).get_columns("audio_books")}
     engine.dispose()
     assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"

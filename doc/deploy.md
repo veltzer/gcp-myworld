@@ -454,12 +454,14 @@ first `companies` tables to `organizations`, then making
 - `GET /api/audio-books` (shared, kept by admins): every audio book, by
   title, with `subtitle`, `authors`, `series`, `series_sequence`, its
   `versions` (each its id and kind's name), `url` (its Audible page, when
-  it has an Audible version) and the cover as `image`. A book is in My World
+  it has an Audible version) and `image`, the cover of its first version
+  that has one (a cover is a version's). A book is in My World
   once by its title, subtitle and authors (409); one someone heard is not
   deleted (409).
 - `GET /api/audio-book-versions` (shared, kept by admins): every version
   of every book, by the book's title, named "title (kind)", each with its
-  `book`, `kind` (`audible` or `mp3`) and `kind_name`, `narrators`,
+  `book`, `kind` (`audible` or `mp3`) and `kind_name`, its own cover as
+  `image` (an Audible one's Audible's, MP3 files' a print edition's), `narrators`,
   `minutes`; of an Audible one what Audible says (`asin`, `genres`,
   `source_rating` of 5 and `source_ratings`, `released`, `cover_url`), of
   MP3 files `parts`; and `listen`: the user's listen of it (its id and
@@ -489,7 +491,9 @@ first `companies` tables to `organizations`, then making
   again. Migrations 0026 (before the deploy) and 0027 (after it) made the
   audio books shared, each in versions, merged the books of one title,
   subtitle and authors, and moved what was each account's own to
-  `audio_books_heard` and `audio_book_listens`.
+  `audio_books_heard` and `audio_book_listens`; 0028 (before the deploy)
+  and 0029 (after it) moved the cover from the book to its versions (to the
+  Audible one when it has one).
 - `GET /api/podcasts` (shared, kept by admins): every podcast, by name,
   with `url` (its page), `rss_feed`, the cover as `image`, how many
   episodes it has (`episodes`), when the newest was published
@@ -835,9 +839,9 @@ The Imports page and its API are in `imports.md`.
   (everything a podcast's feed says of an episode, brought by the Podcast
   feeds importer): what a user heard and thinks of them is theirs, in
   `podcasts_heard` and `episodes_heard`.
-    - `audio_books` (title, subtitle, authors, series, cover) and
-  `audio_book_versions` (each version of a book: Audible, with what Audible
-  says of it, or MP3 files): what a user heard and thinks of them is
+    - `audio_books` (title, subtitle, authors, series) and
+  `audio_book_versions` (each version of a book, with its cover: Audible,
+  with what Audible says of it, or MP3 files): what a user heard and thinks of them is
   theirs, in `audio_books_heard` and `audio_book_listens`.
 - Every other table that holds an account's rows says whose they are in
   `owner_id` (or through the rows it links):

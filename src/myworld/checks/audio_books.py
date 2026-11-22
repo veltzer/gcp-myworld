@@ -23,11 +23,11 @@ def check_audio_book_authors(session: Session) -> Result:
     return Result(checked=len(books), problems=[problem(b, "has no author") for b in books if not b.authors.strip()])
 
 
-@check("audio-book-covers", "Every audio book has a cover", "audio books", "audio-books")
+@check("audio-book-covers", "Every audio book version has a cover", "audio book versions", "audio-book-versions")
 def check_audio_book_covers(session: Session) -> Result:
-    """ Every audio book has a cover image. """
-    books = rows(session, AudioBook)
-    return Result(checked=len(books), problems=[problem(b, "has no cover") for b in books if b.image_id is None])
+    """ Every version of an audio book has its cover: an Audible one Audible's, MP3 files a print edition's. """
+    versions = list(session.scalars(select(AudioBookVersion).join(AudioBook).order_by(AudioBook.name, AudioBookVersion.id)))
+    return Result(checked=len(versions), problems=[problem(v, "has no cover") for v in versions if v.image_id is None])
 
 
 @check("audio-book-duplicates", "No audio book is listed twice", "audio books", "audio-books")

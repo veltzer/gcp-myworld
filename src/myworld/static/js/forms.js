@@ -266,12 +266,11 @@ const WORLD_BODIES = {
 			...(await pictureBody(form)),
 		};
 	},
-	"audio-books": async (form) => ({
-		...Object.fromEntries(["name", "subtitle", "authors", "series", "series_sequence"].map((name) => [name, form.elements[name].value])),
+	"audio-books": async (form) => Object.fromEntries(["name", "subtitle", "authors", "series", "series_sequence"].map((name) => [name, form.elements[name].value])),
+	"audio-book-versions": async (form) => ({
+		...Object.fromEntries(["book_id", "kind", "narrators", "minutes", "parts", "asin", "released", "genres"].map((name) => [name, form.elements[name].value])),
 		...(await pictureBody(form)),
 	}),
-	"audio-book-versions": async (form) => Object.fromEntries(["book_id", "kind", "narrators", "minutes", "parts", "asin", "released", "genres"]
-		.map((name) => [name, form.elements[name].value])),
 	"audio-books-heard": async (form) => Object.fromEntries(["book_id", "rating", "review"].map((name) => [name, form.elements[name].value])),
 	"audio-book-listens": async (form) => {
 		const body = Object.fromEntries(["version_id", "percent_heard", "date", "started", "progress", "device_id", "listened_at"].map((name) => [name, form.elements[name].value]));

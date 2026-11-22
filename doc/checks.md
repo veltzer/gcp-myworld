@@ -221,12 +221,13 @@ By dataset: the key is the page's name in the app (`#book`) and what
 ### Audio books (`audio-books`, shared)
 
 - `audio-book-authors`: every audio book says who wrote it.
-- `audio-book-covers`: every audio book has a cover.
 - `audio-book-duplicates`: no two audio books have the same title and
   subtitle: one book's versions belong together.
 
 ### Audio book versions (`audio-book-versions`, shared)
 
+- `audio-book-covers`: every version has its cover: an Audible one
+  Audible's, MP3 files a print edition's.
 - `audio-book-version-asins`: every Audible version has its ASIN, which the
   Audible library importer finds it again by and its page is linked by.
 

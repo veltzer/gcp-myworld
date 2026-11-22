@@ -345,12 +345,12 @@ def test_audio_books(engine: Engine) -> None:
         session.add(alice)
         session.flush()
         cover = Image(owner_id=alice.id, filename="c.jpg", content_type="image/jpeg", sha256="0" * 64, data=b"\xff\xd8")
-        good = {"authors": "Sam Harris", "image": cover}
+        good = {"authors": "Sam Harris"}
 
         def heard(name: str, *, finished: bool = False, rating: int | None = None, review: str = "", percent: float | None = None, **book: object) -> AudioBook:
             """ A shared book with an MP3 version alice heard. """
             row = AudioBook(name=name, **book)
-            version = AudioBookVersion(book=row, kind="mp3")
+            version = AudioBookVersion(book=row, kind="mp3", image=cover)
             session.add_all([row, AudioBookHeard(owner_id=alice.id, book=row, rating=rating, review=review),
                              AudioBookListen(owner_id=alice.id, version=version, finished=finished, percent_heard=percent)])
             return row
@@ -360,12 +360,13 @@ def test_audio_books(engine: Engine) -> None:
         heard("Halfway", percent=50, **good)
         # the same title with another subtitle is another book
         session.add_all([AudioBook(name="Political Order", subtitle="Volume 1", **good), AudioBook(name="Political Order", subtitle="Volume 2", **good)])
+        # a version with no cover
         # each of these breaks one rule
-        session.add(AudioBook(name="Bare"))
+        session.add(AudioBookVersion(book=AudioBook(name="Bare"), kind="mp3"))
         heard("Unreviewed", finished=True, rating=7, **good)
         heard("Nowhere", **good)
-        session.add_all([AudioBook(name="Twice", **good), AudioBook(name="twice ", authors="Someone", image=cover)])
-        session.add(AudioBookVersion(book=AudioBook(name="No ASIN", **good), kind="audible"))
+        session.add_all([AudioBook(name="Twice", **good), AudioBook(name="twice ", authors="Someone")])
+        session.add(AudioBookVersion(book=AudioBook(name="No ASIN", **good), kind="audible", image=cover))
         session.commit()
 
         def found(name: str) -> list[tuple[str, str]]:
@@ -373,6 +374,8 @@ def test_audio_books(engine: Engine) -> None:
 
         assert found("audio-book-authors") == [("Bare", "has no author")]
         assert found("audio-book-covers") == [("Bare", "has no cover")]
+        [bare] = checks.CHECKS["audio-book-covers"].run(session).problems
+        assert bare.link.split("/")[0] == "audio-book-versions"
         assert found("audio-book-reviews") == [("Unreviewed", "is finished but has no review")]
         assert found("audio-book-version-asins") == [("No ASIN", "has no ASIN")]
         assert found("audio-book-listen-progress") == [("Nowhere", "says neither how much was heard nor how far it got")]

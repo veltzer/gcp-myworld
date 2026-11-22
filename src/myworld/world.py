@@ -359,8 +359,13 @@ def audio_book_json(book: AudioBook) -> dict[str, Any]:
         "series_sequence": book.series_sequence,
         "versions": [{"id": v.id, "name": AUDIO_BOOK_KINDS.get(v.kind, v.kind)} for v in book.versions],
         "url": next((_version_url(v) for v in book.versions if _version_url(v)), ""),
-        "image": image_url(book.image_id),
+        "image": _cover(book.versions),
     }
+
+
+def _cover(versions: Any) -> str | None:
+    """ What a book shows: the cover of the first of versions that has one (each version has its own). """
+    return image_url(next((v.image_id for v in versions if v.image_id is not None), None))
 
 
 def _version_url(version: AudioBookVersion) -> str:
@@ -394,7 +399,7 @@ def _version_fields(version: AudioBookVersion) -> dict[str, Any]:
         "cover_url": version.cover_url,
         "parts": version.parts,
         "url": _version_url(version),
-        "image": image_url(book.image_id),
+        "image": image_url(version.image_id),
     }
 
 
@@ -434,7 +439,8 @@ def audio_book_heard_json(row: AudioBookHeard) -> dict[str, Any]:
         "subtitle": book.subtitle,
         "authors": book.authors,
         "url": next((_version_url(listen.version) for listen in listens if _version_url(listen.version)), ""),
-        "image": image_url(book.image_id),
+        # the cover of a version the user heard, the latest first, else of any
+        "image": _cover([listen.version for listen in listens]) or _cover(book.versions),
         "rating": row.rating,
         "review": row.review,
         # finished when one of the versions is; in progress when one is
@@ -1318,7 +1324,6 @@ def _apply_audio_book(book: AudioBook, body: dict[str, Any]) -> None:
     book.authors = authors
     book.series = text(body, "series")
     book.series_sequence = text(body, "series_sequence")
-    apply_image(book, body)
 
 
 def _apply_audio_book_version(version: AudioBookVersion, body: dict[str, Any]) -> None:
@@ -1353,6 +1358,7 @@ def _apply_audio_book_version(version: AudioBookVersion, body: dict[str, Any]) -
         version.released = datetime.date.fromisoformat(released) if released else None
     except ValueError as e:
         raise ApiError(400, "released: expected YYYY-MM-DD") from e
+    apply_image(version, body)
 
 
 def hearing(owner_id: int, book: AudioBook) -> AudioBookHeard:

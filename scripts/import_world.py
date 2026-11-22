@@ -528,7 +528,7 @@ REPLACED_MODELS = (
 def _shared_image_ids(session: Session) -> set[int]:
     """ The images shared rows show: kept whoever uploaded them (a full import replaces only an account's own). """
     found: set[int] = set()
-    for model in (Place, Podcast, AudioBook, City, Country):
+    for model in (Place, Podcast, AudioBookVersion, City, Country):
         found |= {image_id for image_id in session.scalars(select(model.image_id)) if image_id is not None}
     return found
 
