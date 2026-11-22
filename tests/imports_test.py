@@ -27,10 +27,10 @@ REFRESH = "refresh-token-of-alice"
 
 
 def unstamped(log: str) -> str:
-    """ A run's log without the time of each line ("10:04:05 Sleeping" -> "Sleeping"), each line having one. """
+    """ A run's log without the time of each line ("10:04:05 Sleeping" -> "Sleeping"), each line having one, and how long it took ("Done in 0.3s" -> "Done in Ns"). """
     lines = log.split("\n")
     assert all(re.match(r"\d\d:\d\d:\d\d ", line) for line in lines), log
-    return "\n".join(line[9:] for line in lines)
+    return re.sub(r"^Done in \d+\.\ds", "Done in Ns", "\n".join(line[9:] for line in lines), flags=re.MULTILINE)
 
 
 class FakeYouTube:
@@ -244,7 +244,17 @@ def test_importing_playlists_adds_each_video_once_and_again_adds_nothing(app: we
     done = run(app, ["PLmusic", "PLtalks"])
     assert done["status"] == "done"
     assert done["counts"] == {"YouTube videos added": 4, "of them YouTube no longer has": 1}
-    assert unstamped(done["log"]) == "Music: 3 videos\nTalks: 2 videos"
+    # how it began, what it found, each video added, and how it ended
+    assert unstamped(done["log"]).split("\n") == [
+        "Started YouTube playlists for alice@example.com with playlists = PLmusic, PLtalks",
+        "Music: 3 videos",
+        "Talks: 2 videos",
+        "+ Song: added (Band)",
+        "+ Song two: added (Band)",
+        "+ vidGone0001: added, but YouTube no longer has it",
+        "+ A talk: added (Talks)",
+        "Done in Ns (saved): 4 YouTube videos added; 1 of them YouTube no longer has",
+    ]
     have = videos(engine)
     assert sorted(have) == ["vidGone0001", "vidMusic001", "vidMusic002", "vidTalks001"]
     song = have["vidMusic001"]
@@ -462,7 +472,13 @@ def test_youtube_details_fills_in_the_videos_that_have_none(app: webtest.TestApp
     done = post(False)
     assert done["status"] == "done"
     assert done["counts"] == {"YouTube videos given YouTube's details": 2}
-    assert unstamped(done["log"]) == "2 videos without YouTube's details"
+    assert unstamped(done["log"]).split("\n") == [
+        "Started YouTube details for alice@example.com",
+        "2 videos without YouTube's details",
+        "~ Gone: no longer on YouTube",
+        "~ My name: channel, category, duration, uploaded, views",
+        "Done in Ns (saved): 2 YouTube videos given YouTube's details",
+    ]
     have = videos(engine)
     assert (have["vidMusic001"].name, have["vidMusic001"].rating, have["vidMusic001"].channel, have["vidMusic001"].duration) == ("My name", 7, "Band", 3723)
     assert (have["vidTalks001"].channel, have["vidTalks001"].duration) == ("Mine", 60)
@@ -573,7 +589,10 @@ def test_the_sleep_importer_is_an_admins_only(app: webtest.TestApp, engine: Engi
     second = app.post_json("/api/importers/sleep/runs", {"params": {}}, status=202).json
     assert first["id"] != second["id"]
     assert (first["status"], first["counts"]) == ("done", {"seconds slept": 2})
-    assert unstamped(first["log"]) == "Sleeping for 2 seconds\n1 of 2 seconds\n2 of 2 seconds\nWoke up"
+    assert unstamped(first["log"]).split("\n") == [
+        "Started Sleep (a test, for admins) for alice@example.com", "Sleeping for 2 seconds", "1 of 2 seconds", "2 of 2 seconds", "Woke up",
+        "Done in Ns (saved): 2 seconds slept",
+    ]
 
 
 def test_a_user_may_start_so_many_runs_a_month_and_an_admin_any_number(app: webtest.TestApp, engine: Engine, fake: FakeYouTube, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -684,9 +703,9 @@ def test_what_goes_wrong_in_a_run_is_in_its_log(app: webtest.TestApp, engine: En
     make_admin(engine, "alice@example.com")
     started = app.post_json("/api/importers/sleep/runs", {"params": {}}, status=202).json
     log = unstamped(app.get(f"/api/import-runs/{started['id']}").json["log"]).split("\n")
-    assert log[:2] == ["Starting", "WARNING: retrying once"]
+    assert log[:3] == ["Started Sleep (a test, for admins) for alice@example.com", "Starting", "WARNING: retrying once"]
     # the traceback, then why it failed, last (the runs table shows the last line)
-    assert any("ZeroDivisionError: a bug" in line for line in log[2:-1])
+    assert any("ZeroDivisionError: a bug" in line for line in log[3:-1])
     assert any("in broken" in line for line in log)
     assert log[-1] == "Failed: ZeroDivisionError: a bug"
 

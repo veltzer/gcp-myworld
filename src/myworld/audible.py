@@ -457,6 +457,11 @@ def _listen_values(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _changes(row: Any, values: dict[str, Any]) -> list[str]:
+    """ The keys of values row has another value of. """
+    return [key for key, value in values.items() if getattr(row, key) != value]
+
+
 def _refresh(row: Any, values: dict[str, Any]) -> bool:
     """ row given values where they differ; whether any did. """
     changed = {key: value for key, value in values.items() if getattr(row, key) != value}
@@ -478,20 +483,25 @@ def check_items(items: list[dict[str, Any]], where: str) -> None:
         raise AudibleError(f"{where}: an ASIN is listed twice")
 
 
-def store_library(session: Session, owner: User, items: list[dict[str, Any]], cover: Callable[[str, str], bytes | None]) -> dict[str, int]:
+def store_library(
+    session: Session, owner: User, items: list[dict[str, Any]], cover: Callable[[str, str], bytes | None], say: Callable[[str], None] = lambda _line: None,
+) -> dict[str, int]:
     """
     The books of owner's Audible library (items, as library_item says
     them). Audio books are shared: a book's Audible version is found by its
     ASIN, or else the book by its title, subtitle and authors, or by its
     title and authors when it has no subtitle (it is given Audible's), or
     else the book is added; and the Audible version is added to it, with its
-    cover (cover(asin, cover_url): the image's bytes, or None). Of a version there already, only what
+    cover (cover(asin, cover_url): the image's bytes, or None); one there
+    already with no cover (Audible's image server failed when it was added)
+    is given it now. Of a version there already, only what
     Audible changes is refreshed (_version_values), so whatever was edited
     in the app stays; genres an earlier import kept each once only are given
     back as the library lists them. owner's listen of the version (and the
     book in their Your audio books) is added when they have none, and what
     the library says of their listening refreshed (_listen_values). Safe to
-    run again. Does not commit.
+    run again. Does not commit. What it does to each book is said, a line
+    each (say: the run's log), but of a book left as it was.
     """
     versions = {v.asin: v for v in session.scalars(select(AudioBookVersion).where(AudioBookVersion.kind == SOURCE, AudioBookVersion.asin.is_not(None)))}
     every = list(session.scalars(select(AudioBook)))
@@ -506,13 +516,32 @@ def store_library(session: Session, owner: User, items: list[dict[str, Any]], co
         asin = _text(item["asin"])
         version = versions.get(asin)
         changed = False
+        title = f"{_text(item['title']).strip()} ({asin})"
         if version is not None:
             values = _version_values(item)
             genres = _genres(item)
             # kept each once by an earlier import, and not edited since: as the library lists them
             if version.genres != genres and version.genres == list(dict.fromkeys(genres)):
                 values["genres"] = genres
+            fields = _changes(version, values)
             changed = _refresh(version, values)
+            if fields:
+                say(f"~ {title}: Audible's {', '.join(fields)}")
+            # one added while Audible's image server failed has none: it is asked again
+            if version.image_id is None and version.image is None:
+                filename = f"audible-{asin}.jpg"
+                image = stored.get(filename)
+                if image is None:
+                    data = cover(asin, _text(item.get("cover_url")).strip() or version.cover_url)
+                    if data is not None:
+                        image = Image(owner_id=owner.id, filename=filename, content_type="image/jpeg", sha256=hashlib.sha256(data).hexdigest(), data=data)
+                        session.add(image)
+                        stored[filename] = image
+                        images += 1
+                if image is not None:
+                    version.image = image
+                    changed = True
+                say(f"~ {title}: {'cover added' if image is not None else 'still no cover: Audible gave none'}")
         else:
             name, subtitle, authors = _text(item["title"]).strip(), _text(item.get("subtitle")).strip(), _text(item.get("authors")).strip()
             book = books.get((name, subtitle, authors))
@@ -529,6 +558,7 @@ def store_library(session: Session, owner: User, items: list[dict[str, Any]], co
                     session.add(image)
                     stored[filename] = image
                     images += 1
+            new_book = book is None
             if book is None:
                 book = AudioBook(
                     name=name,
@@ -555,13 +585,19 @@ def store_library(session: Session, owner: User, items: list[dict[str, Any]], co
             session.add(version)
             session.flush()
             versions[asin] = version
+            say(f"+ {title}: added, {'a new book' if new_book else 'a version of the book there'}, "
+                f"{'with its cover' if image is not None else 'no cover: Audible gave none'}")
         listen = listens.get(version.id)
         if listen is None:
             listen = AudioBookListen(owner_id=owner.id, version=version, added_utcz=_stamp(item.get("date_added")), **_listen_values(item))
             session.add(listen)
             listens[version.id] = listen
+            say(f"  + your listen of {title}")
         else:
+            fields = _changes(listen, _listen_values(item))
             changed = _refresh(listen, _listen_values(item)) or changed
+            if fields:
+                say(f"~ {title}: your listening ({', '.join(fields)})")
         if version.book_id not in heard:
             session.add(AudioBookHeard(owner_id=owner.id, book_id=version.book_id))
             heard.add(version.book_id)

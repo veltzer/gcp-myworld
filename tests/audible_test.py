@@ -186,7 +186,7 @@ def test_a_bad_address_or_code_connects_nothing(app: webtest.TestApp, engine: En
         assert session.scalars(select(AudibleConnection)).all() == []
 
 
-def test_importing_the_library_adds_each_book_once_and_again_adds_nothing(app: webtest.TestApp, engine: Engine, fake: FakeAudible) -> None:
+def test_importing_the_library_adds_each_book_once_and_again_adds_nothing(app: webtest.TestApp, engine: Engine, fake: FakeAudible, monkeypatch: pytest.MonkeyPatch) -> None:
     sign_in(app)
     importer = next(i for i in app.get("/api/importers").json["importers"] if i["name"] == "audible-library")
     assert (importer["unavailable"], importer["dataset"]) == ("Connect Audible first", "audio-book-listens")
@@ -195,6 +195,9 @@ def test_importing_the_library_adds_each_book_once_and_again_adds_nothing(app: w
     done = run(app)
     assert done["status"] == "done", done
     assert done["counts"] == {"audio books added": 2, "covers added": 1}
+    # the log says what was done to each book
+    assert "+ Making Sense (0063005409): added, a new book, with its cover" in done["log"]
+    assert "+ Political Order (B07D23CFGR): added, a new book, no cover: Audible gave none" in done["log"]
     listens = {b["asin"]: b for b in app.get("/api/audio-book-listens").json}
     sense, order = listens["0063005409"], listens["B07D23CFGR"]
     assert (sense["kind"], sense["name"], sense["authors"], sense["narrators"]) == ("audible", "Making Sense", "Sam Harris", "Sam Harris, David Chalmers")
@@ -210,7 +213,13 @@ def test_importing_the_library_adds_each_book_once_and_again_adds_nothing(app: w
     assert (books["Political Order"]["series"], books["Political Order"]["series_sequence"], books["Political Order"]["versions"][0]["name"]) == (
         "Political Order", "2", "Audible")
     assert sorted(b["name"] for b in app.get("/api/audio-books-heard").json) == ["Making Sense", "Political Order"]
-    # again: nothing added, nothing changed
+    # again: nothing added, nothing changed (Audible still gives Political Order no cover)
+    assert run(app)["counts"] == {}
+    # its cover, which Audible's image server did not give when it was added, is asked for again, and given now
+    monkeypatch.setattr(audible, "fetch_cover", lambda url: COVER + url.encode())
+    assert run(app)["counts"] == {"covers added": 1, "audio books given Audible's details": 1}
+    order = next(b for b in app.get("/api/audio-book-listens").json if b["asin"] == "B07D23CFGR")
+    assert app.get(order["image"]).body.startswith(COVER)
     assert run(app)["counts"] == {}
     # heard further since, and rated here: Audible's details change, the rating stays
     mine = next(b for b in app.get("/api/audio-books-heard").json if b["name"] == "Political Order")
@@ -228,7 +237,7 @@ def test_importing_the_library_adds_each_book_once_and_again_adds_nothing(app: w
     with Session(engine) as session:
         assert len(session.scalars(select(AudioBook)).all()) == 2
         assert len(session.scalars(select(AudioBookListen)).all()) == 4
-        assert len(session.scalars(select(Image)).all()) == 1
+        assert len(session.scalars(select(Image)).all()) == 2
 
 
 def test_the_library_is_read_a_page_at_a_time(app: webtest.TestApp, fake: FakeAudible, monkeypatch: pytest.MonkeyPatch) -> None:

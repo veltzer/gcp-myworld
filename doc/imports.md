@@ -281,6 +281,31 @@ missing one. A book Open Library does not find, or finds only as another
 book, is said in the log and counted. It takes no parameters, waits a
 second between two requests (a free service), and needs nothing connected.
 
+## Missing covers (an admin's)
+
+`missing-covers` gives the shared data the covers it is missing, so it is
+`shared` and only admins see and run it. An Audible version of an audio
+book with no cover gets Audible's, fetched from the address Audible gave
+for it when it was imported (`cover_url`); a film or series with no poster
+gets The Movie Database's, found by its IMDb id (`TMDB_API_KEY`, which the
+job has; without it the films are left for a later run), and its TMDB id
+when it has none. It only fills what has no cover, so one uploaded by hand
+stays and a run again asks only about those still missing one; one its
+source has no cover for is said in the log and counted. The Audible library
+importer also asks again, on each run, for the cover of a version that has
+none (Audible's image server failed when it was added).
+
+## What a run's log says
+
+Every run's log starts with a line saying which importer ran, for whom,
+whether it is a dry run, and with which parameters, and ends with one saying
+how long it took, whether it was saved or (a dry run) rolled back, and all
+it counted; a run that failed ends with why instead. The runs table shows
+that last line. In between, each importer says what it did to each thing:
+`+` a row added, `~` one changed (with what changed), and why one was
+skipped or not found; a row left as it was is only counted. The warnings and
+errors logged while it runs (a traceback too) are in it as well.
+
 ## Who runs which importer
 
 Today the rule is simple: an importer that writes the shared data

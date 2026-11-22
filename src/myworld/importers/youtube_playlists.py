@@ -85,28 +85,33 @@ def store(session: Session, owner: User, ids: list[str], details: dict[str, dict
                 # YouTube no longer has it: only its id is known
                 session.add(YouTubeVideo(owner_id=owner.id, youtube_id=video_id, name="", review="", watched_at="", unavailable=True))
                 counted[UNAVAILABLE] += 1
+                report.say(f"+ {video_id}: added, but YouTube no longer has it")
             else:
                 session.add(YouTubeVideo(owner_id=owner.id, youtube_id=video_id, review="", watched_at="", unavailable=False, **said))
+                report.say(f"+ {said['name'] or video_id}: added ({said.get('channel') or 'no channel'})")
             counted[ADDED] += 1
             continue
-        changed = False
+        changes: list[str] = []
         if said is None:
             # what was known of it stays; only that it is gone is new
-            changed = not video.unavailable
+            if not video.unavailable:
+                changes.append("no longer on YouTube")
             video.unavailable = True
         else:
             for column in DETAILS:
                 if getattr(video, column) != said[column]:
                     setattr(video, column, said[column])
-                    changed = True
+                    changes.append(column)
             if video.unavailable:
                 video.unavailable = False
-                changed = True
+                changes.append("on YouTube again")
             # one that had no name gets YouTube's; one the user named keeps theirs
             if not video.name and said["name"]:
                 video.name = said["name"]
-                changed = True
-        counted[REFRESHED if changed else UNCHANGED] += 1
+                changes.append("name")
+        if changes:
+            report.say(f"~ {video.name or video_id}: {', '.join(changes)}")
+        counted[REFRESHED if changes else UNCHANGED] += 1
     # always in this order, whatever order they came in
     for what in (ADDED, UNAVAILABLE, REFRESHED, UNCHANGED):
         if counted[what]:

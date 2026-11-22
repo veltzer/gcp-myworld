@@ -22,6 +22,7 @@ import datetime
 import logging
 import os
 import threading
+import time
 import traceback
 from collections import Counter
 from collections.abc import Callable
@@ -321,6 +322,15 @@ def execute(engine: Engine, run_id: int) -> None:
         beat.start()
         captured = _Captured(report)
         logging.getLogger().addHandler(captured)
+        started = time.monotonic()
+        # how it began: which importer, for whom, with what (the log says the rest as it goes)
+        given = ", ".join(f"{key} = {', '.join(map(str, value)) if isinstance(value, list) else value}" for key, value in params.items() if value not in (None, "", []))
+        report.say(" ".join(filter(None, (
+            f"Started {importer.title if importer else record.importer}",
+            f"for {owner.email}" if owner else "",
+            "(a dry run: nothing will be kept)" if dry_run else "",
+            f"with {given}" if given else "",
+        ))))
         try:
             if importer is None or owner is None:
                 raise ImporterError(f"there is no importer {record.importer} any more")
@@ -331,6 +341,9 @@ def execute(engine: Engine, run_id: int) -> None:
             session.flush()
             if not dry_run:
                 session.commit()
+            # how it ended, last (the runs table shows the last line): whether it was kept, and everything it counted
+            kept = "a dry run, nothing kept" if dry_run else "saved"
+            report.say(f"Done in {time.monotonic() - started:.1f}s ({kept}): " + ("; ".join(f"{n} {what}" for what, n in report.counts.items()) or "nothing to change"))
         except IntegrityError:
             status = "failed"
             report.say("Failed: another import added the same rows meanwhile; run it again")

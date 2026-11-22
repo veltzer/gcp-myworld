@@ -35,7 +35,7 @@ def run(session: Session, owner: User, params: dict[str, Any], report: Report) -
         items = audible.library(audible.client_for(session, owner))
         report.say(f"The library has {len(items)} books")
         audible.check_items(items, "the library")
-        counts = audible.store_library(session, owner, items, lambda _asin, url: audible.fetch_cover(url))
+        counts = audible.store_library(session, owner, items, lambda _asin, url: audible.fetch_cover(url), report.say)
     except audible.AudibleError as e:
         raise ImporterError(str(e)) from e
     for key, what in COUNTS.items():

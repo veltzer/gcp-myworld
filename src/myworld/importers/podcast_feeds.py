@@ -109,8 +109,10 @@ def run(session: Session, owner: User, params: dict[str, Any], report: Report) -
         report.say(f"{podcast.name}: the feed has {len(feed.episodes)} episodes")
         if not podcast.url and feed.link.startswith(("https://", "http://")):
             podcast.url = feed.link[:1000]
+            report.say(f"  its page: {podcast.url}")
             report.count("podcasts given their page")
         if _cover(session, owner, podcast, feed.image_url):
+            report.say("  its cover added")
             report.count("covers added")
         have = {episode.guid: episode for episode in podcast.episodes if episode.guid}
         for said in feed.episodes:
@@ -118,14 +120,17 @@ def run(session: Session, owner: User, params: dict[str, Any], report: Report) -
             guid = values["guid"]
             if not guid:
                 # nothing to find it again by: it would be added on every run
+                report.say(f"  skipped {said.name!r}: the feed gives it no id to find it again by")
                 continue
             episode = have.get(guid)
             if episode is None:
                 episode = PodcastEpisode(**values)
                 podcast.episodes.append(episode)
                 have[guid] = episode
+                report.say(f"  + {episode.name}")
                 report.count("podcast episodes added")
             elif _fill(episode, said):
+                report.say(f"  ~ {episode.name}: the feed's details")
                 report.count("episodes given the feed's details")
     session.flush()
 
