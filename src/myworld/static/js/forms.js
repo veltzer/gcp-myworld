@@ -266,7 +266,8 @@ const WORLD_BODIES = {
 			...(await pictureBody(form)),
 		};
 	},
-	"audio-books": async (form) => Object.fromEntries(["name", "subtitle", "authors", "series", "series_sequence"].map((name) => [name, form.elements[name].value])),
+	"audio-books": async (form) => Object.fromEntries(["name", "subtitle", "authors", "series", "series_sequence", "openlibrary_id", "goodreads_id", "wikidata_id"]
+		.map((name) => [name, form.elements[name].value])),
 	"audio-book-versions": async (form) => ({
 		...Object.fromEntries(["book_id", "kind", "narrators", "minutes", "parts", "asin", "released", "genres"].map((name) => [name, form.elements[name].value])),
 		...(await pictureBody(form)),

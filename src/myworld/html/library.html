@@ -464,6 +464,11 @@
 					<label title="The series it is part of, when it is" class="wide">Series <input name="series"></label>
 					<label title="Its place in the series: 1, 2, 0.5, ...">Number <input name="series_sequence"></label>
 				</div>
+				<div class="row">
+					<label title="The book's work in Open Library, like OL27482W; the Audio book ids importer fills it in">Open Library <input name="openlibrary_id" pattern="OL\d+W" placeholder="OL27482W"></label>
+					<label title="A Goodreads book of it, the number in its address (goodreads.com/book/show/234225); the Audio book ids importer fills it in">Goodreads <input name="goodreads_id" pattern="\d{1,12}" placeholder="234225"></label>
+					<label title="The book's item in Wikidata, like Q190192; the Audio book ids importer fills it in">Wikidata <input name="wikidata_id" pattern="Q\d+" placeholder="Q190192"></label>
+				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>
 					<button type="button" class="text cancel">Cancel</button>

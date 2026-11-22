@@ -357,6 +357,9 @@ def audio_book_json(book: AudioBook) -> dict[str, Any]:
         "authors": book.authors,
         "series": book.series,
         "series_sequence": book.series_sequence,
+        "openlibrary_id": book.openlibrary_id,
+        "goodreads_id": book.goodreads_id,
+        "wikidata_id": book.wikidata_id,
         "versions": [{"id": v.id, "name": AUDIO_BOOK_KINDS.get(v.kind, v.kind)} for v in book.versions],
         "url": next((_version_url(v) for v in book.versions if _version_url(v)), ""),
         "image": _cover(book.versions),
@@ -366,6 +369,14 @@ def audio_book_json(book: AudioBook) -> dict[str, Any]:
 def _cover(versions: Any) -> str | None:
     """ What a book shows: the cover of the first of versions that has one (each version has its own). """
     return image_url(next((v.image_id for v in versions if v.image_id is not None), None))
+
+
+# an audio book's ids in catalogs: (field, what a whole one is, an example)
+BOOK_IDS = (
+    ("openlibrary_id", re.compile(r"OL\d+W"), "OL27482W"),
+    ("goodreads_id", re.compile(r"\d{1,12}"), "234225"),
+    ("wikidata_id", re.compile(r"Q\d+"), "Q190192"),
+)
 
 
 def _version_url(version: AudioBookVersion) -> str:
@@ -1324,6 +1335,11 @@ def _apply_audio_book(book: AudioBook, body: dict[str, Any]) -> None:
     book.authors = authors
     book.series = text(body, "series")
     book.series_sequence = text(body, "series_sequence")
+    for key, pattern, example in BOOK_IDS:
+        value = text(body, key)
+        if value and not pattern.fullmatch(value):
+            raise ApiError(400, f"{key}: expected an id like {example}")
+        setattr(book, key, value)
 
 
 def _apply_audio_book_version(version: AudioBookVersion, body: dict[str, Any]) -> None:

@@ -1328,6 +1328,12 @@ class AudioBook(Base):
     series: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     # its place in the series: "2", "0.5"
     series_sequence: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    # the book in catalogs (the Audio book ids importer fills them from Open
+    # Library): its Open Library work ("OL27482W"), a Goodreads book of it, its
+    # Wikidata item ("Q190192")
+    openlibrary_id: Mapped[str] = mapped_column(String(20), nullable=False, default="", server_default="")
+    goodreads_id: Mapped[str] = mapped_column(String(20), nullable=False, default="", server_default="")
+    wikidata_id: Mapped[str] = mapped_column(String(20), nullable=False, default="", server_default="")
     versions: Mapped[list[AudioBookVersion]] = relationship(back_populates="book", cascade="all, delete-orphan", order_by="AudioBookVersion.id")
     heard: Mapped[list[AudioBookHeard]] = relationship(back_populates="book")
 
@@ -1778,7 +1784,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0029"
+SCHEMA_REVISION = "0030"
 
 
 def prepare_schema(engine: Engine) -> None:

@@ -452,7 +452,10 @@ first `companies` tables to `organizations`, then making
   box lists the visits, each with a red pencil, a red − and one red + to
   add another.
 - `GET /api/audio-books` (shared, kept by admins): every audio book, by
-  title, with `subtitle`, `authors`, `series`, `series_sequence`, its
+  title, with `subtitle`, `authors`, `series`, `series_sequence`, its ids in
+  catalogs (`openlibrary_id`, a work like `OL27482W`; `goodreads_id`;
+  `wikidata_id`, like `Q190192`: each checked, 400 otherwise, and filled by
+  the Audio book ids importer), its
   `versions` (each its id and kind's name), `url` (its Audible page, when
   it has an Audible version) and `image`, the cover of its first version
   that has one (a cover is a version's). A book is in My World

@@ -41,7 +41,7 @@ from myworld.importers.core import (
 )
 
 # a module registers its importer as it is imported; the page lists them in this order
-for _module in ("youtube_playlists", "youtube_details", "audible_library", "podcast_feeds", "podcast_next", "locale", "sleep"):
+for _module in ("youtube_playlists", "youtube_details", "audible_library", "podcast_feeds", "podcast_next", "audio_book_ids", "locale", "sleep"):
     importlib.import_module(f"myworld.importers.{_module}")
 
 __all__ = [

@@ -265,6 +265,22 @@ the user's Your podcasts. An episode is heard once (`uq_episode_heard`), so
 each run adds the next ones. It reads no feed: episodes the shared data
 does not have yet come with an admin's Podcast feeds run.
 
+## Audio book ids (an admin's)
+
+`audio-book-ids` fills the audio books' ids in catalogs, which are shared
+data, so it is `shared` and only admins see and run it. Each audio book
+missing its Open Library work, its Goodreads book or its Wikidata item is
+looked up in Open Library's search (`openlibrary.org/search.json`) by its
+title, without a subtitle the title gives after a colon, and its first
+author. The first result that is the same book (the same title, and one of
+the book's authors' surnames among the result's authors) gives it what it
+lacks: the work's key, and the first of the Goodreads books and Wikidata
+items the work's editions are linked to. It only fills what is empty, so
+an id typed in by hand stays, and a run again looks up only the books still
+missing one. A book Open Library does not find, or finds only as another
+book, is said in the log and counted. It takes no parameters, waits a
+second between two requests (a free service), and needs nothing connected.
+
 ## Who runs which importer
 
 Today the rule is simple: an importer that writes the shared data

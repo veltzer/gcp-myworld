@@ -251,8 +251,36 @@ function audioBookCard(item) {
 	detail(list, "Subtitle", item.subtitle);
 	detail(list, "Series", [item.series, item.series_sequence && `#${item.series_sequence}`].filter(Boolean).join(" "));
 	linksDetail(list, "Versions", "audio-book-versions", item.versions);
+	catalogDetail(list, item);
 	websiteButton(card, item.url, item.url ? "Audible page" : "Page");
 	return card;
+}
+
+// an audio book's pages in catalogs, by its ids there: [field, name, its page]
+const BOOK_CATALOGS = [
+	["openlibrary_id", "Open Library", (id) => `https://openlibrary.org/works/${id}`],
+	["goodreads_id", "Goodreads", (id) => `https://www.goodreads.com/book/show/${id}`],
+	["wikidata_id", "Wikidata", (id) => `https://www.wikidata.org/wiki/${id}`],
+];
+
+function catalogDetail(list, item) {
+	const found = BOOK_CATALOGS.filter(([key]) => item[key]);
+	if (found.length === 0) {
+		return;
+	}
+	const li = el("li", "nowrap");
+	li.appendChild(el("span", "label nowrap", "In"));
+	found.forEach(([key, name, url], index) => {
+		if (index) {
+			li.append(", ");
+		}
+		const a = el("a", null, name);
+		a.href = url(item[key]);
+		a.target = "_blank";
+		a.rel = "noopener";
+		li.appendChild(a);
+	});
+	list.appendChild(li);
 }
 
 // what a version is: its kind, who reads it, how long, and what Audible says of an Audible one
