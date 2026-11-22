@@ -22,7 +22,7 @@ from myworld.checks.core import (
     check,
     result_json,
 )
-from myworld.checks.organizations import logo_problems
+from myworld.logos import logo_problems
 
 # a module registers its checks as it is imported; a page lists its checks in this order
 for _module in (

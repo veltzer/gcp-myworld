@@ -122,7 +122,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `museum-duplicates`: no account has two museums of the same name in the
   same city.
 - `museum-near-city`: every museum on the map is within 50 km of its city.
-- `museum-websites`: every museum's website is a web address.
+- `museum-websites`: every museum's website, when it has one, is a
+  well-formed URL: `http://` or `https://`, a host with a dot in it, no spaces.
 
 ### Audio courses (`audio-courses`)
 
@@ -200,7 +201,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
   (ignoring case and spaces).
 - `groups-credits`: every photo of a group that has a credit says its
   source and its license (its author only when one is known).
-- `group-websites`: every group's website is a web address.
+- `group-websites`: every group's website, when it has one, is a
+  well-formed URL: `http://` or `https://`, a host with a dot in it, no spaces.
 
 ### Places (`places`)
 
@@ -215,7 +217,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `place-exact-locations`: no place's remark says its location is
   approximate.
 - `place-near-city`: every place on the map is within 50 km of its city.
-- `place-websites`: every place's website is a web address.
+- `place-websites`: every place's website, when it has one, is a
+  well-formed URL: `http://` or `https://`, a host with a dot in it, no spaces.
 - `places-credits`: every photo of a place that has a credit says its
   source and its license (its author only when one is known).
 
@@ -308,7 +311,11 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `logos`: every SVG image follows the logo convention in `logos.md`
   (canvas, square viewBox, nothing active or external). The margin and
   centering are not checked: they need a renderer.
-- `organization-logos`: every organization has a logo.
+- `organization-logos`: every organization has a logo, and it is an SVG
+  image: a logo is never a bitmap (`logos.md`).
+- `organization-has-website`: every organization has a website; for one
+  that is gone, a snapshot of its site on the Wayback Machine
+  (web.archive.org) is better than none.
 - `organization-relations`: every organization has at least one relation
   type.
 - `organization-addresses`: every organization has an address.
@@ -319,7 +326,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
   name.
 - `organization-near-city`: every organization on the map is within 50 km
   of its city.
-- `organization-websites`: every organization's website is a web address.
+- `organization-websites`: every organization's website, when it has one, is a
+  well-formed URL: `http://` or `https://`, a host with a dot in it, no spaces.
 
 ### Org types (`organization-types`)
 

@@ -2076,7 +2076,10 @@ def test_relation_types(imported: webtest.TestApp) -> None:
 def test_add_edit_delete_organization(imported: webtest.TestApp, engine: Engine) -> None:
     imported.post_json("/api/organizations", {"name": ""}, status=400)
     imported.post_json("/api/organizations", {"name": "Acme"}, status=409)
-    upload = imported.post("/api/images", upload_files=[("file", "logo.jpg", JPEG)]).json
+    # a logo is never a bitmap
+    photo = imported.post("/api/images", upload_files=[("file", "logo.jpg", JPEG)]).json
+    assert imported.post_json("/api/organizations", {"name": "Newco", "image_id": photo["id"]}, status=400).json == {"error": "image_id: an organization's logo is an SVG image"}
+    upload = imported.post("/api/images", upload_files=[("file", "logo.svg", LOGO)]).json
     relations = {t["name"]: t["id"] for t in imported.get("/api/relation-types").json}
     imported.post_json("/api/organizations", {"name": "Badco", "relation_ids": [999]}, status=400)
     organization = imported.post_json("/api/organizations", {

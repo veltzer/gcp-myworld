@@ -2,9 +2,6 @@
 Checks of the organizations, and of their logos.
 """
 
-import re
-import xml.etree.ElementTree as ET
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,82 +14,15 @@ from myworld.checks.core import (
     squashed,
     twice,
 )
+from myworld.logos import SVG_TYPE, logo_problems
 from myworld.models import (
     Image,
     Organization,
     organization_relation_types,
 )
 
-SVG_NS = "http://www.w3.org/2000/svg"
 
-
-XLINK_NS = "http://www.w3.org/1999/xlink"
-
-
-LOGO_SIZE = "1000"
-
-
-# elements that run code, pull in other content, or embed a bitmap
-FORBIDDEN_ELEMENTS = ("script", "foreignObject", "image", "iframe", "object", "embed")
-
-
-# @import, or url() of anything but a #fragment of the same file
-OUTSIDE_STYLE = re.compile(r"@import|url\(\s*['\"]?(?!#)")
-
-
-NUMBER = re.compile(r"[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?")
-
-
-def _local(tag: str) -> str:
-    """ An element or attribute name without its {namespace}. """
-    return tag.rsplit("}", 1)[-1]
-
-
-def logo_problems(data: bytes) -> list[str]:
-    """
-    What is wrong with one SVG logo, by the convention in doc/logos.md: a
-    1000x1000 canvas, a square viewBox, nothing active or external. The
-    6% margin and the centering are not checked: they need the drawn
-    bounding box, so a renderer.
-    """
-    try:
-        root = ET.fromstring(data)
-    except ET.ParseError as e:
-        return [f"not well-formed XML: {e}"]
-    if root.tag != f"{{{SVG_NS}}}svg":
-        return [f"the root element is {root.tag}, not an SVG <svg>"]
-    problems = []
-    width, height = root.get("width"), root.get("height")
-    if (width, height) != (LOGO_SIZE, LOGO_SIZE):
-        problems.append(f'width/height are {width!r}/{height!r}, not "{LOGO_SIZE}"/"{LOGO_SIZE}"')
-    view_box = root.get("viewBox")
-    if view_box is None:
-        problems.append("no viewBox")
-    else:
-        numbers = [float(n.group(0)) for n in NUMBER.finditer(view_box)]
-        if len(numbers) != 4:
-            problems.append(f"viewBox {view_box!r} is not four numbers")
-        elif numbers[2] <= 0 or numbers[2] != numbers[3]:
-            problems.append(f"viewBox {view_box!r} is not a square")
-    for element in root.iter():
-        name = _local(element.tag) if isinstance(element.tag, str) else ""
-        if name in FORBIDDEN_ELEMENTS:
-            problems.append(f"has a <{name}> element")
-        if name == "style" and element.text and OUTSIDE_STYLE.search(element.text):
-            problems.append("<style> refers to something outside the file")
-        for attribute, value in element.attrib.items():
-            local = _local(attribute)
-            if local.lower().startswith("on"):
-                problems.append(f"<{name}> has an event handler, {local}")
-            elif local == "href" and not value.startswith("#"):
-                problems.append(f"<{name}> links to {value[:80]!r}")
-            elif OUTSIDE_STYLE.search(value):
-                problems.append(f"<{name}> {local} refers to something outside the file")
-    # the same problem in many elements is said once
-    return list(dict.fromkeys(problems))
-
-
-@check("logos", "Organization logos", "logos", "organizations")
+@check("logos", "Every logo follows the logo convention", "logos", "organizations")
 def check_logos(session: Session) -> Result:
     """
     Every SVG image in the database follows the logo convention
@@ -117,11 +47,30 @@ def check_logos(session: Session) -> Result:
     return Result(checked=len(images), problems=problems)
 
 
-@check("organization-logos", "Every organization has a logo", "organizations", "organizations")
+@check("organization-logos", "Every organization has an SVG logo", "organizations", "organizations")
 def check_organization_logos(session: Session) -> Result:
-    """ Every organization, of every account, has a logo. """
+    """ Every organization, of every account, has a logo, and it is an SVG image (a logo is never a bitmap: doc/logos.md). """
     organizations = rows(session, Organization)
-    return Result(checked=len(organizations), problems=[problem(o, "has no logo") for o in organizations if o.image_id is None])
+    logo_ids = [o.image_id for o in organizations if o.image_id is not None]
+    types = {image_id: content_type for image_id, content_type in session.execute(select(Image.id, Image.content_type).where(Image.id.in_(logo_ids)))}
+    problems = []
+    for o in organizations:
+        if o.image_id is None:
+            problems.append(problem(o, "has no logo"))
+        elif types.get(o.image_id) != SVG_TYPE:
+            problems.append(problem(o, f"has a logo that is not an SVG ({types.get(o.image_id)})"))
+    return Result(checked=len(organizations), problems=problems)
+
+
+@check("organization-has-website", "Every organization has a website", "organizations", "organizations")
+def check_organization_has_website(session: Session) -> Result:
+    """
+    Every organization, of every account, has a website. One that is gone
+    still gets one: a snapshot of it on the Wayback Machine (web.archive.org)
+    is better than none.
+    """
+    organizations = rows(session, Organization)
+    return Result(checked=len(organizations), problems=[problem(o, "has no website") for o in organizations if not o.website.strip()])
 
 
 @check("organization-relations", "Every organization is related to you", "organizations", "organizations")

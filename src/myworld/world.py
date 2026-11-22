@@ -33,6 +33,7 @@ from myworld.api import (
     require_edit_shared,
     text,
 )
+from myworld.logos import SVG_TYPE
 from myworld.models import (
     AUDIO_BOOK_KINDS,
     DEFAULT_LOCALE,
@@ -59,6 +60,7 @@ from myworld.models import (
     Film,
     FilmWatch,
     Group,
+    Image,
     Organization,
     OrganizationType,
     Person,
@@ -1994,6 +1996,12 @@ def _apply_organization(organization: Organization, body: dict[str, Any]) -> Non
     ).first()
     if clash is not None:
         raise ApiError(409, f"{name} is already in Organizations")
+    # a logo is never a bitmap (doc/logos.md); an unknown image is refused by apply_image
+    logo_id = opt_int(body, "image_id", 1, 2**31 - 1)
+    if logo_id is not None:
+        logo = flask.g.db.get(Image, logo_id)
+        if logo is not None and logo.content_type != SVG_TYPE:
+            raise ApiError(400, "image_id: an organization's logo is an SVG image")
     organization.name = name
     # looked up before anything is set on a new organization, which is not in the session yet
     types = owned_list(body, "type_ids", OrganizationType)

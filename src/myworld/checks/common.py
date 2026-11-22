@@ -1,5 +1,5 @@
 """
-Checks several pages have, made once for each: a credit that says its source and its license, a pin near its city, a website that is an address.
+Checks several pages have, made once for each: a credit that says its source and its license, a pin near its city, a website that is a well-formed URL.
 """
 
 import dataclasses
@@ -148,7 +148,7 @@ WEBSITE = re.compile(r"https?://[^\s/.]+(\.[^\s/.]+)+(/\S*)?")
 def _website_check(dataset: str, model: Any, noun: str, column: str) -> None:
     page = DATASETS[dataset].lower()
 
-    @check(f"{noun}-websites", f"Every website of {page} is an address", "websites", dataset)
+    @check(f"{noun}-websites", f"Every website of {page} is a well-formed URL", "websites", dataset)
     def run(session: Session) -> Result:
         linked = [row for row in rows(session, model) if getattr(row, column).strip()]
         problems = [

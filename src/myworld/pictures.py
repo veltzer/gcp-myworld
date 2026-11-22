@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from myworld import auth
 from myworld.api import ApiError, opt_int, text
+from myworld.logos import SVG_TYPE, SvgError, is_svg, svg_upload
 from myworld.models import (
     AudioBookVersion,
     AudioCourse,
@@ -47,7 +48,7 @@ IMAGE_SIGNATURES: dict[str, tuple[bytes, ...]] = {
     "image/png": (b"\x89PNG\r\n\x1a\n",),
     "image/gif": (b"GIF87a", b"GIF89a"),
 }
-IMAGE_EXTENSIONS = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp"}
+IMAGE_EXTENSIONS = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp", SVG_TYPE: ".svg"}
 
 
 def image_url(image_id: int | None) -> str | None:
@@ -216,8 +217,15 @@ def api_images_add() -> tuple[flask.Response, int]:
     if len(data) > IMAGE_MAX_BYTES:
         raise ApiError(413, f"file: larger than {IMAGE_MAX_BYTES // (1024 * 1024)} MB")
     content_type = _sniff(data)
+    if content_type is None and is_svg(data):
+        # an SVG is stored made to the logo convention (doc/logos.md), or refused when it runs code or reaches outside
+        try:
+            data = svg_upload(data)
+        except SvgError as e:
+            raise ApiError(400, f"file: an SVG image that cannot be a logo: {e}") from e
+        content_type = SVG_TYPE
     if content_type is None:
-        raise ApiError(400, "file: not a JPEG, PNG, GIF or WebP image")
+        raise ApiError(400, "file: not a JPEG, PNG, GIF, WebP or SVG image")
     sha256 = hashlib.sha256(data).hexdigest()
     filename = f"upload-{sha256[:16]}{IMAGE_EXTENSIONS[content_type]}"
     db = flask.g.db

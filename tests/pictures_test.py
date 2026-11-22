@@ -8,11 +8,13 @@ import webtest
 from sqlalchemy.engine import Engine
 
 from myworld import pictures
+from myworld.logos import logo_problems
 from tests.conftest import sign_in, sign_in_admin
 
 JPEG = b"\xff\xd8\xff\xe0" + b"0" * 32
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 32
 GIF = b"GIF89a" + b"0" * 32
+LOGO = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect/></svg>'
 WEBP = b"RIFF\x24\x00\x00\x00WEBPVP8 " + b"0" * 24
 
 
@@ -51,8 +53,8 @@ def test_upload_refuses(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -
     sign_in(app)
     assert app.post("/api/images", status=400).json == {"error": "file: required"}
     assert app.post("/api/images", upload_files=[("other", "x.jpg", JPEG)], status=400).json == {"error": "file: required"}
-    for data in (b"", b"plain text", b"<svg/>"):
-        assert app.post("/api/images", upload_files=[("file", "x.jpg", data)], status=400).json == {"error": "file: not a JPEG, PNG, GIF or WebP image"}
+    for data in (b"", b"plain text", b"<html/>"):
+        assert app.post("/api/images", upload_files=[("file", "x.jpg", data)], status=400).json == {"error": "file: not a JPEG, PNG, GIF, WebP or SVG image"}
     monkeypatch.setattr(pictures, "IMAGE_MAX_BYTES", 2 * 1024 * 1024)
     big = JPEG + b"0" * (2 * 1024 * 1024)
     assert app.post("/api/images", upload_files=[("file", "big.jpg", big)], status=413).json == {"error": "file: larger than 2 MB"}
@@ -148,13 +150,15 @@ def test_photos_keep_their_order_and_their_credit(app: webtest.TestApp, engine: 
 ])
 def test_one_picture_replaced_or_taken_away(app: webtest.TestApp, engine: Engine, path: str, body: dict[str, str]) -> None:
     sign_in_admin(app, engine)
-    old = app.post("/api/images", upload_files=[("file", "old.jpg", JPEG)]).json["id"]
+    # an organization's picture is its logo, an SVG
+    first, second = (LOGO, LOGO.replace(b"<rect/>", b"<circle/>")) if path == "organizations" else (JPEG, JPEG + b"1")
+    old = app.post("/api/images", upload_files=[("file", "old", first)]).json["id"]
     row = app.post_json(f"/api/{path}", {**body, "image_id": old}, status=201).json
     assert row["image"] == f"/api/images/{old}"
     # left out, it stays
     assert app.put_json(f"/api/{path}/{row['id']}", body).json["image"] == f"/api/images/{old}"
     # replaced (an upload is for the save that follows it), the old image is nobody's and goes
-    new = app.post("/api/images", upload_files=[("file", "new.jpg", JPEG + b"1")]).json["id"]
+    new = app.post("/api/images", upload_files=[("file", "new", second)]).json["id"]
     assert app.put_json(f"/api/{path}/{row['id']}", {**body, "image_id": new}).json["image"] == f"/api/images/{new}"
     app.get(f"/api/images/{old}", status=404)
     # taken away
@@ -171,3 +175,37 @@ def test_a_picture_two_rows_show_is_kept_while_one_does(app: webtest.TestApp, en
     app.get(f"/api/images/{image}", status=200)
     app.delete(f"/api/groups/{group['id']}", status=204)
     app.get(f"/api/images/{image}", status=404)
+
+
+SVG_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
+
+
+@pytest.mark.parametrize(("data", "canvas"), [
+    # the shorter side widened, the artwork centered: only the root element changes
+    (f'{SVG_HEAD} viewBox="0 0 200 100"><rect width="200" height="100"/></svg>', 'width="1000" height="1000" viewBox="0 -50 200 200"'),
+    (f'{SVG_HEAD} width="40px" height="80px"><rect/></svg>', 'width="1000" height="1000" viewBox="-20 0 80 80"'),
+    (f'<?xml version="1.0"?>\n<!-- made by hand -->\n{SVG_HEAD} width="1000" height="1000" viewBox="0 0 10 10"><rect/></svg>', 'width="1000" height="1000" viewBox="0 0 10 10"'),
+])
+def test_upload_svg(app: webtest.TestApp, data: str, canvas: str) -> None:
+    sign_in(app)
+    upload = app.post("/api/images", upload_files=[("file", "logo.txt", data.encode())], status=201).json
+    served = app.get(upload["url"])
+    assert served.content_type == "image/svg+xml"
+    assert f"{SVG_HEAD} {canvas}>" in served.text
+    assert served.text.endswith("<rect/></svg>") or served.text.endswith('<rect width="200" height="100"/></svg>')
+    assert not logo_problems(served.body)
+
+
+@pytest.mark.parametrize(("data", "wanted"), [
+    (f'{SVG_HEAD} viewBox="0 0 10 10"><script>alert(1)</script></svg>', "has a <script> element"),
+    (f'{SVG_HEAD} viewBox="0 0 10 10"><image href="https://example.com/x.png"/></svg>', "has a <image> element"),
+    (f'{SVG_HEAD} viewBox="0 0 10 10"><rect onload="x()"/></svg>', "event handler"),
+    ('<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY a "aaaa">]><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1">&a;</svg>', "document type declaration"),
+    (f'{SVG_HEAD} width="100%" height="100%"><rect/></svg>', "no viewBox"),
+    (f'{SVG_HEAD} viewBox="0 0 10"><rect/></svg>', "not four numbers"),
+    ("<svg", "not well-formed XML"),
+])
+def test_upload_svg_refuses(app: webtest.TestApp, data: str, wanted: str) -> None:
+    sign_in(app)
+    error = app.post("/api/images", upload_files=[("file", "logo.svg", data.encode())], status=400).json["error"]
+    assert error.startswith("file: an SVG image that cannot be a logo: ") and wanted in error, error

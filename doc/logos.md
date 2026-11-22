@@ -45,7 +45,18 @@ In order of preference:
 
 The 120 imported logos live in `veltzer.github.io/data/logos/`, where
 `organizations.yaml` records each one's `logo_kind` and `logo_source`
-(see `deploy.md`). A logo added later goes straight into the database:
-`POST /api/images` takes only bitmaps, so an SVG is inserted into
-`images` with SQL and the organization's `image_id` is pointed at it,
-both in one transaction.
+(see `deploy.md`). A logo added later is uploaded in the organization
+dialog, which takes only SVG files: `POST /api/images` accepts an SVG,
+refuses one with anything active or external (or a document type
+declaration), and squares its `viewBox` (the shorter side widened, the
+artwork centered) on the 1000x1000 canvas, changing only the root
+element; the margin is the file's own. An organization's logo is never a
+bitmap: saving an organization with a JPEG, PNG, GIF or WebP as its
+`image_id` is refused, and `organization-logos` (`checks.md`) finds one
+that has one.
+
+An official vector logo that embeds bitmaps (MAFAT's Wikimedia Commons
+SVG draws the shaded arms of its "A" as two clipped PNG images) has them
+redrawn as vector shapes: each clipped region a polygon, filled with a
+linear gradient whose stops are colors sampled from the bitmap along it.
+Render the result beside the original and compare before using it.

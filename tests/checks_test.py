@@ -97,7 +97,7 @@ def test_bad_logo(data: bytes, wanted: str) -> None:
 
 
 def test_every_check_describes_itself() -> None:
-    assert {"logos", "organization-logos", "organization-relations", "organization-addresses", "people-known", "museum-dates", "museum-visit-places", "organization-locations", "museum-addresses", "museum-locations", "museum-company",
+    assert {"logos", "organization-logos", "organization-has-website", "organization-relations", "organization-addresses", "people-known", "museum-dates", "museum-visit-places", "organization-locations", "museum-addresses", "museum-locations", "museum-company",
         "audio-course-lecturers", "audio-course-devices", "audio-course-status", "audio-course-reviews",
         "audio-course-covers", "audio-course-links", "audio-course-stalled", "audio-course-duplicates",
         "audio-book-authors", "audio-book-covers", "audio-book-reviews", "audio-book-duplicates"} <= set(checks.CHECKS)
@@ -117,7 +117,7 @@ def test_a_name_is_registered_once() -> None:
 
 
 def fill(engine: Engine) -> None:
-    """ Two accounts: alice's organizations are fine, bob has a bad logo and an organization without one. """
+    """ Two accounts: alice's organizations are fine; bob has a bad logo, an organization with no logo nor website, and one whose logo is a photo. """
     with Session(engine) as session:
         alice = User(email="alice@example.com")
         bob = User(email="bob@example.com")
@@ -127,10 +127,10 @@ def fill(engine: Engine) -> None:
         bad = Image(owner_id=bob.id, filename="evil.svg", content_type="image/svg+xml", sha256="", data=svg(body="<script/>"))
         photo = Image(owner_id=bob.id, filename="photo.jpg", content_type="image/jpeg", sha256="", data=b"\xff\xd8\xff")
         session.add_all([
-            Organization(owner_id=alice.id, name="Acme", image=good),
-            Organization(owner_id=bob.id, name="Evil", image=bad),
+            Organization(owner_id=alice.id, name="Acme", image=good, website="https://acme.example"),
+            Organization(owner_id=bob.id, name="Evil", image=bad, website="https://web.archive.org/web/2009/http://evil.example/"),
             Organization(owner_id=bob.id, name="Bare"),
-            photo,
+            Organization(owner_id=bob.id, name="Bitmap", image=photo, website="https://bitmap.example"),
         ])
         session.commit()
 
@@ -142,11 +142,18 @@ def test_checks_cover_every_account(engine: Engine) -> None:
         assert logos.checked == 2  # the photo is not an SVG
         assert [(p.subject, p.message) for p in logos.problems] == [("evil.svg (image 2, account 2: Evil)", "has a <script> element")]
         missing = checks.CHECKS["organization-logos"].run(session)
-        assert missing.checked == 3
-        assert [p.subject for p in missing.problems] == ["Bare (organization 3, account 2)"]
+        assert missing.checked == 4
+        assert [(p.subject, p.message) for p in missing.problems] == [
+            ("Bare (organization 3, account 2)", "has no logo"),
+            ("Bitmap (organization 4, account 2)", "has a logo that is not an SVG (image/jpeg)"),
+        ]
         # each problem says where its row is in the app, and whose it is
         assert [(p.link, p.owner) for p in logos.problems] == [("organizations/2", 2)]
-        assert [(p.link, p.owner) for p in missing.problems] == [("organizations/3", 2)]
+        assert [(p.link, p.owner) for p in missing.problems] == [("organizations/3", 2), ("organizations/4", 2)]
+        # a Wayback Machine snapshot is a website too
+        websites = checks.CHECKS["organization-has-website"].run(session)
+        assert websites.checked == 4
+        assert [(p.subject, p.message) for p in websites.problems] == [("Bare (organization 3, account 2)", "has no website")]
 
 
 def test_checks_api_is_for_admins(app: webtest.TestApp, engine: Engine) -> None:
@@ -619,7 +626,7 @@ def test_script(tmp_path: Path) -> None:
     assert "evil.svg (image 2, account 2: Evil): has a <script> element" in failing.stdout
     assert run_script(url, "nonesuch").returncode == 2
     with Session(create_engine(url)) as session:
-        session.execute(update(Organization).where(Organization.name.in_(["Evil", "Bare"])).values(image_id=1))
+        session.execute(update(Organization).where(Organization.name.in_(["Evil", "Bare", "Bitmap"])).values(image_id=1))
         # an SVG nothing uses is still checked, so the bad one has to go
         session.execute(delete(Image).where(Image.filename == "evil.svg"))
         session.commit()
