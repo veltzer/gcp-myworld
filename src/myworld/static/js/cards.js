@@ -241,9 +241,17 @@ function audioCourseCard(item) {
 	detail(list, "Review", item.review);
 	detail(list, "Where", item.listened_at);
 	linksDetail(list, "Device", "devices", item.device ? [item.device] : []);
-	websiteButton(card, item.url);
+	cornerLinks(card, item, COURSE_CATALOGS);
+	// any other page about it (one no longer sold)
+	websiteButton(card, item.link);
 	return card;
 }
+
+// where a course is sold, in its card's corner: The Great Courses (by its page's slug) and Audible (by its ASIN)
+const COURSE_CATALOGS = [
+	["great_courses_slug", "greatcourses", (slug) => `https://www.thegreatcourses.com/courses/${slug}`],
+	["audible_asin", "audible", (asin) => `https://www.audible.com/pd/${asin}`],
+];
 
 // 1346 -> "22h 26m", 45 -> "45m"
 function formatMinutes(minutes) {
