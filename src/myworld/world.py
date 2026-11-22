@@ -398,8 +398,7 @@ def _ref(row: Any) -> dict[str, Any] | None:
 
 
 def podcast_json(podcast: Podcast) -> dict[str, Any]:
-    """ A podcast, shared, with how many of its episodes the signed-in user heard. """
-    mine = [heard for heard in podcast.heard if heard.owner_id == flask.g.user.id]
+    """ A podcast, shared: the same for everyone (what a user heard of it is in Your podcasts). """
     return {
         "id": podcast.id,
         "name": podcast.name,
@@ -409,9 +408,6 @@ def podcast_json(podcast: Podcast) -> dict[str, Any]:
         # its episodes, as its feed has them: how many, the newest's publishing
         "episodes": len(podcast.episodes),
         "published": max((_stamp_json(e.published_utcz) for e in podcast.episodes), default=""),
-        # the user listens to it (Podcasts heard), and heard so many of its episodes
-        "listened": bool(mine),
-        "heard": sum(1 for e in podcast.episodes for heard in e.heard if heard.owner_id == flask.g.user.id),
     }
 
 
@@ -650,7 +646,7 @@ def api_audio_books() -> flask.Response:
 @bp.route("/api/podcasts", methods=["GET"])
 @auth.login_required
 def api_podcasts() -> flask.Response:
-    """ Every podcast (shared), by name. """
+    query = select(Podcast).options(selectinload(Podcast.episodes)).order_by(Podcast.name)
     query = select(Podcast).options(selectinload(Podcast.heard), selectinload(Podcast.episodes).selectinload(PodcastEpisode.heard)).order_by(Podcast.name)
     return flask.jsonify([podcast_json(p) for p in flask.g.db.scalars(query)])
 

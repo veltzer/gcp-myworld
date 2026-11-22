@@ -282,7 +282,6 @@ function podcastCard(item) {
 	// always said, 0 too
 	detail(list, "Episodes", String(item.episodes));
 	detail(list, "Latest episode", item.published.slice(0, 10));
-	detail(list, "Episodes you heard", String(item.heard));
 	websiteButton(card, item.url);
 	return card;
 }
@@ -364,12 +363,11 @@ export function showYouTubeFacts(item) {
 	showFacts("youtube-facts", facts.map(([label, value]) => [label, dash(value)]));
 }
 
-// A podcast's episodes, in its dialog: how many its feed has, how many of
-// them the user heard (0 too), the newest's date; a new podcast has none yet.
+// A podcast's episodes, in its dialog: how many its feed has and the newest's
+// date; a new podcast has none yet. What the user heard is in Your podcasts.
 export function showPodcastFacts(item) {
 	showFacts("podcast-facts", [
 		["Episodes", String(item?.episodes ?? 0)],
-		["Episodes you heard", String(item?.heard ?? 0)],
 		["Latest episode", item?.published ? item.published.slice(0, 10) : "\u2014"],
 	]);
 }

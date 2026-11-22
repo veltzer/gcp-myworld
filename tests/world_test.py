@@ -933,8 +933,10 @@ def test_podcasts(imported: webtest.TestApp) -> None:
     podcasts = imported.get("/api/podcasts").json
     assert [p["name"] for p in podcasts] == ["Mindscape", "The rest is history"]
     mindscape, history = podcasts
-    assert (history["url"], history["rss_feed"], history["episodes"], history["heard"], history["listened"]) == (
-        "https://therestishistory.com/club", "https://feeds.megaphone.fm/GLT4787413333", 2, 2, True)
+    assert (history["url"], history["rss_feed"], history["episodes"]) == (
+        "https://therestishistory.com/club", "https://feeds.megaphone.fm/GLT4787413333", 2)
+    # the same for everyone: what the user heard of it is in Your podcasts
+    assert "heard" not in history and "listened" not in history
     assert "rating" not in history and history["published"] == "2020-11-02T02:00:00Z"
     assert imported.get(history["image"]).body == b"\xff\xd8history"
     assert (mindscape["episodes"], mindscape["image"]) == (1, None)
