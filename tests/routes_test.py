@@ -27,7 +27,7 @@ from tests.conftest import sign_in, sign_in_admin
 NAMED = {
     "people": "Dana Levi", "chess-games": "me vs Deeper Blue", "podcasts-heard": "Mindscape", "episodes-heard": "Trailer",
     "audio-book-versions": "Free Will (MP3)", "audio-books-heard": "Free Will", "audio-book-listens": "Free Will",
-    "film-watches": "Interstellar",
+    "film-watches": "Interstellar", "series-watches": "The Leftovers",
 }
 
 # the least a row of each page can be added with, and what an edit changes it to
@@ -48,6 +48,9 @@ MINIMAL: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
     "films": ({"name": "Dune"}, {"name": "Dune: Part One", "year": 2021, "imdb_id": "tt1160419"}),
     # of a shared film, which minimal() adds first
     "film-watches": ({}, {"rating": 8, "watched_at": "Home"}),
+    "series": ({"name": "Fauda"}, {"name": "Fauda", "year": 2015, "imdb_id": "tt4565380"}),
+    # of a shared series, which minimal() adds first
+    "series-watches": ({}, {"rating": 7, "seasons_seen": "1, 2", "seasons_not_seen": [3]}),
     "youtube-videos": ({"youtube_id": "dQw4w9WgXcQ", "name": "A song"}, {"youtube_id": "dQw4w9WgXcQ", "name": "That song"}),
     # a game is added by its text and named by its players: an edit that sends another text renames it
     "chess-games": (
@@ -81,19 +84,20 @@ def minimal(app: webtest.TestApp, path: str) -> tuple[dict[str, Any], dict[str, 
     if path == "audio-book-listens":
         version = {"version_id": shared_version(app).id}
         return {**first, **version}, {**changed, **version}
-    if path == "film-watches":
-        film = {"film_id": shared_film(app).id}
+    if path in ("film-watches", "series-watches"):
+        film = {"film_id": shared_film(app, path == "series-watches").id}
         return {**first, **film}, {**changed, **film}
     return first, changed
 
 
-def shared_film(app: webtest.TestApp) -> Film:
-    """ The shared film Interstellar, put there as an admin's import would (once). """
+def shared_film(app: webtest.TestApp, series: bool = False) -> Film:
+    """ The shared film Interstellar (or the series The Leftovers), put there as an admin's import would (once). """
     flask_app: Any = app.app
+    name, imdb = ("The Leftovers", "tt2699128") if series else ("Interstellar", "tt0816692")
     with Session(flask_app.config["engine"], expire_on_commit=False) as session:
-        film = session.scalars(select(Film).where(Film.imdb_id == "tt0816692")).first()
+        film = session.scalars(select(Film).where(Film.imdb_id == imdb)).first()
         if film is None:
-            film = Film(name="Interstellar", year=2014, imdb_id="tt0816692", genres=[])
+            film = Film(kind="series" if series else "film", name=name, year=2014, imdb_id=imdb, genres=[])
             session.add(film)
             session.commit()
         return film
@@ -267,6 +271,25 @@ def test_film_watches(app: webtest.TestApp, engine: Engine) -> None:
     assert [f["watches"] for f in app.get("/api/films").json] == [[], []]
 
 
+def test_series_are_films_of_another_kind(app: webtest.TestApp, engine: Engine) -> None:
+    """ A series is listed on the Series pages, a film on the Films pages; a film made a series moves, with its watches. """
+    sign_in(app)
+    series_watch = app.post_json("/api/series-watches", {**minimal(app, "series-watches")[0], "seasons_seen": "3, 1, 2", "seasons_not_seen": "4"}, status=201).json
+    film_watch = app.post_json("/api/film-watches", minimal(app, "film-watches")[0], status=201).json
+    assert (series_watch["kind_name"], series_watch["seasons_seen"], series_watch["seasons_not_seen"]) == ("Series", [1, 2, 3], [4])
+    assert [w["id"] for w in app.get("/api/series-watches").json] == [series_watch["id"]]
+    assert [w["id"] for w in app.get("/api/film-watches").json] == [film_watch["id"]]
+    assert [f["name"] for f in app.get("/api/series").json] == ["The Leftovers"]
+    app.post_json("/api/series-watches", {**minimal(app, "series-watches")[0], "seasons_seen": "1", "seasons_not_seen": "1"}, status=400)
+    app.post_json("/api/series-watches", {**minimal(app, "series-watches")[0], "seasons_seen": "one"}, status=400)
+    sign_in_admin(app, engine)
+    film = app.get("/api/films").json[0]
+    app.put_json(f"/api/films/{film['id']}", {"name": film["name"], "imdb_id": film["imdb_id"], "kind": "series"})
+    assert app.get("/api/films").json == []
+    assert sorted(f["name"] for f in app.get("/api/series").json) == ["Interstellar", "The Leftovers"]
+    assert app.post_json("/api/series", {"name": "Fauda", "kind": "anime"}, status=400).json == {"error": "kind: expected one of film, series"}
+
+
 def test_a_page_that_is_not_one(app: webtest.TestApp) -> None:
     sign_in(app)
     app.post_json("/api/unicorns", {"name": "Bob"}, status=404)
@@ -274,7 +297,7 @@ def test_a_page_that_is_not_one(app: webtest.TestApp) -> None:
     app.delete("/api/unicorns/1", status=404)
 
 
-@pytest.mark.parametrize("path", ["concert-visits", "audio-courses", "episodes-heard", "film-watches", "youtube-videos"])
+@pytest.mark.parametrize("path", ["concert-visits", "audio-courses", "episodes-heard", "film-watches", "series-watches", "youtube-videos"])
 @pytest.mark.parametrize(("date", "precision", "sort"), [
     ("2003", "year", "2003"),
     ("2003-07", "month", "2003-07"),

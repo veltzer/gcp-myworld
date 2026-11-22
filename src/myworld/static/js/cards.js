@@ -124,6 +124,7 @@ export const PICKER_LABELS = {
 	"podcast-episodes": (row) => `${row.podcast?.name}: ${row.name}`,
 	// two films may share a title: the year tells them apart
 	films: (row) => (row.year ? `${row.name} (${row.year})` : row.name),
+	series: (row) => (row.year ? `${row.name} (${row.year})` : row.name),
 };
 
 function placeCard(item) {
@@ -420,7 +421,7 @@ function filmLine(item) {
 
 // what a film is: who directed it, its genres, and its pages elsewhere
 function filmDetails(list, item) {
-	detail(list, "Year", item.year === null ? "" : String(item.year));
+	detail(list, item.kind === "series" ? "Started" : "Year", item.year === null ? "" : String(item.year));
 	detail(list, "Directed by", item.directors);
 	detail(list, "Genres", item.genres.join(", "));
 	catalogDetail(list, item, FILM_CATALOGS);
@@ -429,7 +430,7 @@ function filmDetails(list, item) {
 // a film, shared; each time the user watched it (or means to), a link to that watch
 function filmCard(item) {
 	const { card, list } = cardShell(item, filmLine(item), "poster");
-	linksDetail(list, "You watched it", "film-watches", item.watches);
+	linksDetail(list, "You watched it", item.kind === "series" ? "series-watches" : "film-watches", item.watches);
 	filmDetails(list, item);
 	websiteButton(card, item.url, "On IMDb");
 	return card;
@@ -438,12 +439,15 @@ function filmCard(item) {
 // a time the user watched a film, or one they mean to see: when, where, on what, with whom, what they thought
 function filmWatchCard(item) {
 	const { card, list } = cardShell(item, filmLine(item), "poster");
-	linksDetail(list, "Film", "films", item.film ? [item.film] : []);
+	const series = item.kind === "series";
+	linksDetail(list, series ? "Series" : "Film", series ? "series" : "films", item.film ? [item.film] : []);
 	if (item.status === "done") {
 		detail(list, "Watched", formatDate(item) || "Yes");
 	} else {
 		detail(list, "Status", item.status_name);
 	}
+	detail(list, "Seasons seen", item.seasons_seen.join(", "));
+	detail(list, "Not seen", item.seasons_not_seen.join(", "));
 	rated(list, item);
 	detail(list, "Where", item.watched_at);
 	linksDetail(list, "Device", "devices", item.device ? [item.device] : []);
@@ -567,6 +571,8 @@ export const CARDS = {
 	"episodes-heard": episodeHeardCard,
 	films: filmCard,
 	"film-watches": filmWatchCard,
+	series: filmCard,
+	"series-watches": filmWatchCard,
 	youtube: youtubeCard,
 	chess: chessCard,
 	places: placeCard,

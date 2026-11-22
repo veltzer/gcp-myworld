@@ -121,6 +121,19 @@ const SORTS = {
 		["rating", "Rating", (w) => w.rating, "desc"],
 		["status", "Status", (w) => w.status_name, "asc"],
 	],
+	series: [
+		["name", "Title", (f) => f.name, "asc"],
+		["year", "Started", (f) => f.year, "desc"],
+		["watched", "Watched", (f) => f.watches.length, "desc"],
+	],
+	"series-watches": [
+		["date", "Watched", (w) => w.date_sort, "desc"],
+		["name", "Title", (w) => w.name, "asc"],
+		["year", "Started", (w) => w.year, "desc"],
+		["rating", "Rating", (w) => w.rating, "desc"],
+		["seasons", "Seasons seen", (w) => w.seasons_seen.length, "desc"],
+		["status", "Status", (w) => w.status_name, "asc"],
+	],
 	youtube: [
 		["date", "Watched", (v) => v.date_sort, "desc"],
 		["name", "Name", (v) => v.name, "asc"],

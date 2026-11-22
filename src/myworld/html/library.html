@@ -642,6 +642,7 @@
 				<div class="row">
 					<label title="The film's title" class="wide">Title <input name="name" required></label>
 					<label title="The year it came out">Year <input name="year" type="number" min="1850" max="2200"></label>
+					<label title="Whether it is a film or a series: a series is listed on the Series page">Kind <select name="kind"><option value="film">Film</option><option value="series">Series</option></select></label>
 				</div>
 				<div class="row">
 					<label title="Who directed it: names separated by commas" class="wide">Directors <input name="directors"></label>
@@ -690,6 +691,70 @@
 				<div class="row">
 					<label title="Your rating of the film, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
 					<label title="What you thought of the film, in your own words" class="wide">Review <input name="review"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="series-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="The series' title" class="wide">Title <input name="name" required></label>
+					<label title="The year it started">Started <input name="year" type="number" min="1850" max="2200"></label>
+					<label title="Whether it is a film or a series: a film is listed on the Films page">Kind <select name="kind"><option value="series">Series</option><option value="film">Film</option></select></label>
+				</div>
+				<div class="row">
+					<label title="Who directed it: names separated by commas" class="wide">Directors <input name="directors"></label>
+				</div>
+				<div class="row">
+					<label title="Its genres, separated by commas: drama, documentary, ..." class="wide">Genres <input name="genres" placeholder="e.g. drama, science fiction"></label>
+				</div>
+				<div class="row">
+					<label title="The series' id at IMDb, like tt2699128, or a link to its page there: a series is in Series once by it">IMDb <input name="imdb_id" placeholder="tt2699128"></label>
+					<label title="The series' id at The Movie Database, the number in its address (themoviedb.org/tv/1399)">TMDB <input name="tmdb_id" type="number" min="1" placeholder="157336"></label>
+				</div>
+				<div class="row">
+					<label title="The series' item in Wikidata, like Q16468818">Wikidata <input name="wikidata_id" pattern="Q\d+" placeholder="Q16468818"></label>
+					<label title="The series' page at Rotten Tomatoes, the part of its address after rottentomatoes.com/, like tv/the-leftovers" class="wide">Rotten Tomatoes <input name="rotten_tomatoes_id" pattern="(m|tv)/[A-Za-z0-9_\-]+" placeholder="tv/the-leftovers"></label>
+				</div>
+				<div class="row">
+					<label title="The series' poster. + adds one, in place of the one it has; − takes it away" class="wide">Poster <span class="chips pictures" id="series-pictures" data-pictures="one" data-what="poster"></span></label>
+				</div>
+				<div class="adder" data-picture-adder hidden>
+					<div class="row">
+						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Poster file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
+					</div>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="series-watch-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="The series you watched, or mean to see, one of Series (shared): add a new one there" class="wide">Series <select name="film_id" data-picker="series" data-placeholder="Type a series" title="The series you watched, or mean to see, one of Series (shared): add a new one there"></select></label>
+					<label title="Whether you watched it, or mean to see it">Status <select name="status"><option value="done">Watched</option><option value="wishlist">Want to see</option></select></label>
+				</div>
+				<div class="row">
+					<label title="How much of the date you watched it is known">Watched <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
+					<label title="What you watched it on, one of Devices (a TV, a laptop, a service such as Netflix); add a new one on the Devices page">Device <select name="device_id"></select></label>
+					<label title="Where you watched it: at home, a cinema, ...">Where <input name="watched_at" placeholder="e.g. Home"></label>
+				</div>
+				<div class="row">
+					<label title="The seasons you saw, separated by commas: 1, 2, 3" class="wide">Seasons seen <input name="seasons_seen" placeholder="e.g. 1, 2, 3"></label>
+					<label title="The seasons there are that you did not see, separated by commas: 4, 5" class="wide">Not seen <input name="seasons_not_seen" placeholder="e.g. 4, 5"></label>
+				</div>
+				<div class="row">
+					<label title="The people you watched it with, each one of People; add a new one on the People page" class="wide">With <select multiple data-chips="people" data-field="people" data-placeholder="Type a name from People"><option value=""></option></select></label>
+				</div>
+				<div class="row">
+					<label title="Who told you to see it, one of People; add a new one on the People page" class="wide">Recommended by <select name="recommended_by_id" data-picker="people" data-placeholder="Type a name from People" title="Who told you to see it, one of People; add a new one on the People page"></select></label>
+				</div>
+				<div class="row">
+					<label title="Your rating of the series, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
+					<label title="What you thought of the series, in your own words" class="wide">Review <input name="review"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>

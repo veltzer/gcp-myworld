@@ -50,7 +50,9 @@ checkout of the site's history that has them.
 
 Films come from data/yaml/video_features.yaml (each a time a film was
 watched: when, where, on what, with whom, the rating and review), their
-posters from static/images/movie-<imdb_id>.jpg, and the films still to see
+posters from static/images/movie-<imdb_id>.jpg; series (films of the kind
+series) from data/yaml/video_series.yaml, each with the seasons seen and
+not, their posters from static/images/series-<imdb_id>.jpg; and the films still to see
 from ../data/json/movies_to_see.json (by IMDb id, with who recommended each
 and its genre). A film is shared, found again by its IMDb id; what Wikidata
 says of it (the title, the year, the directors) fills in what is missing.
@@ -315,6 +317,8 @@ YOUTUBE_FIELDS = DATE_FIELDS | {"id", "name", "rating", "review", "device", "loc
 FILM_FIELDS = DATE_FIELDS | {"name", "imdb_id", "wikidata_id", "rotten_tomatoes_id", "location", "device", "rating", "review", "with"}
 # movies_to_see.json: a film to see, by its IMDb number, who recommended it and its genre
 FILM_TO_SEE_FIELDS = {"imdb_id", "recommended_by", "genre"}
+# video_series.yaml: a series watched, as a film is, with the seasons seen and those not
+SERIES_FIELDS = DATE_FIELDS | {"name", "imdb_id", "wikidata_id", "rotten_tomatoes_id", "location", "device", "rating", "review", "seasons_seen", "seasons_not_seen"}
 # the watch history: yt-dlp's names; status "missing" (with video_id) is a video YouTube no longer has
 YOUTUBE_HISTORY_FIELDS = {"title", "webpage_url", "channel", "categories", "duration", "upload_date", "view_count", "status", "video_id"}
 # rows per multi-row INSERT: 18 columns each stays well under PostgreSQL's 65,535 parameters
@@ -1415,6 +1419,10 @@ def _films_path(source: Path) -> Path:
     return source / "data" / "yaml" / "video_features.yaml"
 
 
+def _series_path(source: Path) -> Path:
+    return source / "data" / "yaml" / "video_series.yaml"
+
+
 def _films_to_see_path(source: Path) -> Path:
     """ The films still to see: in the data repository beside the site's. """
     return source.parent / "data" / "json" / "movies_to_see.json"
@@ -1442,8 +1450,10 @@ def _to_see_items(path: Path) -> list[dict[str, Any]]:
 
 def import_films(session: Session, owner: User, source: Path) -> dict[str, int]:
     """
-    Add the films of video_features.yaml and movies_to_see.json to the
-    shared ones, with their posters, and owner's watches of them: a film is
+    Add the films of video_features.yaml, the series of video_series.yaml
+    (films of the kind series, each watch with the seasons seen and not)
+    and the films of movies_to_see.json to the shared ones, with their
+    posters, and owner's watches of them: a film is
     found again by its IMDb id (one there gets only the ids it lacks), and
     what Wikidata says fills in the title, year and directors a film has
     not. A watch is added unless owner has one of that film on that date; a
@@ -1453,14 +1463,16 @@ def import_films(session: Session, owner: User, source: Path) -> dict[str, int]:
     path = _films_path(source)
     if not path.exists():
         raise WorldImportError(f"{path} is not there")
-    items = _items(source, "video_features", FILM_FIELDS)
+    sources = [(path, _items(source, "video_features", FILM_FIELDS), "film", "movie")]
+    if _series_path(source).exists():
+        sources.append((_series_path(source), _items(source, "video_series", SERIES_FIELDS), "series", "series"))
     to_see_path = _films_to_see_path(source)
     to_see = _to_see_items(to_see_path) if to_see_path.exists() else []
     image_dir = source / "static" / "images"
     films = {f.imdb_id: f for f in session.scalars(select(Film).options(selectinload(Film.watches))) if f.imdb_id}
     people: dict[str, list[Person]] = {}
-    for person in session.scalars(select(Person).where(Person.owner_id == owner.id).options(selectinload(Person.names))):
-        people.setdefault(naming.key(person.name), []).append(person)
+    for known in session.scalars(select(Person).where(Person.owner_id == owner.id).options(selectinload(Person.names))):
+        people.setdefault(naming.key(known.name), []).append(known)
 
     def person(name: str, where: str) -> Person:
         """ owner's one person called name: the import stops when there is none, or several. """
@@ -1470,26 +1482,30 @@ def import_films(session: Session, owner: User, source: Path) -> dict[str, int]:
         return found[0]
 
     device = Devices(session, owner)
-    counts = {"films added": 0, "films filled from Wikidata": 0, "posters added": 0, "film watches added": 0, "films to see added": 0}
+    counts = {
+        "films added": 0, "series added": 0, "films filled from Wikidata": 0, "posters added": 0,
+        "film watches added": 0, "series watches added": 0, "films to see added": 0,
+    }
 
-    def film(imdb: str, name: str = "") -> Film:
+    def film(imdb: str, name: str = "", kind: str = "film", prefix: str = "movie") -> Film:
+        """ The film of an IMDb id (of the kind it is there, whatever kind is said), or a new one of kind, with its poster. """
         found = films.get(imdb)
         if found is None:
-            found = Film(name=name, imdb_id=imdb, genres=[], watches=[])
+            found = Film(kind=kind, name=name, imdb_id=imdb, genres=[], watches=[])
             session.add(found)
             films[imdb] = found
-            counts["films added"] += 1
+            counts["series added" if kind == "series" else "films added"] += 1
         if found.image_id is None and found.image is None:
-            poster = image_dir / f"movie-{imdb.removeprefix('tt')}.jpg"
+            poster = image_dir / f"{prefix}-{imdb.removeprefix('tt')}.jpg"
             if poster.exists():
                 data = poster.read_bytes()
                 found.image = Image(owner_id=owner.id, filename=poster.name, content_type="image/jpeg", sha256=hashlib.sha256(data).hexdigest(), data=data)
                 counts["posters added"] += 1
         return found
 
-    for item in items:
-        where = f"{path}: {item['name']!r}"
-        watched = film(_imdb(item["imdb_id"], where), str(item["name"]).strip())
+    def _import_watch(item: dict[str, Any], where: str, kind: str, prefix: str) -> None:
+        """ A watch of the yaml (a film's, or a series' with its seasons), unless owner has one of that film on that date. """
+        watched = film(_imdb(item["imdb_id"], where), str(item["name"]).strip(), kind, prefix)
         # only what the film lacks: what an admin typed in stays
         if not watched.wikidata_id:
             watched.wikidata_id = str(item.get("wikidata_id") or "")
@@ -1498,8 +1514,9 @@ def import_films(session: Session, owner: User, source: Path) -> dict[str, int]:
         dates = _dates(item)
         empty = {"date_utcz": None, "date_ymd": None, "date_my": "", "date_y": None}
         if any(w.owner_id == owner.id and all((getattr(w, key) or empty[key]) == dates.get(key, empty[key]) for key in empty) for w in watched.watches):
-            continue
-        if len(set(item["with"])) != len(item["with"]):
+            return
+        companions = item.get("with") or []
+        if len(set(companions)) != len(companions):
             raise WorldImportError(f"{where}: a name appears twice in with")
         watched.watches.append(FilmWatch(
             owner_id=owner.id,
@@ -1508,10 +1525,17 @@ def import_films(session: Session, owner: User, source: Path) -> dict[str, int]:
             review=str(item.get("review") or ""),
             watched_at=str(item.get("location") or ""),
             device=device(str(item.get("device") or "")),
-            people=[person(name, where) for name in item["with"]],
+            people=[person(name, where) for name in companions],
+            seasons_seen=sorted({int(n) for n in item.get("seasons_seen") or []}),
+            seasons_not_seen=sorted({int(n) for n in item.get("seasons_not_seen") or []}),
             **dates,
         ))
-        counts["film watches added"] += 1
+        counts["series watches added" if kind == "series" else "film watches added"] += 1
+
+    for at, items, kind, prefix in sources:
+        for item in items:
+            _import_watch(item, f"{at}: {item['name']!r}", kind, prefix)
+
     for item in to_see:
         where = f"{to_see_path}: {item.get('imdb_id')!r}"
         wanted = film(_imdb(item["imdb_id"], where))
@@ -1777,7 +1801,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--films", action="store_true",
-        help="import only the films watched and those to see (from ../data), adding what the account does not have yet; safe to run again",
+        help="import only the films and series watched and the films to see (from ../data), adding what the account does not have yet; safe to run again",
     )
     parser.add_argument(
         "--youtube", action="store_true",

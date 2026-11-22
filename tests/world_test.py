@@ -1091,11 +1091,28 @@ items:
     review: "I like this one a lot"
     with: []
 """
+SERIES = """
+items:
+  - name: "Fauda"
+    imdb_id: "4565380"
+    wikidata_id: "Q21207093"
+    rotten_tomatoes_id: "tv/fauda"
+    device: "Netflix"
+    date_utcz: "2021-10-22T20:13:21Z"
+    date_timezone: "Asia/Jerusalem"
+    location: "Home"
+    seasons_seen: [1, 2, 3]
+    seasons_not_seen: [4]
+    rating: 8
+    review: "Tense"
+"""
 FILMS_TO_SEE = [{"recommended_by": "Alice Friend", "imdb_id": "0427312", "genre": "documentary"}]
 
 
 def write_films(source: Path) -> None:
     (source / "data" / "yaml" / "video_features.yaml").write_text(FILMS, encoding="UTF8")
+    (source / "data" / "yaml" / "video_series.yaml").write_text(SERIES, encoding="UTF8")
+    (source / "static" / "images" / "series-4565380.jpg").write_bytes(b"\xff\xd8fauda")
     (source / "static" / "images" / "movie-0816692.jpg").write_bytes(b"\xff\xd8interstellar")
     (source.parent / "data" / "json").mkdir(parents=True)
     (source.parent / "data" / "json" / "movies_to_see.json").write_text(json.dumps(FILMS_TO_SEE), encoding="UTF8")
@@ -1110,6 +1127,7 @@ def test_films_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_
             {"imdb": "tt0816692", "item": "http://www.wikidata.org/entity/Q13417189", "itemLabel": "Interstellar", "year": "2014", "directors": "Christopher Nolan"},
             # no English title: labelled by its id
             {"imdb": "tt0427312", "item": "http://www.wikidata.org/entity/Q1067409", "itemLabel": "Grizzly Man", "year": "2005", "directors": "Werner Herzog, Q42"},
+            {"imdb": "tt4565380", "item": "http://www.wikidata.org/entity/Q21207093", "itemLabel": "Fauda", "year": "2015", "directors": "Assaf Bernstein"},
         ]
 
     monkeypatch.setattr(movies, "sparql", sparql)
@@ -1118,7 +1136,12 @@ def test_films_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_
     with Session(engine) as session:
         counts = import_world.import_films(session, owner(session), source)
         session.commit()
-    assert counts == {"films added": 2, "films filled from Wikidata": 2, "posters added": 1, "film watches added": 2, "films to see added": 1, "devices added": 1}
+    assert counts == {
+        "films added": 2, "series added": 1, "films filled from Wikidata": 3, "posters added": 2,
+        "film watches added": 2, "series watches added": 1, "films to see added": 1, "devices added": 1,
+    }
+    [fauda] = imported.get("/api/series-watches").json
+    assert (fauda["name"], fauda["seasons_seen"], fauda["seasons_not_seen"], fauda["year"], fauda["rotten_tomatoes_id"]) == ("Fauda", [1, 2, 3], [4], 2015, "tv/fauda")
     watches = imported.get("/api/film-watches").json
     assert [(w["name"], w["status"], w["rating"], w["with"], w["device"]["name"] if w["device"] else None) for w in watches] == [
         ("Interstellar", "done", 9, [], "Netflix"),
@@ -1138,7 +1161,10 @@ def test_films_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_
     with Session(engine) as session:
         counts = import_world.import_films(session, owner(session), source)
         session.commit()
-    assert counts == {"films added": 0, "films filled from Wikidata": 0, "posters added": 0, "film watches added": 0, "films to see added": 0, "devices added": 0}
+    assert counts == {
+        "films added": 0, "series added": 0, "films filled from Wikidata": 0, "posters added": 0,
+        "film watches added": 0, "series watches added": 0, "films to see added": 0, "devices added": 0,
+    }
     assert asked == []
     assert imported.get("/api/film-watches").json[0]["rating"] == 10
     # a name the account has no person of stops it

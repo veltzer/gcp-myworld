@@ -94,6 +94,21 @@ const VALUE_FILTERS = {
 			["watched", "You watched it", (f) => [f.watches.length ? "Watched" : "Not watched"]],
 		],
 	},
+	series: {
+		all: "All series",
+		groups: [
+			["genre", "Genre", (f) => f.genres],
+			["watched", "You watched it", (f) => [f.watches.length ? "Watched" : "Not watched"]],
+		],
+	},
+	"series-watches": {
+		all: "All series watches",
+		groups: [
+			["status", "Status", (w) => [w.status_name]],
+			["seen", "Seen", (w) => [w.seasons_not_seen.length ? "Some seasons" : "Every season known"]],
+			["device", "Device", (w) => named(w.device)],
+		],
+	},
 	"film-watches": {
 		all: "All film watches",
 		groups: [

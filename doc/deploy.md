@@ -552,6 +552,15 @@ first `companies` tables to `organizations`, then making
   `scripts/import_world.py --films`, which fills the title, year and directors a film lacks from
   Wikidata and can run again. Migration 0031 (before the deploy) made the
   tables and moved the film the library kept (Dune) into films.
+- `GET /api/series` and `GET /api/series-watches`: the same for the
+  series, which are films of another kind (`kind`: `film` or `series`, which
+  an admin may change: a film made a series moves to the Series pages, its
+  watches with it); a series watch also says `seasons_seen` and
+  `seasons_not_seen` (lists of numbers, written as lists or as "1, 2, 3";
+  a season is not both, 400). Imported (2026-11-22) from
+  `video_series.yaml` (posters `static/images/series-<imdb>.jpg`) by the same
+  `scripts/import_world.py --films`. Migration 0032 (before the deploy)
+  added `films.kind` and the seasons.
 - `GET /api/youtube-videos`: the YouTube videos watched, newest first (the
   watch history, with no dates, after), with `youtube_id`, rating,
   review, `device` (id and name), `watched_at`, and what YouTube says
@@ -668,7 +677,7 @@ a person is written with `type_ids`, a list.
   (how it is related to the user: ids and names of relation types), status, website, location, address, `latitude` and `longitude`, the logo as
   `image`, and `people` (ids and names).
 - `POST` to the same paths adds,
-  `PUT /api/<concert-visits|museum-visits|audio-courses|audio-books|audio-book-versions|audio-books-heard|audio-book-listens|podcasts|podcast-episodes|podcasts-heard|episodes-heard|films|film-watches|youtube-videos|chess-games|places|groups|people|organizations>/<id>` replaces the fields,
+  `PUT /api/<concert-visits|museum-visits|audio-courses|audio-books|audio-book-versions|audio-books-heard|audio-book-listens|podcasts|podcast-episodes|podcasts-heard|episodes-heard|films|film-watches|series|series-watches|youtube-videos|chess-games|places|groups|people|organizations>/<id>` replaces the fields,
   `DELETE` removes. The date is sent as `YYYY`, `YYYY-MM` or
   `YYYY-MM-DD` (the add and edit forms pick it with a date picker and a Day, Month
   only or Year only choice, so it is always a real date); a date sent back exactly as it came keeps its stored

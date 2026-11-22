@@ -167,6 +167,12 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `film-watch-reviews`: every film watched has the user's rating and
   review.
 
+### Series watches (`series-watches`)
+
+- `series-watch-dates`: every series watched says when.
+- `series-watch-reviews`: every series watched has the user's rating and
+  review.
+
 ### YouTube (`youtube`)
 
 - `youtube-ids`: every YouTube video id is one YouTube could have given
@@ -243,6 +249,12 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `film-imdb-ids`: every film has its IMDb id, which the importers find it
   again by and its page is linked by.
 - `film-years`: every film says the year it came out.
+
+### Series (`series`, shared)
+
+- `series-posters`: every series has its poster.
+- `series-imdb-ids`: every series has its IMDb id.
+- `series-years`: every series says the year it started.
 
 ### Cities (`cities`)
 

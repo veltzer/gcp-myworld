@@ -22,6 +22,8 @@ export const WORLDS = {
 	"episodes-heard": ["Episodes heard", "/api/episodes-heard", "episode heard", "Episodes heard"],
 	// each time the user watched a film (a shared one), or means to
 	"film-watches": ["Film watches", "/api/film-watches", "film watch", "Film watches"],
+	// and each time they watched a series (a film of another kind), or mean to
+	"series-watches": ["Series watches", "/api/series-watches", "series watch", "Series watches"],
 	youtube: ["YouTube videos", "/api/youtube-videos", "YouTube video", "YouTube"],
 	chess: ["Chess games", "/api/chess-games", "chess game", "Chess"],
 	places: ["Places", "/api/places", "place", "Places"],
@@ -33,6 +35,8 @@ export const WORLDS = {
 	"audio-book-versions": ["Audio book versions", "/api/audio-book-versions", "audio book version", "Audio book versions"],
 	// every film
 	films: ["Films", "/api/films", "film", "Films"],
+	// every series
+	series: ["Series", "/api/series", "series", "Series"],
 	cities: ["Cities", "/api/cities", "city", "Cities"],
 	countries: ["Countries", "/api/countries", "country", "Countries"],
 	currencies: ["Currencies", "/api/currencies", "currency", "Currencies"],
@@ -55,7 +59,7 @@ export const WORLDS = {
 
 // The pages whose rows are shared by everyone: the same for every account, with nothing personal
 // on them, changed by admins only (the server refuses anyone else). The sidebar lists them apart.
-export const SHARED_VIEWS = new Set(["places", "podcasts", "podcast-episodes", "audio-books", "audio-book-versions", "films", "cities", "countries", "currencies", "place-kinds", "visit-types", "locales"]);
+export const SHARED_VIEWS = new Set(["places", "podcasts", "podcast-episodes", "audio-books", "audio-book-versions", "films", "series", "cities", "countries", "currencies", "place-kinds", "visit-types", "locales"]);
 
 // The pages that are shared data filtered for the user, not rows of their own: view -> what they are.
 // The sidebar marks them with a filter; their rows come by what the user does elsewhere, so + stays, disabled.

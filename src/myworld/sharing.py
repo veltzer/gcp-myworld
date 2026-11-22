@@ -42,7 +42,7 @@ from myworld.views import HTML_DIR, vocabularies
 bp = flask.Blueprint("sharing", __name__)
 
 # the data sets a view can show: the library's kinds, then the views of the user's own rows (the page's names)
-WORLD_DATASETS = ("concerts", "museums", "audio-courses", "audio-books-heard", "audio-book-listens", "podcasts-heard", "episodes-heard", "film-watches", "youtube", "chess", "people", "groups", "organizations")
+WORLD_DATASETS = ("concerts", "museums", "audio-courses", "audio-books-heard", "audio-book-listens", "podcasts-heard", "episodes-heard", "film-watches", "series-watches", "youtube", "chess", "people", "groups", "organizations")
 DATASETS = (*KINDS, *WORLD_DATASETS)
 
 TITLE_MAX = 200
@@ -57,6 +57,7 @@ READS: dict[str, Callable[[Mapping[str, Any]], str | None]] = {
     "world.api_podcasts_heard": lambda _args: "podcasts-heard",
     "world.api_episodes_heard": lambda _args: "episodes-heard",
     "world.api_film_watches": lambda _args: "film-watches",
+    "world.api_series_watches": lambda _args: "series-watches",
     "world.api_youtube": lambda _args: "youtube",
     "world.api_chess_games": lambda _args: "chess",
     "world.api_chess_game": lambda _args: "chess",

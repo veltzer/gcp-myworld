@@ -1590,6 +1590,12 @@ class YouTubeVideo(_Dated, Base):
     unavailable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
 
 
+# what a film is -> its name: a film, or a series (of seasons)
+FILM_KINDS: dict[str, str] = {
+    "film": "Film",
+    "series": "Series",
+}
+
 # where the user is with a film watch -> its name: watched, or one they mean to see
 FILM_WATCH_STATUSES: dict[str, str] = {
     "done": "Watched",
@@ -1599,7 +1605,8 @@ FILM_WATCH_STATUSES: dict[str, str] = {
 
 class Film(Base):
     """
-    A film: its title, the year it came out, who directed it, its genres,
+    A film, or a series (kind, FILM_KINDS): its title, the year it came out
+    (a series, the year it started), who directed it, its genres,
     its poster and its ids on IMDb ("tt0816692"), The Movie Database,
     Wikidata ("Q13417189") and Rotten Tomatoes ("m/interstellar_2014").
     Shared: the same for every account, kept by admins (SHARED); each time a
@@ -1613,6 +1620,8 @@ class Film(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # one of FILM_KINDS: the Films page lists the films, the Series page the series
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="film", server_default="film")
     # the title
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -1634,8 +1643,9 @@ class FilmWatch(_Dated, Base):
     A time the user watched a film (a shared one), or one they mean to see
     (status): when (the date, _Dated), where, on what (a device or a service:
     "Netflix") and with whom, their rating and what they thought of it, and
-    who recommended it to them. A film watched twice has two, each with its
-    own rating and review.
+    who recommended it to them; of a series, the seasons they saw and those
+    they know they did not. A film watched twice has two, each with its own
+    rating and review.
     """
     __tablename__ = "film_watches"
     __table_args__ = (
@@ -1658,6 +1668,9 @@ class FilmWatch(_Dated, Base):
     # who told the user to see it: one of their own people
     recommended_by_id: Mapped[int | None] = mapped_column(ForeignKey("people.id", ondelete="SET NULL", name="fk_film_watches_recommended_by_id"), nullable=True)
     recommended_by: Mapped[Person | None] = relationship(back_populates="recommended")
+    # a series: the seasons seen ([1, 2, 3]), and those there are that were not ([4, 5])
+    seasons_seen: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
+    seasons_not_seen: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
     # who the user watched it with
     people: Mapped[list[Person]] = relationship(secondary=film_watch_companions, back_populates="film_watches")
 
@@ -1870,7 +1883,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0031"
+SCHEMA_REVISION = "0032"
 
 
 def prepare_schema(engine: Engine) -> None:

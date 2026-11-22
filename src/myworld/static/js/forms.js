@@ -243,6 +243,23 @@ export function where() {
 	}
 }
 
+// a film's form, and a series' (a film of another kind)
+async function filmBody(form) {
+	return {
+		...Object.fromEntries(["name", "kind", "year", "directors", "genres", "imdb_id", "tmdb_id", "wikidata_id", "rotten_tomatoes_id"].map((name) => [name, form.elements[name].value])),
+		...(await pictureBody(form)),
+	};
+}
+
+// a film watch's form, and a series watch's
+async function filmWatchBody(form) {
+	return {
+		...Object.fromEntries(["film_id", "status", "date", "rating", "review", "device_id", "watched_at", "recommended_by_id"].map((name) => [name, form.elements[name].value])),
+		people: chosen(form, "people"),
+		date_timezone: state.editing?.date_timezone || where(),
+	};
+}
+
 // view -> what its form posts
 const WORLD_BODIES = {
 	"audio-courses": async (form) => {
@@ -293,14 +310,13 @@ const WORLD_BODIES = {
 		const body = Object.fromEntries(["episode_id", "date", "rating", "review", "device_id", "listened_at"].map((name) => [name, form.elements[name].value]));
 		return { ...body, date_timezone: state.editing?.date_timezone || where() };
 	},
-	films: async (form) => ({
-		...Object.fromEntries(["name", "year", "directors", "genres", "imdb_id", "tmdb_id", "wikidata_id", "rotten_tomatoes_id"].map((name) => [name, form.elements[name].value])),
-		...(await pictureBody(form)),
-	}),
-	"film-watches": async (form) => ({
-		...Object.fromEntries(["film_id", "status", "date", "rating", "review", "device_id", "watched_at", "recommended_by_id"].map((name) => [name, form.elements[name].value])),
-		people: chosen(form, "people"),
-		date_timezone: state.editing?.date_timezone || where(),
+	films: async (form) => filmBody(form),
+	series: async (form) => filmBody(form),
+	"film-watches": async (form) => filmWatchBody(form),
+	"series-watches": async (form) => ({
+		...(await filmWatchBody(form)),
+		seasons_seen: form.elements.seasons_seen.value,
+		seasons_not_seen: form.elements.seasons_not_seen.value,
 	}),
 	youtube: async (form) => {
 		const value = (name) => form.elements[name].value;

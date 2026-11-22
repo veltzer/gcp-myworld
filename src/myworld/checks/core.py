@@ -97,6 +97,7 @@ DATASETS: dict[str, str] = {
     "podcasts-heard": "Your podcasts",
     "episodes-heard": "Episodes heard",
     "film-watches": "Film watches",
+    "series-watches": "Series watches",
     "youtube": "YouTube",
     "chess": "Chess",
     "people": "People",
@@ -107,6 +108,7 @@ DATASETS: dict[str, str] = {
     "audio-books": "Audio books",
     "audio-book-versions": "Audio book versions",
     "films": "Films",
+    "series": "Series",
     "cities": "Cities",
     "countries": "Countries",
     "currencies": "Currencies",
@@ -214,6 +216,10 @@ def problem(row: Any, message: str) -> Problem:
         kind = row.work.kind
         return Problem(f"{row.work.title} ({KINDS[kind][0].lower()} {row.work_id}, account {row.owner_id})", message, f"{kind}/{row.work_id}", row.owner_id)
     noun, view = SUBJECTS[type(row)]
+    # a series is a film of another kind, on pages of its own
+    series = (isinstance(row, Film) and row.kind == "series") or (isinstance(row, FilmWatch) and row.film.kind == "series")
+    if series:
+        noun, view = noun.replace("film", "series"), view.replace("film", "series").replace("seriess", "series")
     # one heard is told by the name of what was heard
     if isinstance(row, PodcastHeard):
         name = row.podcast.name

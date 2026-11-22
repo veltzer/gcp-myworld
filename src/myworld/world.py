@@ -36,6 +36,7 @@ from myworld.api import (
 from myworld.models import (
     AUDIO_BOOK_KINDS,
     DEFAULT_LOCALE,
+    FILM_KINDS,
     FILM_WATCH_STATUSES,
     MUSEUM_KIND,
     MUSEUM_VISIT,
@@ -619,6 +620,8 @@ def _film_fields(film: Film) -> dict[str, Any]:
     """ What a film is, as its card and a watch of it show it. """
     return {
         "film": _ref(film),
+        "kind": film.kind,
+        "kind_name": FILM_KINDS.get(film.kind, film.kind),
         "year": film.year,
         "directors": film.directors,
         "genres": film.genres,
@@ -669,6 +672,8 @@ def film_watch_json(watch: FilmWatch) -> dict[str, Any]:
         "watched_at": watch.watched_at,
         "device": _ref(watch.device),
         "recommended_by": None if watch.recommended_by is None else {"id": watch.recommended_by.id, "name": shown_name(watch.recommended_by)},
+        "seasons_seen": watch.seasons_seen,
+        "seasons_not_seen": watch.seasons_not_seen,
         "with": _names(watch.people),
         "people": _refs(watch.people),
     }
@@ -898,25 +903,45 @@ def api_episodes_heard() -> flask.Response:
     return flask.jsonify(sorted(episodes, key=lambda e: (e["date_sort"], e["published"]), reverse=True))
 
 
-@bp.route("/api/films", methods=["GET"])
-@auth.login_required
-def api_films() -> flask.Response:
-    """ Every film (shared), by title, each with the user's watches of it. """
+def _films(kind: str) -> flask.Response:
+    """ Every film of kind (shared), by title, each with the user's watches of it. """
     mine: dict[int, list[FilmWatch]] = {}
     for watch in flask.g.db.scalars(select(FilmWatch).where(FilmWatch.owner_id == flask.g.user.id)):
         mine.setdefault(watch.film_id, []).append(watch)
-    query = select(Film).order_by(Film.name, Film.year, Film.id)
+    query = select(Film).where(Film.kind == kind).order_by(Film.name, Film.year, Film.id)
     return flask.jsonify([film_json(f, mine.get(f.id, [])) for f in flask.g.db.scalars(query)])
+
+
+def _film_watches(kind: str) -> flask.Response:
+    """ The user's watches of the films of kind, the latest watched first; those still to see (no date) after them. """
+    query = select(FilmWatch).join(Film).where(FilmWatch.owner_id == flask.g.user.id, Film.kind == kind).options(
+        selectinload(FilmWatch.film), selectinload(FilmWatch.device), selectinload(FilmWatch.people), selectinload(FilmWatch.recommended_by),
+    )
+    return flask.jsonify(_newest_first([film_watch_json(w) for w in flask.g.db.scalars(query)]))
+
+
+@bp.route("/api/films", methods=["GET"])
+@auth.login_required
+def api_films() -> flask.Response:
+    return _films("film")
+
+
+@bp.route("/api/series", methods=["GET"])
+@auth.login_required
+def api_series() -> flask.Response:
+    return _films("series")
 
 
 @bp.route("/api/film-watches", methods=["GET"])
 @auth.login_required
 def api_film_watches() -> flask.Response:
-    query = select(FilmWatch).where(FilmWatch.owner_id == flask.g.user.id).options(
-        selectinload(FilmWatch.film), selectinload(FilmWatch.device), selectinload(FilmWatch.people), selectinload(FilmWatch.recommended_by),
-    )
-    # the latest watched first; the films still to see (no date) after them
-    return flask.jsonify(_newest_first([film_watch_json(w) for w in flask.g.db.scalars(query)]))
+    return _film_watches("film")
+
+
+@bp.route("/api/series-watches", methods=["GET"])
+@auth.login_required
+def api_series_watches() -> flask.Response:
+    return _film_watches("series")
 
 
 @bp.route("/api/youtube-videos", methods=["GET"])
@@ -1660,8 +1685,12 @@ def _apply_youtube_video(video: YouTubeVideo, body: dict[str, Any]) -> None:
     _apply_dates(video, body)
 
 
-def _apply_film(film: Film, body: dict[str, Any]) -> None:
+def _apply_film(film: Film, body: dict[str, Any], kind: str = "film") -> None:
+    """ A film, or a series (kind, which the body may change: a film then moves to the Series page). """
     name = text(body, "name", required=True)
+    kind = text(body, "kind") or kind
+    if kind not in FILM_KINDS:
+        raise ApiError(400, f"kind: expected one of {', '.join(FILM_KINDS)}")
     imdb = imdb_id(text(body, "imdb_id"))
     if imdb:
         clash = flask.g.db.execute(select(Film.id).where(Film.imdb_id == imdb, Film.id != film.id)).first()
@@ -1672,6 +1701,7 @@ def _apply_film(film: Film, body: dict[str, Any]) -> None:
         genres = genres.split(",")
     if not isinstance(genres, list) or not all(isinstance(g, str) for g in genres):
         raise ApiError(400, "genres: expected a list of names")
+    film.kind = kind
     film.name = name
     film.year = opt_int(body, "year", 1850, 2200)
     film.directors = text(body, "directors")
@@ -1684,6 +1714,24 @@ def _apply_film(film: Film, body: dict[str, Any]) -> None:
             raise ApiError(400, f"{key}: expected an id like {example}")
         setattr(film, key, value)
     apply_image(film, body)
+
+
+def _apply_series(film: Film, body: dict[str, Any]) -> None:
+    _apply_film(film, body, "series")
+
+
+def _seasons(body: dict[str, Any], key: str) -> list[int]:
+    """ Season numbers, as a list or as typed ("1, 2, 3"), each once, in order. """
+    value = body.get(key) or []
+    if isinstance(value, str):
+        value = [part.strip() for part in value.split(",") if part.strip()]
+    try:
+        seasons = sorted({int(season) for season in value})
+    except (TypeError, ValueError) as e:
+        raise ApiError(400, f"{key}: expected season numbers, like 1, 2, 3") from e
+    if any(not 0 <= season <= 1000 for season in seasons):
+        raise ApiError(400, f"{key}: expected season numbers from 0 to 1000")
+    return seasons
 
 
 def _apply_film_watch(watch: FilmWatch, body: dict[str, Any]) -> None:
@@ -1701,6 +1749,10 @@ def _apply_film_watch(watch: FilmWatch, body: dict[str, Any]) -> None:
     watch.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
     watch.review = text(body, "review")
     watch.watched_at = text(body, "watched_at")
+    seen, not_seen = _seasons(body, "seasons_seen"), _seasons(body, "seasons_not_seen")
+    if set(seen) & set(not_seen):
+        raise ApiError(400, f"season {min(set(seen) & set(not_seen))} is both seen and not seen")
+    watch.seasons_seen, watch.seasons_not_seen = seen, not_seen
     _apply_dates(watch, body)
     watch.device = device
     watch.recommended_by = recommended_by
@@ -1983,6 +2035,9 @@ VIEWS: dict[str, _View] = {
     "episodes-heard": _View(EpisodeHeard, _apply_episode_heard, episode_heard_json),
     "films": _View(Film, _apply_film, film_json),
     "film-watches": _View(FilmWatch, _apply_film_watch, film_watch_json),
+    # the same rows, of the kind series
+    "series": _View(Film, _apply_series, film_json),
+    "series-watches": _View(FilmWatch, _apply_film_watch, film_watch_json),
     "youtube-videos": _View(YouTubeVideo, _apply_youtube_video, youtube_video_json),
     "chess-games": _View(ChessGame, _apply_chess_game, chess_game_json),
     "people": _View(Person, _apply_person, person_json),
@@ -2070,7 +2125,7 @@ def api_world_delete(what: str, row_id: int) -> flask.Response:
         raise ApiError(409, f"{version_name(row)} was heard (Audio book listens): it stays")
     # and so does a film someone watched
     if isinstance(row, Film) and row.watches:
-        raise ApiError(409, f"{row.name} was watched (Film watches): it stays")
+        raise ApiError(409, f"{row.name} was watched ({'Series' if row.kind == 'series' else 'Film'} watches): it stays")
     if isinstance(row, AudioBookHeard) and _listens_of(row):
         raise ApiError(409, f"you heard {row.book.name} ({_listens_of(row)} listens): delete them first")
     flask.g.db.delete(row)
