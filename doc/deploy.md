@@ -550,7 +550,9 @@ first `companies` tables to `organizations`, then making
   `static/images/movie-<imdb>.jpg`) in `veltzer.github.io` and the films to
   see from `movies_to_see.json` in `data` by
   `scripts/import_world.py --films`, which fills the title, year and directors a film lacks from
-  Wikidata and can run again. Migration 0031 (before the deploy) made the
+  Wikidata and can run again; with `TMDB_API_KEY` set it also fills the
+  year, poster and TMDB id a film or series still lacks from The Movie
+  Database. Migration 0031 (before the deploy) made the
   tables and moved the film the library kept (Dune) into films.
 - `GET /api/series` and `GET /api/series-watches`: the same for the
   series, which are films of another kind (`kind`: `film` or `series`, which

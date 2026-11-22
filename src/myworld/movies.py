@@ -9,7 +9,9 @@ one; Wikidata does (property P1258), so the details call follows the
 Wikidata id when TMDB gives one. Needs TMDB_API_KEY (a v3 API key); the
 Wikidata call is anonymous.
 
-What Wikidata says of films by their IMDb ids (wikidata_films: the item,
+What TMDB says of a film or series by its IMDb id (tmdb_find: its id there,
+the year it came out or started, its poster) fills in what Wikidata does
+not have, when the key is there. What Wikidata says of films by their IMDb ids (wikidata_films: the item,
 the English title, the year, the directors) fills in the films the
 importer brings that it has no more than an IMDb id of.
 """
@@ -22,6 +24,8 @@ import requests
 
 TMDB_API = "https://api.themoviedb.org/3"
 TMDB_IMAGES = "https://image.tmdb.org/t/p/w92"
+# a poster as the importer keeps it: wide enough for a card
+TMDB_POSTERS = "https://image.tmdb.org/t/p/w500"
 WIKIDATA_ENTITY = "https://www.wikidata.org/wiki/Special:EntityData"
 WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
 ROTTEN_TOMATOES_PROPERTY = "P1258"
@@ -186,3 +190,36 @@ def wikidata_films(imdb_ids: list[str]) -> dict[str, dict[str, Any]]:
                 "directors": ", ".join(d for d in row.get("directors", "").split(", ") if d and not re.fullmatch(r"Q\d+", d)),
             })
     return found
+
+
+def tmdb_find(imdb: str) -> dict[str, Any] | None:
+    """
+    What TMDB says of the film or series of an IMDb id ("tt0816692"): its id
+    there, whether it is a series, the year it came out (a series, started)
+    and its poster's address ("" when it has none); None when TMDB does not
+    know it.
+    """
+    if not IMDB_ID.fullmatch(imdb):
+        raise MovieLookupError(f"{imdb!r} is not an IMDb id")
+    data = tmdb_get(f"/find/{imdb}", external_source="imdb_id")
+    series = data.get("tv_results") or []
+    found = (series or data.get("movie_results") or [None])[0]
+    if not isinstance(found, dict):
+        return None
+    poster = found.get("poster_path")
+    return {
+        "tmdb_id": found["id"],
+        "series": bool(series),
+        "year": _year(found.get("first_air_date") or found.get("release_date")),
+        "poster_url": f"{TMDB_POSTERS}{poster}" if poster else "",
+    }
+
+
+def poster_bytes(url: str) -> bytes:
+    """ A poster's image (JPEG); the tests replace this. """
+    response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT)
+    if not response.ok:
+        raise MovieLookupError(f"TMDB's images answered {response.status_code}")
+    if not response.content.startswith(b"\xff\xd8"):
+        raise MovieLookupError(f"{url} is not a JPEG image")
+    return response.content

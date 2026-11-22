@@ -55,8 +55,9 @@ series) from data/yaml/video_series.yaml, each with the seasons seen and
 not, their posters from static/images/series-<imdb_id>.jpg; and the films still to see
 from ../data/json/movies_to_see.json (by IMDb id, with who recommended each
 and its genre). A film is shared, found again by its IMDb id; what Wikidata
-says of it (the title, the year, the directors) fills in what is missing.
-Each watch is the account's (one it has already, of the film on the same
+says of it (the title, the year, the directors) fills in what is missing,
+and with TMDB_API_KEY set what The Movie Database says (the year, the
+poster, its id there) fills in what is still missing. Each watch is the account's (one it has already, of the film on the same
 date, is left as it is); a film to see is a watch of the status Want to see,
 added when the account has none of that film. The people named are the
 account's own, matched by name exactly; --films can run again.
@@ -1456,7 +1457,7 @@ def import_films(session: Session, owner: User, source: Path) -> dict[str, int]:
     posters, and owner's watches of them: a film is
     found again by its IMDb id (one there gets only the ids it lacks), and
     what Wikidata says fills in the title, year and directors a film has
-    not. A watch is added unless owner has one of that film on that date; a
+    not, and TMDB (when its key is there) the year, poster and TMDB id. A watch is added unless owner has one of that film on that date; a
     film to see unless owner has any watch of it. Safe to run again. Does
     not commit.
     """
@@ -1484,7 +1485,7 @@ def import_films(session: Session, owner: User, source: Path) -> dict[str, int]:
     device = Devices(session, owner)
     counts = {
         "films added": 0, "series added": 0, "films filled from Wikidata": 0, "posters added": 0,
-        "film watches added": 0, "series watches added": 0, "films to see added": 0,
+        "film watches added": 0, "series watches added": 0, "films to see added": 0, "films filled from TMDB": 0,
     }
 
     def film(imdb: str, name: str = "", kind: str = "film", prefix: str = "movie") -> Film:
@@ -1564,6 +1565,22 @@ def import_films(session: Session, owner: User, source: Path) -> dict[str, int]:
             found.directors = found.directors or facts["directors"]
             found.wikidata_id = found.wikidata_id or facts["wikidata_id"]
             counts["films filled from Wikidata"] += before != (found.name, found.year, found.directors, found.wikidata_id)
+    # and what TMDB says (when its key is there) of those still without a year, a poster or their TMDB id
+    if movies.configured():
+        for found in [f for f in films.values() if f.imdb_id and (f.year is None or (f.image_id is None and f.image is None) or f.tmdb_id is None)]:
+            try:
+                facts = movies.tmdb_find(found.imdb_id or "")
+                data = movies.poster_bytes(facts["poster_url"]) if facts and facts["poster_url"] and found.image_id is None and found.image is None else None
+            except (movies.MovieLookupError, OSError, ValueError, KeyError) as e:
+                raise WorldImportError(f"TMDB: {found.imdb_id}: {e}") from e
+            if facts is None:
+                continue
+            found.year = found.year if found.year is not None else facts["year"]
+            found.tmdb_id = found.tmdb_id if found.tmdb_id is not None else facts["tmdb_id"]
+            if data is not None:
+                found.image = Image(owner_id=owner.id, filename=f"tmdb-{found.imdb_id}.jpg", content_type="image/jpeg", sha256=hashlib.sha256(data).hexdigest(), data=data)
+                counts["posters added"] += 1
+            counts["films filled from TMDB"] += 1
     nameless = [f.imdb_id for f in films.values() if not f.name]
     if nameless:
         raise WorldImportError(f"neither the sources nor Wikidata name the films {nameless}")

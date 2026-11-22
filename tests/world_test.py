@@ -1131,14 +1131,23 @@ def test_films_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_
         ]
 
     monkeypatch.setattr(movies, "sparql", sparql)
+    # TMDB has Grizzly Man's poster (the only film with no poster of the site); Fauda it does not know
+    monkeypatch.setattr(movies, "configured", lambda: True)
+    found = {
+        "tt0816692": {"tv_results": [], "movie_results": [{"id": 157336, "release_date": "2014-11-05", "poster_path": "/i.jpg"}]},
+        "tt0427312": {"tv_results": [], "movie_results": [{"id": 501, "release_date": "2005-01-24", "poster_path": "/g.jpg"}]},
+        "tt4565380": {"tv_results": [], "movie_results": []},
+    }
+    monkeypatch.setattr(movies, "tmdb_get", lambda path, **_params: found[path.removeprefix("/find/")])
+    monkeypatch.setattr(movies, "poster_bytes", lambda url: b"\xff\xd8" + url.encode())
     source = write_source(tmp_path / "site")
     write_films(source)
     with Session(engine) as session:
         counts = import_world.import_films(session, owner(session), source)
         session.commit()
     assert counts == {
-        "films added": 2, "series added": 1, "films filled from Wikidata": 3, "posters added": 2,
-        "film watches added": 2, "series watches added": 1, "films to see added": 1, "devices added": 1,
+        "films added": 2, "series added": 1, "films filled from Wikidata": 3, "posters added": 3,
+        "film watches added": 2, "series watches added": 1, "films to see added": 1, "films filled from TMDB": 2, "devices added": 1,
     }
     [fauda] = imported.get("/api/series-watches").json
     assert (fauda["name"], fauda["seasons_seen"], fauda["seasons_not_seen"], fauda["year"], fauda["rotten_tomatoes_id"]) == ("Fauda", [1, 2, 3], [4], 2015, "tv/fauda")
@@ -1153,7 +1162,9 @@ def test_films_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_
     assert (films["Interstellar"]["year"], films["Interstellar"]["directors"], films["Interstellar"]["imdb_id"], films["Interstellar"]["rotten_tomatoes_id"]) == (
         2014, "Christopher Nolan", "tt0816692", "m/interstellar_2014",
     )
-    assert films["Interstellar"]["image"] and films["Grizzly Man"]["image"] is None
+    # the site's poster is kept; the one it has not, TMDB's; and each its TMDB id
+    assert films["Interstellar"]["image"] and films["Grizzly Man"]["image"]
+    assert (films["Interstellar"]["tmdb_id"], films["Grizzly Man"]["tmdb_id"]) == (157336, 501)
     assert (films["Grizzly Man"]["directors"], films["Grizzly Man"]["genres"], films["Grizzly Man"]["wikidata_id"]) == ("Werner Herzog", ["documentary"], "Q1067409")
     # what was edited stays; a run again adds nothing, and asks Wikidata of nothing (every film has all it says)
     imported.put_json(f"/api/film-watches/{watches[0]['id']}", {"film_id": watches[0]["film"]["id"], "date": watches[0]["date"], "rating": 10})
@@ -1163,7 +1174,7 @@ def test_films_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_
         session.commit()
     assert counts == {
         "films added": 0, "series added": 0, "films filled from Wikidata": 0, "posters added": 0,
-        "film watches added": 0, "series watches added": 0, "films to see added": 0, "devices added": 0,
+        "film watches added": 0, "series watches added": 0, "films to see added": 0, "films filled from TMDB": 0, "devices added": 0,
     }
     assert asked == []
     assert imported.get("/api/film-watches").json[0]["rating"] == 10

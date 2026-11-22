@@ -275,7 +275,8 @@ const BOOK_CATALOGS = [
 // a film's pages, the same way
 const FILM_CATALOGS = [
 	["imdb_id", "IMDb", (id) => `https://www.imdb.com/title/${id}/`],
-	["tmdb_id", "TMDB", (id) => `https://www.themoviedb.org/movie/${id}`],
+	// a series is at TMDB under /tv/, a film under /movie/
+	["tmdb_id", "TMDB", (id, item) => `https://www.themoviedb.org/${item.kind === "series" ? "tv" : "movie"}/${id}`],
 	["wikidata_id", "Wikidata", (id) => `https://www.wikidata.org/wiki/${id}`],
 	["rotten_tomatoes_id", "Rotten Tomatoes", (id) => `https://www.rottentomatoes.com/${id}`],
 ];
@@ -292,7 +293,7 @@ function catalogDetail(list, item, catalogs = BOOK_CATALOGS) {
 			li.append(", ");
 		}
 		const a = el("a", null, name);
-		a.href = url(item[key]);
+		a.href = url(item[key], item);
 		a.target = "_blank";
 		a.rel = "noopener";
 		li.appendChild(a);
