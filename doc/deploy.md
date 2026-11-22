@@ -385,10 +385,12 @@ on its card. The types are an enumeration the user keeps on the sidebar's Types,
 Org: add, rename, describe or delete them there, and pick one in the
 organization dialog. A type still in use cannot be deleted. An import
 starts the user with Company, University, College, Government, Public
-body, Military and Non-profit; `organizations.yaml` has no type field, so
-the importer types the few organizations that are not companies by name
-(`ORGANIZATION_TYPE_BY_NAME` in `scripts/import_world.py`), and a `type`
-in the YAML would win. `--only-types` imports nothing and only adds the
+body, Military, Non-profit and Publisher; `organizations.yaml` has no type
+field, so the importer makes a publisher (`publisher` among its functions)
+a Publisher, types the few other organizations that are not companies by
+name (`ORGANIZATION_TYPE_BY_NAME` in `scripts/import_world.py`), and a
+`type` in the YAML would win. The publishers (Audible, Penguin Audio, ...
+live only in My World now: they left `organizations.yaml`. `--only-types` imports nothing and only adds the
 starting types a user lacks and types the organizations and people that
 have none.
 

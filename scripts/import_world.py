@@ -219,8 +219,11 @@ ORGANIZATION_TYPES = {
     "Public body": "Owned or chartered by the public, not a ministry",
     "Military": "An army unit or school",
     "Non-profit": "A charity or other organization not run for profit",
+    "Publisher": "Publishes books, audio books, courses or broadcasts",
 }
 DEFAULT_ORGANIZATION_TYPE = "Company"
+# the type of an organization whose functions include publisher
+PUBLISHER_TYPE = "Publisher"
 # the professions (person types) every import starts the user with; how a
 # person is related to the user is a person relation instead (to the user's
 # own person, see self_person)
@@ -295,7 +298,6 @@ ORGANIZATION_TYPE_BY_NAME = {
     "Bank of Israel": "Government",
     "Bituach Leumi": "Government",
     "Mifal Hapayis": "Public body",
-    "BBC Radio": "Public body",
     "Basmach": "Military",
     "MercyCorps": "Non-profit",
 }
@@ -384,8 +386,10 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
-def type_for(name: str) -> str:
-    """ The type name an organization of organizations.yaml gets when the YAML does not say. """
+def type_for(name: str, functions: list[str] | None = None) -> str:
+    """ The type name an organization of organizations.yaml gets when the YAML does not say: a publisher (by its functions) is a Publisher. """
+    if "publisher" in (functions or []):
+        return PUBLISHER_TYPE
     return ORGANIZATION_TYPE_BY_NAME.get(name, DEFAULT_ORGANIZATION_TYPE)
 
 
@@ -508,7 +512,7 @@ def give_types(session: Session, owner: User) -> dict[str, int]:
         session.delete(kind)
     typed = 0
     for organization in session.scalars(select(Organization).where(Organization.owner_id == owner.id, Organization.type_id.is_(None))):
-        organization.type = org_types[type_for(organization.name)]
+        organization.type = org_types[type_for(organization.name, [relation.name.lower() for relation in organization.relations])]
         typed += 1
     given_profession = given_relation = 0
     for person in people:
@@ -678,7 +682,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
         organization = Organization(
             owner_id=owner.id,
             name=item["name"],
-            type=organization_type(item.get("type") or type_for(item["name"])),
+            type=organization_type(item.get("type") or type_for(item["name"], item.get("functions"))),
             relations=[relation_type(word) for word in dict.fromkeys(item.get("functions", []))],
             **{key: item.get(key, "") for key in sorted(ORGANIZATION_COLUMNS - {"name", "type", "functions", "address", "remark"})},
             **_address(item.get("address", ""), item.get("remark", ""), city.of_location(item.get("location", "")), city),
