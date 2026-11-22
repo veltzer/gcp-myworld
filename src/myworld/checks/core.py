@@ -115,7 +115,7 @@ DATASETS: dict[str, str] = {
     "place-kinds": "Place kinds",
     "visit-types": "Visit types",
     "organizations": "Organizations",
-    "organization-types": "Org types",
+    "organization-types": "Organization tags",
     "person-types": "Professions",
     "relation-types": "Org relation types",
     "person-relation-types": "Person relation types",

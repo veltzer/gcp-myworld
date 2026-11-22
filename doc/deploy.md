@@ -334,7 +334,7 @@ inverse ("Child of"; a type without one, "Friend of", reads the same both
 ways). The person form adds and removes a person's own relations; the
 People list and Connections show both ways. The Relation types page,
 how an organization is related to the user, is Org relations in the sidebar. People and Organizations
-have a type filter next to the search that filters by relation too, the two together: on Organizations by how it is related to the user (Consulting: the companies consulted for), on People by how they are related to other people, read from their side (Friend of, Child of), each offered with how many rows have it; on a library kind (Books) the same control filters by status and by whether an entry has a
+have a filter next to the search, by tag on Organizations and by profession on People, that filters by relation too, the two together: on Organizations by how it is related to the user (Consulting: the companies consulted for), on People by how they are related to other people, read from their side (Friend of, Child of), each offered with how many rows have it; on a library kind (Books) the same control filters by status and by whether an entry has a
 cover, together (Done and No cover: the books read that have no cover).
 Other pages filter by values their rows have, each offered with how many
 rows have it (`VALUE_FILTERS` in `filters.js`): Chess by result, side and
@@ -386,7 +386,7 @@ Publisher),
 shown on its card (organization_type_links; migration 0033, before the
 deploy, made the one type each had, `organizations.type_id`, one of them,
 and 0034, after it, dropped the column). The types are an enumeration the
-user keeps on the sidebar's Types, Org: add, rename, describe or delete
+user keeps on the sidebar's Organization tags (under Your types; the organization dialog and cards call them Tags): add, rename, describe or delete
 them there, and pick any of them in the organization dialog. A type still
 in use cannot be deleted. An import
 starts the user with Company, University, College, Government, Public

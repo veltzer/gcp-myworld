@@ -592,7 +592,7 @@ export async function prepareWorkForm(form, entry) {
 	}
 }
 
-// The organization dialog's type list: the user's own organization types, and "none".
+// The organization dialog's tag list: the user's own organization tags (organization-types), and "none".
 export async function fillTypes(select, typesView, label = (t) => t.name) {
 	const types = await worldList(typesView);
 	const none = document.createElement("option");

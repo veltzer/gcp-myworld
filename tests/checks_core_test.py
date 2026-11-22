@@ -188,7 +188,7 @@ def test_ids_and_dated(world: Session) -> None:
 def test_one_of() -> None:
     assert core.one_of("devices") == "device"
     assert core.one_of("person-types") == "profession"
-    assert core.one_of("organization-types") == "organization type"
+    assert core.one_of("organization-types") == "organization tag"
     assert core.one_of("relation-types") == "organization relation type"
 
 

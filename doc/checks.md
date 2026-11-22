@@ -329,13 +329,13 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `organization-websites`: every organization's website, when it has one, is a
   well-formed URL: `http://` or `https://`, a host with a dot in it, no spaces.
 
-### Org types (`organization-types`)
+### Organization tags (`organization-types`)
 
-- `organization-type-used`: every organization type, of every account,
+- `organization-type-used`: every organization tag, of every account,
   is used by at least one row; one used by nothing can go.
-- `organization-type-descriptions`: every organization type, of every
+- `organization-type-descriptions`: every organization tag, of every
   account, has a description, so its tooltip and page say what it means.
-- `organization-type-duplicates`: no account has two organization types
+- `organization-type-duplicates`: no account has two organization tags
   of the same name (ignoring case and spaces at the ends).
 
 ### Professions (`person-types`)

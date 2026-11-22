@@ -120,7 +120,7 @@ function renderStats(stats) {
 		statTile("People", stats.people, "", "people"),
 		statTile("Groups", stats.groups, "", "groups"),
 		statTile("Organizations", stats.organizations, "", "organizations"),
-		statTile("Organization types", stats.organization_types, "", "organization-types"),
+		statTile("Organization tags", stats.organization_types, "", "organization-types"),
 		statTile("Professions", stats.person_types, "", "person-types"),
 		statTile("Org relation types", stats.relation_types, "", "relation-types"),
 		statTile("Person relation types", stats.person_relation_types, "", "person-relation-types"),

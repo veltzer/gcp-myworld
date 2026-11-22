@@ -134,12 +134,19 @@ const RELATED = {
 	people: { all: "All people", values: (p) => [...p.relations, ...p.related].map((r) => r.type) },
 };
 
+// What the type group of a TYPED view is called, as its sidebar page is:
+// an organization's are its tags, a person's their professions.
+const TYPE_WORDS = {
+	organizations: { heading: "Tag", none: "No tag" },
+	people: { heading: "Profession", none: "No profession" },
+};
+
 // What a view is filtered by: what the button says with nothing picked, and
 // its groups ({key, heading, options: [{value, name, count}]}). Null: nothing to filter by.
 async function filterSpec(view) {
 	if (TYPED[view]) {
 		const typeRows = await worldList(TYPED[view]);
-		const types = [...typeRows.map((t) => ({ value: String(t.id), name: t.name, count: t.count })), { value: "none", name: "No type", count: null }];
+		const types = [...typeRows.map((t) => ({ value: String(t.id), name: t.name, count: t.count })), { value: "none", name: TYPE_WORDS[view].none, count: null }];
 		if (!RELATED[view]) {
 			return { all: "All types", groups: [{ key: "type", heading: "", options: types }] };
 		}
@@ -154,7 +161,7 @@ async function filterSpec(view) {
 		return {
 			all: RELATED[view].all,
 			groups: [
-				{ key: "type", heading: "Type", options: types },
+				{ key: "type", heading: TYPE_WORDS[view].heading, options: types },
 				{ key: "relation", heading: "Relation", options: [...relations, { value: "none", name: "No relation", count: null }] },
 			],
 		};

@@ -46,7 +46,7 @@ export const WORLDS = {
 	people: ["People", "/api/people", "person", "People"],
 	groups: ["Groups", "/api/groups", "group", "Groups"],
 	organizations: ["Organizations", "/api/organizations", "organization", "Organizations"],
-	"organization-types": ["Organization types", "/api/organization-types", "organization type", "Org"],
+	"organization-types": ["Organization tags", "/api/organization-types", "organization tag", "Organization tags"],
 	// what a person does (performer, book author, ...); how they are related to people is a person relation
 	"person-types": ["Professions", "/api/person-types", "profession", "Professions"],
 	"relation-types": ["Relation types", "/api/relation-types", "relation type", "Org relations"],

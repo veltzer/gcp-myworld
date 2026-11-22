@@ -883,7 +883,7 @@
 					<label title="What the organization is called" class="wide">Name <input name="name" required></label>
 					<label title="Where its headquarters are, in the words of the source: city, region, country" class="wide">Headquarters, as written <input name="location" placeholder="City, region, country, and anything more"></label>
 					<label title="The city of its headquarters; add a new one on the Cities page">Headquarters <select name="headquarters_id" data-picker="cities" data-placeholder="Type a city" title="The city of its headquarters; add a new one on the Cities page"></select></label>
-					<label title="What kind of organization it is, each one of Org types (a public body and a publisher); add a new one on the Org page" class="wide">Types <select multiple data-chips="organization-types" data-field="types" data-placeholder="Type a name from Org types"><option value=""></option></select></label>
+					<label title="What kind of organization it is, each one of Organization tags (a public body and a publisher); add a new one on the Organization tags page" class="wide">Tags <select multiple data-chips="organization-types" data-field="types" data-placeholder="Type a name from Organization tags"><option value=""></option></select></label>
 				</div>
 				<div class="row">
 					<label title="What the organization is to you, each one of Org relations: taught there, consulted, ..." class="wide">Relation to me <select multiple data-chips="relation-types" data-field="relations" data-placeholder="Type a name from Relation types"><option value=""></option></select></label>
@@ -1094,10 +1094,10 @@
 			</form>
 			<form id="organization-type-form" class="dialog-form" hidden>
 				<div class="row">
-					<label title="What the organization type is called" class="wide">Name <input name="name" required placeholder="e.g. Hospital"></label>
+					<label title="What the organization tag is called" class="wide">Name <input name="name" required placeholder="e.g. Hospital"></label>
 				</div>
 				<div class="row">
-					<label title="What the organization type means: shown as its tooltip and on its page" class="wide">Description <input name="description"></label>
+					<label title="What the organization tag means: shown as its tooltip and on its page" class="wide">Description <input name="description"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>

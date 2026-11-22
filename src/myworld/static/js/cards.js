@@ -208,7 +208,7 @@ function museumCard(item) {
 function organizationCard(item) {
 	const { card, list } = cardShell(item, item.location, "logo");
 	cornerOf(card).appendChild(placeButton(item));
-	linksDetail(list, "Types", "organization-types", item.types);
+	linksDetail(list, "Tags", "organization-types", item.types);
 	// the office's city, and where its headquarters are when elsewhere
 	linksDetail(list, "City", "cities", item.city ? [item.city] : []);
 	linksDetail(list, "Headquarters", "cities", item.headquarters && item.headquarters.id !== item.city?.id ? [item.headquarters] : []);
