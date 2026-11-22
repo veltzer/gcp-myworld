@@ -348,7 +348,7 @@ left keeps the control, disabled.
 
 The pickers over the user's own rows (performers, people they went with,
 members, lecturers, types, organizations, groups, a concert's place, the
-other person of a relation) are Tom Select (https://tom-select.js.org/,
+other person of a relation) are Tom Select (<https://tom-select.js.org/>,
 Apache-2.0), loaded from cdnjs with its integrity hash, at an exact version
 as Leaflet is (a script from a CDN has no lockfile). Typing offers the best
 few matches, each with what tells two of the same name apart; a list of more

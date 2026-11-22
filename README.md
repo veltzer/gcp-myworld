@@ -5,7 +5,7 @@
 
 description: My World: a personal record of books, concerts, museums, courses and more
 
-project website: https://veltzer.github.io/gcp-myworld
+project website: <https://veltzer.github.io/gcp-myworld>
 
 author: Mark Veltzer
 
