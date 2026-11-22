@@ -394,8 +394,11 @@ body, Military, Non-profit and Publisher; `organizations.yaml` has no type
 field, so the importer types the few organizations that are not companies
 by name (`ORGANIZATION_TYPE_BY_NAME` in `scripts/import_world.py`) and makes
 a publisher (`publisher` among its functions) a Publisher too, and a `type`
-in the YAML (a name or a list of them) would win. The publishers (Audible, Penguin Audio, ...
-live only in My World now: they left `organizations.yaml`. `--only-types` imports nothing and only adds the
+in the YAML (a name or a list of them) would win. The publishers (Audible, Penguin Audio, ...)
+live only in My World now: they left `organizations.yaml`. So does the
+consulting: the companies consulted for are those with the relation
+Consulting here, and `organizations.yaml` has no `consulting` function any
+more (the ones that were only that left it). `--only-types` imports nothing and only adds the
 starting types a user lacks and types the organizations and people that
 have none.
 
