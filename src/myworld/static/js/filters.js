@@ -9,7 +9,8 @@ import { SIDES, TYPED, el, formatDate } from "./worlds.js";
 // The filter next to the search, in groups. On a view whose rows have a
 // type (people, organizations) one group picks types; on a library kind
 // one picks statuses (Done, Want to, ...) and one whether it has a cover; on
-// the chess games one picks how they ended, one the side played, one the site.
+// the views of VALUE_FILTERS each group picks values the rows have (the
+// chess games: how they ended, the side played, the site).
 // Kept per view as a set of "group:value" ("type:none" for the rows without
 // a type), empty for everything. A row matches when, in every group with
 // something picked, it has one of the picked values.
@@ -22,6 +23,76 @@ export function pickedTypes(view) {
 	return typeFilters[view];
 }
 
+// how far a listen (or a book heard) got, in words
+const LISTEN_STATUS = { done: "Finished", in_progress: "In progress", "": "Not started" };
+const named = (ref) => (ref ? [ref.name] : []);
+
+// The views filtered by values their rows have: what the button says with
+// nothing picked, and each group's key, heading and the row's values in it
+// (a list: a row may have several, or none); each value is offered with how
+// many rows have it, the most first.
+const VALUE_FILTERS = {
+	chess: {
+		all: "All games",
+		groups: [
+			["outcome", "Result", (g) => [g.outcome]],
+			["color", "Played as", (g) => [SIDES[g.color]]],
+			["site", "Site", (g) => [g.site]],
+		],
+	},
+	"audio-courses": {
+		all: "All courses",
+		groups: [
+			["status", "Status", (c) => [c.date ? "Finished" : "In progress"]],
+			["device", "Device", (c) => named(c.device)],
+		],
+	},
+	"audio-books-heard": {
+		all: "All audio books",
+		groups: [
+			["status", "Status", (b) => [LISTEN_STATUS[b.status]]],
+			["kind", "Versions heard", (b) => b.listens.map((l) => l.name)],
+		],
+	},
+	"audio-book-listens": {
+		all: "All listens",
+		groups: [
+			["kind", "Kind", (b) => [b.kind_name]],
+			["status", "Status", (b) => [LISTEN_STATUS[b.status]]],
+			["device", "Device", (b) => named(b.device)],
+		],
+	},
+	"audio-books": {
+		all: "All audio books",
+		groups: [["kind", "Versions", (b) => b.versions.map((v) => v.name)]],
+	},
+	"audio-book-versions": {
+		all: "All versions",
+		groups: [
+			["kind", "Kind", (v) => [v.kind_name]],
+			["heard", "You heard it", (v) => [v.listen ? "Heard" : "Not heard"]],
+		],
+	},
+	"podcast-episodes": {
+		all: "All episodes",
+		groups: [
+			["podcast", "Podcast", (e) => named(e.podcast)],
+			["heard", "You heard it", (e) => [e.heard ? "Heard" : "Not heard"]],
+		],
+	},
+	"episodes-heard": {
+		all: "All episodes",
+		groups: [
+			["podcast", "Podcast", (e) => named(e.podcast)],
+			["device", "Device", (e) => named(e.device)],
+		],
+	},
+	youtube: {
+		all: "All videos",
+		groups: [["device", "Device", (v) => named(v.device)]],
+	},
+};
+
 // What a view is filtered by: what the button says with nothing picked, and
 // its groups ({key, heading, options: [{value, name, count}]}). Null: nothing to filter by.
 async function filterSpec(view) {
@@ -30,21 +101,21 @@ async function filterSpec(view) {
 		const options = types.map((t) => ({ value: String(t.id), name: t.name, count: t.count }));
 		return { all: "All types", groups: [{ key: "type", heading: "", options: [...options, { value: "none", name: "No type", count: null }] }] };
 	}
-	if (view === "chess") {
-		// how it ended, the side played and where it was played, each value with how many games have it
-		const games = await worldList(view);
-		const group = (key, heading, value) => {
+	if (VALUE_FILTERS[view]) {
+		const rows = await worldList(view);
+		const groups = VALUE_FILTERS[view].groups.map(([key, heading, values]) => {
 			const counts = new Map();
-			for (const game of games) {
-				counts.set(value(game), (counts.get(value(game)) || 0) + 1);
+			for (const row of rows) {
+				for (const value of new Set(values(row))) {
+					counts.set(value, (counts.get(value) || 0) + 1);
+				}
 			}
 			const options = [...counts].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ value: name, name: name || "(none)", count }));
 			return { key, heading, options };
-		};
-		return {
-			all: "All games",
-			groups: [group("outcome", "Result", (g) => g.outcome), group("color", "Played as", (g) => SIDES[g.color]), group("site", "Site", (g) => g.site)],
-		};
+		});
+		// a group with one value or none filters nothing: left out; with none left, there is nothing to filter by
+		const kept = groups.filter((group) => group.options.length > 1);
+		return kept.length ? { all: VALUE_FILTERS[view].all, groups: kept } : null;
 	}
 	if (state.config.kinds[view]) {
 		const count = (test) => state.entries.filter(test).length;
@@ -63,20 +134,15 @@ async function filterSpec(view) {
 
 // a row's values in a filter group
 function filterValues(group, item) {
-	if (group === "status") {
+	if (group === "status" && !VALUE_FILTERS[state.view]) {
 		return [item.status];
 	}
 	if (group === "cover") {
 		return [item.image ? "yes" : "no"];
 	}
-	if (group === "outcome") {
-		return [item.outcome];
-	}
-	if (group === "color") {
-		return [SIDES[item.color]];
-	}
-	if (group === "site") {
-		return [item.site];
+	const valued = VALUE_FILTERS[state.view]?.groups.find(([key]) => key === group);
+	if (valued) {
+		return valued[2](item);
 	}
 	// a person has a list of types, an organization one
 	const types = item.types || (item.type ? [item.type] : []);
@@ -154,10 +220,15 @@ const FILTER_GROUPS = {
 	type: (view) => Boolean(TYPED[view]),
 	status: (view) => view in state.config.kinds,
 	cover: (view) => view in state.config.kinds,
-	outcome: (view) => view === "chess",
-	color: (view) => view === "chess",
-	site: (view) => view === "chess",
 };
+
+// a view's groups: those of VALUE_FILTERS, or else those FILTER_GROUPS says it has
+function groupsOf(view) {
+	if (VALUE_FILTERS[view]) {
+		return VALUE_FILTERS[view].groups.map(([key]) => key);
+	}
+	return Object.entries(FILTER_GROUPS).filter(([, applies]) => applies(view)).map(([key]) => key);
+}
 
 export function typeMatches(item) {
 	const view = state.view;
@@ -166,10 +237,7 @@ export function typeMatches(item) {
 		return true;
 	}
 	// within a group any picked value will do; every group with a pick must match
-	return Object.entries(FILTER_GROUPS).every(([group, applies]) => {
-		if (!applies(view)) {
-			return true;
-		}
+	return groupsOf(view).every((group) => {
 		const wanted = [...picked].filter((value) => value.startsWith(`${group}:`));
 		return wanted.length === 0 || filterValues(group, item).some((value) => wanted.includes(`${group}:${value}`));
 	});

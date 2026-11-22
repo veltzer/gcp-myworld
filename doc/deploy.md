@@ -336,6 +336,15 @@ People list and Connections show both ways. The Relation types page,
 how an organization is related to the user, is Org relations in the sidebar. People and Organizations
 have a type filter next to the search; on a library kind (Books) the same control filters by status and by whether an entry has a
 cover, together (Done and No cover: the books read that have no cover).
+Other pages filter by values their rows have, each offered with how many
+rows have it (`VALUE_FILTERS` in `filters.js`): Chess by result, side and
+site; Audio courses by status and device; Your audio books by status and
+the kinds of version heard; Audio book listens by kind (Audible, MP3),
+status and device; Audio books by the kinds of its versions; Audio book
+versions by kind and whether you heard it; Podcast episodes by podcast and
+whether you heard it; Episodes heard by podcast and device; YouTube by
+device. A group with a single value is left out, and a page with no group
+left keeps the control, disabled.
 
 The pickers over the user's own rows (performers, people they went with,
 members, lecturers, types, organizations, groups, a concert's place, the
