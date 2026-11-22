@@ -1,9 +1,12 @@
 """
-The books of the user's Audible library, as audio books from Audible: each
-one they do not have yet is added, with its cover; one they have is given
-what Audible says of it now (finished, how much was heard, its rating
-there, ...) and keeps everything they wrote of it (rating, review, title,
-...). It only ever adds: a book gone from the library since stays.
+The books of the user's Audible library, as their listens of the books'
+Audible versions. Audio books are shared: a book My World does not have
+yet is added (with its cover, and its Audible version), and so is the
+Audible version of a book it has; one there already is given what Audible
+says of it now (its rating there, ...), and the user's listen what the
+library says of their listening (finished, how much was heard). What
+anyone wrote (a rating, a review, a title) stays. It only ever adds: a
+book gone from the library since stays.
 """
 
 from typing import Any
@@ -44,11 +47,12 @@ IMPORTER = register(Importer(
     name="audible-library",
     title="Audible library",
     description=(
-        "The books of your Audible library, as audio books. Only the ones you do not have are added, with their covers; "
-        "the ones you have get Audible's details as they are now (finished, how much you heard, the rating there) and keep "
-        "your rating, review and edits. Safe to run again: it only ever adds."
+        "The books of your Audible library, as your listens of their Audible versions. A book My World does not have yet is "
+        "added to the shared Audio books, with its cover; the ones there get Audible's details as they are now (the rating "
+        "there), your listens what the library says (finished, how much you heard), and everyone's ratings, reviews and edits "
+        "stay. Safe to run again: it only ever adds."
     ),
-    dataset="audio-books",
+    dataset="audio-book-listens",
     params=(),
     run=run,
     unavailable=unavailable,

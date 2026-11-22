@@ -266,31 +266,16 @@ const WORLD_BODIES = {
 			...(await pictureBody(form)),
 		};
 	},
-	"audio-books": async (form) => {
-		const value = (name) => form.elements[name].value;
-		return {
-			name: value("name"),
-			subtitle: value("subtitle"),
-			authors: value("authors"),
-			narrators: value("narrators"),
-			series: value("series"),
-			series_sequence: value("series_sequence"),
-			genres: value("genres"),
-			minutes: value("minutes"),
-			finished: form.elements.finished.checked,
-			percent_heard: value("percent_heard"),
-			rating: value("rating"),
-			review: value("review"),
-			date: value("date"),
-			date_timezone: state.editing?.date_timezone || where(),
-			started: value("started"),
-			progress: value("progress"),
-			device_id: value("device_id"),
-			listened_at: value("listened_at"),
-			source: value("source"),
-			source_id: value("source_id"),
-			...(await pictureBody(form)),
-		};
+	"audio-books": async (form) => ({
+		...Object.fromEntries(["name", "subtitle", "authors", "series", "series_sequence"].map((name) => [name, form.elements[name].value])),
+		...(await pictureBody(form)),
+	}),
+	"audio-book-versions": async (form) => Object.fromEntries(["book_id", "kind", "narrators", "minutes", "parts", "asin", "released", "genres"]
+		.map((name) => [name, form.elements[name].value])),
+	"audio-books-heard": async (form) => Object.fromEntries(["book_id", "rating", "review"].map((name) => [name, form.elements[name].value])),
+	"audio-book-listens": async (form) => {
+		const body = Object.fromEntries(["version_id", "percent_heard", "date", "started", "progress", "device_id", "listened_at"].map((name) => [name, form.elements[name].value]));
+		return { ...body, finished: form.elements.finished.checked, date_timezone: state.editing?.date_timezone || where() };
 	},
 	podcasts: async (form) => {
 		const value = (name) => form.elements[name].value;

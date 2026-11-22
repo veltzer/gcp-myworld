@@ -25,6 +25,8 @@ from myworld import addresses, checks, cities, languages, names, notes
 from myworld.models import (
     SEED_LOCALES,
     AudioBook,
+    AudioBookListen,
+    AudioBookVersion,
     AudioCourse,
     Concert,
     Cover,
@@ -787,25 +789,36 @@ def test_audio_courses_import_adds_once(imported: webtest.TestApp, engine: Engin
 
 
 def test_audio_books(imported: webtest.TestApp) -> None:
+    # the books are shared, by title, each with its versions
     books = imported.get("/api/audio-books").json
-    # the latest into the library first
-    # the latest finished or into the library first; one never finished nor added (only started) last
-    assert [b["name"] for b in books] == ["Political Order and Political Decay", "Making Sense", "Letter to a Christian Nation", "Heretic"]
-    order, sense, letter, heretic = books
-    assert (sense["source"], sense["source_name"], sense["source_id"], sense["url"]) == ("audible", "Audible", "0063005409", "https://www.audible.com/pd/0063005409")
-    assert (sense["subtitle"], sense["authors"], sense["narrators"], sense["minutes"]) == ("Conversations on Consciousness", "Sam Harris", "Sam Harris, David Chalmers", 1346)
-    # everything as Audible gives it: the genres repeats too, the cover's address, when bought
-    assert sense["genres"] == ["Psychology", "Science", "Psychology"]
-    assert (sense["cover_url"], sense["purchased"]) == ("https://m.media-amazon.com/images/I/x.jpg", "2021-08-11T00:00:00Z")
-    assert (sense["finished"], sense["status"], sense["source_rating"], sense["source_ratings"]) == (True, "done", 4.7, 592)
-    assert (sense["added"], sense["released"], sense["rating"], sense["review"]) == ("2021-08-10T08:55:06.867000Z", "2020-08-11", None, "")
+    assert [b["name"] for b in books] == ["Heretic", "Letter to a Christian Nation", "Making Sense", "Political Order and Political Decay"]
+    heretic, letter, sense, order = books
+    assert (sense["subtitle"], sense["authors"], [v["name"] for v in sense["versions"]], sense["url"]) == (
+        "Conversations on Consciousness", "Sam Harris", ["Audible"], "https://www.audible.com/pd/0063005409")
     assert imported.get(sense["image"]).body == b"\xff\xd8sense"
-    # what Audible leaves empty is empty; a book without a cover file has none
-    assert (order["series"], order["series_sequence"], order["minutes"], order["released"], order["source_rating"]) == ("Political Order", "2", None, "", None)
-    assert (order["finished"], order["status"], order["percent_heard"], order["image"]) == (False, "in_progress", 12.5, None)
-    # heard elsewhere: no source; said as an audio course is
-    assert (letter["source"], letter["source_id"], letter["authors"], letter["url"]) == ("", "", "Sam Harris", "")
-    assert (letter["finished"], letter["status"], letter["date"], letter["date_timezone"]) == (True, "done", "2016-05-01T21:33:15Z", "Asia/Jerusalem")
+    assert (order["series"], order["series_sequence"], order["image"]) == ("Political Order", "2", None)
+    # heard elsewhere: MP3 files
+    assert ([v["name"] for v in letter["versions"]], letter["authors"], letter["url"]) == (["MP3"], "Sam Harris", "")
+    assert "rating" not in letter and "finished" not in letter
+    # the versions: what Audible says of an Audible one, everything as Audible gives it (the genres repeats too)
+    versions = {v["name"]: v for v in imported.get("/api/audio-book-versions").json}
+    audible = versions["Making Sense (Audible)"]
+    assert (audible["kind"], audible["asin"], audible["narrators"], audible["minutes"]) == ("audible", "0063005409", "Sam Harris, David Chalmers", 1346)
+    assert (audible["genres"], audible["cover_url"], audible["released"]) == (["Psychology", "Science", "Psychology"], "https://m.media-amazon.com/images/I/x.jpg", "2020-08-11")
+    assert (audible["source_rating"], audible["source_ratings"], audible["listen"]["date"]) == (4.7, 592, None)
+    assert (versions["Letter to a Christian Nation (MP3)"]["kind"], versions["Letter to a Christian Nation (MP3)"]["asin"]) == ("mp3", "")
+    # the user's: the books they heard, with their rating and review, and the versions heard
+    heard = {b["name"]: b for b in imported.get("/api/audio-books-heard").json}
+    assert sorted(heard) == ["Heretic", "Letter to a Christian Nation", "Making Sense", "Political Order and Political Decay"]
+    assert (heard["Making Sense"]["status"], heard["Making Sense"]["rating"], [v["name"] for v in heard["Making Sense"]["listens"]]) == ("done", None, ["Audible"])
+    # and each listen: the latest finished or into the library first; one never finished nor added (only started) last
+    listens = imported.get("/api/audio-book-listens").json
+    assert [b["name"] for b in listens] == ["Political Order and Political Decay", "Making Sense", "Letter to a Christian Nation", "Heretic"]
+    order, sense, letter, heretic = listens
+    assert (sense["purchased"], sense["added"], sense["finished"], sense["status"]) == ("2021-08-11T00:00:00Z", "2021-08-10T08:55:06.867000Z", True, "done")
+    assert (order["finished"], order["status"], order["percent_heard"], order["minutes"]) == (False, "in_progress", 12.5, None)
+    assert (letter["kind_name"], letter["version"]["name"], letter["status"], letter["date"], letter["date_timezone"]) == (
+        "MP3", "Letter to a Christian Nation (MP3)", "done", "2016-05-01T21:33:15Z", "Asia/Jerusalem")
     assert (letter["listened_at"], letter["device"]["name"], letter["started"]) == ("Night Walks", "Samsung S7", "")
     assert (heretic["authors"], heretic["status"], heretic["started"], heretic["progress"]) == ("Ayaan Hirsi Ali, A. N. Other", "in_progress", "2022-08-20T12:28:35Z", "did part03")
     assert (heretic["date"], heretic["listened_at"], heretic["device"]["name"]) == (None, "Home", "Desktop")
@@ -813,64 +826,84 @@ def test_audio_books(imported: webtest.TestApp) -> None:
 
 def test_edit_audio_book(imported: webtest.TestApp) -> None:
     sense = next(b for b in imported.get("/api/audio-books").json if b["name"] == "Making Sense")
-    edited = imported.put_json(f"/api/audio-books/{sense['id']}", dict(sense, rating=9, review="Deep", genres="Psychology, Philosophy, Psychology")).json
-    assert (edited["rating"], edited["review"], edited["genres"]) == (9, "Deep", ["Psychology", "Philosophy", "Psychology"])
-    # what only the source says is kept by an edit
-    assert (edited["cover_url"], edited["purchased"]) == (sense["cover_url"], sense["purchased"])
+    edited = imported.put_json(f"/api/audio-books/{sense['id']}", dict(sense, subtitle="On Consciousness")).json
     # the cover is kept when the edit sends none
-    assert edited["image"] == sense["image"]
-    added = imported.post_json("/api/audio-books", {"name": "A Book Heard Elsewhere", "authors": "Someone"}, status=201).json
-    assert (added["source"], added["source_id"], added["url"], added["status"]) == ("", "", "", "")
-    # a book is in a source's library once; an id needs its source; a source is one there is
-    imported.post_json("/api/audio-books", {"name": "x", "source": "audible", "source_id": "0063005409"}, status=409)
-    imported.post_json("/api/audio-books", {"name": "x", "source_id": "123"}, status=400)
-    imported.post_json("/api/audio-books", {"name": "x", "source": "nowhere"}, status=400)
-    imported.post_json("/api/audio-books", {"name": "x", "percent_heard": 101}, status=400)
-    # finished on a day, and the device it was heard on; then started only, on none
-    dated = imported.put_json(f"/api/audio-books/{added['id']}", dict(added, date="2024-03", listened_at="Car")).json
-    assert (dated["status"], dated["date"], dated["date_precision"], dated["listened_at"]) == ("done", "2024-03", "month", "Car")
-    started = imported.put_json(f"/api/audio-books/{added['id']}", dict(dated, date="", started="2024-01-02", progress="disc 2")).json
+    assert (edited["subtitle"], edited["image"], edited["versions"]) == ("On Consciousness", sense["image"], sense["versions"])
+    # a book is in Audio books once by its title, subtitle and authors
+    imported.post_json("/api/audio-books", {"name": "Making Sense", "subtitle": "On Consciousness", "authors": "Sam Harris"}, status=409)
+    book = imported.post_json("/api/audio-books", {"name": "A Book Heard Elsewhere", "authors": "Someone"}, status=201).json
+    # its versions: an Audible one in Audio book versions once by its ASIN, which only an Audible one has
+    version = imported.post_json("/api/audio-book-versions", {"book_id": book["id"], "kind": "mp3", "parts": 9, "minutes": 600}, status=201).json
+    assert (version["name"], version["parts"], version["url"]) == ("A Book Heard Elsewhere (MP3)", 9, "")
+    imported.post_json("/api/audio-book-versions", {"book_id": book["id"], "kind": "audible", "asin": "0063005409"}, status=409)
+    imported.post_json("/api/audio-book-versions", {"book_id": book["id"], "kind": "mp3", "asin": "123"}, status=400)
+    imported.post_json("/api/audio-book-versions", {"book_id": book["id"], "kind": "cd"}, status=400)
+    imported.post_json("/api/audio-book-versions", {"kind": "mp3"}, status=400)
+    edited = imported.put_json(f"/api/audio-book-versions/{version['id']}", {
+        "book_id": book["id"], "kind": "audible", "asin": "B0OTHER", "genres": "Psychology, Philosophy, Psychology", "released": "2020-01-02"}).json
+    assert (edited["genres"], edited["released"], edited["url"]) == (["Psychology", "Philosophy", "Psychology"], "2020-01-02", "https://www.audible.com/pd/B0OTHER")
+    # heard: finished on a day, and the device it was heard on; then started only, on none
+    listen = imported.post_json("/api/audio-book-listens", {"version_id": version["id"], "date": "2024-03", "listened_at": "Car"}, status=201).json
+    assert (listen["status"], listen["date"], listen["date_precision"], listen["listened_at"]) == ("done", "2024-03", "month", "Car")
+    started = imported.put_json(f"/api/audio-book-listens/{listen['id']}", {"version_id": version["id"], "started": "2024-01-02", "progress": "disc 2"}).json
     assert (started["status"], started["started"], started["progress"]) == ("in_progress", "2024-01-02T00:00:00Z", "disc 2")
-    imported.put_json(f"/api/audio-books/{added['id']}", dict(started, device_id=99999), status=400)
-    imported.delete(f"/api/audio-books/{added['id']}", status=204)
+    imported.put_json(f"/api/audio-book-listens/{listen['id']}", {"version_id": version["id"], "device_id": 99999}, status=400)
+    imported.put_json(f"/api/audio-book-listens/{listen['id']}", {"version_id": version["id"], "percent_heard": 101}, status=400)
+    # a version is heard once; the user rates the book
+    imported.post_json("/api/audio-book-listens", {"version_id": version["id"]}, status=409)
+    mine = next(b for b in imported.get("/api/audio-books-heard").json if b["name"] == "A Book Heard Elsewhere")
+    rated = imported.put_json(f"/api/audio-books-heard/{mine['id']}", {"book_id": book["id"], "rating": 9, "review": "Deep"}).json
+    assert (rated["rating"], rated["review"], rated["status"]) == (9, "Deep", "in_progress")
+    # what was heard stays: the listen goes first, then the version and the book may
+    imported.delete(f"/api/audio-book-versions/{version['id']}", status=409)
+    imported.delete(f"/api/audio-book-listens/{listen['id']}", status=204)
+    imported.delete(f"/api/audio-book-versions/{version['id']}", status=204)
+    imported.delete(f"/api/audio-books/{book['id']}", status=409)
+    imported.delete(f"/api/audio-books-heard/{mine['id']}", status=204)
+    imported.delete(f"/api/audio-books/{book['id']}", status=204)
     assert len(imported.get("/api/audio-books").json) == 4
 
 
 def test_audio_books_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
-    sense = next(b for b in imported.get("/api/audio-books").json if b["name"] == "Making Sense")
-    imported.put_json(f"/api/audio-books/{sense['id']}", dict(sense, name="Making Sense (edited)", rating=9))
+    mine = next(b for b in imported.get("/api/audio-books-heard").json if b["name"] == "Making Sense")
+    imported.put_json(f"/api/audio-books-heard/{mine['id']}", {"book_id": mine["book"]["id"], "rating": 9})
     source = write_source(tmp_path / "again")
     yaml_file = source / "data" / "yaml" / "audible.yaml"
-    # Audible since: the second book further along, and a third one bought
+    # Audible since: the second book further along, and a book heard as MP3 files bought there too
     text = yaml_file.read_text(encoding="UTF8").replace('percent_complete: "12.5"', 'percent_complete: "40.0"')
-    text += """  - asin: "B0NEWBOOK1"
-    title: "A New One"
+    text += """  - asin: "B002V1JDMM"
+    title: "Letter to a Christian Nation"
     subtitle: ""
-    authors: "Someone New"
-    narrators: ""
+    authors: "Sam Harris"
+    narrators: "Jordan Bridges"
     series_title: ""
     series_sequence: ""
     genres: []
-    runtime_length_min: "60"
-    is_finished: false
-    percent_complete: "0.0"
+    runtime_length_min: "115"
+    is_finished: true
+    percent_complete: "100.0"
     rating: ""
     num_ratings: ""
-    date_added: "2023-03-03T00:00:00Z"
-    release_date: "2023-01-01"
+    date_added: "2023-03-04T17:19:51Z"
+    release_date: "2006-11-17"
     cover_url: ""
-    purchase_date: "2023-03-03T00:00:00Z"
+    purchase_date: "2023-03-04T17:19:51Z"
 """
     yaml_file.write_text(text, encoding="UTF8")
     with Session(engine) as session:
         counts = import_world.import_audio_books(session, owner(session), source)
         session.commit()
-    assert counts == {"audio books added": 1, "audio books refreshed": 1, "images": 0, "devices added": 0}
-    books = {b["source_id"]: b for b in imported.get("/api/audio-books").json}
-    assert books["B07D23CFGR"]["percent_heard"] == 40.0
-    # what was edited in the app stays
-    assert (books["0063005409"]["name"], books["0063005409"]["rating"]) == ("Making Sense (edited)", 9)
-    assert books["B0NEWBOOK1"]["name"] == "A New One"
+    # no book added: the Audible version is one more of the book heard as MP3 files, each version with its own listen
+    assert counts == {"audio books added": 0, "audio books refreshed": 1, "images": 0, "devices added": 0}
+    letter = next(b for b in imported.get("/api/audio-books").json if b["name"] == "Letter to a Christian Nation")
+    assert [v["name"] for v in letter["versions"]] == ["MP3", "Audible"]
+    listens = [b for b in imported.get("/api/audio-book-listens").json if b["name"] == "Letter to a Christian Nation"]
+    assert sorted((b["kind_name"], b["date"] or b["added"]) for b in listens) == [("Audible", "2023-03-04T17:19:51Z"), ("MP3", "2016-05-01T21:33:15Z")]
+    heard = {b["name"]: b for b in imported.get("/api/audio-books-heard").json}
+    assert sorted(v["name"] for v in heard["Letter to a Christian Nation"]["listens"]) == ["Audible", "MP3"]
+    assert next(b for b in imported.get("/api/audio-book-listens").json if b["asin"] == "B07D23CFGR")["percent_heard"] == 40.0
+    # what was said in the app stays
+    assert heard["Making Sense"]["rating"] == 9
     with Session(engine) as session:
         again = import_world.import_audio_books(session, owner(session), source)
     assert again == {"audio books added": 0, "audio books refreshed": 0, "images": 0, "devices added": 0}
@@ -880,16 +913,18 @@ def test_audio_books_import_gives_back_the_genres_kept_once(imported: webtest.Te
     del imported
     with Session(engine) as session:
         # as an earlier import kept them: each once, and without the cover's address or when bought
-        sense = session.scalars(select(AudioBook).where(AudioBook.source_id == "0063005409")).one()
-        sense.genres, sense.cover_url, sense.purchased_utcz = ["Psychology", "Science"], "", None
-        order = session.scalars(select(AudioBook).where(AudioBook.source_id == "B07D23CFGR")).one()
+        sense = session.scalars(select(AudioBookVersion).where(AudioBookVersion.asin == "0063005409")).one()
+        sense.genres, sense.cover_url = ["Psychology", "Science"], ""
+        bought = session.scalars(select(AudioBookListen).where(AudioBookListen.version_id == sense.id)).one()
+        bought.purchased_utcz = None
+        order = session.scalars(select(AudioBookVersion).where(AudioBookVersion.asin == "B07D23CFGR")).one()
         # edited in the app: left as it is
         order.genres = ["Politics"]
         session.commit()
         import_world.import_audio_books(session, owner(session), write_source(tmp_path / "again"))
         session.commit()
         assert sense.genres == ["Psychology", "Science", "Psychology"]
-        assert (sense.cover_url, sense.purchased_utcz) == ("https://m.media-amazon.com/images/I/x.jpg", datetime.datetime(2021, 8, 11))
+        assert (sense.cover_url, bought.purchased_utcz) == ("https://m.media-amazon.com/images/I/x.jpg", datetime.datetime(2021, 8, 11))
         assert order.genres == ["Politics"]
 
 

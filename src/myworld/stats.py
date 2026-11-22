@@ -15,6 +15,8 @@ from myworld.models import (
     MUSEUM_VISIT,
     STATUSES,
     AudioBook,
+    AudioBookListen,
+    AudioBookVersion,
     AudioCourse,
     ChessGame,
     City,
@@ -146,7 +148,11 @@ def api_stats() -> flask.Response:
         "museum_visits": len(visits),
         "museums": len(museums),
         "audio_courses": count(AudioCourse),
+        # Your audio books: those the user heard a version of; and the shared ones
+        "audio_books_heard": db.scalar(select(func.count(func.distinct(AudioBookVersion.book_id))).join(AudioBookListen).where(AudioBookListen.owner_id == me)) or 0,
+        "audio_book_listens": count(AudioBookListen),
         "audio_books": count(AudioBook),
+        "audio_book_versions": count(AudioBookVersion),
         "podcasts": count(Podcast),
         "podcast_episodes": count(PodcastEpisode),
         # Your podcasts: those the user heard an episode of

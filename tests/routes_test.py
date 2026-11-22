@@ -12,18 +12,31 @@ from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from myworld.models import Podcast, PodcastEpisode, is_shared
+from myworld.models import (
+    AudioBook,
+    AudioBookVersion,
+    Podcast,
+    PodcastEpisode,
+    is_shared,
+)
 from myworld.world import VIEWS
 from tests.conftest import sign_in, sign_in_admin
 
 # what a row is called after its edit, where the edit does not say a name
-NAMED = {"people": "Dana Levi", "chess-games": "me vs Deeper Blue", "podcasts-heard": "Mindscape", "episodes-heard": "Trailer"}
+NAMED = {
+    "people": "Dana Levi", "chess-games": "me vs Deeper Blue", "podcasts-heard": "Mindscape", "episodes-heard": "Trailer",
+    "audio-book-versions": "Free Will (MP3)", "audio-books-heard": "Free Will", "audio-book-listens": "Free Will",
+}
 
 # the least a row of each page can be added with, and what an edit changes it to
 MINIMAL: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
     "concert-visits": ({"name": "Jarrett"}, {"name": "Jarrett Trio"}),
     "audio-courses": ({"name": "Logic"}, {"name": "Logic 101"}),
     "audio-books": ({"name": "Dune"}, {"name": "Dune Messiah"}),
+    # of a shared book, of a shared book, and of a shared version, which minimal() adds first
+    "audio-book-versions": ({"kind": "mp3"}, {"kind": "mp3", "minutes": 60, "parts": 3}),
+    "audio-books-heard": ({}, {"rating": 7}),
+    "audio-book-listens": ({}, {"finished": True, "listened_at": "Car"}),
     "podcasts": ({"name": "Mindscape"}, {"name": "Mindscape 2"}),
     # and the podcast it is of, which minimal() adds first
     "podcast-episodes": ({"name": "Trailer"}, {"name": "The trailer"}),
@@ -57,7 +70,26 @@ def minimal(app: webtest.TestApp, path: str) -> tuple[dict[str, Any], dict[str, 
     if path == "episodes-heard":
         episode = {"episode_id": shared_episode(app).id}
         return {**first, **episode}, {**changed, **episode}
+    if path in ("audio-book-versions", "audio-books-heard"):
+        book = {"book_id": shared_version(app).book_id}
+        return {**first, **book}, {**changed, **book}
+    if path == "audio-book-listens":
+        version = {"version_id": shared_version(app).id}
+        return {**first, **version}, {**changed, **version}
     return first, changed
+
+
+def shared_version(app: webtest.TestApp) -> AudioBookVersion:
+    """ The shared audio book Free Will's Audible version, put there as an Audible library run would (once). """
+    flask_app: Any = app.app
+    with Session(flask_app.config["engine"], expire_on_commit=False) as session:
+        version = session.scalars(select(AudioBookVersion).where(AudioBookVersion.asin == "B00FW")).first()
+        if version is None:
+            book = AudioBook(name="Free Will", authors="Sam Harris")
+            version = AudioBookVersion(book=book, kind="audible", asin="B00FW")
+            session.add(version)
+            session.commit()
+        return version
 
 
 def shared_episode(app: webtest.TestApp) -> PodcastEpisode:
@@ -77,8 +109,8 @@ def test_every_view_is_tried() -> None:
     assert set(MINIMAL) == set(VIEWS)
 
 
-# Your podcasts are added to by hearing an episode, not by adding one (test_your_podcasts)
-ADDED = sorted(path for path in VIEWS if path != "podcasts-heard")
+# Your podcasts and Your audio books are added to by hearing an episode or a version, not by adding one (test_your_podcasts, test_your_audio_books)
+ADDED = sorted(path for path in VIEWS if path not in ("podcasts-heard", "audio-books-heard"))
 
 
 @pytest.mark.parametrize("path", ADDED)
@@ -155,6 +187,34 @@ def test_your_podcasts(app: webtest.TestApp) -> None:
     sign_in(app, sub="someone-else")
     assert app.get("/api/podcasts-heard").json == []
     app.put_json(f"/api/podcasts-heard/{mine['id']}", first, status=404)
+
+
+def test_your_audio_books(app: webtest.TestApp, engine: Engine) -> None:
+    """ The shared audio books, filtered to those the user heard a version of, with their rating and review; a book heard stays. """
+    sign_in(app)
+    first, _ = minimal(app, "audio-books-heard")
+    error = "Free Will is in Your audio books once you heard a version of it: add it in Audio book listens"
+    assert app.post_json("/api/audio-books-heard", first, status=409).json == {"error": error}
+    listen = app.post_json("/api/audio-book-listens", minimal(app, "audio-book-listens")[0], status=201).json
+    assert (listen["name"], listen["kind_name"], listen["version"]["name"]) == ("Free Will", "Audible", "Free Will (Audible)")
+    [mine] = app.get("/api/audio-books-heard").json
+    assert (mine["name"], [v["name"] for v in mine["listens"]], mine["rating"]) == ("Free Will", ["Audible"], None)
+    app.put_json(f"/api/audio-books-heard/{mine['id']}", {**first, "rating": 7, "review": "Good"})
+    # the shared version says the user heard it; the book, and the version, stay while it is heard
+    [version] = app.get("/api/audio-book-versions").json
+    assert version["listen"]["id"] == listen["id"]
+    sign_in_admin(app, engine)
+    app.delete(f"/api/audio-books/{first['book_id']}", status=409)
+    app.delete(f"/api/audio-book-versions/{version['id']}", status=409)
+    app.delete(f"/api/audio-books-heard/{mine['id']}", status=409)
+    # with no version heard it is not listed, and keeps what the user said of it for when one is heard again
+    app.delete(f"/api/audio-book-listens/{listen['id']}", status=204)
+    assert app.get("/api/audio-books-heard").json == []
+    app.post_json("/api/audio-book-listens", minimal(app, "audio-book-listens")[0], status=201)
+    assert [(b["rating"], b["review"]) for b in app.get("/api/audio-books-heard").json] == [(7, "Good")]
+    sign_in(app, sub="someone-else")
+    assert app.get("/api/audio-books-heard").json == []
+    app.put_json(f"/api/audio-books-heard/{mine['id']}", first, status=404)
 
 
 def test_a_page_that_is_not_one(app: webtest.TestApp) -> None:

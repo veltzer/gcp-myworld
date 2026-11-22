@@ -43,16 +43,37 @@ const SORTS = {
 		["rating", "Rating", (c) => c.rating, "desc"],
 		["started", "Started", (c) => c.started, "desc"],
 	],
-	"audio-books": [
-		// when finished, else when it came into the library
+	"audio-books-heard": [
+		// when a version of it was finished, else came into the library
 		["date", "Date", (b) => b.date_sort, "desc"],
 		["name", "Title", (b) => b.name, "asc"],
 		["author", "Author", (b) => b.authors, "asc"],
 		["rating", "Rating", (b) => b.rating, "desc"],
+		["versions", "Versions heard", (b) => b.listens.length, "desc"],
+	],
+	"audio-book-listens": [
+		// when finished, else when it came into the library
+		["date", "Date", (b) => b.date_sort, "desc"],
+		["name", "Title", (b) => b.name, "asc"],
+		["author", "Author", (b) => b.authors, "asc"],
+		["kind", "Kind", (b) => b.kind_name, "asc"],
 		["heard", "Heard", (b) => (b.finished ? 100 : b.percent_heard), "desc"],
 		["length", "Length", (b) => b.minutes, "desc"],
 		["released", "Released", (b) => b.released, "desc"],
 		["source_rating", "Rating there", (b) => b.source_rating, "desc"],
+	],
+	"audio-books": [
+		["name", "Title", (b) => b.name, "asc"],
+		["author", "Author", (b) => b.authors, "asc"],
+		["versions", "Versions", (b) => b.versions.length, "desc"],
+	],
+	"audio-book-versions": [
+		["name", "Title", (v) => v.name, "asc"],
+		["author", "Author", (v) => v.authors, "asc"],
+		["kind", "Kind", (v) => v.kind_name, "asc"],
+		["length", "Length", (v) => v.minutes, "desc"],
+		["released", "Released", (v) => v.released, "desc"],
+		["source_rating", "Rating there", (v) => v.source_rating, "desc"],
 	],
 	podcasts: [
 		["name", "Name", (p) => p.name, "asc"],

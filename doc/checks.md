@@ -141,14 +141,16 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `audio-course-duplicates`: no account has two audio courses of the same
   name.
 
-### Audio books (`audio-books`)
+### Your audio books (`audio-books-heard`)
 
-- `audio-book-authors`: every audio book says who wrote it.
-- `audio-book-covers`: every audio book has a cover.
-- `audio-book-reviews`: every finished audio book has your own rating and
-  a review.
-- `audio-book-duplicates`: no account has two audio books of the same
-  title and subtitle.
+- `audio-book-reviews`: every book in Your audio books that you finished
+  a version of has your own rating and a review.
+
+### Audio book listens (`audio-book-listens`)
+
+- `audio-book-listen-progress`: every version you heard but did not
+  finish says how far you got: how much was heard (Audible says), or in
+  words ("did part03").
 
 ### Your podcasts (`podcasts-heard`)
 
@@ -215,6 +217,18 @@ By dataset: the key is the page's name in the app (`#book`) and what
 
 - `podcast-episode-guids`: every episode has its id in the feed (guid): one
   typed in without it is not found in the feed again.
+
+### Audio books (`audio-books`, shared)
+
+- `audio-book-authors`: every audio book says who wrote it.
+- `audio-book-covers`: every audio book has a cover.
+- `audio-book-duplicates`: no two audio books have the same title and
+  subtitle: one book's versions belong together.
+
+### Audio book versions (`audio-book-versions`, shared)
+
+- `audio-book-version-asins`: every Audible version has its ASIN, which the
+  Audible library importer finds it again by and its page is linked by.
 
 ### Cities (`cities`)
 

@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from myworld import audible
 from myworld.importers import core, jobs
-from myworld.models import AudibleConnection, AudioBook, Image
+from myworld.models import AudibleConnection, AudioBook, AudioBookListen, Image
 from tests.conftest import sign_in
 
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -189,32 +189,45 @@ def test_a_bad_address_or_code_connects_nothing(app: webtest.TestApp, engine: En
 def test_importing_the_library_adds_each_book_once_and_again_adds_nothing(app: webtest.TestApp, engine: Engine, fake: FakeAudible) -> None:
     sign_in(app)
     importer = next(i for i in app.get("/api/importers").json["importers"] if i["name"] == "audible-library")
-    assert (importer["unavailable"], importer["dataset"]) == ("Connect Audible first", "audio-books")
+    assert (importer["unavailable"], importer["dataset"]) == ("Connect Audible first", "audio-book-listens")
     assert run(app, status=400)["error"] == "Connect Audible first"
     connect(app)
     done = run(app)
     assert done["status"] == "done", done
     assert done["counts"] == {"audio books added": 2, "covers added": 1}
-    books = {b["source_id"]: b for b in app.get("/api/audio-books").json}
-    sense, order = books["0063005409"], books["B07D23CFGR"]
-    assert (sense["source"], sense["name"], sense["authors"], sense["narrators"]) == ("audible", "Making Sense", "Sam Harris", "Sam Harris, David Chalmers")
+    listens = {b["asin"]: b for b in app.get("/api/audio-book-listens").json}
+    sense, order = listens["0063005409"], listens["B07D23CFGR"]
+    assert (sense["kind"], sense["name"], sense["authors"], sense["narrators"]) == ("audible", "Making Sense", "Sam Harris", "Sam Harris, David Chalmers")
     # the genres as the library lists them: each path from its top genre down
     assert sense["genres"] == ["Science", "Physics", "Science", "Biology"]
     assert (sense["minutes"], sense["finished"], sense["source_rating"], sense["source_ratings"]) == (1346, True, 4.7, 592)
     assert (sense["added"], sense["purchased"], sense["released"]) == ("2021-08-10T08:55:06.867000Z", "2021-08-11T00:00:00Z", "2020-08-11")
     assert sense["cover_url"] == "https://m.media-amazon.com/images/I/0063005409.jpg"
     assert app.get(sense["image"]).body == COVER
-    assert (order["series"], order["series_sequence"], order["percent_heard"], order["status"], order["image"]) == ("Political Order", "2", 12.5, "in_progress", None)
+    assert (order["percent_heard"], order["status"], order["image"]) == (12.5, "in_progress", None)
+    # the books are shared, with their Audible versions; the user heard both
+    books = {b["name"]: b for b in app.get("/api/audio-books").json}
+    assert (books["Political Order"]["series"], books["Political Order"]["series_sequence"], books["Political Order"]["versions"][0]["name"]) == (
+        "Political Order", "2", "Audible")
+    assert sorted(b["name"] for b in app.get("/api/audio-books-heard").json) == ["Making Sense", "Political Order"]
     # again: nothing added, nothing changed
     assert run(app)["counts"] == {}
-    # heard further since, and edited here: Audible's details change, the edits stay
-    app.put_json(f"/api/audio-books/{order['id']}", dict(order, name="Political Order and Decay", rating=8))
+    # heard further since, and rated here: Audible's details change, the rating stays
+    mine = next(b for b in app.get("/api/audio-books-heard").json if b["name"] == "Political Order")
+    app.put_json(f"/api/audio-books-heard/{mine['id']}", {"book_id": mine["book"]["id"], "rating": 8, "review": "Good"})
     fake.books[1]["percent_complete"] = 40.0
     assert run(app)["counts"] == {"audio books given Audible's details": 1}
-    order = next(b for b in app.get("/api/audio-books").json if b["source_id"] == "B07D23CFGR")
-    assert (order["percent_heard"], order["name"], order["rating"]) == (40.0, "Political Order and Decay", 8)
+    order = next(b for b in app.get("/api/audio-book-listens").json if b["asin"] == "B07D23CFGR")
+    mine = next(b for b in app.get("/api/audio-books-heard").json if b["name"] == "Political Order")
+    assert (order["percent_heard"], mine["rating"]) == (40.0, 8)
+    # another account with the same books: no new book, listens of its own
+    sign_in(app, sub="another")
+    connect(app)
+    assert run(app)["counts"] == {}
+    assert len(app.get("/api/audio-book-listens").json) == 2
     with Session(engine) as session:
         assert len(session.scalars(select(AudioBook)).all()) == 2
+        assert len(session.scalars(select(AudioBookListen)).all()) == 4
         assert len(session.scalars(select(Image)).all()) == 1
 
 

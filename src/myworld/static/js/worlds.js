@@ -12,8 +12,10 @@ export const WORLDS = {
 	// the user's museum visits, a card for each museum with its visits to it
 	museums: ["My Museum visits", "/api/museum-visits", "museum visit", "Museum visits"],
 	"audio-courses": ["Audio courses", "/api/audio-courses", "audio course", "Audio courses"],
-	// the books of the user's audio book libraries (Audible, ...)
-	"audio-books": ["Audio books", "/api/audio-books", "audio book", "Audio books"],
+	// Your audio books: the shared audio books, filtered to those the user heard a version of (with their rating and review);
+	// and the versions of them heard (Audible, MP3)
+	"audio-books-heard": ["Your audio books", "/api/audio-books-heard", "audio book heard", "Your audio books"],
+	"audio-book-listens": ["Audio book listens", "/api/audio-book-listens", "audio book listen", "Audio book listens"],
 	// Your podcasts: the shared podcasts, filtered to those the user heard an episode of (with their rating and review);
 	// and the episodes of them heard
 	"podcasts-heard": ["Your podcasts", "/api/podcasts-heard", "podcast heard", "Your podcasts"],
@@ -24,6 +26,9 @@ export const WORLDS = {
 	// every podcast, and every episode of them its feed has
 	podcasts: ["Podcasts", "/api/podcasts", "podcast", "Podcasts"],
 	"podcast-episodes": ["Podcast episodes", "/api/podcast-episodes", "podcast episode", "Podcast episodes"],
+	// every audio book, and every version of them (Audible, MP3)
+	"audio-books": ["Audio books", "/api/audio-books", "audio book", "Audio books"],
+	"audio-book-versions": ["Audio book versions", "/api/audio-book-versions", "audio book version", "Audio book versions"],
 	cities: ["Cities", "/api/cities", "city", "Cities"],
 	countries: ["Countries", "/api/countries", "country", "Countries"],
 	currencies: ["Currencies", "/api/currencies", "currency", "Currencies"],
@@ -46,12 +51,13 @@ export const WORLDS = {
 
 // The pages whose rows are shared by everyone: the same for every account, with nothing personal
 // on them, changed by admins only (the server refuses anyone else). The sidebar lists them apart.
-export const SHARED_VIEWS = new Set(["places", "podcasts", "podcast-episodes", "cities", "countries", "currencies", "place-kinds", "visit-types", "locales"]);
+export const SHARED_VIEWS = new Set(["places", "podcasts", "podcast-episodes", "audio-books", "audio-book-versions", "cities", "countries", "currencies", "place-kinds", "visit-types", "locales"]);
 
 // The pages that are shared data filtered for the user, not rows of their own: view -> what they are.
 // The sidebar marks them with a filter; their rows come by what the user does elsewhere, so + stays, disabled.
 export const FILTERED_VIEWS = {
 	"podcasts-heard": "The shared Podcasts, filtered to the ones you heard an episode of: hearing an episode (Episodes heard) adds its podcast here",
+	"audio-books-heard": "The shared Audio books, filtered to the ones you heard a version of: hearing a version (Audio book listens) adds its book here",
 };
 
 export function isAdmin() {

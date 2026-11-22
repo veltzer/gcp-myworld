@@ -30,11 +30,12 @@ written into its notes.
 
 Audio books came from data/yaml/audible.yaml (the books of the Audible
 library, as Audible says them), their covers from
-static/images/audible-<asin>.jpg; each is an audio book with source
-"audible", found again by its ASIN. The audio books heard elsewhere came
-from data/yaml/audio_books.yaml, as an audio course is said (when finished
-or started, how far, where, on what device); each has no source, and is
-found again by its name. veltzer.github.io no longer has either file (My
+static/images/audible-<asin>.jpg; audio books are shared, and each is the
+account's listen of the book's Audible version, found again by its ASIN.
+The audio books heard elsewhere came from data/yaml/audio_books.yaml, as
+an audio course is said (when finished or started, how far, where, on what
+device); each is the account's listen of the book's MP3 version, the book
+found again by its title and authors. veltzer.github.io no longer has either file (My
 World keeps them now): a source without them imports no audio books, and
 --audio-books reads them from a checkout of the site's history that has them.
 
@@ -117,6 +118,9 @@ from myworld.models import (
     MUSEUM_KIND,
     MUSEUM_VISIT,
     AudioBook,
+    AudioBookHeard,
+    AudioBookListen,
+    AudioBookVersion,
     AudioCourse,
     City,
     Concert,
@@ -516,7 +520,7 @@ def find_owner(session: Session, email: str, subject: str | None) -> User:
 # what the full import deletes and makes again, so what an account must not have unless it is replaced on purpose;
 # the shared rows (countries, cities, places) are everyone's: never deleted, found again or added
 REPLACED_MODELS = (
-    AudioCourse, AudioBook, EpisodeHeard, PodcastHeard, YouTubeVideo, Device, Concert, Visit, Group, Person, Organization,
+    AudioCourse, AudioBookListen, AudioBookHeard, EpisodeHeard, PodcastHeard, YouTubeVideo, Device, Concert, Visit, Group, Person, Organization,
     OrganizationType, PersonType, RelationType, PersonRelationType, PersonOrganizationType, Image,
 )
 
@@ -524,7 +528,7 @@ REPLACED_MODELS = (
 def _shared_image_ids(session: Session) -> set[int]:
     """ The images shared rows show: kept whoever uploaded them (a full import replaces only an account's own). """
     found: set[int] = set()
-    for model in (Place, Podcast, City, Country):
+    for model in (Place, Podcast, AudioBook, City, Country):
         found |= {image_id for image_id in session.scalars(select(model.image_id)) if image_id is not None}
     return found
 
@@ -892,26 +896,42 @@ def import_audio_books(session: Session, owner: User, source: Path) -> dict[str,
 
 def _import_heard(session: Session, owner: User, path: Path, source: Path) -> dict[str, int]:
     """
-    Add the audio books owner heard elsewhere (audio_books.yaml) that owner
-    does not have yet: a book of no source is found again by its name. Does
-    not commit.
+    Add the audio books owner heard elsewhere (audio_books.yaml) as their
+    listens of the books' MP3 versions: a book (shared) found by its title
+    and authors (the file says no subtitle: of one so found, the first), or
+    else added, and its MP3 version, or else added; one
+    owner heard already is left as it is. Does not commit.
     """
     items = _items(source, "audio_books", AUDIO_BOOK_FIELDS)
-    had = {b.name for b in session.scalars(select(AudioBook).where(AudioBook.owner_id == owner.id, AudioBook.source == ""))}
+    books: dict[tuple[str, str], AudioBook] = {}
+    for found in session.scalars(select(AudioBook).options(selectinload(AudioBook.versions)).order_by(AudioBook.id)):
+        books.setdefault((found.name, found.authors), found)
+    listened = set(session.scalars(select(AudioBookListen.version_id).where(AudioBookListen.owner_id == owner.id)))
+    heard = set(session.scalars(select(AudioBookHeard.book_id).where(AudioBookHeard.owner_id == owner.id)))
     device = Devices(session, owner)
     added = 0
     for item in items:
         name = str(item["name"]).strip()
-        if name in had:
-            continue
         authors = [str(a).strip() for a in item.get("authors", []) if str(a).strip()]
         if any("," in a for a in authors):
             raise WorldImportError(f"{path}: {name!r} has an author with a comma, which the authors' list would split")
+        book = books.get((name, ", ".join(authors)))
+        if book is None:
+            book = AudioBook(name=name, authors=", ".join(authors))
+            session.add(book)
+            books[name, book.authors] = book
+            added += 1
+        version = next((v for v in book.versions if v.kind == "mp3"), None)
+        if version is None:
+            version = AudioBookVersion(book=book, kind="mp3")
+            session.add(version)
+            session.flush()
+        if version.id in listened:
+            continue
         dates = _dates(item)
-        session.add(AudioBook(
+        session.add(AudioBookListen(
             owner_id=owner.id,
-            name=name,
-            authors=", ".join(authors),
+            version=version,
             finished=any(dates.get(key) for key in ("date_utcz", "date_ymd", "date_my", "date_y")),
             started_utcz=_stamp(item, "date_started_utcz"),
             progress=str(item.get("progress", "")),
@@ -919,8 +939,10 @@ def _import_heard(session: Session, owner: User, path: Path, source: Path) -> di
             device=device(str(item.get("device", ""))),
             **dates,
         ))
-        had.add(name)
-        added += 1
+        listened.add(version.id)
+        if book.id not in heard:
+            session.add(AudioBookHeard(owner_id=owner.id, book=book))
+            heard.add(book.id)
     session.flush()
     return {"audio books added": added, "devices added": device.added}
 

@@ -206,14 +206,20 @@ GOOGLE_CLIENT_ID=<gcp_oauth_client_id> GOOGLE_CLIENT_SECRET="$(pass show keys/go
 ## Audible library
 
 `audible-library` brings the books of the user's Audible library in as
-audio books from Audible (source `audible`, found again by ASIN). A book
-the user does not have is added with its cover; one they have is given
-what Audible says of it now (finished, how much was heard, its rating
-there, when bought, the cover's address) and keeps the rest as edited:
-the user's rating, review, title and the like. Genres are kept as Audible
-lists them, each genre's path from its top genre down. It takes no
-parameters, adds only, and needs Audible connected. It shares its writing
-with `scripts/import_world.py --audio-books` (`audible.store_library`).
+their listens (Audio book listens) of the books' Audible versions. Audio
+books are shared, so it writes shared data too, though every user runs it
+(see "Who runs which importer"): a book's Audible version is found by its
+ASIN; a book My World does not have is added with its cover, and one it
+has (by title, subtitle and authors, or by title and authors when it has
+no subtitle, as one heard as MP3 files has) is given its Audible version.
+A version there already is given what Audible says of it now (its rating
+there, the cover's address); the user's listen what the library says of
+their listening (finished, how much was heard, when bought), and the book
+is in their Your audio books. What anyone wrote stays: ratings, reviews,
+titles. Genres are kept as Audible lists them, each genre's path from its
+top genre down. It takes no parameters, adds only, and needs Audible
+connected. It shares its writing with
+`scripts/import_world.py --audio-books` (`audible.store_library`).
 
 ## Podcast feeds (an admin's)
 
@@ -289,6 +295,13 @@ opening it, or other shared importers like it, to every user:
   admin's who ran it; for a user's run, theirs, though everyone sees it.
 - How the Imports page lists such an importer: with Your importers, saying
   it writes shared data.
+
+The Audible library importer already crosses the line the other way: it is
+every user's, since it reads their own library, yet it adds to the shared
+Audio books and Audio book versions (a book or version not there yet) and
+refreshes what Audible says of a version. It only adds, never renames, and
+keeps ids, and what it writes of a version is Audible's, the same for
+everyone; but a user's run can add a book no admin looked at.
 
 ## Connecting Audible
 

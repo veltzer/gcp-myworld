@@ -46,7 +46,16 @@ from sqlalchemy.orm import Session
 
 from myworld import auth
 from myworld.api import ApiError, json_body, text
-from myworld.models import AudibleConnection, AudioBook, Image, User, utcnow
+from myworld.models import (
+    AudibleConnection,
+    AudioBook,
+    AudioBookHeard,
+    AudioBookListen,
+    AudioBookVersion,
+    Image,
+    User,
+    utcnow,
+)
 
 bp = flask.Blueprint("audible", __name__, url_prefix="/audible")
 
@@ -430,16 +439,30 @@ def _genres(item: dict[str, Any]) -> list[str]:
     return [_text(g).strip() for g in item.get("genres", []) if _text(g).strip()]
 
 
-def _source_values(item: dict[str, Any]) -> dict[str, Any]:
-    """ What the library says of a book that the app does not edit: refreshed on every import. """
+def _version_values(item: dict[str, Any]) -> dict[str, Any]:
+    """ What Audible says of a book (its Audible version) that the app does not edit: refreshed on every import. """
     return {
-        "purchased_utcz": _stamp(item.get("purchase_date")),
         "cover_url": _text(item.get("cover_url")).strip(),
-        "finished": bool(item.get("is_finished")),
-        "percent_heard": _optional(item.get("percent_complete"), float),
         "source_rating": _optional(item.get("rating"), float),
         "source_ratings": _optional(item.get("num_ratings"), int),
     }
+
+
+def _listen_values(item: dict[str, Any]) -> dict[str, Any]:
+    """ What the library says of the user's own listening to a book that the app does not edit: refreshed on every import. """
+    return {
+        "purchased_utcz": _stamp(item.get("purchase_date")),
+        "finished": bool(item.get("is_finished")),
+        "percent_heard": _optional(item.get("percent_complete"), float),
+    }
+
+
+def _refresh(row: Any, values: dict[str, Any]) -> bool:
+    """ row given values where they differ; whether any did. """
+    changed = {key: value for key, value in values.items() if getattr(row, key) != value}
+    for key, value in changed.items():
+        setattr(row, key, value)
+    return bool(changed)
 
 
 def check_items(items: list[dict[str, Any]], where: str) -> None:
@@ -458,60 +481,91 @@ def check_items(items: list[dict[str, Any]], where: str) -> None:
 def store_library(session: Session, owner: User, items: list[dict[str, Any]], cover: Callable[[str, str], bytes | None]) -> dict[str, int]:
     """
     The books of owner's Audible library (items, as library_item says
-    them): one owner does not have yet (by ASIN) is added, with its cover
-    (cover(asin, cover_url): the image's bytes, or None); on one owner has,
-    only what the library changes is refreshed (_source_values), so
-    whatever was edited in the app stays; genres an earlier import kept each
-    once only are given back as the library lists them. Safe to run again.
-    Does not commit.
+    them). Audio books are shared: a book's Audible version is found by its
+    ASIN, or else the book by its title, subtitle and authors, or by its
+    title and authors when it has no subtitle (it is given Audible's), and a
+    version is added to it; or else the book is added, with its cover (cover(asin, cover_url):
+    the image's bytes, or None). Of a version there already, only what
+    Audible changes is refreshed (_version_values), so whatever was edited
+    in the app stays; genres an earlier import kept each once only are given
+    back as the library lists them. owner's listen of the version (and the
+    book in their Your audio books) is added when they have none, and what
+    the library says of their listening refreshed (_listen_values). Safe to
+    run again. Does not commit.
     """
-    had = {b.source_id: b for b in session.scalars(select(AudioBook).where(AudioBook.owner_id == owner.id, AudioBook.source == SOURCE))}
+    versions = {v.asin: v for v in session.scalars(select(AudioBookVersion).where(AudioBookVersion.kind == SOURCE, AudioBookVersion.asin.is_not(None)))}
+    every = list(session.scalars(select(AudioBook)))
+    books = {(b.name, b.subtitle, b.authors): b for b in every}
+    # a book said without its subtitle (heard as MP3 files, ...) is found by its title and authors
+    unsubtitled = {(b.name, b.authors): b for b in every if not b.subtitle}
+    listens = {listen.version_id: listen for listen in session.scalars(select(AudioBookListen).where(AudioBookListen.owner_id == owner.id))}
+    heard = {row.book_id for row in session.scalars(select(AudioBookHeard).where(AudioBookHeard.owner_id == owner.id))}
     stored = {image.filename: image for image in session.scalars(select(Image).where(Image.owner_id == owner.id, Image.filename.like("audible-%")))}
     added = refreshed = images = 0
     for item in items:
         asin = _text(item["asin"])
-        book = had.get(asin)
-        if book is not None:
-            values = _source_values(item)
+        version = versions.get(asin)
+        changed = False
+        if version is not None:
+            values = _version_values(item)
             genres = _genres(item)
             # kept each once by an earlier import, and not edited since: as the library lists them
-            if book.genres != genres and book.genres == list(dict.fromkeys(genres)):
+            if version.genres != genres and version.genres == list(dict.fromkeys(genres)):
                 values["genres"] = genres
-            changed = {key: value for key, value in values.items() if getattr(book, key) != value}
-            for key, value in changed.items():
-                setattr(book, key, value)
-            refreshed += bool(changed)
-            continue
-        filename = f"audible-{asin}.jpg"
-        image = stored.get(filename)
-        if image is None:
-            data = cover(asin, _text(item.get("cover_url")).strip())
-            if data is not None:
-                image = Image(owner_id=owner.id, filename=filename, content_type="image/jpeg", sha256=hashlib.sha256(data).hexdigest(), data=data)
-                session.add(image)
-                stored[filename] = image
-                images += 1
-        release = _text(item.get("release_date")).strip()
-        book = AudioBook(
-            owner_id=owner.id,
-            source=SOURCE,
-            source_id=asin,
-            name=_text(item["title"]).strip(),
-            subtitle=_text(item.get("subtitle")).strip(),
-            authors=_text(item.get("authors")).strip(),
-            narrators=_text(item.get("narrators")).strip(),
-            series=_text(item.get("series_title")).strip(),
-            series_sequence=_text(item.get("series_sequence")).strip(),
-            genres=_genres(item),
-            minutes=_optional(item.get("runtime_length_min"), int),
-            added_utcz=_stamp(item.get("date_added")),
-            released=datetime.date.fromisoformat(release) if release else None,
-            image=image,
-            **_source_values(item),
-        )
-        session.add(book)
-        had[asin] = book
-        added += 1
+            changed = _refresh(version, values)
+        else:
+            name, subtitle, authors = _text(item["title"]).strip(), _text(item.get("subtitle")).strip(), _text(item.get("authors")).strip()
+            book = books.get((name, subtitle, authors))
+            if book is None and (name, authors) in unsubtitled:
+                book = unsubtitled.pop((name, authors))
+                book.subtitle = subtitle
+                books[name, subtitle, authors] = book
+            if book is None:
+                filename = f"audible-{asin}.jpg"
+                image = stored.get(filename)
+                if image is None:
+                    data = cover(asin, _text(item.get("cover_url")).strip())
+                    if data is not None:
+                        image = Image(owner_id=owner.id, filename=filename, content_type="image/jpeg", sha256=hashlib.sha256(data).hexdigest(), data=data)
+                        session.add(image)
+                        stored[filename] = image
+                        images += 1
+                book = AudioBook(
+                    name=name,
+                    subtitle=subtitle,
+                    authors=authors,
+                    series=_text(item.get("series_title")).strip(),
+                    series_sequence=_text(item.get("series_sequence")).strip(),
+                    image=image,
+                )
+                session.add(book)
+                books[name, subtitle, authors] = book
+                added += 1
+            release = _text(item.get("release_date")).strip()
+            version = AudioBookVersion(
+                book=book,
+                kind=SOURCE,
+                asin=asin,
+                narrators=_text(item.get("narrators")).strip(),
+                genres=_genres(item),
+                minutes=_optional(item.get("runtime_length_min"), int),
+                released=datetime.date.fromisoformat(release) if release else None,
+                **_version_values(item),
+            )
+            session.add(version)
+            session.flush()
+            versions[asin] = version
+        listen = listens.get(version.id)
+        if listen is None:
+            listen = AudioBookListen(owner_id=owner.id, version=version, added_utcz=_stamp(item.get("date_added")), **_listen_values(item))
+            session.add(listen)
+            listens[version.id] = listen
+        else:
+            changed = _refresh(listen, _listen_values(item)) or changed
+        if version.book_id not in heard:
+            session.add(AudioBookHeard(owner_id=owner.id, book_id=version.book_id))
+            heard.add(version.book_id)
+        refreshed += changed
     session.flush()
     return {"audio books added": added, "audio books refreshed": refreshed, "images": images}
 

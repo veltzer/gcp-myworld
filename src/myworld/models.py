@@ -1256,7 +1256,7 @@ class Device(_Pictured, Base):
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     audio_courses: Mapped[list[AudioCourse]] = relationship(back_populates="device")
-    audio_books: Mapped[list[AudioBook]] = relationship(back_populates="device")
+    audio_book_listens: Mapped[list[AudioBookListen]] = relationship(back_populates="device")
     youtube_videos: Mapped[list[YouTubeVideo]] = relationship(back_populates="device")
     episodes_heard: Mapped[list[EpisodeHeard]] = relationship(back_populates="device")
 
@@ -1299,76 +1299,132 @@ class AudioCourse(_Dated, Base):
     lecturers: Mapped[list[Person]] = relationship(secondary=audio_course_lecturers, back_populates="lectured")
 
 
-# where an audio book came from -> its name; the importer of each source
-# finds a book again by its id there (source_id), so it is added once
-AUDIO_BOOK_SOURCES: dict[str, str] = {
+# what an audio book version is -> its name: a book in the user's Audible
+# library (found again there by its ASIN), or MP3 files
+AUDIO_BOOK_KINDS: dict[str, str] = {
     "audible": "Audible",
+    "mp3": "MP3",
 }
 
 
-class AudioBook(_Dated, Base):
+class AudioBook(Base):
     """
-    An audio book in the user's library at a source (Audible, for now): what
-    the source says of it (title, authors, narrators, series, genres, length,
-    how far it was heard, its rating there), and what the user says of it
-    (their rating and review), and, as an audio course has them, when it was
-    finished (the date, _Dated), when started, how far it got, where it was
-    heard and on what device. Imported from veltzer.github.io's audible.yaml
-    and audio_books.yaml (scripts/import_world.py --audio-books), which it
-    keeps field for field, every value as the source gives it;
-    a run again refreshes what the source changes (how far it was heard, its
-    rating there) and adds the new books, and leaves the rest as edited.
+    An audio book: its title, subtitle, authors, series and cover. Shared:
+    the same for every account, kept by admins (SHARED). It comes in versions
+    (AudioBookVersion: an Audible one, MP3 files, ...), each with what is
+    its own; what a user thinks of the book is their AudioBookHeard, and each
+    version they heard is their AudioBookListen. A book is in My World once
+    by its title, subtitle and authors.
     """
     __tablename__ = "audio_books"
-    __table_args__ = (
-        # a book is in a source's library once; one typed in by hand has no source id (NULLs never clash)
-        UniqueConstraint("owner_id", "source", "source_id", name="uq_audio_book_source_id"),
-        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_audio_book_rating_range"),
-    )
+    __table_args__ = (UniqueConstraint("name", "subtitle", "authors", name="uq_audio_book_identity"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    # one of AUDIO_BOOK_SOURCES, or "" for none
-    source: Mapped[str] = mapped_column(String(20), nullable=False, default="")
-    # the book's id at its source: Audible's ASIN
-    source_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # the title
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     subtitle: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     # as the source writes them: "Sam Harris, David Chalmers"
     authors: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
-    narrators: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     series: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     # its place in the series: "2", "0.5"
     series_sequence: Mapped[str] = mapped_column(String(20), nullable=False, default="")
-    # as the source lists them: Audible gives each genre's path from its top
-    # genre down, one after another, so a top genre comes again for each path
-    genres: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
+    image: Mapped[Image | None] = relationship()
+    versions: Mapped[list[AudioBookVersion]] = relationship(back_populates="book", cascade="all, delete-orphan", order_by="AudioBookVersion.id")
+    heard: Mapped[list[AudioBookHeard]] = relationship(back_populates="book")
+
+
+class AudioBookVersion(Base):
+    """
+    One version of an audio book (shared, as the book is): the Audible one,
+    or MP3 files. Each says who reads it and how long it is; an Audible one
+    also what Audible says of it (its ASIN, genres, rating there, when it
+    came out, its cover's address), MP3 files how many parts they are. An
+    Audible book is in My World once by its ASIN.
+    """
+    __tablename__ = "audio_book_versions"
+    __table_args__ = (
+        # NULLs never clash: an MP3 version has no ASIN
+        UniqueConstraint("asin", name="uq_audio_book_version_asin"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    book_id: Mapped[int] = mapped_column(ForeignKey("audio_books.id", ondelete="CASCADE", name="fk_audio_book_versions_book_id"), nullable=False, index=True)
+    book: Mapped[AudioBook] = relationship(back_populates="versions")
+    # one of AUDIO_BOOK_KINDS
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    # as the source writes them: "Jordan Bridges"
+    narrators: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    finished: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
-    # how much of it was heard, 0 to 100, as the source says
-    percent_heard: Mapped[float | None] = mapped_column(Double, nullable=True)
-    # its rating at the source (of 5) and by how many
+    # Audible's: the book's id there, and what it says of it
+    asin: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # as Audible lists them: each genre's path from its top genre down, one
+    # after another, so a top genre comes again for each path
+    genres: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    # its rating at Audible (of 5) and by how many
     source_rating: Mapped[float | None] = mapped_column(Double, nullable=True)
     source_ratings: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # when it came into the user's library there, and when it was bought there
-    added_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-    purchased_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-    # the address of its cover at the source (the cover itself is image)
-    cover_url: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     released: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
-    # the user's own
+    # the address of its cover at Audible (the cover itself is the book's image)
+    cover_url: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    # MP3's: how many files (parts, discs) it comes in
+    parts: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    listens: Mapped[list[AudioBookListen]] = relationship(back_populates="version")
+
+
+class AudioBookHeard(Base):
+    """
+    An audio book (a shared one) the user heard, and what they think of it:
+    their rating and review. The user's own; the versions of it they heard
+    are their AudioBookListen rows. A book is in a user's once.
+    """
+    __tablename__ = "audio_books_heard"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "book_id", name="uq_audio_book_heard"),
+        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_audio_book_heard_rating_range"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # a book someone heard is not deleted (RESTRICT)
+    book_id: Mapped[int] = mapped_column(ForeignKey("audio_books.id", ondelete="RESTRICT", name="fk_audio_books_heard_book_id"), nullable=False, index=True)
+    book: Mapped[AudioBook] = relationship(back_populates="heard")
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     review: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class AudioBookListen(_Dated, Base):
+    """
+    A version of an audio book (a shared one) the user heard: whether they
+    finished it and when (the date, _Dated), how much of it they heard
+    (Audible says), when they started and how far they got ("did part03"),
+    where they heard it and on what device; of an Audible one, when it came
+    into their library there and when they bought it. A version is in a
+    user's once.
+    """
+    __tablename__ = "audio_book_listens"
+    __table_args__ = (UniqueConstraint("owner_id", "version_id", name="uq_audio_book_listen"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # a version someone heard is not deleted (RESTRICT)
+    version_id: Mapped[int] = mapped_column(
+        ForeignKey("audio_book_versions.id", ondelete="RESTRICT", name="fk_audio_book_listens_version_id"), nullable=False, index=True,
+    )
+    version: Mapped[AudioBookVersion] = relationship(back_populates="listens")
+    finished: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    # how much of it was heard, 0 to 100, as Audible says
+    percent_heard: Mapped[float | None] = mapped_column(Double, nullable=True)
     # not finished: when it was started, and how far it got ("did part03")
     started_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     progress: Mapped[str] = mapped_column(String(20), nullable=False, default="")
     # where it was heard ("Night Walks"), and on what: one of the user's own devices
     listened_at: Mapped[str] = mapped_column(String(100), nullable=False, default="")
-    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id", ondelete="SET NULL", name="fk_audio_books_device_id"), nullable=True)
-    device: Mapped[Device | None] = relationship(back_populates="audio_books")
-    image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
-    image: Mapped[Image | None] = relationship()
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id", ondelete="SET NULL", name="fk_audio_book_listens_device_id"), nullable=True)
+    device: Mapped[Device | None] = relationship(back_populates="audio_book_listens")
+    # Audible's: when it came into the user's library there, and when they bought it
+    added_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    purchased_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Podcast(Base):
@@ -1720,7 +1776,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0025"
+SCHEMA_REVISION = "0027"
 
 
 def prepare_schema(engine: Engine) -> None:

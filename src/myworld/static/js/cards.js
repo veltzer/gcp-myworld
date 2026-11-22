@@ -245,34 +245,66 @@ function formatMinutes(minutes) {
 	return h ? `${h}h ${minutes % 60}m` : `${minutes}m`;
 }
 
+// an audio book, shared: the book, and its versions (Audible, MP3), each a link to its card
 function audioBookCard(item) {
 	const { card, list } = cardShell(item, item.authors);
 	detail(list, "Subtitle", item.subtitle);
-	detail(list, "Narrators", item.narrators);
 	detail(list, "Series", [item.series, item.series_sequence && `#${item.series_sequence}`].filter(Boolean).join(" "));
+	linksDetail(list, "Versions", "audio-book-versions", item.versions);
+	websiteButton(card, item.url, item.url ? "Audible page" : "Page");
+	return card;
+}
+
+// what a version is: its kind, who reads it, how long, and what Audible says of an Audible one
+function versionDetails(list, item) {
+	detail(list, "Kind", item.kind_name);
+	detail(list, "Narrators", item.narrators);
+	detail(list, "Length", formatMinutes(item.minutes));
+	detail(list, "Parts", item.parts === null ? "" : String(item.parts));
+	// each once: the list repeats a top genre for each path under it
+	detail(list, "Genres", [...new Set(item.genres)].join(", "));
+	detail(list, "Released", item.released);
+	if (item.source_rating !== null) {
+		detail(list, "On Audible", `${item.source_rating}/5${item.source_ratings ? ` (${item.source_ratings.toLocaleString()} ratings)` : ""}`);
+	}
+}
+
+// a version of an audio book, shared; when the user heard it, a link to their listen of it
+function audioBookVersionCard(item) {
+	const { card, list } = cardShell(item, item.authors);
+	linksDetail(list, "Book", "audio-books", item.book ? [item.book] : []);
+	linksDetail(list, "You heard it", "audio-book-listens", item.listen ? [{ id: item.listen.id, name: formatDate(item.listen) || "Yes" }] : []);
+	versionDetails(list, item);
+	websiteButton(card, item.url, item.url ? "Audible page" : "Page");
+	return card;
+}
+
+// an audio book the user heard: what they think of it, and the versions of it they heard, each a link to their listen
+function audioBookHeardCard(item) {
+	const { card, list } = cardShell(item, item.authors);
+	linksDetail(list, "Book", "audio-books", item.book ? [item.book] : []);
+	detail(list, "Status", { done: "Finished", in_progress: "In progress" }[item.status] || "Not started");
+	rated(list, item);
+	linksDetail(list, "Versions heard", "audio-book-listens", item.listens);
+	websiteButton(card, item.url, item.url ? "Audible page" : "Page");
+	return card;
+}
+
+// a version the user heard: how far, when, where and on what; and what the version is
+function audioBookListenCard(item) {
+	const { card, list } = cardShell(item, item.authors);
+	linksDetail(list, "Version", "audio-book-versions", item.version ? [item.version] : []);
 	if (item.status === "done") {
 		detail(list, "Finished", item.date ? formatDate(item) : "Yes");
 	} else {
 		detail(list, "Status", item.status === "in_progress" ? ["In progress", item.percent_heard ? `${Math.round(item.percent_heard)}% heard` : item.progress].filter(Boolean).join(", ") : "Not started");
 		detail(list, "Started", item.started.slice(0, 10));
 	}
-	detail(list, "Length", formatMinutes(item.minutes));
-	if (item.rating !== null) {
-		detail(list, "Rating", `${item.rating}/${state.config.rating_max}`);
-	}
-	detail(list, "Review", item.review);
-	// each once: the list repeats a top genre for each path under it
-	detail(list, "Genres", [...new Set(item.genres)].join(", "));
 	detail(list, "Where", item.listened_at);
 	linksDetail(list, "Device", "devices", item.device ? [item.device] : []);
-	detail(list, "Released", item.released);
 	detail(list, "Added", item.added.slice(0, 10));
-	if (item.source_rating !== null) {
-		detail(list, `On ${item.source_name || "its source"}`, `${item.source_rating}/5${item.source_ratings ? ` (${item.source_ratings.toLocaleString()} ratings)` : ""}`);
-	} else {
-		detail(list, "From", item.source_name);
-	}
-	websiteButton(card, item.url, item.source_name ? `${item.source_name} page` : "Page");
+	versionDetails(list, item);
+	websiteButton(card, item.url, item.url ? "Audible page" : "Page");
 	return card;
 }
 
@@ -441,6 +473,9 @@ export const CARDS = {
 	museums: museumCard,
 	"audio-courses": audioCourseCard,
 	"audio-books": audioBookCard,
+	"audio-book-versions": audioBookVersionCard,
+	"audio-books-heard": audioBookHeardCard,
+	"audio-book-listens": audioBookListenCard,
 	podcasts: podcastCard,
 	"podcast-episodes": podcastEpisodeCard,
 	"podcasts-heard": podcastHeardCard,

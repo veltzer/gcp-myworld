@@ -34,7 +34,7 @@ from myworld.api import (
     text,
 )
 from myworld.models import (
-    AUDIO_BOOK_SOURCES,
+    AUDIO_BOOK_KINDS,
     DEFAULT_LOCALE,
     MUSEUM_KIND,
     MUSEUM_VISIT,
@@ -42,6 +42,9 @@ from myworld.models import (
     RATING_MIN,
     YOUTUBE_ID_LENGTH,
     AudioBook,
+    AudioBookHeard,
+    AudioBookListen,
+    AudioBookVersion,
     AudioCourse,
     ChessGame,
     City,
@@ -346,51 +349,121 @@ def _course_url(course: AudioCourse) -> str:
 
 
 def audio_book_json(book: AudioBook) -> dict[str, Any]:
-    added = _stamp_json(book.added_utcz)
-    dated = date_json(book)
+    """ An audio book, shared: the same for everyone, with its versions (what a user heard of it is in Your audio books). """
     return {
         "id": book.id,
         "name": book.name,
         "subtitle": book.subtitle,
-        "source": book.source,
-        "source_name": AUDIO_BOOK_SOURCES.get(book.source, ""),
-        "source_id": book.source_id or "",
         "authors": book.authors,
-        "narrators": book.narrators,
         "series": book.series,
         "series_sequence": book.series_sequence,
-        "genres": book.genres,
-        "minutes": book.minutes,
-        "finished": book.finished,
-        # finished when it says so or has the day it was; in progress when heard some, or started
-        "status": "done" if book.finished or dated["date"] else ("in_progress" if book.percent_heard or book.started_utcz else ""),
-        **dated,
-        "date_timezone": book.date_timezone,
-        "started": _stamp_json(book.started_utcz),
-        "progress": book.progress,
-        "listened_at": book.listened_at,
-        "device": None if book.device is None else {"id": book.device.id, "name": book.device.name},
-        "percent_heard": book.percent_heard,
-        "source_rating": book.source_rating,
-        "source_ratings": book.source_ratings,
-        "added": added,
-        "purchased": _stamp_json(book.purchased_utcz),
-        "cover_url": book.cover_url,
-        # what the sorting goes by: when it was finished, else when it came into the library
-        "date_sort": dated["date_sort"] or added,
-        "released": book.released.isoformat() if book.released else "",
-        "rating": book.rating,
-        "review": book.review,
-        "url": _audio_book_url(book),
+        "versions": [{"id": v.id, "name": AUDIO_BOOK_KINDS.get(v.kind, v.kind)} for v in book.versions],
+        "url": next((_version_url(v) for v in book.versions if _version_url(v)), ""),
         "image": image_url(book.image_id),
     }
 
 
-def _audio_book_url(book: AudioBook) -> str:
-    """ The book's page at its source. """
-    if book.source == "audible" and book.source_id:
-        return f"https://www.audible.com/pd/{book.source_id}"
+def _version_url(version: AudioBookVersion) -> str:
+    """ The version's page at its source: an Audible one's at Audible. """
+    if version.kind == "audible" and version.asin:
+        return f"https://www.audible.com/pd/{version.asin}"
     return ""
+
+
+def version_name(version: AudioBookVersion) -> str:
+    """ "Letter to a Christian Nation (MP3)": the book, and which version. """
+    return f"{version.book.name} ({AUDIO_BOOK_KINDS.get(version.kind, version.kind)})"
+
+
+def _version_fields(version: AudioBookVersion) -> dict[str, Any]:
+    """ What a version is, as its card and a listen's show it. """
+    book = version.book
+    return {
+        "book": _ref(book),
+        "authors": book.authors,
+        "subtitle": book.subtitle,
+        "kind": version.kind,
+        "kind_name": AUDIO_BOOK_KINDS.get(version.kind, version.kind),
+        "narrators": version.narrators,
+        "minutes": version.minutes,
+        "asin": version.asin or "",
+        "genres": version.genres,
+        "source_rating": version.source_rating,
+        "source_ratings": version.source_ratings,
+        "released": version.released.isoformat() if version.released else "",
+        "cover_url": version.cover_url,
+        "parts": version.parts,
+        "url": _version_url(version),
+        "image": image_url(book.image_id),
+    }
+
+
+def audio_book_version_json(version: AudioBookVersion, mine: AudioBookListen | None = None) -> dict[str, Any]:
+    """ A version, shared; the signed-in user's listen of it (mine), when said, or else looked for. """
+    if mine is None:
+        mine = next((listen for listen in version.listens if listen.owner_id == flask.g.user.id), None)
+    return {
+        "id": version.id,
+        "name": version_name(version),
+        **_version_fields(version),
+        "listen": None if mine is None else {"id": mine.id, **date_json(mine)},
+    }
+
+
+def _listen_status(listen: AudioBookListen) -> str:
+    """ Finished when it says so or has the day it was; in progress when heard some, or started. """
+    if listen.finished or date_json(listen)["date"]:
+        return "done"
+    return "in_progress" if listen.percent_heard or listen.started_utcz else ""
+
+
+def _listen_sort(listen: AudioBookListen) -> str:
+    """ What the sorting goes by: when it was finished, else when it came into the library (one only started goes last). """
+    return date_json(listen)["date_sort"] or _stamp_json(listen.added_utcz)
+
+
+def audio_book_heard_json(row: AudioBookHeard) -> dict[str, Any]:
+    """ An audio book the user heard: what they think of it, and the versions of it they heard, each a link to their listen. """
+    book = row.book
+    listens = sorted((listen for v in book.versions for listen in v.listens if listen.owner_id == row.owner_id), key=_listen_sort, reverse=True)
+    statuses = {_listen_status(listen) for listen in listens}
+    return {
+        "id": row.id,
+        "name": book.name,
+        "book": _ref(book),
+        "subtitle": book.subtitle,
+        "authors": book.authors,
+        "url": next((_version_url(listen.version) for listen in listens if _version_url(listen.version)), ""),
+        "image": image_url(book.image_id),
+        "rating": row.rating,
+        "review": row.review,
+        # finished when one of the versions is; in progress when one is
+        "status": "done" if "done" in statuses else ("in_progress" if "in_progress" in statuses else ""),
+        "listens": [{"id": listen.id, "name": AUDIO_BOOK_KINDS.get(listen.version.kind, listen.version.kind)} for listen in listens],
+        "date_sort": _listen_sort(listens[0]) if listens else "",
+    }
+
+
+def audio_book_listen_json(listen: AudioBookListen) -> dict[str, Any]:
+    version = listen.version
+    return {
+        "id": listen.id,
+        "name": version.book.name,
+        "version": {"id": version.id, "name": version_name(version)},
+        **_version_fields(version),
+        "finished": listen.finished,
+        "status": _listen_status(listen),
+        **date_json(listen),
+        "date_timezone": listen.date_timezone,
+        "started": _stamp_json(listen.started_utcz),
+        "progress": listen.progress,
+        "listened_at": listen.listened_at,
+        "device": _ref(listen.device),
+        "percent_heard": listen.percent_heard,
+        "added": _stamp_json(listen.added_utcz),
+        "purchased": _stamp_json(listen.purchased_utcz),
+        "date_sort": _listen_sort(listen),
+    }
 
 
 def _ref(row: Any) -> dict[str, Any] | None:
@@ -638,16 +711,53 @@ def api_audio_courses() -> flask.Response:
 @bp.route("/api/audio-books", methods=["GET"])
 @auth.login_required
 def api_audio_books() -> flask.Response:
-    books = flask.g.db.scalars(select(AudioBook).where(AudioBook.owner_id == flask.g.user.id).options(selectinload(AudioBook.device))).all()
+    """ Every audio book (shared), by title. """
+    query = select(AudioBook).options(selectinload(AudioBook.versions)).order_by(AudioBook.name, AudioBook.id)
+    return flask.jsonify([audio_book_json(b) for b in flask.g.db.scalars(query)])
+
+
+@bp.route("/api/audio-book-versions", methods=["GET"])
+@auth.login_required
+def api_audio_book_versions() -> flask.Response:
+    """ Every version of every audio book (shared), by the book's title, each saying whether the user heard it. """
+    mine = {listen.version_id: listen for listen in flask.g.db.scalars(select(AudioBookListen).where(AudioBookListen.owner_id == flask.g.user.id))}
+    query = select(AudioBookVersion).join(AudioBook).options(selectinload(AudioBookVersion.book)).order_by(AudioBook.name, AudioBookVersion.id)
+    return flask.jsonify([audio_book_version_json(v, mine.get(v.id)) for v in flask.g.db.scalars(query)])
+
+
+@bp.route("/api/audio-books-heard", methods=["GET"])
+@auth.login_required
+def api_audio_books_heard() -> flask.Response:
+    """
+    Your audio books: the shared audio books filtered to those the user heard
+    a version of, each with their rating and review of it (their
+    AudioBookHeard, which a listen makes). One whose listens were all
+    deleted is not listed, and keeps the rating and review for when one is
+    heard again.
+    """
+    heard_of = select(AudioBookVersion.book_id).join(AudioBookListen).where(AudioBookListen.owner_id == flask.g.user.id)
+    query = select(AudioBookHeard).where(AudioBookHeard.owner_id == flask.g.user.id, AudioBookHeard.book_id.in_(heard_of)).options(
+        selectinload(AudioBookHeard.book).selectinload(AudioBook.versions).selectinload(AudioBookVersion.listens),
+    )
     # the latest finished, or come into the library, first
-    return flask.jsonify(_newest_first([audio_book_json(b) for b in books]))
+    return flask.jsonify(_newest_first([audio_book_heard_json(row) for row in flask.g.db.scalars(query)]))
+
+
+@bp.route("/api/audio-book-listens", methods=["GET"])
+@auth.login_required
+def api_audio_book_listens() -> flask.Response:
+    query = select(AudioBookListen).where(AudioBookListen.owner_id == flask.g.user.id).options(
+        selectinload(AudioBookListen.version).selectinload(AudioBookVersion.book), selectinload(AudioBookListen.device),
+    )
+    # the latest finished, or come into the library, first
+    return flask.jsonify(_newest_first([audio_book_listen_json(listen) for listen in flask.g.db.scalars(query)]))
 
 
 @bp.route("/api/podcasts", methods=["GET"])
 @auth.login_required
 def api_podcasts() -> flask.Response:
+    """ Every podcast (shared), by name. """
     query = select(Podcast).options(selectinload(Podcast.episodes)).order_by(Podcast.name)
-    query = select(Podcast).options(selectinload(Podcast.heard), selectinload(Podcast.episodes).selectinload(PodcastEpisode.heard)).order_by(Podcast.name)
     return flask.jsonify([podcast_json(p) for p in flask.g.db.scalars(query)])
 
 
@@ -944,7 +1054,7 @@ def api_currencies() -> flask.Response:
 
 
 
-def _apply_dates(row: Concert | Visit | AudioCourse | AudioBook | EpisodeHeard | YouTubeVideo, body: dict[str, Any]) -> None:
+def _apply_dates(row: Concert | Visit | AudioCourse | AudioBookListen | EpisodeHeard | YouTubeVideo, body: dict[str, Any]) -> None:
     """
     The date as typed: YYYY, YYYY-MM or YYYY-MM-DD, stored at that precision,
     or nothing. date_timezone is where it happened (an IANA name). A date
@@ -1197,44 +1307,106 @@ def _opt_number(body: dict[str, Any], key: str, low: float, high: float) -> floa
 
 
 def _apply_audio_book(book: AudioBook, body: dict[str, Any]) -> None:
-    book.name = text(body, "name", required=True)
-    book.subtitle = text(body, "subtitle")
-    source = text(body, "source")
-    if source and source not in AUDIO_BOOK_SOURCES:
-        raise ApiError(400, f"source: expected one of {', '.join(AUDIO_BOOK_SOURCES)}, or none")
-    book.source = source
-    source_id = text(body, "source_id")
-    if source_id and not source:
-        raise ApiError(400, "source_id: a book's id at a source needs the source")
-    if source_id:
-        taken = flask.g.db.scalars(select(AudioBook.id).where(
-            AudioBook.owner_id == flask.g.user.id, AudioBook.source == source, AudioBook.source_id == source_id, AudioBook.id != book.id,
-        )).first()
-        if taken is not None:
-            raise ApiError(409, f"source_id: {source_id} is in Audio books already")
-    book.source_id = source_id or None
-    book.authors = text(body, "authors")
-    book.narrators = text(body, "narrators")
+    name, subtitle, authors = text(body, "name", required=True), text(body, "subtitle"), text(body, "authors")
+    clash = flask.g.db.execute(select(AudioBook.id).where(
+        AudioBook.name == name, AudioBook.subtitle == subtitle, AudioBook.authors == authors, AudioBook.id != book.id,
+    )).first()
+    if clash is not None:
+        raise ApiError(409, f"{name}{f': {subtitle}' if subtitle else ''}{f' by {authors}' if authors else ''} is already in Audio books")
+    book.name = name
+    book.subtitle = subtitle
+    book.authors = authors
     book.series = text(body, "series")
     book.series_sequence = text(body, "series_sequence")
+    apply_image(book, body)
+
+
+def _apply_audio_book_version(version: AudioBookVersion, body: dict[str, Any]) -> None:
+    book = owned_ref(body, "book_id", AudioBook, "audio book")
+    if book is None:
+        raise ApiError(400, "book_id: a version is of an audio book")
+    kind = text(body, "kind")
+    if kind not in AUDIO_BOOK_KINDS:
+        raise ApiError(400, f"kind: expected one of {', '.join(AUDIO_BOOK_KINDS)}")
+    asin = text(body, "asin")
+    if asin and kind != "audible":
+        raise ApiError(400, "asin: only an Audible version has an ASIN")
+    if asin:
+        clash = flask.g.db.execute(select(AudioBookVersion.id).where(AudioBookVersion.asin == asin, AudioBookVersion.id != version.id)).first()
+        if clash is not None:
+            raise ApiError(409, f"asin: {asin} is in Audio book versions already")
     genres = body.get("genres", [])
     if isinstance(genres, str):
         genres = [g.strip() for g in genres.split(",")]
     if not isinstance(genres, list) or not all(isinstance(g, str) for g in genres):
         raise ApiError(400, "genres: expected a list of names")
-    # kept as listed, repeats too: a source's list says each genre's path (AudioBook.genres)
-    book.genres = [g.strip() for g in genres if g.strip()]
-    book.minutes = opt_int(body, "minutes", 1, 100_000)
-    book.finished = bool(body.get("finished"))
-    book.percent_heard = _opt_number(body, "percent_heard", 0, 100)
-    book.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
-    book.review = text(body, "review")
-    book.started_utcz = _stamp(body, "started", book.started_utcz)
-    book.progress = text(body, "progress")
-    book.listened_at = text(body, "listened_at")
-    book.device = owned_ref(body, "device_id", Device, "device")
-    apply_image(book, body)
-    _apply_dates(book, body)
+    version.book = book
+    version.kind = kind
+    version.asin = asin or None
+    # kept as listed, repeats too: Audible's list says each genre's path (AudioBookVersion.genres)
+    version.genres = [g.strip() for g in genres if g.strip()]
+    version.narrators = text(body, "narrators")
+    version.minutes = opt_int(body, "minutes", 1, 100_000)
+    version.parts = opt_int(body, "parts", 1, 10_000)
+    released = text(body, "released")
+    try:
+        version.released = datetime.date.fromisoformat(released) if released else None
+    except ValueError as e:
+        raise ApiError(400, "released: expected YYYY-MM-DD") from e
+
+
+def hearing(owner_id: int, book: AudioBook) -> AudioBookHeard:
+    """ owner's AudioBookHeard of book, made when they have none: a version heard is of a book they heard. """
+    found = next((row for row in book.heard if row.owner_id == owner_id), None)
+    if found is None:
+        found = AudioBookHeard(owner_id=owner_id, book=book)
+    return found
+
+
+def _listens_of(row: AudioBookHeard) -> int:
+    """ How many versions of row's book its user heard. """
+    return len(flask.g.db.scalars(select(AudioBookListen.id).join(AudioBookVersion).where(
+        AudioBookListen.owner_id == row.owner_id, AudioBookVersion.book_id == row.book_id,
+    )).all())
+
+
+def _apply_audio_book_heard(row: AudioBookHeard, body: dict[str, Any]) -> None:
+    book = owned_ref(body, "book_id", AudioBook, "audio book")
+    if book is None:
+        raise ApiError(400, "book_id: choose the audio book")
+    if row.id is None:
+        # Your audio books are the books the user heard a version of: hearing one adds it
+        raise ApiError(409, f"{book.name} is in Your audio books once you heard a version of it: add it in Audio book listens")
+    clash = flask.g.db.execute(select(AudioBookHeard.id).where(
+        AudioBookHeard.owner_id == flask.g.user.id, AudioBookHeard.book_id == book.id, AudioBookHeard.id != row.id,
+    )).first()
+    if clash is not None:
+        raise ApiError(409, f"{book.name} is already in Your audio books")
+    if row.book_id is not None and row.book_id != book.id and _listens_of(row):
+        raise ApiError(409, f"you heard {row.book.name}: it stays the book your listens are of")
+    row.book = book
+    row.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
+    row.review = text(body, "review")
+
+
+def _apply_audio_book_listen(listen: AudioBookListen, body: dict[str, Any]) -> None:
+    version = owned_ref(body, "version_id", AudioBookVersion, "audio book version")
+    if version is None:
+        raise ApiError(400, "version_id: choose the version heard")
+    clash = flask.g.db.execute(select(AudioBookListen.id).where(
+        AudioBookListen.owner_id == flask.g.user.id, AudioBookListen.version_id == version.id, AudioBookListen.id != listen.id,
+    )).first()
+    if clash is not None:
+        raise ApiError(409, f"{version_name(version)} is already in your Audio book listens")
+    listen.version = version
+    listen.finished = bool(body.get("finished"))
+    listen.percent_heard = _opt_number(body, "percent_heard", 0, 100)
+    listen.started_utcz = _stamp(body, "started", listen.started_utcz)
+    listen.progress = text(body, "progress")
+    listen.listened_at = text(body, "listened_at")
+    listen.device = owned_ref(body, "device_id", Device, "device")
+    _apply_dates(listen, body)
+    flask.g.db.add(hearing(flask.g.user.id, version.book))
 
 
 def _web_link(body: dict[str, Any], key: str) -> str:
@@ -1629,6 +1801,9 @@ VIEWS: dict[str, _View] = {
     "concert-visits": _View(Concert, _apply_concert, concert_json),
     "audio-courses": _View(AudioCourse, _apply_audio_course, audio_course_json),
     "audio-books": _View(AudioBook, _apply_audio_book, audio_book_json),
+    "audio-book-versions": _View(AudioBookVersion, _apply_audio_book_version, audio_book_version_json),
+    "audio-books-heard": _View(AudioBookHeard, _apply_audio_book_heard, audio_book_heard_json),
+    "audio-book-listens": _View(AudioBookListen, _apply_audio_book_listen, audio_book_listen_json),
     "podcasts": _View(Podcast, _apply_podcast, podcast_json),
     "podcast-episodes": _View(PodcastEpisode, _apply_podcast_episode, podcast_episode_json),
     "podcasts-heard": _View(PodcastHeard, _apply_podcast_heard, podcast_heard_json),
@@ -1713,6 +1888,13 @@ def api_world_delete(what: str, row_id: int) -> flask.Response:
         raise ApiError(409, f"{row.name} was heard (Episodes heard): it stays")
     if isinstance(row, PodcastHeard) and _heard_of(row):
         raise ApiError(409, f"you heard {_heard_of(row)} episodes of {row.podcast.name}: delete them first")
+    # and so does an audio book someone heard, a version someone heard, a book heard with listens
+    if isinstance(row, AudioBook) and (row.heard or any(v.listens for v in row.versions)):
+        raise ApiError(409, f"{row.name} was heard (Audio book listens): it stays")
+    if isinstance(row, AudioBookVersion) and row.listens:
+        raise ApiError(409, f"{version_name(row)} was heard (Audio book listens): it stays")
+    if isinstance(row, AudioBookHeard) and _listens_of(row):
+        raise ApiError(409, f"you heard {row.book.name} ({_listens_of(row)} listens): delete them first")
     flask.g.db.delete(row)
     flask.g.db.flush()
     drop_unused_images()

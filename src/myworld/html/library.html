@@ -456,39 +456,11 @@
 					<label title="The book's subtitle, when it has one" class="wide">Subtitle <input name="subtitle"></label>
 				</div>
 				<div class="row">
-					<label title="Who wrote it, as the source writes them: names separated by commas" class="wide">Authors <input name="authors"></label>
-				</div>
-				<div class="row">
-					<label title="Who reads it, as the source writes them: names separated by commas" class="wide">Narrators <input name="narrators"></label>
+					<label title="Who wrote it: names separated by commas. A book is in Audio books once by its title and authors" class="wide">Authors <input name="authors"></label>
 				</div>
 				<div class="row">
 					<label title="The series it is part of, when it is" class="wide">Series <input name="series"></label>
 					<label title="Its place in the series: 1, 2, 0.5, ...">Number <input name="series_sequence"></label>
-				</div>
-				<div class="row">
-					<label title="Its genres, separated by commas, as the source lists them: each genre's path from its top genre down, so a top genre comes again for each path" class="wide">Genres <input name="genres"></label>
-					<label title="How long it is, in minutes">Minutes <input name="minutes" type="number" min="1"></label>
-				</div>
-				<div class="row">
-					<label class="check" title="Whether you heard all of it; the source's import refreshes it"><input name="finished" type="checkbox"> Finished</label>
-					<label title="How much of it you heard, 0 to 100; the source's import refreshes it">Heard (%) <input name="percent_heard" type="number" min="0" max="100" step="any"></label>
-					<label title="Your rating of the book, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
-				</div>
-				<div class="row">
-					<label title="What you thought of the book, in your own words" class="wide">Review <input name="review"></label>
-				</div>
-				<div class="row">
-					<label title="How much of the date is known">Finished <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
-					<label title="The day you started listening, as YYYY-MM-DD">Started <input name="started" pattern="\d{4}-\d{2}-\d{2}(T[0-9:.]+Z)?" placeholder="YYYY-MM-DD"></label>
-					<label title="How far you got in a book you have not finished, in your own words: did part03, disc 2 of 9">Progress <input name="progress" placeholder="e.g. did part03"></label>
-				</div>
-				<div class="row">
-					<label title="What you listened on, one of Devices; add a new one on the Devices page">Device <select name="device_id"></select></label>
-					<label title="Where you listened to it: on night walks, in the car, ...">Where <input name="listened_at" placeholder="e.g. Night Walks, Car"></label>
-				</div>
-				<div class="row">
-					<label title="Where the book is in your library: its import finds it again there by its id">Source <select name="source"><option value="">None</option><option value="audible">Audible</option></select></label>
-					<label title="The book's id at its source (Audible's ASIN), for the link to its page">Id there <input name="source_id"></label>
 				</div>
 				<div class="row">
 					<label title="The book's cover image. + adds one, in place of the one it has; − takes it away" class="wide">Cover <span class="chips pictures" id="audio-book-pictures" data-pictures="one" data-what="cover"></span></label>
@@ -497,6 +469,68 @@
 					<div class="row">
 						<label title="An image file on this device (JPEG, PNG, GIF or WebP, up to 8 MB): choosing one adds it" class="wide">Cover file <input name="photo" type="file" accept="image/jpeg,image/png,image/gif,image/webp"></label>
 					</div>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="audio-book-version-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="The audio book it is a version of, one of Audio books: add a new one there" class="wide">Book <select name="book_id" data-picker="audio-books" data-placeholder="Type a book" title="The audio book it is a version of, one of Audio books: add a new one there"></select></label>
+				</div>
+				<div class="row">
+					<label title="What the version is: the book in an Audible library, or MP3 files">Kind <select name="kind"><option value="audible">Audible</option><option value="mp3">MP3</option></select></label>
+					<label title="How long it is, in minutes">Minutes <input name="minutes" type="number" min="1"></label>
+					<label title="MP3: how many files (parts, discs) it comes in">Parts <input name="parts" type="number" min="1"></label>
+				</div>
+				<div class="row">
+					<label title="Who reads it: names separated by commas" class="wide">Narrators <input name="narrators"></label>
+				</div>
+				<div class="row">
+					<label title="Audible: the book's id there (its ASIN), for the link to its page; the Audible library importer finds it again by it">ASIN <input name="asin"></label>
+					<label title="Audible: the day it came out, as YYYY-MM-DD">Released <input name="released" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"></label>
+				</div>
+				<div class="row">
+					<label title="Audible: its genres, separated by commas, as Audible lists them: each genre's path from its top genre down, so a top genre comes again for each path" class="wide">Genres <input name="genres"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="audio-book-heard-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="The audio book you heard, one of Audio books (shared)" class="wide">Book <select name="book_id" data-picker="audio-books" data-placeholder="Type a book" title="The audio book you heard, one of Audio books (shared)"></select></label>
+				</div>
+				<div class="row">
+					<label title="Your rating of the book, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
+					<label title="What you thought of the book, in your own words" class="wide">Review <input name="review"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="audio-book-listen-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="The version you heard, one of Audio book versions (shared), as book (kind)" class="wide">Version <select name="version_id" data-picker="audio-book-versions" data-placeholder="Type a book" title="The version you heard, one of Audio book versions (shared), as book (kind)"></select></label>
+				</div>
+				<div class="row">
+					<label class="check" title="Whether you heard all of it; the Audible library importer refreshes it for an Audible version"><input name="finished" type="checkbox"> Finished</label>
+					<label title="How much of it you heard, 0 to 100; the Audible library importer refreshes it for an Audible version">Heard (%) <input name="percent_heard" type="number" min="0" max="100" step="any"></label>
+				</div>
+				<div class="row">
+					<label title="How much of the date you finished it is known">Finished on <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
+					<label title="The day you started listening, as YYYY-MM-DD">Started <input name="started" pattern="\d{4}-\d{2}-\d{2}(T[0-9:.]+Z)?" placeholder="YYYY-MM-DD"></label>
+					<label title="How far you got in a version you have not finished, in your own words: did part03, disc 2 of 9">Progress <input name="progress" placeholder="e.g. did part03"></label>
+				</div>
+				<div class="row">
+					<label title="What you listened on, one of Devices; add a new one on the Devices page">Device <select name="device_id"></select></label>
+					<label title="Where you listened to it: on night walks, in the car, ...">Where <input name="listened_at" placeholder="e.g. Night Walks, Car"></label>
 				</div>
 				<div class="dialog-actions">
 					<button type="button" class="text danger delete" hidden>Delete</button>

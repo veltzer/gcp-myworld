@@ -11,8 +11,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from myworld.models import (
+    AUDIO_BOOK_KINDS,
     KINDS,
     AudioBook,
+    AudioBookHeard,
+    AudioBookListen,
+    AudioBookVersion,
     AudioCourse,
     City,
     Concert,
@@ -86,7 +90,8 @@ DATASETS: dict[str, str] = {
     "concerts": "Concerts",
     "museums": "Museum visits",
     "audio-courses": "Audio courses",
-    "audio-books": "Audio books",
+    "audio-books-heard": "Your audio books",
+    "audio-book-listens": "Audio book listens",
     "podcasts-heard": "Your podcasts",
     "episodes-heard": "Episodes heard",
     "youtube": "YouTube",
@@ -96,6 +101,8 @@ DATASETS: dict[str, str] = {
     "places": "Places",
     "podcasts": "Podcasts",
     "podcast-episodes": "Podcast episodes",
+    "audio-books": "Audio books",
+    "audio-book-versions": "Audio book versions",
     "cities": "Cities",
     "countries": "Countries",
     "currencies": "Currencies",
@@ -157,6 +164,9 @@ SUBJECTS: dict[type, tuple[str, str]] = {
     Concert: ("concert", "concerts"),
     AudioCourse: ("audio course", "audio-courses"),
     AudioBook: ("audio book", "audio-books"),
+    AudioBookVersion: ("audio book version", "audio-book-versions"),
+    AudioBookHeard: ("audio book of yours", "audio-books-heard"),
+    AudioBookListen: ("audio book listen", "audio-book-listens"),
     Podcast: ("podcast", "podcasts"),
     PodcastEpisode: ("podcast episode", "podcast-episodes"),
     PodcastHeard: ("podcast of yours", "podcasts-heard"),
@@ -199,7 +209,18 @@ def problem(row: Any, message: str) -> Problem:
         return Problem(f"{row.work.title} ({KINDS[kind][0].lower()} {row.work_id}, account {row.owner_id})", message, f"{kind}/{row.work_id}", row.owner_id)
     noun, view = SUBJECTS[type(row)]
     # one heard is told by the name of what was heard
-    name = row.podcast.name if isinstance(row, PodcastHeard) else row.episode.name if isinstance(row, EpisodeHeard) else row.name
+    if isinstance(row, PodcastHeard):
+        name = row.podcast.name
+    elif isinstance(row, EpisodeHeard):
+        name = row.episode.name
+    elif isinstance(row, AudioBookHeard):
+        name = row.book.name
+    elif isinstance(row, AudioBookVersion):
+        name = f"{row.book.name} ({AUDIO_BOOK_KINDS.get(row.kind, row.kind)})"
+    elif isinstance(row, AudioBookListen):
+        name = f"{row.version.book.name} ({AUDIO_BOOK_KINDS.get(row.version.kind, row.version.kind)})"
+    else:
+        name = row.name
     # a place is told with its city and a city with its country: two may share a name
     if isinstance(row, Place) and row.city:
         name = f"{name}, {row.city.name}"

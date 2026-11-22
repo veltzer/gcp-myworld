@@ -442,30 +442,50 @@ first `companies` tables to `organizations`, then making
   dialog the museum is picked from the museums of Places, and the Visits
   box lists the visits, each with a red pencil, a red − and one red + to
   add another.
-- `GET /api/audio-books`: the books of the user's audio book libraries,
-  latest into the library first, each with `source` (`audible`, or `""`
-  for one typed in by hand), `source_name`, `source_id` (Audible's ASIN),
-  `name` (the title), `subtitle`, `authors` and `narrators` (as the source
-  writes them), `series`, `series_sequence`, `genres`, `minutes`,
-  `finished`, `percent_heard`, `status` (`done`, `in_progress` or `""`),
-  `source_rating` (of 5) and `source_ratings`, `added`, `purchased`,
-  `released`, `cover_url` (the cover's address at the source), the
-  user's own `rating` and `review`, as an audio course has them the day
-  it was finished (`date`, at the precision known), `started`, `progress`,
-  `listened_at` and `device`, `url` (its page at the source) and the
-  cover as `image`. Those heard elsewhere came from `audio_books.yaml`, with
-  no source, found again by name. A source's book is in an account once (409). Imported
-  (2026-11-21) from `audible.yaml` in `veltzer.github.io`, which no longer
-  has it (My World keeps them now; the site's git history does) (covers
-  `static/images/audible-<asin>.jpg`) by
-  `scripts/import_world.py --audio-books`, which adds the books the account does not have yet and
-  refreshes what Audible changes on the rest (finished, how much was
-  heard, the rating there, when bought, the cover's address), so it can run again after the site's data is.
+- `GET /api/audio-books` (shared, kept by admins): every audio book, by
+  title, with `subtitle`, `authors`, `series`, `series_sequence`, its
+  `versions` (each its id and kind's name), `url` (its Audible page, when
+  it has an Audible version) and the cover as `image`. A book is in My World
+  once by its title, subtitle and authors (409); one someone heard is not
+  deleted (409).
+- `GET /api/audio-book-versions` (shared, kept by admins): every version
+  of every book, by the book's title, named "title (kind)", each with its
+  `book`, `kind` (`audible` or `mp3`) and `kind_name`, `narrators`,
+  `minutes`; of an Audible one what Audible says (`asin`, `genres`,
+  `source_rating` of 5 and `source_ratings`, `released`, `cover_url`), of
+  MP3 files `parts`; and `listen`: the user's listen of it (its id and
+  date), or null. An Audible version is once by its ASIN (409); one someone
+  heard is not deleted (409).
+- `GET /api/audio-books-heard` (Your audio books): the shared books
+  filtered to those the user heard a version of, the latest finished or
+  into the library first, each with the user's `rating` and `review`
+  (`audio_books_heard`, one per book, made when a version of it is first
+  heard), `status` (`done` when a version is finished, `in_progress`, or
+  `""`) and the versions heard (`listens`: the listen's id and the kind's
+  name). It is not added to (`POST` is 409: a listen adds its book); one
+  whose listens are all deleted is not listed and keeps its rating and
+  review, and is deleted only then (409 before).
+- `GET /api/audio-book-listens`: the versions the user heard, the latest
+  finished or into the library first (one only started last), each with
+  its `version` (id and name) and what the version is (as above),
+  `finished`, `percent_heard`, `status`, as an audio course has them the
+  day it was finished (`date`, at the precision known), `started`,
+  `progress`, `listened_at` and `device`, and of an Audible one `added` and
+  `purchased`. A version is heard once (409). Imported (2026-11-21) from
+  `audible.yaml` (covers `static/images/audible-<asin>.jpg`) and
+  `audio_books.yaml` (heard as MP3 files) in `veltzer.github.io`, which no
+  longer has them (the site's git history does), by
+  `scripts/import_world.py --audio-books`, which adds what the account
+  does not have yet and refreshes what Audible changes, so it can run
+  again. Migrations 0026 (before the deploy) and 0027 (after it) made the
+  audio books shared, each in versions, merged the books of one title,
+  subtitle and authors, and moved what was each account's own to
+  `audio_books_heard` and `audio_book_listens`.
 - `GET /api/podcasts` (shared, kept by admins): every podcast, by name,
   with `url` (its page), `rss_feed`, the cover as `image`, how many
   episodes it has (`episodes`), when the newest was published
-  (`published`), and whether the user listens to it (`listened`) and how
-  many of its episodes they heard (`heard`). A name is once in My World
+  (`published`): the same for everyone (what a user heard is in Your
+  podcasts). A name is once in My World
   (409); a podcast someone listens to is not deleted (409).
 - `GET /api/podcast-episodes` (shared, kept by admins, brought from the
   feeds by the Podcast feeds importer): every episode, the latest published
@@ -611,7 +631,7 @@ a person is written with `type_ids`, a list.
   (how it is related to the user: ids and names of relation types), status, website, location, address, `latitude` and `longitude`, the logo as
   `image`, and `people` (ids and names).
 - `POST` to the same paths adds,
-  `PUT /api/<concert-visits|museum-visits|audio-courses|audio-books|podcasts|podcast-episodes|podcasts-heard|episodes-heard|youtube-videos|chess-games|places|groups|people|organizations>/<id>` replaces the fields,
+  `PUT /api/<concert-visits|museum-visits|audio-courses|audio-books|audio-book-versions|audio-books-heard|audio-book-listens|podcasts|podcast-episodes|podcasts-heard|episodes-heard|youtube-videos|chess-games|places|groups|people|organizations>/<id>` replaces the fields,
   `DELETE` removes. The date is sent as `YYYY`, `YYYY-MM` or
   `YYYY-MM-DD` (the add and edit forms pick it with a date picker and a Day, Month
   only or Year only choice, so it is always a real date); a date sent back exactly as it came keeps its stored
@@ -806,10 +826,17 @@ The Imports page and its API are in `imports.md`.
   (everything a podcast's feed says of an episode, brought by the Podcast
   feeds importer): what a user heard and thinks of them is theirs, in
   `podcasts_heard` and `episodes_heard`.
+    - `audio_books` (title, subtitle, authors, series, cover) and
+  `audio_book_versions` (each version of a book: Audible, with what Audible
+  says of it, or MP3 files): what a user heard and thinks of them is
+  theirs, in `audio_books_heard` and `audio_book_listens`.
 - Every other table that holds an account's rows says whose they are in
   `owner_id` (or through the rows it links):
     - `concert_visits`, `visits` (a visit to a place, of a type: the
-  museum visits), `audio_courses`, `audio_books`, `podcasts_heard` (a
+  museum visits), `audio_courses`, `audio_books_heard` (a shared audio
+  book the user heard, with their rating and review) and
+  `audio_book_listens` (a shared version heard: finished, how far, when,
+  where, on what), `podcasts_heard` (a
   shared podcast the user listens to, with their rating and review) and
   `episodes_heard` (a shared episode heard, when, where, on what), `youtube_videos`, `chess_games`: one
   row per thing done (see "Concerts, museums, people and organizations").

@@ -25,6 +25,9 @@ from myworld.models import (
     MUSEUM_VISIT,
     ROLE_ADMIN,
     AudioBook,
+    AudioBookHeard,
+    AudioBookListen,
+    AudioBookVersion,
     AudioCourse,
     Base,
     City,
@@ -343,19 +346,26 @@ def test_audio_books(engine: Engine) -> None:
         session.flush()
         cover = Image(owner_id=alice.id, filename="c.jpg", content_type="image/jpeg", sha256="0" * 64, data=b"\xff\xd8")
         good = {"authors": "Sam Harris", "image": cover}
-        session.add_all([
-            # every rule kept: finished, rated and reviewed; one not finished is not asked for a review
-            AudioBook(owner_id=alice.id, name="Good", finished=True, rating=8, review="Fine", **good),
-            AudioBook(owner_id=alice.id, name="Halfway", percent_heard=50, **good),
-            # the same title with another subtitle is another book
-            AudioBook(owner_id=alice.id, name="Political Order", subtitle="Volume 1", **good),
-            AudioBook(owner_id=alice.id, name="Political Order", subtitle="Volume 2", **good),
-            # each of these breaks one rule
-            AudioBook(owner_id=alice.id, name="Bare"),
-            AudioBook(owner_id=alice.id, name="Unreviewed", finished=True, rating=7, **good),
-            AudioBook(owner_id=alice.id, name="Twice", **good),
-            AudioBook(owner_id=alice.id, name="twice ", **good),
-        ])
+
+        def heard(name: str, *, finished: bool = False, rating: int | None = None, review: str = "", percent: float | None = None, **book: object) -> AudioBook:
+            """ A shared book with an MP3 version alice heard. """
+            row = AudioBook(name=name, **book)
+            version = AudioBookVersion(book=row, kind="mp3")
+            session.add_all([row, AudioBookHeard(owner_id=alice.id, book=row, rating=rating, review=review),
+                             AudioBookListen(owner_id=alice.id, version=version, finished=finished, percent_heard=percent)])
+            return row
+
+        # every rule kept: finished, rated and reviewed; one not finished is not asked for a review, and says how far it got
+        heard("Good", finished=True, rating=8, review="Fine", **good)
+        heard("Halfway", percent=50, **good)
+        # the same title with another subtitle is another book
+        session.add_all([AudioBook(name="Political Order", subtitle="Volume 1", **good), AudioBook(name="Political Order", subtitle="Volume 2", **good)])
+        # each of these breaks one rule
+        session.add(AudioBook(name="Bare"))
+        heard("Unreviewed", finished=True, rating=7, **good)
+        heard("Nowhere", **good)
+        session.add_all([AudioBook(name="Twice", **good), AudioBook(name="twice ", authors="Someone", image=cover)])
+        session.add(AudioBookVersion(book=AudioBook(name="No ASIN", **good), kind="audible"))
         session.commit()
 
         def found(name: str) -> list[tuple[str, str]]:
@@ -364,10 +374,14 @@ def test_audio_books(engine: Engine) -> None:
         assert found("audio-book-authors") == [("Bare", "has no author")]
         assert found("audio-book-covers") == [("Bare", "has no cover")]
         assert found("audio-book-reviews") == [("Unreviewed", "is finished but has no review")]
+        assert found("audio-book-version-asins") == [("No ASIN", "has no ASIN")]
+        assert found("audio-book-listen-progress") == [("Nowhere", "says neither how much was heard nor how far it got")]
         duplicates = checks.CHECKS["audio-book-duplicates"].run(session).problems
         assert [p.subject.split(" (")[0] for p in duplicates] == ["Twice", "twice "]
-        # each problem opens its book
-        assert [(p.link.split("/")[0], p.owner) for p in duplicates] == [("audio-books", alice.id)] * 2
+        # each problem opens its book: a shared one any admin may; one heard, the account's own
+        assert [(p.link.split("/")[0], p.owner) for p in duplicates] == [("audio-books", None)] * 2
+        [review] = checks.CHECKS["audio-book-reviews"].run(session).problems
+        assert (review.link.split("/")[0], review.owner) == ("audio-books-heard", alice.id)
 
 
 def test_podcasts(engine: Engine) -> None:

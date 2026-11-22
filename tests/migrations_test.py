@@ -4,6 +4,7 @@ the tables the models declare, the app marks a database it made as being at
 the newest of them, and one the migrations keep is changed by them alone.
 """
 
+import datetime
 import os
 import subprocess
 import sys
@@ -422,5 +423,61 @@ def test_podcasts_become_shared_and_what_was_heard_each_accounts(url: str) -> No
         ]
     for table in ("podcasts", "podcast_episodes"):
         assert "owner_id" not in {column["name"] for column in inspect(engine).get_columns(table)}, table
+    engine.dispose()
+    assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"
+
+
+def test_audio_books_become_shared_each_in_versions_and_what_was_heard_each_accounts(url: str) -> None:
+    """ 0026 and 0027: audio books are everyone's, each in versions (Audible, MP3); each account's rating, review and listening are its own. """
+    alembic(url, "upgrade", "0025")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        for user in (1, 2):
+            connection.execute(text("INSERT INTO users (id, email, name, picture, created_at, role) VALUES (:id, :email, '', '', '2026-01-01', 'user')"), {"id": user, "email": f"{user}@example.com"})
+        connection.execute(text("INSERT INTO devices (id, owner_id, name, description, image_source, image_license, image_author) VALUES (1, 1, 'Samsung S7', '', '', '', '')"))
+        connection.execute(text("INSERT INTO images (id, owner_id, filename, content_type, sha256, data) VALUES (1, 1, 'audible-B1.jpg', 'image/jpeg', '0', X'FFD8')"))
+        book = (
+            "INSERT INTO audio_books (id, owner_id, source, source_id, name, subtitle, authors, narrators, series, series_sequence, genres, minutes,"
+            " finished, percent_heard, added_utcz, purchased_utcz, cover_url, rating, review, progress, listened_at, device_id, date_ymd, date_my,"
+            " date_timezone, image_id) VALUES (:id, :owner, :source, :asin, :name, '', 'Sam Harris', :narrators, '', '', :genres, :minutes, :finished,"
+            " :percent, :added, NULL, '', :rating, :review, '', :where, :device, :date, '', '', :image)"
+        )
+        for row in (
+            # the first account has Letter from Audible, and heard it as MP3 files too; and Free Will from Audible
+            {"id": 1, "owner": 1, "source": "audible", "asin": "B1", "name": "Letter", "narrators": "Jordan Bridges", "genres": '["Religion"]', "minutes": 115,
+             "finished": True, "percent": 100.0, "added": "2023-03-04", "rating": None, "review": "", "where": "", "device": None, "date": None, "image": 1},
+            {"id": 2, "owner": 1, "source": "", "asin": None, "name": "Letter", "narrators": "", "genres": "[]", "minutes": None,
+             "finished": True, "percent": None, "added": None, "rating": 9, "review": "Sharp", "where": "Night Walks", "device": 1, "date": "2016-05-01", "image": None},
+            {"id": 3, "owner": 1, "source": "audible", "asin": "B2", "name": "Free Will", "narrators": "Sam Harris", "genres": "[]", "minutes": 60,
+             "finished": False, "percent": 12.5, "added": "2021-01-01", "rating": None, "review": "", "where": "", "device": None, "date": None, "image": None},
+            # the second account has Free Will from Audible too
+            {"id": 4, "owner": 2, "source": "audible", "asin": "B2", "name": "Free Will", "narrators": "Sam Harris", "genres": "[]", "minutes": 60,
+             "finished": True, "percent": 100.0, "added": "2022-01-01", "rating": 6, "review": "Short", "where": "", "device": None, "date": None, "image": None},
+        ):
+            connection.execute(text(book), row)
+    engine.dispose()
+    said = run(url, "upgrade").stdout.strip().splitlines()
+    assert said == [
+        "0026: audio_books row 4 is the Audible book B2 of row 3: its version",
+        "0026: audio_books ('Letter', '', 'Sam Harris') kept once (row 1; row 2 merged into it)",
+        "0026: audio_books ('Free Will', '', 'Sam Harris') kept once (row 3; row 4 merged into it)",
+        f"migrated from 0025 to {SCHEMA_REVISION}; user 1 made the first admin",
+    ]
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT id, name, subtitle, authors, image_id FROM audio_books ORDER BY id")).all() == [
+            (1, "Letter", "", "Sam Harris", 1), (3, "Free Will", "", "Sam Harris", None)]
+        # Letter in two versions, Audible and MP3; Free Will's Audible version once, by its ASIN
+        assert connection.execute(text("SELECT id, book_id, kind, asin, narrators, minutes FROM audio_book_versions ORDER BY id")).all() == [
+            (1, 1, "audible", "B1", "Jordan Bridges", 115), (2, 1, "mp3", None, "", None), (3, 3, "audible", "B2", "Sam Harris", 60)]
+        # each account's rating and review of a book once: of Letter, the MP3 row's, as the Audible one had none
+        assert connection.execute(text("SELECT owner_id, book_id, rating, review FROM audio_books_heard ORDER BY owner_id, book_id")).all() == [
+            (1, 1, 9, "Sharp"), (1, 3, None, ""), (2, 3, 6, "Short")]
+        # and a listen of each version it heard, as it heard it
+        listens = text("SELECT owner_id, version_id, finished, percent_heard, listened_at, device_id, date_ymd FROM audio_book_listens ORDER BY owner_id, version_id")
+        assert [tuple(row) for row in connection.execute(listens).all()] == [
+            (1, 1, True, 100.0, "", None, None), (1, 2, True, None, "Night Walks", 1, datetime.date(2016, 5, 1) if url.startswith("postgresql") else "2016-05-01"),
+            (1, 3, False, 12.5, "", None, None), (2, 3, True, 100.0, "", None, None)]
+    assert "owner_id" not in {column["name"] for column in inspect(engine).get_columns("audio_books")}
     engine.dispose()
     assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"
