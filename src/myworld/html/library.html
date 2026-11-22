@@ -514,6 +514,7 @@
 				<div class="row">
 					<label title="The address of the podcast's RSS feed, which lists its episodes" class="wide">RSS feed <input name="rss_feed" type="url" placeholder="https://"></label>
 				</div>
+				<div id="podcast-facts" class="row facts" title="The podcast's episodes, as its feed has them (the Podcast feeds importer brings them), and how many of them you heard: read only"></div>
 				<div class="row">
 					<label title="The podcast's cover image. + adds one, in place of the one it has; − takes it away" class="wide">Cover <span class="chips pictures" id="podcast-pictures" data-pictures="one" data-what="cover"></span></label>
 				</div>
@@ -604,7 +605,7 @@
 					<label title="The video's title; empty for a video YouTube no longer has" class="wide">Name <input name="name" placeholder="none for a video YouTube no longer has"></label>
 				</div>
 				<!-- what YouTube says of it: only read; the YouTube importers refresh it -->
-				<div id="youtube-facts" class="row youtube-facts" title="What YouTube says of the video: read only, filled in and refreshed by the YouTube importers on the Imports page"></div>
+				<div id="youtube-facts" class="row facts" title="What YouTube says of the video: read only, filled in and refreshed by the YouTube importers on the Imports page"></div>
 				<div class="row">
 					<label title="How much of the date is known">Watched <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
 					<label title="Your rating of the video, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>

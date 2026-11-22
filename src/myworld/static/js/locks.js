@@ -1,7 +1,7 @@
 // Read only until its pencil is pressed.
 
 import { prepareBoard, setupBoard } from "./board.js";
-import { PICKER_LABELS, showYouTubeFacts } from "./cards.js";
+import { PICKER_LABELS, showPodcastFacts, showYouTubeFacts } from "./cards.js";
 import { $, VISIT, api, showError } from "./core.js";
 import { DIALOG_FORMS, dialogError, makePicker, preparePictures, setPickerRows, setPickerValue, syncAlone, worldList } from "./dialog.js";
 import { fillTypes, fillWorldForm, preparePersonLinks, prepareWorkForm, resetForm, setupWorldForm, syncDatePicks } from "./forms.js";
@@ -192,6 +192,9 @@ export async function openDialog(listed) {
 		}
 		if (form.id === "youtube-video-form") {
 			showYouTubeFacts(item);
+		}
+		if (form.id === "podcast-form") {
+			showPodcastFacts(item);
 		}
 		if (form.id === "person-form") {
 			prepareNames(item);
