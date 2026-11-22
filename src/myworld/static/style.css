@@ -2481,6 +2481,11 @@ button.text.check-toggle {
 	padding-right: 4.25rem;
 }
 
+/* nor under a film's four (IMDb, TMDB, Wikidata, Rotten Tomatoes) */
+.world-card:has(> .card-corner.catalogs) .world-title {
+	padding-right: 8.5rem;
+}
+
 .place-button {
 	order: 2;
 }

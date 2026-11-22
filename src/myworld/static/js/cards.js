@@ -8,7 +8,7 @@ import { placeButton } from "./map.js";
 import { localeName } from "./names.js";
 import { showRow } from "./views.js";
 import { visitText } from "./visits.js";
-import { SIDES, cornerOf, detail, el, formatDate, inView, linksDetail, slug, websiteButton } from "./worlds.js";
+import { SIDES, cornerOf, detail, el, formatDate, inView, linkButton, linksDetail, slug, websiteButton } from "./worlds.js";
 
 // what the picture of the rows of the view shown is called ("photo", "logo", "flag": its dialog's
 // picture box says), "" for rows that never have one
@@ -272,17 +272,28 @@ const BOOK_CATALOGS = [
 	["wikidata_id", "Wikidata", (id) => `https://www.wikidata.org/wiki/${id}`],
 ];
 
-// a film's pages, the same way
+// a film's pages, each as its site's own mark in the card's corner, in one colour like every
+// corner icon (Simple Icons, CC0): [field, site, its page, the mark]
+const brand = (path) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
 const FILM_CATALOGS = [
-	["imdb_id", "IMDb", (id) => `https://www.imdb.com/title/${id}/`],
+	["imdb_id", "IMDb", (id) => `https://www.imdb.com/title/${id}/`, brand("M22.378 0H1.622a1.72 1.72 0 0 0-1.62 1.595L0 22.378c.058.876.712 1.543 1.556 1.62l.045.002h20.797l.043-.002A1.723 1.723 0 0 0 24 22.29V1.71A1.72 1.72 0 0 0 22.415.002zm0 .496a1.214 1.214 0 0 1 1.125 1.214v20.58c0 .637-.487 1.16-1.104 1.214H1.602a1.214 1.214 0 0 1-1.106-1.126V1.628c.041-.61.522-1.092 1.126-1.132zM4.795 8.26v7.364H2.89V8.26zm6.537 0v7.364H9.671v-4.97L9 15.624H7.813l-.699-4.862-.006 4.862H5.44V8.26h2.468c.075.448.149.97.23 1.574l.272 1.871.44-3.445zm2.977 1.33q.112.06.142.203c.028.095.035.311.035.644v2.855c0 .488-.035.786-.096.895q-.092.171-.502.17V9.52c.204 0 .346.02.421.068m-.02 6.034c.454 0 .8-.027 1.024-.074q.345-.072.57-.265a.96.96 0 0 0 .324-.522c.061-.224.102-.665.102-1.322v-2.584q-.002-1.047-.074-1.403a1.3 1.3 0 0 0-.313-.644c-.169-.197-.42-.333-.745-.421-.32-.081-.854-.129-1.77-.129h-1.424v7.364zm5.14-1.783q-.001.529-.055.671c-.033.095-.19.142-.305.142-.108 0-.19-.047-.224-.135q-.06-.134-.06-.623v-1.947q.002-.501.054-.624.052-.121.217-.122c.115 0 .27.041.311.142q.061.145.061.604zm-2.475-5.58v7.363h1.715l.115-.468q.233.285.516.428c.182.088.46.135.678.135.304 0 .563-.075.78-.237a1.05 1.05 0 0 0 .42-.563c.054-.217.088-.543.088-.984v-2.067a7 7 0 0 0-.034-.868 1 1 0 0 0-.17-.42 1 1 0 0 0-.427-.333 1.929 1.929 0 0 0-1.342.013 1.6 1.6 0 0 0-.509.4v-2.4z")],
 	// a series is at TMDB under /tv/, a film under /movie/
-	["tmdb_id", "TMDB", (id, item) => `https://www.themoviedb.org/${item.kind === "series" ? "tv" : "movie"}/${id}`],
-	["wikidata_id", "Wikidata", (id) => `https://www.wikidata.org/wiki/${id}`],
-	["rotten_tomatoes_id", "Rotten Tomatoes", (id) => `https://www.rottentomatoes.com/${id}`],
+	["tmdb_id", "TMDB", (id, item) => `https://www.themoviedb.org/${item.kind === "series" ? "tv" : "movie"}/${id}`, brand("M6.62 12a2.29 2.29 0 0 1 2.292-2.295h-.013A2.29 2.29 0 0 1 11.189 12a2.29 2.29 0 0 1-2.29 2.291h.013A2.29 2.29 0 0 1 6.62 12m10.72-4.062h4.266a2.29 2.29 0 0 0 2.29-2.291 2.29 2.29 0 0 0-2.29-2.296H17.34a2.29 2.29 0 0 0-2.291 2.296 2.29 2.29 0 0 0 2.29 2.29zM2.688 20.645h8.285a2.29 2.29 0 0 0 2.291-2.292 2.29 2.29 0 0 0-2.29-2.295H2.687a2.29 2.29 0 0 0-2.291 2.295 2.29 2.29 0 0 0 2.29 2.292zm10.881-6.354h.81l1.894-4.586H15.19l-1.154 3.008h-.013l-1.135-3.008h-1.154zm4.208 0h1.011V9.705h-1.011zm2.878 0h3.235v-.93h-2.223v-.933h1.99v-.934h-1.99v-.855h2.107v-.934h-3.112zM1.31 7.941h1.01V4.247h1.31v-.895H0v.895h1.31zm3.747 0h1.011V5.959h1.958v1.984h1.011v-4.59h-1.01v1.711H6.061V3.351H5.057zm5.348 0h3.242v-.933H11.41v-.934h1.99v-.933h-1.99v-.856h2.107v-.934h-3.112zM.162 14.296h1.005v-3.52h.013l1.167 3.52h.765l1.206-3.52h.013v3.52h1.011v-4.59H3.82L2.755 12.7h-.013L1.686 9.705H.156zm14.534 6.353h1.641a3.2 3.2 0 0 0 .98-.149 2.5 2.5 0 0 0 .824-.437 2.1 2.1 0 0 0 .567-.713 2.2 2.2 0 0 0 .223-.983 2.4 2.4 0 0 0-.218-1.07 1.96 1.96 0 0 0-.586-.716 2.4 2.4 0 0 0-.873-.392 4.4 4.4 0 0 0-1.046-.13h-1.519zm1.013-3.656h.596a2.3 2.3 0 0 1 .606.08 1.5 1.5 0 0 1 .503.244 1.2 1.2 0 0 1 .34.412 1.3 1.3 0 0 1 .13.587 1.55 1.55 0 0 1-.13.658 1.1 1.1 0 0 1-.347.433 1.4 1.4 0 0 1-.518.238 2.8 2.8 0 0 1-.649.07h-.538zm4.686 3.656h1.88a3 3 0 0 0 .613-.064 1.7 1.7 0 0 0 .554-.214 1.2 1.2 0 0 0 .402-.39 1.1 1.1 0 0 0 .155-.606 1.2 1.2 0 0 0-.071-.415 1 1 0 0 0-.204-.34 1.1 1.1 0 0 0-.317-.24 1.3 1.3 0 0 0-.413-.13v-.012a1.2 1.2 0 0 0 .575-.366.96.96 0 0 0 .216-.648 1.1 1.1 0 0 0-.149-.603 1 1 0 0 0-.389-.354 1.7 1.7 0 0 0-.54-.169 4.5 4.5 0 0 0-.6-.041h-1.712zm1.011-3.734h.687a1.4 1.4 0 0 1 .24.022.8.8 0 0 1 .22.075.43.43 0 0 1 .16.147.4.4 0 0 1 .061.236.5.5 0 0 1-.055.233.43.43 0 0 1-.146.156.6.6 0 0 1-.204.084 1 1 0 0 1-.23.026h-.745zm0 1.835h.765a2 2 0 0 1 .266.02 1 1 0 0 1 .26.07.5.5 0 0 1 .204.152.4.4 0 0 1 .08.26.5.5 0 0 1-.06.253.5.5 0 0 1-.16.168.6.6 0 0 1-.217.09 1 1 0 0 1-.237.027H21.4z")],
+	["wikidata_id", "Wikidata", (id) => `https://www.wikidata.org/wiki/${id}`, brand("M0 4.583v14.833h.865V4.583zm1.788 0v14.833h2.653V4.583zm3.518 0v14.832H7.96V4.583zm3.547 0v14.834h.866V4.583zm1.789 0v14.833h.865V4.583zm1.759 0v14.834h2.653V4.583zm3.518 0v14.834h.923V4.583zm1.788 0v14.833h2.653V4.583zm3.64 0v14.834h.865V4.583zm1.788 0v14.834H24V4.583Z")],
+	["rotten_tomatoes_id", "Rotten Tomatoes", (id) => `https://www.rottentomatoes.com/${id}`, brand("M5.866 0 4.335 1.262l2.082 1.8c-2.629-.989-4.842 1.4-5.012 2.338 1.384-.323 2.24-.422 3.344-.335-7.042 4.634-4.978 13.148-1.434 16.094 5.784 4.612 13.77 3.202 17.91-1.316C27.26 13.363 22.993.65 10.86 2.766c.107-1.17.633-1.503 1.243-1.602-.89-1.493-3.67-.734-4.556 1.374C7.52 2.602 5.866 0 5.866 0M4.422 7.217H6.9c2.673 0 2.898.012 3.55.202 1.06.307 1.868.973 2.313 1.904q.074.158.13.305l7.623.008.027 2.912-2.745-.024v7.549l-2.982-.016v-7.522l-2.127.016a2.9 2.9 0 0 1-1.056 1.134c-.287.176-.3.19-.254.264.127.2 2.125 3.642 2.125 3.659l-3.39.019-2.013-3.376c-.034-.047-.122-.068-.344-.084l-.297-.02.037 3.48-3.075-.038zm3.016 2.288.024.338c.014.186.024.729.024 1.206v.867l.582-.025c.32-.013.695-.049.833-.078.694-.146 1.048-.478 1.087-1.018.027-.378-.063-.636-.303-.87-.318-.309-.761-.416-1.733-.418Z")],
 ];
 
-function catalogDetail(list, item, catalogs = BOOK_CATALOGS) {
-	const found = catalogs.filter(([key]) => item[key]);
+// a film's pages in its card's corner, always all four: one it has no id of is there, disabled
+function filmLinks(card, item) {
+	const corner = cornerOf(card);
+	corner.classList.add("catalogs");
+	for (const [key, site, url, icon] of FILM_CATALOGS) {
+		corner.appendChild(linkButton(item[key] ? url(item[key], item) : "", `${site} page`, icon, "catalog-button"));
+	}
+}
+
+function catalogDetail(list, item) {
+	const found = BOOK_CATALOGS.filter(([key]) => item[key]);
 	if (found.length === 0) {
 		return;
 	}
@@ -293,7 +304,7 @@ function catalogDetail(list, item, catalogs = BOOK_CATALOGS) {
 			li.append(", ");
 		}
 		const a = el("a", null, name);
-		a.href = url(item[key], item);
+		a.href = url(item[key]);
 		a.target = "_blank";
 		a.rel = "noopener";
 		li.appendChild(a);
@@ -425,7 +436,6 @@ function filmDetails(list, item) {
 	detail(list, item.kind === "series" ? "Started" : "Year", item.year === null ? "" : String(item.year));
 	detail(list, "Directed by", item.directors);
 	detail(list, "Genres", item.genres.join(", "));
-	catalogDetail(list, item, FILM_CATALOGS);
 }
 
 // a film, shared; each time the user watched it (or means to), a link to that watch
@@ -433,7 +443,7 @@ function filmCard(item) {
 	const { card, list } = cardShell(item, filmLine(item), "poster");
 	linksDetail(list, "You watched it", item.kind === "series" ? "series-watches" : "film-watches", item.watches);
 	filmDetails(list, item);
-	websiteButton(card, item.url, "On IMDb");
+	filmLinks(card, item);
 	return card;
 }
 
@@ -455,7 +465,7 @@ function filmWatchCard(item) {
 	linksDetail(list, "With", "people", item.people);
 	linksDetail(list, "Recommended by", "people", item.recommended_by ? [item.recommended_by] : []);
 	filmDetails(list, item);
-	websiteButton(card, item.url, "On IMDb");
+	filmLinks(card, item);
 	return card;
 }
 

@@ -296,22 +296,27 @@ const WEBSITE_ICON =
 
 // The website of a card's row, as a globe in its corner, opening in a new tab; disabled, in the same place, when it has none.
 export function websiteButton(card, url, label = "Website") {
+	cornerOf(card).appendChild(linkButton(url, label, WEBSITE_ICON, "website-button"));
+}
+
+// A link as an icon in a card's corner, opening in a new tab; disabled, in the same place, when there is no url
+export function linkButton(url, label, icon, className) {
 	let button;
 	if (url) {
-		button = el("a", "icon-button website-button");
+		button = el("a", `icon-button ${className}`);
 		button.href = url;
 		button.target = "_blank";
 		button.rel = "noopener";
 		button.title = `${label}: ${url}`;
 	} else {
-		button = el("button", "icon-button website-button");
+		button = el("button", `icon-button ${className}`);
 		button.type = "button";
 		button.disabled = true;
-		button.title = `No ${label.toLowerCase()}: add it in the dialog`;
+		button.title = `No ${label}: add it in the dialog`;
 	}
 	button.setAttribute("aria-label", button.title);
-	button.innerHTML = WEBSITE_ICON;
-	cornerOf(card).appendChild(button);
+	button.innerHTML = icon;
+	return button;
 }
 
 // How the cards are laid out, picked with the buttons next to the search and
