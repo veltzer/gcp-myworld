@@ -89,4 +89,5 @@ src_extensions = [".css"]
 
 [processor.checker.oxlint]
 src_dirs = ["src/myworld/static"]
-args = ["-c", ".oxlintrc.json"]
+args = ["-c", ".oxlintrc.repo.json"]
+dep_inputs = [".oxlintrc.repo.json"]
