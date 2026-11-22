@@ -119,6 +119,12 @@ export async function loadCounts() {
 }
 
 const SIDEBAR_KEY = "myworld.sidebar";
+// the sidebar's width (px) the user dragged it to, and how narrow and wide it may be
+const SIDEBAR_WIDTH_KEY = "myworld.sidebar-width";
+const SIDEBAR_MIN = 160;
+const SIDEBAR_MAX = 560;
+// an arrow key moves the edge by this much
+const SIDEBAR_STEP = 16;
 
 const phone = window.matchMedia("(max-width: 900px)");
 
@@ -139,7 +145,73 @@ export function closeSidebarOnPhone() {
 	}
 }
 
+// the sidebar at width px (kept between SIDEBAR_MIN and SIDEBAR_MAX), or at the stylesheet's when null; remembered unless told not to
+function setSidebarWidth(width, remember = true) {
+	const root = document.documentElement;
+	if (width === null) {
+		root.style.removeProperty("--sidebar");
+	} else {
+		width = Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, width)));
+		root.style.setProperty("--sidebar", `${width}px`);
+	}
+	$("sidebar-sash").setAttribute("aria-valuenow", String(Math.round($("sidebar").getBoundingClientRect().width)));
+	if (!remember) {
+		return;
+	}
+	try {
+		if (width === null) {
+			localStorage.removeItem(SIDEBAR_WIDTH_KEY);
+		} else {
+			localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
+		}
+	} catch (e) {
+		// remembered for this page only
+	}
+}
+
+// the sidebar's edge: dragged with a mouse, a pen or a finger, or moved with the arrow keys; a double click puts it back
+function setupSash() {
+	const sash = $("sidebar-sash");
+	sash.setAttribute("aria-valuemin", String(SIDEBAR_MIN));
+	sash.setAttribute("aria-valuemax", String(SIDEBAR_MAX));
+	let saved = null;
+	try {
+		saved = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY)) || null;
+	} catch (e) {
+		// no storage: the stylesheet's width
+	}
+	setSidebarWidth(saved, false);
+	sash.onpointerdown = (event) => {
+		event.preventDefault();
+		sash.setPointerCapture(event.pointerId);
+		document.body.classList.add("sidebar-resizing");
+		const left = $("sidebar").getBoundingClientRect().left;
+		let width = null;
+		sash.onpointermove = (move) => {
+			width = move.clientX - left;
+			setSidebarWidth(width, false);
+		};
+		// where it was last dragged to is kept (a drag the browser cancelled says no place of its own)
+		sash.onpointerup = sash.onpointercancel = () => {
+			sash.onpointermove = sash.onpointerup = sash.onpointercancel = null;
+			document.body.classList.remove("sidebar-resizing");
+			if (width !== null) {
+				setSidebarWidth(width);
+			}
+		};
+	};
+	sash.ondblclick = () => setSidebarWidth(null);
+	sash.onkeydown = (event) => {
+		const step = { ArrowLeft: -SIDEBAR_STEP, ArrowRight: SIDEBAR_STEP }[event.key];
+		if (step) {
+			event.preventDefault();
+			setSidebarWidth($("sidebar").getBoundingClientRect().width + step);
+		}
+	};
+}
+
 export function setupSidebar() {
+	setupSash();
 	try {
 		document.body.classList.toggle("sidebar-folded", localStorage.getItem(SIDEBAR_KEY) === "folded");
 	} catch (e) {
