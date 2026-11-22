@@ -124,26 +124,39 @@ const VALUE_FILTERS = {
 	},
 };
 
-// The views whose rows also have relations to the user, filtered by them
-// too, and the enumeration of those relations (organizations: Consulting,
-// Teaching, ...).
-const RELATED = { organizations: "relation-types" };
+// The views whose rows also have relations, filtered by them too: what the
+// button says with nothing picked, and a row's relations as their cards read
+// them. An organization's are to the user (Consulting, Teaching, ...); a
+// person's are to other people, from either side ("Mother of" on hers,
+// "Child of" on her child's).
+const RELATED = {
+	organizations: { all: "All organizations", values: (o) => o.relations.map((r) => r.name) },
+	people: { all: "All people", values: (p) => [...p.relations, ...p.related].map((r) => r.type) },
+};
 
 // What a view is filtered by: what the button says with nothing picked, and
 // its groups ({key, heading, options: [{value, name, count}]}). Null: nothing to filter by.
 async function filterSpec(view) {
 	if (TYPED[view]) {
-		const kinds = async (what, none) => {
-			const rows = await worldList(what);
-			return [...rows.map((t) => ({ value: String(t.id), name: t.name, count: t.count })), { value: "none", name: none, count: null }];
-		};
+		const typeRows = await worldList(TYPED[view]);
+		const types = [...typeRows.map((t) => ({ value: String(t.id), name: t.name, count: t.count })), { value: "none", name: "No type", count: null }];
 		if (!RELATED[view]) {
-			return { all: "All types", groups: [{ key: "type", heading: "", options: await kinds(TYPED[view], "No type") }] };
+			return { all: "All types", groups: [{ key: "type", heading: "", options: types }] };
 		}
-		const [types, relations] = await Promise.all([kinds(TYPED[view], "No type"), kinds(RELATED[view], "No relation")]);
+		// the relations the rows have, each with how many rows have it, the most first
+		const counts = new Map();
+		for (const row of await worldList(view)) {
+			for (const value of new Set(RELATED[view].values(row))) {
+				counts.set(value, (counts.get(value) || 0) + 1);
+			}
+		}
+		const relations = [...counts].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0])).map(([name, count]) => ({ value: name, name, count }));
 		return {
-			all: "All organizations",
-			groups: [{ key: "type", heading: "Type", options: types }, { key: "relation", heading: "Relation", options: relations }],
+			all: RELATED[view].all,
+			groups: [
+				{ key: "type", heading: "Type", options: types },
+				{ key: "relation", heading: "Relation", options: [...relations, { value: "none", name: "No relation", count: null }] },
+			],
 		};
 	}
 	if (VALUE_FILTERS[view]) {
@@ -190,8 +203,8 @@ function filterValues(group, item) {
 		return valued[2](item);
 	}
 	if (group === "relation") {
-		const relations = item.relations || [];
-		return relations.length ? relations.map((r) => String(r.id)) : ["none"];
+		const relations = RELATED[state.view].values(item);
+		return relations.length ? relations : ["none"];
 	}
 	// a person or an organization has a list of types
 	const types = item.types || [];
