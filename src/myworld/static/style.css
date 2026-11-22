@@ -902,33 +902,6 @@ button.danger {
 	color: var(--muted);
 }
 
-/* a library card's catalog links, under its title */
-.world-body > .ids {
-	margin: 0.25rem 0 0;
-}
-
-.ids {
-	display: inline-flex;
-	gap: 0.35rem;
-	margin-left: 0.4rem;
-	vertical-align: middle;
-}
-
-.ids a {
-	font-size: 0.7rem;
-	font-weight: 600;
-	padding: 0.05rem 0.35rem;
-	border: 1px solid var(--line);
-	border-radius: 999px;
-	color: var(--muted);
-	text-decoration: none;
-}
-
-.ids a:hover {
-	color: var(--accent);
-	border-color: var(--accent);
-}
-
 .id-field {
 	display: inline-flex;
 	align-items: center;
@@ -1418,8 +1391,7 @@ button.danger {
 .layout-tiles .world-card.is-photo .person-link,
 .layout-tiles .world-card.is-cover .person-link,
 .layout-tiles .world-card.is-photo .world-details a,
-.layout-tiles .world-card.is-cover .world-details a,
-.layout-tiles .world-card.is-cover .ids a {
+.layout-tiles .world-card.is-cover .world-details a {
 	color: #bfdbfe;
 }
 
@@ -2476,14 +2448,21 @@ button.text.check-toggle {
 	order: 1;
 }
 
-/* the title does not run under the corner's icons */
+/* the title does not run under the corner's icons, however many there are (about 2.1rem each) */
 .world-card:has(> .card-corner) .world-title {
 	padding-right: 4.25rem;
 }
 
-/* nor under a film's four (IMDb, TMDB, Wikidata, Rotten Tomatoes) */
-.world-card:has(> .card-corner.catalogs) .world-title {
+.world-card:has(> .card-corner > :nth-child(3)) .world-title {
+	padding-right: 6.4rem;
+}
+
+.world-card:has(> .card-corner > :nth-child(4)) .world-title {
 	padding-right: 8.5rem;
+}
+
+.world-card:has(> .card-corner > :nth-child(5)) .world-title {
+	padding-right: 10.6rem;
 }
 
 .place-button {

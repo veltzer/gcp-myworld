@@ -11,7 +11,7 @@ import { readText } from "./readings.js";
 import { rankBySearch, searchMatches } from "./search.js";
 import { renderKinds, setCount } from "./sidebar.js";
 import { currentSort, sortItems, updateTools } from "./sorting.js";
-import { appendLinks, detail, linksDetail } from "./worlds.js";
+import { appendLinks, cornerLinks, detail, linksDetail } from "./worlds.js";
 
 // view is a kind of work ("book", ...) or one of WORLDS ("concerts", ...)
 // editing is the item open in the dialog, null when adding
@@ -39,6 +39,13 @@ const CATALOGS = [
 	["openlibrary_id", "Open Library", (id) => `https://openlibrary.org/works/${id}`, null],
 ];
 
+// a book's pages in catalogs, as icons in its card's corner: [field, site (worlds.js), its page]
+const BOOK_LINKS = [
+	["openlibrary_id", "openlibrary", (id) => `https://openlibrary.org/works/${id}`],
+	["goodreads_id", "goodreads", (id) => `https://www.goodreads.com/book/show/${id}`],
+	["simania_id", "simania", (id) => `https://simania.co.il/bookdetails.php?item_id=${id}`],
+];
+
 // The read-only id fields of the add form: the values come from the search, never typed.
 export function showMovieIds(values) {
 	const form = $("add-form");
@@ -49,25 +56,6 @@ export function showMovieIds(values) {
 		link.hidden = !value;
 		link.href = value ? url(value) : "";
 	}
-}
-
-function catalogLinks(entry) {
-	const links = CATALOGS.filter(([key]) => entry[key]);
-	if (links.length === 0) {
-		return null;
-	}
-	const span = document.createElement("span");
-	span.className = "ids";
-	for (const [key, label, url] of links) {
-		const a = document.createElement("a");
-		a.href = url(entry[key]);
-		a.target = "_blank";
-		a.rel = "noopener";
-		a.textContent = label;
-		a.title = `${label}: ${entry[key]}`;
-		span.appendChild(a);
-	}
-	return span;
 }
 
 // Make a card or row open its item in the dialog, by click or by Enter, except
@@ -94,7 +82,7 @@ export function editable(node, item) {
 }
 
 // A library entry as a card, laid out like every other card view; its cover
-// is the image, the catalog links (IMDb, Goodreads, ...) sit under the title.
+// is the image, the catalog links (Goodreads, ...) are icons in its corner.
 function libraryCard(entry) {
 	const { creator } = state.config.kinds[state.kind];
 	// the title and the authors' names in the language it was read in (the server picks them)
@@ -107,15 +95,13 @@ function libraryCard(entry) {
 			subtitle.append(`, ${entry.year}`);
 		}
 	}
-	const { card, body, list } = cardShell({ ...entry, name: entry.title }, subtitle, "cover");
+	const { card, list } = cardShell({ ...entry, name: entry.title }, subtitle, "cover");
 	// an entry is known by its work: "book-12", opened by the link #book/12
 	card.id = `${state.kind}-${entry.work_id}`;
 	// the dialog edits the entry as it is
 	editable(card, entry);
-	const links = catalogLinks(entry);
-	if (links) {
-		body.insertBefore(links, list);
-	}
+	// its pages in catalogs, in its corner
+	cornerLinks(card, entry, BOOK_LINKS);
 	// the authors as links to them in People; the plain text for an entry with none linked
 	if (entry.authors.length) {
 		linksDetail(list, creator, "people", entry.authors);
