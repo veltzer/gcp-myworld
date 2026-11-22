@@ -47,11 +47,16 @@ def unavailable(session: Session, _owner: User) -> str:
     return "" if _missing(session) else "Every audio book has its Open Library, Goodreads and Wikidata ids"
 
 
+def query_words(text: str) -> str:
+    """ text as words Open Library's search takes: its search reads a "-" as "not" ("Twenty-First" found nothing), so a hyphen is a space. """
+    return " ".join(text.replace("-", " ").split())
+
+
 def search(title: str, author: str) -> list[dict[str, Any]]:
     """ Open Library's search for title by author: its works, the best match first. """
-    params = {"title": title, "fields": SEARCH_FIELDS, "limit": "10"}
+    params = {"title": query_words(title), "fields": SEARCH_FIELDS, "limit": "10"}
     if author:
-        params["author"] = author
+        params["author"] = query_words(author)
     try:
         response = requests.get(SEARCH_URL, params=params, timeout=HTTP_TIMEOUT, headers={"User-Agent": "My World audio book ids"})
         if not response.ok:

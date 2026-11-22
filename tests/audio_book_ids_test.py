@@ -98,3 +98,9 @@ def test_an_id_typed_in_is_checked(app: webtest.TestApp, engine: Engine) -> None
     assert (book["openlibrary_id"], book["goodreads_id"], book["wikidata_id"]) == ("OL16801432W", "13259167", "Q7500364")
     for key, value in (("openlibrary_id", "OL123M"), ("goodreads_id", "abc"), ("wikidata_id", "7500364")):
         assert key in app.put_json(f"/api/audio-books/{book['id']}", {"name": "Free Will", key: value}, status=400).json["error"]
+
+
+def test_a_hyphen_is_not_a_not() -> None:
+    # Open Library's search reads "-word" as without word
+    assert audio_book_ids.query_words("Capital in the Twenty-First Century") == "Capital in the Twenty First Century"
+    assert audio_book_ids.query_words("The Gulag Archipelago 1918-1956") == "The Gulag Archipelago 1918 1956"
