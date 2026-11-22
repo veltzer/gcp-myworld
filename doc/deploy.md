@@ -390,10 +390,12 @@ user keeps on the sidebar's Types, Org: add, rename, describe or delete
 them there, and pick any of them in the organization dialog. A type still
 in use cannot be deleted. An import
 starts the user with Company, University, College, Government, Public
-body, Military, Non-profit and Publisher; `organizations.yaml` has no type
+body, Military, Non-profit, Publisher and Training Company; `organizations.yaml` has no type
 field, so the importer types the few organizations that are not companies
-by name (`ORGANIZATION_TYPE_BY_NAME` in `scripts/import_world.py`) and makes
-a publisher (`publisher` among its functions) a Publisher too, and a `type`
+by name (`ORGANIZATION_TYPE_BY_NAME` in `scripts/import_world.py`), makes
+a publisher (`publisher` among its functions) a Publisher too and a
+training provider (`training-provider`: the training companies the blog
+lists as those taught for) a Company and a Training Company, and a `type`
 in the YAML (a name or a list of them) would win. The publishers (Audible, Penguin Audio, ...)
 live only in My World now: they left `organizations.yaml`. So does the
 consulting: the companies consulted for are those with the relation

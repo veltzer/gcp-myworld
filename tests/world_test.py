@@ -417,7 +417,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         counts = import_world.import_world(session, owner(session), write_source(tmp_path))
         session.commit()
     assert counts == {
-        "people": 7, "organizations": 3, "organization types": 8, "relation types": 6, "person types": 3, "people with a profession": 4, "people related to the user": 2,
+        "people": 7, "organizations": 3, "organization types": 9, "relation types": 6, "person types": 3, "people with a profession": 4, "people related to the user": 2,
         "concerts": 3, "places": 1, "museums": 2, "museum visits": 3, "audio courses": 2, "audio books": 4, "podcasts": 2, "podcast episodes": 3, "films": 0, "film watches": 0,
         "YouTube videos": 4, "devices": 4, "books": 3, "images": 9}
     return app
@@ -1594,6 +1594,8 @@ def test_a_publisher_is_of_type_publisher() -> None:
     assert import_world.types_for("BBC Radio", ["publisher"]) == ["Public body", "Publisher"]
     assert import_world.types_for("Hebrew University of Jerusalem", ["education"]) == ["University"]
     assert import_world.types_for("Acme") == ["Company"]
+    # a training provider is a company that is a Training Company too
+    assert import_world.types_for("John Bryce", ["training-provider"]) == ["Company", "Training Company"]
 
 
 def test_professions_and_relations(imported: webtest.TestApp) -> None:
@@ -2155,7 +2157,7 @@ def test_stats(imported: webtest.TestApp) -> None:
     assert (stats["concerts"], stats["museum_visits"], stats["museums"], stats["audio_courses"]) == (3, 3, 2, 2)
     assert (stats["people"], stats["organizations"], stats["images"]) == (8, 3, 9)
     assert (stats["podcasts"], stats["podcast_episodes"], stats["podcasts_heard"], stats["episodes_heard"]) == (2, 3, 2, 3)
-    assert (stats["organization_types"], stats["person_types"]) == (8, 3)
+    assert (stats["organization_types"], stats["person_types"]) == (9, 3)
     # Bob, Singer and The Band performed; Bob also went with the user, he counts once
     assert stats["performers"] == 3
     books = next(k for k in stats["library"] if k["kind"] == "book")

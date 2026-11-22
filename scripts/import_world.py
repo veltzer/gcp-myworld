@@ -221,10 +221,13 @@ ORGANIZATION_TYPES = {
     "Military": "An army unit or school",
     "Non-profit": "A charity or other organization not run for profit",
     "Publisher": "Publishes books, audio books, courses or broadcasts",
+    "Training Company": "Sells courses to companies and hires teachers to give them",
 }
 DEFAULT_ORGANIZATION_TYPE = "Company"
 # the type of an organization whose functions include publisher
 PUBLISHER_TYPE = "Publisher"
+# the type, besides Company, of an organization whose functions include training-provider
+TRAINING_TYPE = "Training Company"
 # the professions (person types) every import starts the user with; how a
 # person is related to the user is a person relation instead (to the user's
 # own person, see self_person)
@@ -392,12 +395,15 @@ def types_for(name: str, functions: list[str] | None = None) -> list[str]:
     """
     The type names an organization of organizations.yaml gets when the YAML
     does not say: its type by name (ORGANIZATION_TYPE_BY_NAME), and Publisher
-    when its functions include publisher (BBC Radio is both); a Company when
-    neither says anything.
+    when its functions include publisher (BBC Radio is both); a training
+    provider is a Training Company, and a Company too unless its name says
+    otherwise; a Company when nothing says anything.
     """
     types = [ORGANIZATION_TYPE_BY_NAME[name]] if name in ORGANIZATION_TYPE_BY_NAME else []
     if "publisher" in (functions or []):
         types.append(PUBLISHER_TYPE)
+    if "training-provider" in (functions or []):
+        types = (types or [DEFAULT_ORGANIZATION_TYPE]) + [TRAINING_TYPE]
     return types or [DEFAULT_ORGANIZATION_TYPE]
 
 
