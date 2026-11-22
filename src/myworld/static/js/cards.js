@@ -406,6 +406,14 @@ function filmDetails(list, item) {
 	detail(list, "Genres", item.genres.join(", "));
 }
 
+// a film's pages in its card's corner, by its ids there: a series is at TMDB under /tv/, a film under /movie/
+const FILM_CATALOGS = [
+	["imdb_id", "imdb", (id) => `https://www.imdb.com/title/${id}/`],
+	["tmdb_id", "tmdb", (id, item) => `https://www.themoviedb.org/${item.kind === "series" ? "tv" : "movie"}/${id}`],
+	["wikidata_id", "wikidata", (id) => `https://www.wikidata.org/wiki/${id}`],
+	["rotten_tomatoes_id", "rotten_tomatoes", (id) => `https://www.rottentomatoes.com/${id}`],
+];
+
 // a film, shared; each time the user watched it (or means to), a link to that watch
 function filmCard(item) {
 	const { card, list } = cardShell(item, filmLine(item), "poster");
