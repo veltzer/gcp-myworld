@@ -176,7 +176,7 @@ function filterValues(group, item) {
 		return valued[2](item);
 	}
 	// a person has a list of types, an organization one
-	const types = item.types || (item.type ? [item.type] : []);
+	const types = item.types || [];
 	return types.length ? types.map((t) => String(t.id)) : ["none"];
 }
 

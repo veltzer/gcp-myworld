@@ -404,7 +404,7 @@ def test_what_a_row_points_at_is_the_users_own(app: webtest.TestApp) -> None:
         ("concert-visits", {"name": "Jarrett", "people": [theirs["person"]]}, "people: unknown person"),
         ("concert-visits", {"name": "Jarrett", "people": "Dana"}, "people: expected a list of ids"),
         ("concert-visits", {"name": "Jarrett", "people": [True]}, "people: expected a list of ids"),
-        ("organizations", {"name": "ACME", "type_id": theirs["type"]}, "type_id: unknown type"),
+        ("organizations", {"name": "ACME", "type_ids": [theirs["type"]]}, "type_ids: unknown organizationtype"),
         ("audio-courses", {"name": "Logic", "device_id": theirs["device"]}, "device_id: unknown device"),
         ("episodes-heard", {"episode_id": 999999}, "episode_id: unknown episode"),
         ("organizations", {"name": "ACME", "city_id": "Haifa"}, "city_id: expected a number"),

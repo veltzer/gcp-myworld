@@ -17,7 +17,7 @@ import owned_from_notes
 import pytest
 import tidy_book_notes
 import webtest
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -49,6 +49,7 @@ from myworld.models import (
     YouTubeVideo,
     concert_companions,
     library_entry_authors,
+    organization_type_links,
     person_organizations,
 )
 from tests.conftest import sign_in, sign_in_admin
@@ -1583,15 +1584,16 @@ def test_organization_types(imported: webtest.TestApp) -> None:
     assert types["University"]["count"] == 1
     assert types["Military"]["count"] == 0
     by_name = {o["name"]: o for o in imported.get("/api/organizations").json}
-    assert by_name["Old School"]["type"] == {"id": types["University"]["id"], "name": "University"}
-    assert by_name["Acme"]["type"]["name"] == "Company"
+    assert by_name["Old School"]["types"] == [{"id": types["University"]["id"], "name": "University"}]
+    assert [t["name"] for t in by_name["Acme"]["types"]] == ["Company"]
 
 
 def test_a_publisher_is_of_type_publisher() -> None:
-    # by its functions, whatever its name says
-    assert import_world.type_for("Pimsleur", ["publisher"]) == "Publisher"
-    assert import_world.type_for("Hebrew University of Jerusalem", ["education"]) == "University"
-    assert import_world.type_for("Acme") == "Company"
+    # by its functions, and of its type by name too: BBC Radio is both
+    assert import_world.types_for("Pimsleur", ["publisher"]) == ["Publisher"]
+    assert import_world.types_for("BBC Radio", ["publisher"]) == ["Public body", "Publisher"]
+    assert import_world.types_for("Hebrew University of Jerusalem", ["education"]) == ["University"]
+    assert import_world.types_for("Acme") == ["Company"]
 
 
 def test_professions_and_relations(imported: webtest.TestApp) -> None:
@@ -1737,15 +1739,15 @@ def test_guessing_professions_and_relations() -> None:
 
 def test_give_types_fills_only_what_is_missing(imported: webtest.TestApp, engine: Engine) -> None:
     with Session(engine) as session:
-        session.execute(update(Organization).values(type_id=None))
+        session.execute(delete(organization_type_links))
         session.execute(delete(OrganizationType).where(OrganizationType.name == "Military"))
         session.commit()
         counts = import_world.give_types(session, owner(session))
         session.commit()
     assert counts == {"types added": 1, "organizations given a type": 3, "people given a profession": 0, "people given a relation": 0, "person types made relations": 0}
-    by_name = {o["name"]: o["type"]["name"] for o in imported.get("/api/organizations").json}
+    by_name = {o["name"]: [t["name"] for t in o["types"]] for o in imported.get("/api/organizations").json}
     # Old School's type came from the YAML, which this does not read: it gets the default
-    assert by_name == {"Acme": "Company", "Old School": "Company", "Startup": "Company"}
+    assert by_name == {"Acme": ["Company"], "Old School": ["Company"], "Startup": ["Company"]}
     with Session(engine) as session:
         assert import_world.give_types(session, owner(session)) == {
             "types added": 0, "organizations given a type": 0, "people given a profession": 0, "people given a relation": 0, "person types made relations": 0,
@@ -1758,15 +1760,17 @@ def test_edit_organization_types(imported: webtest.TestApp) -> None:
     lab = imported.post_json("/api/organization-types", {"name": "Lab", "description": "Research"}, status=201).json
     assert lab["count"] == 0
     acme = next(o for o in imported.get("/api/organizations").json if o["name"] == "Acme")
-    edited = imported.put_json(f"/api/organizations/{acme['id']}", dict(acme, type_id=lab["id"])).json
-    assert edited["type"]["name"] == "Lab"
-    imported.put_json(f"/api/organizations/{acme['id']}", dict(acme, type_id=999), status=400)
+    company = acme["types"][0]["id"]
+    # of two types at once: a company and a lab
+    edited = imported.put_json(f"/api/organizations/{acme['id']}", dict(acme, type_ids=[company, lab["id"]])).json
+    assert [t["name"] for t in edited["types"]] == ["Company", "Lab"]
+    imported.put_json(f"/api/organizations/{acme['id']}", dict(acme, type_ids=[999]), status=400)
     renamed = imported.put_json(f"/api/organization-types/{lab['id']}", {"name": "Laboratory"}).json
     assert renamed["count"] == 1
-    assert next(o for o in imported.get("/api/organizations").json if o["name"] == "Acme")["type"]["name"] == "Laboratory"
+    assert [t["name"] for t in next(o for o in imported.get("/api/organizations").json if o["name"] == "Acme")["types"]] == ["Company", "Laboratory"]
     # a type in use cannot go; once nothing is of it, it can
     imported.delete(f"/api/organization-types/{lab['id']}", status=409)
-    imported.put_json(f"/api/organizations/{acme['id']}", dict(acme, type_id=None))
+    imported.put_json(f"/api/organizations/{acme['id']}", dict(acme, type_ids=[company]))
     imported.delete(f"/api/organization-types/{lab['id']}", status=204)
     assert "Laboratory" not in [t["name"] for t in imported.get("/api/organization-types").json]
 
@@ -2134,7 +2138,7 @@ def test_others_cannot_touch(imported: webtest.TestApp) -> None:
     imported.delete("/api/organizations/1", status=404)
     imported.put_json("/api/organization-types/1", {"name": "mine now"}, status=404)
     imported.delete("/api/organization-types/1", status=404)
-    imported.post_json("/api/organizations", {"name": "x", "type_id": 1}, status=400)
+    imported.post_json("/api/organizations", {"name": "x", "type_ids": [1]}, status=400)
     imported.put_json("/api/person-types/1", {"name": "mine now"}, status=404)
     imported.post_json("/api/people", {"first_name": "x", "type_ids": [1]}, status=400)
     imported.post_json("/api/concert-visits", {"name": "x", "people": [alice]}, status=400)

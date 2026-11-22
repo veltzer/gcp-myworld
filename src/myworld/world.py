@@ -128,7 +128,7 @@ def _names(people: list[Person]) -> list[str]:
     return sorted(shown_name(p) for p in people)
 
 
-def _refs(rows: list[Person] | list[Organization] | list[PersonType] | list[RelationType] | list[Group] | list[Concert] | list[Place] | list[City] | list[PlaceKind] | list[Country]) -> list[dict[str, Any]]:
+def _refs(rows: list[Person] | list[Organization] | list[PersonType] | list[OrganizationType] | list[RelationType] | list[Group] | list[Concert] | list[Place] | list[City] | list[PlaceKind] | list[Country]) -> list[dict[str, Any]]:
     """ Names with the ids the People and Organizations views link to, each row once (a person may be linked to one organization twice). """
     unique = {row.id: row for row in rows}.values()
     return sorted(({"id": row.id, "name": _name(row)} for row in unique), key=lambda ref: ref["name"])
@@ -763,7 +763,8 @@ def organization_json(organization: Organization) -> dict[str, Any]:
     return {
         "id": organization.id,
         "name": organization.name,
-        "type": None if organization.type is None else {"id": organization.type.id, "name": organization.type.name},
+        # what it is: any number of the user's own organization types
+        "types": _refs(organization.types),
         # how it is related to the user: any number of their own relation types
         "relations": _refs(organization.relations),
         "status": organization.status,
@@ -1112,7 +1113,7 @@ def api_organizations() -> flask.Response:
         select(Organization)
         .where(Organization.owner_id == flask.g.user.id)
         .options(
-            selectinload(Organization.people), selectinload(Organization.type), selectinload(Organization.relations), selectinload(Organization.city).selectinload(City.country),
+            selectinload(Organization.people), selectinload(Organization.types), selectinload(Organization.relations), selectinload(Organization.city).selectinload(City.country),
             selectinload(Organization.headquarters).selectinload(City.country),
             selectinload(Organization.person_links).selectinload(PersonOrganization.relation_type),
             selectinload(Organization.person_links).selectinload(PersonOrganization.person),
@@ -1994,9 +1995,10 @@ def _apply_organization(organization: Organization, body: dict[str, Any]) -> Non
     if clash is not None:
         raise ApiError(409, f"{name} is already in Organizations")
     organization.name = name
-    organization.type = owned_ref(body, "type_id", OrganizationType, "type")
     # looked up before anything is set on a new organization, which is not in the session yet
+    types = owned_list(body, "type_ids", OrganizationType)
     relations = owned_list(body, "relation_ids", RelationType)
+    organization.types = types
     organization.relations = relations
     organization.status = text(body, "status")
     organization.website = text(body, "website")

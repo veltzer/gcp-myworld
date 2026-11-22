@@ -380,16 +380,21 @@ from the `functions` field of `organizations.yaml`; the
 `organization-relations` check (`checks.md`) finds an organization with
 none.
 
-Each organization has a type (company, university, government, ...), shown
-on its card. The types are an enumeration the user keeps on the sidebar's Types,
-Org: add, rename, describe or delete them there, and pick one in the
-organization dialog. A type still in use cannot be deleted. An import
+Each organization has any number of types (company, university,
+government, publisher, ...: a radio station may be a Public body and a
+Publisher),
+shown on its card (organization_type_links; migration 0033, before the
+deploy, made the one type each had, `organizations.type_id`, one of them,
+and 0034, after it, dropped the column). The types are an enumeration the
+user keeps on the sidebar's Types, Org: add, rename, describe or delete
+them there, and pick any of them in the organization dialog. A type still
+in use cannot be deleted. An import
 starts the user with Company, University, College, Government, Public
 body, Military, Non-profit and Publisher; `organizations.yaml` has no type
-field, so the importer makes a publisher (`publisher` among its functions)
-a Publisher, types the few other organizations that are not companies by
-name (`ORGANIZATION_TYPE_BY_NAME` in `scripts/import_world.py`), and a
-`type` in the YAML would win. The publishers (Audible, Penguin Audio, ...
+field, so the importer types the few organizations that are not companies
+by name (`ORGANIZATION_TYPE_BY_NAME` in `scripts/import_world.py`) and makes
+a publisher (`publisher` among its functions) a Publisher too, and a `type`
+in the YAML (a name or a list of them) would win. The publishers (Audible, Penguin Audio, ...
 live only in My World now: they left `organizations.yaml`. `--only-types` imports nothing and only adds the
 starting types a user lacks and types the organizations and people that
 have none.
@@ -686,8 +691,8 @@ a person is written with `type_ids`, a list.
   `YYYY-MM-DD` (the add and edit forms pick it with a date picker and a Day, Month
   only or Year only choice, so it is always a real date); a date sent back exactly as it came keeps its stored
   precision, timestamps included. `people` and `organizations` are lists of
-  ids, `type_id` an organization type id, and an organization's relation
-  types are written as `relation_ids`, a list.
+  ids, and an organization's types and relation types are written as
+  `type_ids` and `relation_ids`, lists of ids.
 - `GET /api/users` (admins only, 403 otherwise): every account, with
   email, name, how it signs in (google, github, email, dev), role and
   when it was made. `PUT /api/users/<id>` with `{"role": "user" | "admin"}`

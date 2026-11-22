@@ -118,7 +118,7 @@ def api_stats() -> flask.Response:
     museums = {visit.place_id for visit in visits if visit.place_id is not None}
     people = db.execute(select(Person).where(Person.owner_id == me).options(selectinload(Person.types))).scalars().all()
     organizations = db.execute(
-        select(Organization).where(Organization.owner_id == me).options(selectinload(Organization.type), selectinload(Organization.relations))
+        select(Organization).where(Organization.owner_id == me).options(selectinload(Organization.types), selectinload(Organization.relations))
     ).scalars().all()
     people_by_type: dict[str, int] = {}
     for person in people:
@@ -132,8 +132,9 @@ def api_stats() -> flask.Response:
             organizations_by_relation[name] = organizations_by_relation.get(name, 0) + 1
     organizations_by_type: dict[str, int] = {}
     for organization in organizations:
-        name = organization.type.name if organization.type else "No type"
-        organizations_by_type[name] = organizations_by_type.get(name, 0) + 1
+        for kind in organization.types or [None]:
+            name = kind.name if kind else "No type"
+            organizations_by_type[name] = organizations_by_type.get(name, 0) + 1
     performers = db.scalar(
         select(func.count(func.distinct(concert_performers.c.person_id)))
         .join(Concert, Concert.id == concert_performers.c.concert_id)

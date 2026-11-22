@@ -28,6 +28,7 @@ from myworld.models import (
     RelationType,
     YouTubeVideo,
     organization_relation_types,
+    organization_type_links,
     person_type_links,
 )
 from myworld.pictures import apply_picture, picture_json
@@ -36,8 +37,8 @@ bp = flask.Blueprint("enumerations", __name__)
 
 type TypeModel = OrganizationType | PersonType | RelationType | PersonRelationType | PersonOrganizationType | Device
 
-# path -> (type model, what the typed rows are called); an organization has one
-# type (organizations.type_id) and any number of relation types
+# path -> (type model, what the typed rows are called); an organization has any
+# number of types (organization_type_links) and of relation types
 # (organization_relation_types), a person any number of types (person_type_links)
 TYPES: dict[str, tuple[type[TypeModel], str]] = {
     "organization-types": (OrganizationType, "organization"),
@@ -55,7 +56,11 @@ TYPES: dict[str, tuple[type[TypeModel], str]] = {
 def _type_links(what: str) -> Any:
     """ One row per typed row of the user and one of its types: (type_id). """
     if what == "organization-types":
-        return select(Organization.type_id.label("type_id")).where(Organization.owner_id == flask.g.user.id)
+        return (
+            select(organization_type_links.c.organization_type_id.label("type_id"))
+            .join(Organization, Organization.id == organization_type_links.c.organization_id)
+            .where(Organization.owner_id == flask.g.user.id)
+        )
     if what == "devices":
         # audio courses, audio book listens, episodes heard, film watches and YouTube videos point to a device
         return select(AudioCourse.device_id.label("type_id")).where(AudioCourse.owner_id == flask.g.user.id).union_all(

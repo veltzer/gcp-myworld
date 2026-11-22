@@ -817,7 +817,16 @@ class OrganizationType(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
-    organizations: Mapped[list[Organization]] = relationship(back_populates="type")
+    organizations: Mapped[list[Organization]] = relationship(secondary=lambda: organization_type_links, back_populates="types")
+
+
+# what an organization is: any number of the user's organization types (BBC Radio is a Public body and a Publisher)
+organization_type_links = Table(
+    "organization_type_links",
+    Base.metadata,
+    Column("organization_id", ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True),
+    Column("organization_type_id", ForeignKey("organization_types.id", ondelete="CASCADE"), primary_key=True),
+)
 
 
 organization_relation_types = Table(
@@ -1071,9 +1080,8 @@ class Organization(_Addressed, _Located, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    # what it is (company, university, ...): one of the user's own organization types
-    type_id: Mapped[int | None] = mapped_column(ForeignKey("organization_types.id", ondelete="SET NULL"), nullable=True)
-    type: Mapped[OrganizationType | None] = relationship(back_populates="organizations")
+    # what it is (company, university, publisher, ...): any number of the user's own organization types
+    types: Mapped[list[OrganizationType]] = relationship(secondary=organization_type_links, back_populates="organizations", order_by=lambda: OrganizationType.name)
     # active, acquired, defunct, ...
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     website: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
@@ -1883,7 +1891,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0032"
+SCHEMA_REVISION = "0034"
 
 
 def prepare_schema(engine: Engine) -> None:

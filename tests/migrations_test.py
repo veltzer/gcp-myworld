@@ -512,3 +512,26 @@ def test_the_films_of_the_library_become_shared_films(url: str) -> None:
         assert connection.execute(text("SELECT id, kind FROM library_works ORDER BY id")).all() == [(2, "film"), (4, "book")]
     engine.dispose()
     assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"
+
+
+def test_an_organization_has_its_one_type_among_its_types(url: str) -> None:
+    """ 0033 and 0034: the one type each organization had (organizations.type_id) is one of its types, and type_id goes. """
+    alembic(url, "upgrade", "0032")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(text("INSERT INTO users (id, email, name, picture, created_at, role) VALUES (1, '1@example.com', '', '', '2026-01-01', 'user')"))
+        connection.execute(text("INSERT INTO organization_types (id, owner_id, name, description) VALUES (1, 1, 'Public body', ''), (2, 1, 'Publisher', '')"))
+        organization = (
+            "INSERT INTO organizations (id, owner_id, name, type_id, status, website, location, what_happened, remark, details, street, neighbourhood, postcode)"
+            " VALUES (:id, 1, :name, :type, '', '', '', '', '', '{}', '', '', '')"
+        )
+        for row in ({"id": 1, "name": "BBC Radio", "type": 1}, {"id": 2, "name": "Untyped", "type": None}):
+            connection.execute(text(organization), row)
+    engine.dispose()
+    assert run(url, "upgrade").returncode == 0
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT organization_id, organization_type_id FROM organization_type_links")).all() == [(1, 1)]
+    assert "type_id" not in {column["name"] for column in inspect(engine).get_columns("organizations")}
+    engine.dispose()
+    assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"

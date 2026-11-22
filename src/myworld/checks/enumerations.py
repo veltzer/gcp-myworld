@@ -21,7 +21,6 @@ from myworld.models import (
     Device,
     EpisodeHeard,
     FilmWatch,
-    Organization,
     OrganizationType,
     PersonOrganization,
     PersonOrganizationType,
@@ -31,6 +30,7 @@ from myworld.models import (
     RelationType,
     YouTubeVideo,
     organization_relation_types,
+    organization_type_links,
     person_type_links,
 )
 
@@ -81,7 +81,7 @@ def check_profession_photos(session: Session) -> Result:
     ])
 
 
-_enumeration_checks("organization-types", OrganizationType, lambda session: ids(session, Organization.type_id))
+_enumeration_checks("organization-types", OrganizationType, lambda session: ids(session, organization_type_links.c.organization_type_id))
 
 
 _enumeration_checks("person-types", PersonType, lambda session: ids(session, person_type_links.c.person_type_id))

@@ -192,7 +192,7 @@ const SORTS = {
 	],
 	organizations: [
 		["name", "Name", (o) => o.name, "asc"],
-		["type", "Type", (o) => o.type?.name, "asc"],
+		["type", "Type", (o) => o.types[0]?.name, "asc"],
 		["people", "People", (o) => o.people.length, "desc"],
 		["status", "Status", (o) => o.status, "asc"],
 		["location", "Location", (o) => o.location, "asc"],

@@ -436,7 +436,7 @@ const WORLD_BODIES = {
 		const value = (name) => form.elements[name].value;
 		return {
 			name: value("name"),
-			type_id: value("type_id"),
+			type_ids: chosen(form, "types"),
 			relation_ids: chosen(form, "relations"),
 			status: value("status"),
 			website: value("website"),
@@ -554,9 +554,6 @@ export function fillWorldForm(form, item) {
 	}
 	for (const select of form.querySelectorAll("[data-chips]")) {
 		setPickerValue(select, item[select.dataset.field].map((row) => row.id));
-	}
-	if (form.elements.type_id) {
-		form.elements.type_id.value = item.type ? item.type.id : "";
 	}
 }
 

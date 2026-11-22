@@ -9,7 +9,7 @@ import { loadEntries, state } from "./library.js";
 import { prepareNames } from "./names.js";
 import { refreshWorld } from "./views.js";
 import { prepareVisits } from "./visits.js";
-import { TYPED, WORLDS, canChange, el, isAdmin, sharedLockedWhy, slug } from "./worlds.js";
+import { WORLDS, canChange, el, isAdmin, sharedLockedWhy, slug } from "./worlds.js";
 
 // What a dialog shows of something that exists is there to read: every box that
 // holds a value is locked, and the red pencil beside it lets it be changed; the
@@ -150,9 +150,6 @@ export async function openDialog(listed) {
 		for (const select of form.querySelectorAll("[data-chips]")) {
 			setPickerRows(select, await worldList(select.dataset.chips));
 		}
-		if (form.elements.type_id) {
-			await fillTypes(form.elements.type_id, TYPED[view]);
-		}
 		if (form.elements.device_id) {
 			await fillTypes(form.elements.device_id, "devices");
 		}
@@ -167,7 +164,7 @@ export async function openDialog(listed) {
 		if (view === "organizations" && !item) {
 			// through worldList: a reload of another view may have dropped the cached types meanwhile
 			const company = (await worldList("organization-types")).find((t) => t.name === "Company");
-			form.elements.type_id.value = company ? company.id : "";
+			setPickerValue(form.querySelector("[data-field=types]"), company ? [company.id] : []);
 		}
 		if (item) {
 			fillWorldForm(form, item);

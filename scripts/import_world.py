@@ -179,6 +179,7 @@ from myworld.models import (
     library_entry_authors,
     make_engine,
     organization_relation_types,
+    organization_type_links,
     person_organizations,
     person_type_links,
     region_for,
@@ -287,7 +288,7 @@ FAMILY_DESCRIPTION = re.compile(r"my (brother|sister|mother|father|son|daughter|
 GIRLFRIEND_DESCRIPTION = re.compile(r"(ex-)?girlfriend\b", re.IGNORECASE)
 CO_WORKER_DESCRIPTION = re.compile(r"\bMAFAT\b|\bwork(ed)? with\b")
 # organizations.yaml has no type field (yet): these are the ones that are not a
-# company; a type field in the YAML (a type name) wins over this list
+# company; a type field in the YAML (a type name, or a list of them) wins over this list
 ORGANIZATION_TYPE_BY_NAME = {
     "Hebrew University of Jerusalem": "University",
     "Open University of Israel": "University",
@@ -298,6 +299,7 @@ ORGANIZATION_TYPE_BY_NAME = {
     "Bank of Israel": "Government",
     "Bituach Leumi": "Government",
     "Mifal Hapayis": "Public body",
+    "BBC Radio": "Public body",
     "Basmach": "Military",
     "MercyCorps": "Non-profit",
 }
@@ -386,11 +388,23 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
-def type_for(name: str, functions: list[str] | None = None) -> str:
-    """ The type name an organization of organizations.yaml gets when the YAML does not say: a publisher (by its functions) is a Publisher. """
+def types_for(name: str, functions: list[str] | None = None) -> list[str]:
+    """
+    The type names an organization of organizations.yaml gets when the YAML
+    does not say: its type by name (ORGANIZATION_TYPE_BY_NAME), and Publisher
+    when its functions include publisher (BBC Radio is both); a Company when
+    neither says anything.
+    """
+    types = [ORGANIZATION_TYPE_BY_NAME[name]] if name in ORGANIZATION_TYPE_BY_NAME else []
     if "publisher" in (functions or []):
-        return PUBLISHER_TYPE
-    return ORGANIZATION_TYPE_BY_NAME.get(name, DEFAULT_ORGANIZATION_TYPE)
+        types.append(PUBLISHER_TYPE)
+    return types or [DEFAULT_ORGANIZATION_TYPE]
+
+
+def _yaml_types(item: dict[str, Any]) -> list[str]:
+    """ The type field of an organization of organizations.yaml: a type name or a list of them, each once. """
+    value = item.get("type") or []
+    return list(dict.fromkeys([value] if isinstance(value, str) else value))
 
 
 def split_name(name: str) -> tuple[str, str, str, str]:
@@ -511,8 +525,8 @@ def give_types(session: Session, owner: User) -> dict[str, int]:
                 made_relations += relate(person, relation)
         session.delete(kind)
     typed = 0
-    for organization in session.scalars(select(Organization).where(Organization.owner_id == owner.id, Organization.type_id.is_(None))):
-        organization.type = org_types[type_for(organization.name, [relation.name.lower() for relation in organization.relations])]
+    for organization in session.scalars(select(Organization).where(Organization.owner_id == owner.id, ~Organization.types.any())):
+        organization.types = [org_types[name] for name in types_for(organization.name, [relation.name.lower() for relation in organization.relations])]
         typed += 1
     given_profession = given_relation = 0
     for person in people:
@@ -610,6 +624,9 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     session.execute(delete(organization_relation_types).where(
         organization_relation_types.c.organization_id.in_(select(Organization.id).where(Organization.owner_id == owner.id)),
     ))
+    session.execute(delete(organization_type_links).where(
+        organization_type_links.c.organization_id.in_(select(Organization.id).where(Organization.owner_id == owner.id)),
+    ))
     # every person goes, so every author link of owner's library entries does too
     session.execute(delete(library_entry_authors).where(library_entry_authors.c.owner_id == owner.id))
     # the books are added again below, and what hangs on them goes with them (said here, as not
@@ -682,7 +699,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
         organization = Organization(
             owner_id=owner.id,
             name=item["name"],
-            type=organization_type(item.get("type") or type_for(item["name"], item.get("functions"))),
+            types=[organization_type(name) for name in _yaml_types(item) or types_for(item["name"], item.get("functions"))],
             relations=[relation_type(word) for word in dict.fromkeys(item.get("functions", []))],
             **{key: item.get(key, "") for key in sorted(ORGANIZATION_COLUMNS - {"name", "type", "functions", "address", "remark"})},
             **_address(item.get("address", ""), item.get("remark", ""), city.of_location(item.get("location", "")), city),
@@ -702,7 +719,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
         names = _person_organizations(item)
         for name in names:
             if name not in organizations:
-                organizations[name] = Organization(owner_id=owner.id, name=name, type=organization_type(DEFAULT_ORGANIZATION_TYPE))
+                organizations[name] = Organization(owner_id=owner.id, name=name, types=[organization_type(DEFAULT_ORGANIZATION_TYPE)])
                 session.add(organizations[name])
         honorific, first_name, middle_name, surname = split_name(item["name"])
         person = Person(
