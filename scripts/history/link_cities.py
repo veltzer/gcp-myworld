@@ -26,14 +26,15 @@ from collections import Counter
 from pathlib import Path
 
 # the myworld package is in src/, not installed (see scripts/check.py)
-ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(ROOT / "src"))
-os.chdir(ROOT)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from sqlalchemy import Connection, inspect, text
 
 from myworld.cities import better, city_key, country_name, parse_location
 from myworld.models import make_engine
+
+ROOT = Path(__file__).resolve().parent.parent.parent
+os.chdir(ROOT)
 
 
 def columns(connection: Connection, table: str) -> set[str]:

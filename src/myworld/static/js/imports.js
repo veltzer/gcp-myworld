@@ -72,13 +72,13 @@ function renderConnection(youtube) {
 	const box = $("youtube-connection");
 	const button = el("button", "", youtube.connected ? "Disconnect" : "Connect YouTube");
 	button.type = "button";
-	let said;
+	let summary;
 	if (!youtube.configured) {
-		said = "YouTube: connecting is not set up on this site.";
+		summary = "YouTube: connecting is not set up on this site.";
 		button.disabled = true;
 		button.title = "The site has no Google client secret (GOOGLE_CLIENT_SECRET)";
 	} else if (youtube.connected) {
-		said = `YouTube: connected${youtube.channel ? ` as ${youtube.channel}` : ""}, read only.`;
+		summary = `YouTube: connected${youtube.channel ? ` as ${youtube.channel}` : ""}, read only.`;
 		button.title = "Forget the connection, and tell Google to revoke it";
 		button.onclick = async () => {
 			button.disabled = true;
@@ -91,13 +91,13 @@ function renderConnection(youtube) {
 			}
 		};
 	} else {
-		said = "YouTube: not connected. Connecting lets the importers read your playlists, nothing else.";
+		summary = "YouTube: not connected. Connecting lets the importers read your playlists, nothing else.";
 		button.title = "Go to Google and allow My World to read your YouTube account";
 		button.onclick = () => {
 			window.location.href = "/youtube/connect";
 		};
 	}
-	box.replaceChildren(el("span", "", said), button);
+	box.replaceChildren(el("span", "", summary), button);
 }
 
 // The Audible account the Audible library importer reads: who it is, and Connect or Disconnect in the same spot.
@@ -107,9 +107,9 @@ function renderAudible(audible) {
 	const box = $("audible-connection");
 	const button = el("button", "", audible.connected ? "Disconnect" : "Connect Audible");
 	button.type = "button";
-	let said;
+	let summary;
 	if (audible.connected) {
-		said = `Audible: connected${audible.name ? ` as ${audible.name}` : ""} (${audible.store}), reading the library only.`;
+		summary = `Audible: connected${audible.name ? ` as ${audible.name}` : ""} (${audible.store}), reading the library only.`;
 		button.title = "Forget the connection, and take My World off your Audible account's devices";
 		button.onclick = async () => {
 			button.disabled = true;
@@ -122,7 +122,7 @@ function renderAudible(audible) {
 			}
 		};
 	} else {
-		said = "Audible: not connected. Connecting lets the importer read your Audible library, nothing else.";
+		summary = "Audible: not connected. Connecting lets the importer read your Audible library, nothing else.";
 		button.title = "Sign in at Amazon, in a new tab, to make My World a device of your Audible account";
 		button.onclick = async () => {
 			button.disabled = true;
@@ -135,7 +135,7 @@ function renderAudible(audible) {
 			}
 		};
 	}
-	box.replaceChildren(el("span", "", said), button);
+	box.replaceChildren(el("span", "", summary), button);
 }
 
 // The two steps of connecting Audible, in the connection's spot until it is done or cancelled.

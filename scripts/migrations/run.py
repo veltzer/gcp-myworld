@@ -17,10 +17,8 @@ local sqlite file), one step at a time:
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-# pylint: disable=wrong-import-position
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
@@ -31,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from myworld.models import ROLE_ADMIN, Base, User, database_url
 
+HERE = Path(__file__).resolve().parent
 BASELINE = "0001"
 STEPS = {
     "state": "where the database is: empty, legacy, or its revision",

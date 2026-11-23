@@ -1149,8 +1149,8 @@ def _named_parts(item: dict[str, Any], title: str) -> list[str]:
 
 def _strip_parts(notes: str, parts: list[str]) -> str:
     """ notes ("A. B. C", as _book_notes joins them) without the sentences that are exactly one of parts. """
-    for part in parts:
-        part = part.rstrip(".")
+    for sentence in parts:
+        part = sentence.rstrip(".")
         if notes == part:
             notes = ""
         elif notes.startswith(f"{part}. "):

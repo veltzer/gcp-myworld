@@ -111,7 +111,7 @@ def test_details(app: webtest.TestApp, tmdb: list[str]) -> None:
 
 @pytest.mark.usefixtures("tmdb")
 def test_details_without_rotten_tomatoes(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
-    def no_wikidata(qid: str) -> dict[str, Any]:
+    def no_wikidata(_qid: str) -> dict[str, Any]:
         raise movies.MovieLookupError("Wikidata answered 500")
     monkeypatch.setattr(movies, "wikidata_entity", no_wikidata)
     sign_in(app)

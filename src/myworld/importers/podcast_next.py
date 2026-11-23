@@ -12,12 +12,12 @@ ones. It reads no feed: an episode the shared data does not have yet is
 brought by an admin's Podcast feeds run.
 """
 
-import datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from myworld import timeutil
 from myworld.importers.core import Importer, Param, Report, register
 from myworld.models import (
     EpisodeHeard,
@@ -51,7 +51,7 @@ def unavailable(session: Session, _owner: User) -> str:
 
 def in_order(episodes: list[PodcastEpisode]) -> list[PodcastEpisode]:
     """ A podcast's episodes, the first published first (one with no date where it was added). """
-    return sorted(episodes, key=lambda e: (e.published_utcz is None, e.published_utcz or datetime.datetime.min, e.id))
+    return sorted(episodes, key=lambda e: (e.published_utcz is None, e.published_utcz or timeutil.EARLIEST, e.id))
 
 
 def add_next(session: Session, owner: User, podcast: Podcast, count: int | None) -> list[EpisodeHeard]:
@@ -61,7 +61,7 @@ def add_next(session: Session, owner: User, podcast: Podcast, count: int | None)
     positions = [i for i, e in enumerate(episodes) if e.id in mine]
     following = episodes[max(positions) + 1:] if positions else episodes
     # heard where and on what the last one heard was
-    last = max(mine.values(), key=lambda h: (h.date_utcz or datetime.datetime.min, h.id), default=None)
+    last = max(mine.values(), key=lambda h: (h.date_utcz or timeutil.EARLIEST, h.id), default=None)
     now = utcnow().replace(microsecond=0)
     added = []
     for episode in following[:count]:

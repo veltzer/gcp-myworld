@@ -18,6 +18,7 @@ both are set.
 """
 
 import base64
+import contextlib
 import datetime
 import hashlib
 import hmac
@@ -123,10 +124,8 @@ def api_get(access_token: str, path: str, params: dict[str, str]) -> dict[str, A
 
 def revoke(token: str) -> None:
     """ Tell Google the token is no longer wanted; best effort, the tests replace it. """
-    try:
+    with contextlib.suppress(requests.RequestException):
         requests.post(REVOKE_URL, data={"token": token}, timeout=HTTP_TIMEOUT)
-    except requests.RequestException:
-        pass
 
 
 # ─── reading the account ────────────────────────────────────────────────────
@@ -344,10 +343,8 @@ def disconnect() -> tuple[str, int]:
     db = flask.g.db
     kept = connection(db, flask.g.user)
     if kept is not None:
-        try:
+        with contextlib.suppress(YouTubeError):
             revoke(unseal(kept.refresh_token))
-        except YouTubeError:
-            pass
         db.delete(kept)
         db.commit()
     return "", 204

@@ -22,6 +22,8 @@ import xml.etree.ElementTree as ET
 
 import requests
 
+from myworld import timeutil
+
 HTTP_TIMEOUT = 30
 # a feed of a thousand episodes with long descriptions is a few MB
 FEED_MAX_BYTES = 30 * 1024 * 1024
@@ -187,7 +189,7 @@ def parse_feed(data: bytes) -> Feed:
     episodes = [_episode(item) for item in reversed(channel.findall("item"))]
     episodes = [episode for episode in episodes if episode.name]
     if all(episode.published_utcz is not None for episode in episodes):
-        episodes.sort(key=lambda episode: episode.published_utcz or datetime.datetime.min)
+        episodes.sort(key=lambda episode: episode.published_utcz or timeutil.EARLIEST)
     return Feed(
         link=_text(channel, "link"),
         image_url=_attr(channel, f"{ITUNES}image", "href") or _text(channel, "image/url"),

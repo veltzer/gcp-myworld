@@ -64,9 +64,9 @@ export async function libraryPage() {
 		event.preventDefault();
 		dialogError("");
 		const body = { kind: state.editingView };
-		for (const el of form.elements) {
-			if (el.name && el.type !== "file") {
-				body[el.name] = el.value;
+		for (const field of form.elements) {
+			if (field.name && field.type !== "file") {
+				body[field.name] = field.value;
 			}
 		}
 		if (state.editingView === "book") {

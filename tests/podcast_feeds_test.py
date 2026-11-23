@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session, selectinload
 from myworld import podcasts
 from myworld.importers import core, jobs
 from myworld.models import EpisodeHeard, Image, Podcast, PodcastEpisode
+from myworld.timeutil import naive_utc
 from tests.conftest import sign_in, sign_in_admin
 
 FEED_URL = "https://feeds.example.com/history"
@@ -113,7 +114,7 @@ def test_what_a_feed_says() -> None:
     first = said.episodes[0]
     assert [e.guid for e in said.episodes] == ["g1", "g2"]
     assert first == podcasts.Episode(
-        name="1. Episode 1", description="About 1", published_utcz=datetime.datetime(2020, 3, 1, 8), number=1, duration=3723,
+        name="1. Episode 1", description="About 1", published_utcz=naive_utc(2020, 3, 1, 8), number=1, duration=3723,
         episode_type="full", explicit="no", enclosure_url="https://audio.example.com/1.mp3", image_url="https://img.example.com/1.jpg",
         author="Goalhanger", guid="g1",
     )
@@ -138,7 +139,8 @@ def importer(app: webtest.TestApp, name: str) -> dict[str, Any] | None:
     return next((i for i in app.get("/api/importers").json["importers"] if i["name"] == name), None)
 
 
-def test_the_feeds_are_an_admins_and_the_next_episodes_everyones(app: webtest.TestApp, engine: Engine, web: FakeWeb) -> None:
+@pytest.mark.usefixtures("web")
+def test_the_feeds_are_an_admins_and_the_next_episodes_everyones(app: webtest.TestApp, engine: Engine) -> None:
     sign_in(app, sub="someone")
     # the feeds write the shared data: only admins see that importer
     assert importer(app, "podcast-feeds") is None
@@ -166,7 +168,7 @@ def test_a_feed_brings_every_episode_and_fills_what_is_empty(app: webtest.TestAp
     assert record["counts"] == {"podcast episodes added": 4, "episodes given the feed's details": 1, "covers added": 1, "podcasts given their page": 1}
     first, *_ = episodes(engine)
     # what was typed is kept; what was empty is the feed's
-    assert (first.name, first.description, first.duration, first.published_utcz) == ("My own name", "About 1", 3723, datetime.datetime(2020, 3, 1, 8))
+    assert (first.name, first.description, first.duration, first.published_utcz) == ("My own name", "About 1", 3723, naive_utc(2020, 3, 1, 8))
     assert [e.guid for e in episodes(engine)] == ["g1", "g2", "g3", "g4", "g5"]
     with Session(engine) as session:
         shared = session.scalars(select(Podcast)).one()
@@ -192,7 +194,8 @@ def test_a_feed_brings_every_episode_and_fills_what_is_empty(app: webtest.TestAp
     assert [e.id for e in episodes(engine)][:5] == ids
 
 
-def test_the_next_episodes_are_added_as_heard_now(app: webtest.TestApp, engine: Engine, web: FakeWeb) -> None:
+@pytest.mark.usefixtures("web")
+def test_the_next_episodes_are_added_as_heard_now(app: webtest.TestApp, engine: Engine) -> None:
     podcast = history(app, engine)
     feeds(app)
     sign_in(app, sub="someone")
@@ -217,7 +220,8 @@ def test_the_next_episodes_are_added_as_heard_now(app: webtest.TestApp, engine: 
     assert [p["name"] for p in app.get("/api/podcasts-heard").json] == ["History"]
 
 
-def test_from_the_first_when_none_was_heard_and_each_their_own(app: webtest.TestApp, engine: Engine, web: FakeWeb) -> None:
+@pytest.mark.usefixtures("web")
+def test_from_the_first_when_none_was_heard_and_each_their_own(app: webtest.TestApp, engine: Engine) -> None:
     podcast = history(app, engine)
     feeds(app)
     sign_in(app, sub="someone")
@@ -230,7 +234,8 @@ def test_from_the_first_when_none_was_heard_and_each_their_own(app: webtest.Test
     assert len(episodes(engine)) == 5
 
 
-def test_every_one_left(app: webtest.TestApp, engine: Engine, web: FakeWeb) -> None:
+@pytest.mark.usefixtures("web")
+def test_every_one_left(app: webtest.TestApp, engine: Engine) -> None:
     podcast = history(app, engine)
     feeds(app)
     sign_in(app, sub="someone")
@@ -240,7 +245,8 @@ def test_every_one_left(app: webtest.TestApp, engine: Engine, web: FakeWeb) -> N
     assert next_heard(app, podcast, "all")["counts"] == {}
 
 
-def test_a_dry_run_keeps_nothing(app: webtest.TestApp, engine: Engine, web: FakeWeb) -> None:
+@pytest.mark.usefixtures("web")
+def test_a_dry_run_keeps_nothing(app: webtest.TestApp, engine: Engine) -> None:
     history(app, engine)
     record = feeds(app, dry_run=True)
     assert record["counts"]["podcast episodes added"] == 5
@@ -249,7 +255,8 @@ def test_a_dry_run_keeps_nothing(app: webtest.TestApp, engine: Engine, web: Fake
         assert session.scalars(select(Image)).first() is None
 
 
-def test_a_feed_that_cannot_be_read_is_skipped(app: webtest.TestApp, engine: Engine, web: FakeWeb) -> None:
+@pytest.mark.usefixtures("web")
+def test_a_feed_that_cannot_be_read_is_skipped(app: webtest.TestApp, engine: Engine) -> None:
     good = history(app, engine)
     gone = app.post_json("/api/podcasts", {"name": "Gone", "rss_feed": "https://feeds.example.com/gone"}, status=201).json["id"]
     record = feeds(app)

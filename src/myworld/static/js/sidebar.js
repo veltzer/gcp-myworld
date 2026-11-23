@@ -192,13 +192,17 @@ function setupSash() {
 			setSidebarWidth(width, false);
 		};
 		// where it was last dragged to is kept (a drag the browser cancelled says no place of its own)
-		sash.onpointerup = sash.onpointercancel = () => {
-			sash.onpointermove = sash.onpointerup = sash.onpointercancel = null;
+		const release = () => {
+			sash.onpointermove = null;
+			sash.onpointerup = null;
+			sash.onpointercancel = null;
 			document.body.classList.remove("sidebar-resizing");
 			if (width !== null) {
 				setSidebarWidth(width);
 			}
 		};
+		sash.onpointerup = release;
+		sash.onpointercancel = release;
 	};
 	sash.ondblclick = () => setSidebarWidth(null);
 	sash.onkeydown = (event) => {

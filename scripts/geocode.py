@@ -43,9 +43,7 @@ from pathlib import Path
 from typing import Any
 
 # the myworld package is in src/, not installed: find it from any directory
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
-os.chdir(ROOT)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -60,6 +58,9 @@ from myworld.models import (
     PlaceKind,
     make_engine,
 )
+
+ROOT = Path(__file__).resolve().parent.parent
+os.chdir(ROOT)
 
 NOMINATIM = "https://nominatim.openstreetmap.org/search"
 USER_AGENT = "myworld-geocode/1.0 (+https://github.com/veltzer/gcp-myworld)"

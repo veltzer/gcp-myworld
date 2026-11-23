@@ -41,15 +41,16 @@ from pathlib import Path
 from typing import Any
 
 # the myworld package is in src/, not installed (see scripts/check.py)
-ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(ROOT / "src"))
-os.chdir(ROOT)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from sqlalchemy import Connection, inspect, text
 
 from myworld.addresses import from_osm, parse_address, split_text
 from myworld.cities import city_key
 from myworld.models import make_engine
+
+ROOT = Path(__file__).resolve().parent.parent.parent
+os.chdir(ROOT)
 
 REVERSE = "https://nominatim.openstreetmap.org/reverse"
 USER_AGENT = "myworld-geocode/1.0 (+https://github.com/veltzer/gcp-myworld)"
@@ -123,8 +124,8 @@ def main() -> int:
                 WHERE t.address <> '' AND t.street = '' AND t.neighbourhood = '' AND t.postcode = '' ORDER BY t.id
             """)).all()
             split = kept = empty = 0
-            for row_id, name, address, remark, latitude, longitude, city, region, country, owner, city_id in rows:
-                city, region, country = city or "", region or "", country or ""
+            for row_id, name, address, remark, latitude, longitude, raw_city, _region, raw_country, owner, city_id in rows:
+                city, country = raw_city or "", raw_country or ""
                 whole = True
                 if table == "places":
                     if "Location approximate" in remark or latitude is None:
@@ -147,7 +148,7 @@ def main() -> int:
                             if moved is not None and not args.dry_run:
                                 connection.execute(text(f"UPDATE {table} SET city_id = :c WHERE id = :id"), {"c": moved, "id": row_id})
                 else:
-                    street, neighbourhood, postcode, whole = split_text(address, city, region, country)
+                    street, neighbourhood, postcode, whole = split_text(address, city, country)
                 note = "" if whole else f"Address as written: {address}"
                 if not (street or neighbourhood or postcode):
                     empty += 1

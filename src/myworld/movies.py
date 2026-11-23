@@ -86,17 +86,17 @@ def _poster(path: str | None) -> str:
 def search(query: str) -> list[dict[str, Any]]:
     """ Candidate films for a title, most relevant first, enough to pick the right one. """
     data = tmdb_get("/search/movie", query=query, include_adult="false")
-    results = []
-    for movie in data.get("results", [])[:10]:
-        results.append({
+    return [
+        {
             "tmdb_id": movie["id"],
             "title": movie.get("title") or "",
             "original_title": movie.get("original_title") or "",
             "year": _year(movie.get("release_date")),
             "overview": (movie.get("overview") or "")[:300],
             "poster": _poster(movie.get("poster_path")),
-        })
-    return results
+        }
+        for movie in data.get("results", [])[:10]
+    ]
 
 
 def rotten_tomatoes_id(wikidata_id: str) -> str:

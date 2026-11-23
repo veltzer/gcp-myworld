@@ -360,7 +360,7 @@ def test_forgotten_password_is_replaced_by_mail(app: webtest.TestApp, mailer: Fa
 
 
 def test_mail_failure_is_said(app: webtest.TestApp, mailer: FakeMailer, monkeypatch: pytest.MonkeyPatch, engine: Engine) -> None:
-    def fail(email: str, continue_url: str) -> None:
+    def fail(_email: str, _continue_url: str) -> None:
         raise VerificationError("down")
     monkeypatch.setattr(mailer, "send", fail)
     assert "could not be sent" in app.post_json("/auth/email/register", {"email": "carol@example.com"}, status=503).json["error"]
@@ -458,11 +458,11 @@ def test_oauth_from_alias_host(engine: Engine, monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("SECRET_KEY", "test-secret")
     redirects: list[str] = []
 
-    def fake_exchange(provider: auth.OAuthProvider, code: str, redirect_uri: str) -> str:
+    def fake_exchange(_provider: auth.OAuthProvider, _code: str, redirect_uri: str) -> str:
         redirects.append(redirect_uri)
         return "access-token"
 
-    def fake_claims(provider: auth.OAuthProvider, token: str) -> dict[str, str | bool]:
+    def fake_claims(_provider: auth.OAuthProvider, _token: str) -> dict[str, str | bool]:
         return {"sub": "github:42", "email": "dave@example.com", "name": "Dave", "picture": "", "verified": True}
 
     monkeypatch.setattr(auth, "exchange_code", fake_exchange)
@@ -491,7 +491,7 @@ def test_oauth_from_alias_host(engine: Engine, monkeypatch: pytest.MonkeyPatch) 
 def test_oauth_callback_failures_return_to_landing(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
     configure_github(monkeypatch)
 
-    def failing_exchange(provider: auth.OAuthProvider, code: str, redirect_uri: str) -> str:
+    def failing_exchange(_provider: auth.OAuthProvider, _code: str, _redirect_uri: str) -> str:
         raise auth.OAuthError("nope")
 
     monkeypatch.setattr(auth, "exchange_code", failing_exchange)
@@ -519,8 +519,8 @@ def test_oauth_callback_failures_return_to_landing(app: webtest.TestApp, monkeyp
 def github_as(monkeypatch: pytest.MonkeyPatch, app: webtest.TestApp, claims: dict[str, str | bool]) -> None:
     """ Go through GitHub's sign-in, GitHub saying claims. """
     configure_github(monkeypatch)
-    monkeypatch.setattr(auth, "exchange_code", lambda provider, code, redirect_uri: "token")
-    monkeypatch.setattr(auth, "fetch_claims", lambda provider, token: claims)
+    monkeypatch.setattr(auth, "exchange_code", lambda _provider, _code, _redirect_uri: "token")
+    monkeypatch.setattr(auth, "fetch_claims", lambda _provider, _token: claims)
     start = app.get("/auth/oauth/github")
     assert start.location is not None
     state = start.location.split("state=")[1].split("&")[0]
@@ -545,8 +545,8 @@ def test_logins_of_one_verified_email_are_one_account(app: webtest.TestApp, monk
 def github_as_location(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch, claims: dict[str, str | bool]) -> str:
     """ Go through GitHub's sign-in, GitHub saying claims; where it lands. """
     configure_github(monkeypatch)
-    monkeypatch.setattr(auth, "exchange_code", lambda provider, code, redirect_uri: "token")
-    monkeypatch.setattr(auth, "fetch_claims", lambda provider, token: claims)
+    monkeypatch.setattr(auth, "exchange_code", lambda _provider, _code, _redirect_uri: "token")
+    monkeypatch.setattr(auth, "fetch_claims", lambda _provider, _token: claims)
     start = app.get("/auth/oauth/github")
     assert start.location is not None
     state = start.location.split("state=")[1].split("&")[0]

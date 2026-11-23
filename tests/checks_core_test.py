@@ -36,6 +36,7 @@ from myworld.models import (
     Work,
     YouTubeVideo,
 )
+from myworld.timeutil import naive_utc
 
 
 def test_squashed() -> None:
@@ -178,7 +179,7 @@ def test_ids_and_dated(world: Session) -> None:
     assert core.ids(world, Organization.city_id) == set()
     concert = world.get(Concert, 1)
     assert concert is not None and not core.dated(concert)
-    for field, value in (("date_y", 2003), ("date_my", "07-2003"), ("date_ymd", datetime.date(2003, 7, 14)), ("date_utcz", datetime.datetime(2003, 7, 14, 20, 0))):
+    for field, value in (("date_y", 2003), ("date_my", "07-2003"), ("date_ymd", datetime.date(2003, 7, 14)), ("date_utcz", naive_utc(2003, 7, 14, 20, 0))):
         setattr(concert, field, value)
         assert core.dated(concert), field
         setattr(concert, field, "" if field == "date_my" else None)

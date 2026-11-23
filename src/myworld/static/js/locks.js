@@ -51,22 +51,22 @@ export function setupLocks(dialog) {
 			const controls = lockControls(box);
 			if (box.classList.contains("editing")) {
 				// the ×: what was there comes back, locked again
-				controls.forEach((control, index) => {
-					if (control.tomselect) {
-						control.tomselect.setValue(box.saved[index], true);
-					} else if (control.type === "checkbox") {
-						control.checked = box.saved[index];
+				controls.forEach((field, index) => {
+					if (field.tomselect) {
+						field.tomselect.setValue(box.saved[index], true);
+					} else if (field.type === "checkbox") {
+						field.checked = box.saved[index];
 					} else {
-						control.value = box.saved[index];
+						field.value = box.saved[index];
 					}
 					// what follows a box (a date's hidden field, I went alone and its picker) follows it back
-					control.dispatchEvent(new Event(control.tagName === "SELECT" || control.type === "checkbox" ? "change" : "input", { bubbles: true }));
+					field.dispatchEvent(new Event(field.tagName === "SELECT" || field.type === "checkbox" ? "change" : "input", { bubbles: true }));
 				});
 				setLocked(box, true);
 				return;
 			}
 			// the pencil: the box is freed, and until the form is saved the pencil is a × that regrets it
-			box.saved = controls.map((control) => control.tomselect ? [...control.tomselect.items] : control.type === "checkbox" ? control.checked : control.value);
+			box.saved = controls.map((field) => field.tomselect ? [...field.tomselect.items] : field.type === "checkbox" ? field.checked : field.value);
 			setLocked(box, false);
 			box.classList.add("editing");
 			pencil.textContent = "\u00D7";

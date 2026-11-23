@@ -24,15 +24,16 @@ import sys
 from pathlib import Path
 
 # the myworld package is in src/, not installed (see scripts/check.py)
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
-os.chdir(ROOT)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from myworld import names as naming
 from myworld.models import Person, PersonType, UserWork, Work, make_engine
+
+ROOT = Path(__file__).resolve().parent.parent
+os.chdir(ROOT)
 
 # what separates the authors in a creator text
 SEPARATOR = re.compile(r"\s*(?:,|;|&|\band\b|\bwith\b)\s*", re.IGNORECASE)

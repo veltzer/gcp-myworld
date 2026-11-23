@@ -10,7 +10,7 @@ import datetime
 import logging
 import re
 import urllib.parse
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import webtest
@@ -19,6 +19,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld import importers, youtube
+from myworld.checks import DATASETS
 from myworld.importers import core, jobs, sleep
 from myworld.models import ROLE_ADMIN, ImportRun, User, YouTubeConnection, YouTubeVideo
 from tests.conftest import sign_in
@@ -221,7 +222,8 @@ def test_the_imports_api_needs_a_sign_in(app: webtest.TestApp) -> None:
 
 # ─── the importer ───────────────────────────────────────────────────────────
 
-def test_the_playlists_to_choose_from(app: webtest.TestApp, fake: FakeYouTube) -> None:
+@pytest.mark.usefixtures("fake")
+def test_the_playlists_to_choose_from(app: webtest.TestApp) -> None:
     sign_in(app)
     importer = next(i for i in app.get("/api/importers").json["importers"] if i["name"] == "youtube-playlists")
     # not connected: nothing to choose from, and it says why
@@ -238,7 +240,8 @@ def test_the_playlists_to_choose_from(app: webtest.TestApp, fake: FakeYouTube) -
     ]
 
 
-def test_importing_playlists_adds_each_video_once_and_again_adds_nothing(app: webtest.TestApp, engine: Engine, fake: FakeYouTube) -> None:
+@pytest.mark.usefixtures("fake")
+def test_importing_playlists_adds_each_video_once_and_again_adds_nothing(app: webtest.TestApp, engine: Engine) -> None:
     sign_in(app)
     connect(app)
     done = run(app, ["PLmusic", "PLtalks"])
@@ -303,7 +306,8 @@ def test_it_only_ever_adds(app: webtest.TestApp, engine: Engine, fake: FakeYouTu
     assert sorted(videos(engine)) == ["vidMusic001", "vidTalks001"]
 
 
-def test_a_dry_run_keeps_nothing_but_says_what_a_run_would_do(app: webtest.TestApp, engine: Engine, fake: FakeYouTube) -> None:
+@pytest.mark.usefixtures("fake")
+def test_a_dry_run_keeps_nothing_but_says_what_a_run_would_do(app: webtest.TestApp, engine: Engine) -> None:
     sign_in(app)
     connect(app)
     dry = run(app, ["LLalice"], dry_run=True)
@@ -313,7 +317,8 @@ def test_a_dry_run_keeps_nothing_but_says_what_a_run_would_do(app: webtest.TestA
     assert [(r["importer"], r["dry_run"], r["params"]) for r in runs] == [("youtube-playlists", True, {"playlists": ["LLalice"]})]
 
 
-def test_wrong_parameters_run_nothing(app: webtest.TestApp, engine: Engine, fake: FakeYouTube) -> None:
+@pytest.mark.usefixtures("fake")
+def test_wrong_parameters_run_nothing(app: webtest.TestApp, engine: Engine) -> None:
     sign_in(app)
     connect(app)
     assert run(app, [], status=400)["error"] == "Playlists: choose at least one"
@@ -326,7 +331,8 @@ def test_wrong_parameters_run_nothing(app: webtest.TestApp, engine: Engine, fake
         assert session.scalars(select(ImportRun)).all() == []
 
 
-def test_a_connection_google_no_longer_accepts_fails_the_run(app: webtest.TestApp, engine: Engine, fake: FakeYouTube) -> None:
+@pytest.mark.usefixtures("fake")
+def test_a_connection_google_no_longer_accepts_fails_the_run(app: webtest.TestApp, engine: Engine) -> None:
     sign_in(app)
     connect(app)
     with Session(engine) as session:
@@ -358,7 +364,8 @@ def test_a_failing_import_is_rolled_back_and_kept_as_failed(app: webtest.TestApp
     assert app.get("/api/import-runs").json["ended"][0]["status"] == "failed"
 
 
-def test_each_user_imports_into_their_own_data(app: webtest.TestApp, engine: Engine, fake: FakeYouTube) -> None:
+@pytest.mark.usefixtures("fake")
+def test_each_user_imports_into_their_own_data(app: webtest.TestApp, engine: Engine) -> None:
     sign_in(app)
     connect(app)
     run(app, ["LLalice"])
@@ -409,7 +416,6 @@ def test_an_importer_is_registered_once_with_parameters_there_are(monkeypatch: p
 
 
 def test_every_importer_adds_to_a_page_there_is() -> None:
-    from myworld.checks import DATASETS
     assert importers.IMPORTERS
     for importer in importers.IMPORTERS.values():
         # a test adds to nothing
@@ -449,7 +455,8 @@ def test_the_playlists_of_the_last_run_are_picked_to_start_with(app: webtest.Tes
     assert chosen() == []
 
 
-def test_youtube_details_fills_in_the_videos_that_have_none(app: webtest.TestApp, engine: Engine, fake: FakeYouTube) -> None:
+@pytest.mark.usefixtures("fake")
+def test_youtube_details_fills_in_the_videos_that_have_none(app: webtest.TestApp, engine: Engine) -> None:
     sign_in(app)
     connect(app)
     owner = alice(engine).id
@@ -506,7 +513,8 @@ def queue(engine: Engine, owner_id: int, status: str, **columns: Any) -> int:
         return record.id
 
 
-def test_a_run_is_queued_and_its_job_does_it(app: webtest.TestApp, engine: Engine, fake: FakeYouTube, fixture_inline_jobs: list[int]) -> None:
+@pytest.mark.usefixtures("fake")
+def test_a_run_is_queued_and_its_job_does_it(app: webtest.TestApp, engine: Engine, fixture_inline_jobs: list[int]) -> None:
     sign_in(app)
     connect(app)
     done = run(app, ["LLalice"])
@@ -520,7 +528,8 @@ def test_a_run_is_queued_and_its_job_does_it(app: webtest.TestApp, engine: Engin
     assert run(app, ["LLalice"])["counts"] == {"YouTube videos unchanged": 1}
 
 
-def test_a_job_that_cannot_be_started_fails_the_run(app: webtest.TestApp, engine: Engine, fake: FakeYouTube, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.usefixtures("fake")
+def test_a_job_that_cannot_be_started_fails_the_run(app: webtest.TestApp, engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
     sign_in(app)
     connect(app)
 
@@ -595,7 +604,8 @@ def test_the_sleep_importer_is_an_admins_only(app: webtest.TestApp, engine: Engi
     ]
 
 
-def test_a_user_may_start_so_many_runs_a_month_and_an_admin_any_number(app: webtest.TestApp, engine: Engine, fake: FakeYouTube, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.usefixtures("fake")
+def test_a_user_may_start_so_many_runs_a_month_and_an_admin_any_number(app: webtest.TestApp, engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("IMPORT_RUNS_PER_MONTH", "2")
     sign_in(app)
     connect(app)
@@ -652,18 +662,19 @@ def test_a_cloud_run_jobs_execution_is_asked_for_with_the_run_id(monkeypatch: py
         def raise_for_status(self) -> None:
             assert self.ok
 
-    def get(url: str, headers: dict[str, str], timeout: int) -> Answer:
+    def get(_url: str, headers: dict[str, str], timeout: int) -> Answer:
         assert headers == {"Metadata-Flavor": "Google"} and timeout
         return Answer(200, {"access_token": "sa-token"})
 
     def post(url: str, headers: dict[str, str], json: Any, timeout: int) -> Answer:
+        assert timeout
         asked.append((url, headers, json))
         return Answer(200, {"name": "operations/1", "metadata": {"name": "projects/p/locations/r/jobs/myworld-import/executions/x1"}})
 
     monkeypatch.setattr(jobs.requests, "get", get)
     monkeypatch.setattr(jobs.requests, "post", post)
     monkeypatch.setenv("IMPORT_JOB", "projects/p/locations/r/jobs/myworld-import")
-    dispatch = REAL_DISPATCHER(None)  # type: ignore[arg-type] - a job, not the app, does the run
+    dispatch = REAL_DISPATCHER(cast(Any, None))  # a job, not the app, does the run
     assert dispatch(42) == "projects/p/locations/r/jobs/myworld-import/executions/x1"
     assert asked == [(
         "https://run.googleapis.com/v2/projects/p/locations/r/jobs/myworld-import:run",
@@ -710,7 +721,8 @@ def test_what_goes_wrong_in_a_run_is_in_its_log(app: webtest.TestApp, engine: En
     assert log[-1] == "Failed: ZeroDivisionError: a bug"
 
 
-def test_clear_deletes_ended_runs_and_nothing_they_imported(app: webtest.TestApp, engine: Engine, fake: FakeYouTube, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.usefixtures("fake")
+def test_clear_deletes_ended_runs_and_nothing_they_imported(app: webtest.TestApp, engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("IMPORT_RUNS_PER_MONTH", "5")
     sign_in(app, "bob")
     sign_in(app)
@@ -745,7 +757,8 @@ def test_clear_deletes_ended_runs_and_nothing_they_imported(app: webtest.TestApp
     assert app.get("/api/import-runs").json["ended"] == []
 
 
-def test_a_run_that_ended_is_deleted_by_its_user_or_an_admin(app: webtest.TestApp, engine: Engine, fake: FakeYouTube) -> None:
+@pytest.mark.usefixtures("fake")
+def test_a_run_that_ended_is_deleted_by_its_user_or_an_admin(app: webtest.TestApp, engine: Engine) -> None:
     sign_in(app, "bob")
     sign_in(app)
     connect(app)

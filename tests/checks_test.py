@@ -66,6 +66,7 @@ from myworld.models import (
     WorkTitle,
     YouTubeVideo,
 )
+from myworld.timeutil import naive_utc
 from tests.conftest import sign_in
 
 GOOD = b'<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="-1 -1 12 12"><rect width="10" height="10"/></svg>'
@@ -118,9 +119,9 @@ def test_every_check_describes_itself() -> None:
 
 def test_a_name_is_registered_once() -> None:
     with pytest.raises(ValueError, match="twice"):
-        checks.check("logos", "again", "logos", "organizations")(lambda session: checks.Result(0, []))
+        checks.check("logos", "again", "logos", "organizations")(lambda _session: checks.Result(0, []))
     with pytest.raises(ValueError, match="no dataset"):
-        checks.check("plays", "Plays", "plays", "play")(lambda session: checks.Result(0, []))
+        checks.check("plays", "Plays", "plays", "play")(lambda _session: checks.Result(0, []))
 
 
 def fill(engine: Engine) -> None:
@@ -245,7 +246,7 @@ def test_museum_dates(engine: Engine) -> None:
             # any one precision is a date
             visit(session, alice.id, louvre, date_ymd=datetime.date(2019, 5, 1)), visit(session, alice.id, louvre, date_my="06-2018"),
             visit(session, alice.id, tate, date_y=2015),
-            visit(session, alice.id, moma, date_utcz=datetime.datetime(2020, 1, 2, 15, 0)),
+            visit(session, alice.id, moma, date_utcz=naive_utc(2020, 1, 2, 15, 0)),
             visit(session, alice.id, uffizi),
             # and a visit to a place that is no museum, or to none (an admin deleted it)
             visit(session, alice.id, Place(name="A club"), date_y=2001), visit(session, alice.id, None, date_y=2002),

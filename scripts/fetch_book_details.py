@@ -32,14 +32,15 @@ from pathlib import Path
 from typing import Any
 
 # the myworld package is in src/, not installed (see scripts/check.py)
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
-os.chdir(ROOT)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from myworld.models import Work, make_engine
+
+ROOT = Path(__file__).resolve().parent.parent
+os.chdir(ROOT)
 
 USER_AGENT = "myworld-books/1.0 (+https://github.com/veltzer/gcp-myworld)"
 # seconds between two requests to one site: these are free services
@@ -123,7 +124,7 @@ def openlibrary_search(**query: str) -> list[dict[str, Any]]:
 
 def plain(title: str) -> str:
     """ A title to compare: its main part (before a colon), letters and digits only, any case. """
-    return re.sub(r"\W+", " ", title.split(":")[0]).casefold().strip()
+    return re.sub(r"\W+", " ", title.split(":", maxsplit=1)[0]).casefold().strip()
 
 
 def openlibrary(work: Work, isbn: str) -> dict[str, Any] | None:

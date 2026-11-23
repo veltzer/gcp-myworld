@@ -78,9 +78,7 @@ from pathlib import Path
 from typing import Any
 
 # the myworld package is in src/, not installed (see scripts/check.py)
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
-os.chdir(ROOT)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -99,6 +97,9 @@ from myworld.models import (
     User,
     make_engine,
 )
+
+ROOT = Path(__file__).resolve().parent.parent
+os.chdir(ROOT)
 
 USER_AGENT = "myworld-pictures/1.0 (+https://github.com/veltzer/gcp-myworld)"
 SUMMARY = "https://{lang}.wikipedia.org/api/rest_v1/page/summary/"
@@ -372,7 +373,7 @@ def place_picture(place: Place, overrides: dict[str, tuple[str, str]]) -> tuple[
         chosen = picture(lead, False) if lead else None
         # a lead photo may be any picture of the kind (a jazz club's article, a photo of some jazz):
         # taken only when its file names the place, in English or in Hebrew
-        names = [word for word in re.findall(r"\w{4,}", place.name.split(",")[0].lower())] + ([hebrew.replace(" ", "_").lower()] if hebrew else [])
+        names = list(re.findall(r"\w{4,}", place.name.split(",")[0].lower())) + ([hebrew.replace(" ", "_").lower()] if hebrew else [])
         if lead and chosen and any(name in chosen.lower().replace(" ", "_") for name in names) and free(lead, chosen):
             return lead, chosen
     return None
@@ -542,7 +543,7 @@ def main() -> int:
                 found = {"title": f"File:{chosen}", "lang": "en"}
             elif isinstance(row, Group):
                 picked = group_picture(row, overrides)
-                found, chosen, whose = picked if picked else (None, None, "")
+                found, chosen, whose = picked or (None, None, "")
             elif isinstance(row, Device):
                 found, chosen = device_picture(row, overrides) or (None, None)
             elif isinstance(row, PersonType):

@@ -12,6 +12,7 @@ It is sent as it is made, never kept on disk.
 
 import logging
 import os
+import sqlite3
 import subprocess
 import zlib
 from collections.abc import Iterator
@@ -84,9 +85,9 @@ def _sqlite_dump(engine: Engine) -> Iterator[bytes]:
     compressor = zlib.compressobj(6, zlib.DEFLATED, 16 + zlib.MAX_WBITS)
     try:
         sqlite = connection.driver_connection
-        assert sqlite is not None
+        assert isinstance(sqlite, sqlite3.Connection)
         lines: list[str] = []
-        for line in sqlite.iterdump():  # type: ignore[attr-defined]
+        for line in sqlite.iterdump():
             lines.append(line + "\n")
             if len(lines) >= 1000:
                 yield compressor.compress("".join(lines).encode())

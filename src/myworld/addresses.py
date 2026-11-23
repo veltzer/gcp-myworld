@@ -113,10 +113,10 @@ def _within(short: list[str], long: list[str]) -> bool:
     return any(long[i:i + len(short)] == short for i in range(len(long) - len(short) + 1))
 
 
-def split_text(text: str, city: str, region: str, country: str) -> tuple[str, str, str, bool]:
+def split_text(text: str, city: str, country: str) -> tuple[str, str, str, bool]:
     """
     (street, neighbourhood, postcode, whole) of an address typed in one line
-    of a row in city (in region and country): see parse_address. whole is
+    of a row in city (in country): see parse_address. whole is
     False when more was written than fits, so the caller can keep the text.
     """
     parsed = parse_address(text, {city_key(city, "")[0]} if city else set(), country)

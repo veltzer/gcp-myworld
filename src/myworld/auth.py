@@ -88,7 +88,7 @@ def verify_google_token(token: str) -> dict[str, Any]:
     audience = client_id()
     if not audience:
         raise ValueError("GOOGLE_CLIENT_ID is not configured")
-    return id_token.verify_oauth2_token(token, google_requests.Request(), audience)
+    return dict(id_token.verify_oauth2_token(token, google_requests.Request(), audience))
 
 
 class UnverifiedEmailError(Exception):

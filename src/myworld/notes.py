@@ -22,7 +22,7 @@ ALIKE = 0.85
 def _plain(text: str) -> str:
     """ A title as it is compared: its letters and digits, lowercase and unaccented, "&" an "and", no leading article. """
     text = unicodedata.normalize("NFKD", text.casefold().replace("&", " and "))
-    words = re.findall(r"\w+", "".join(char for char in text if not unicodedata.combining(char)).replace("'", "").replace("’", ""))
+    words = re.findall(r"\w+", "".join(char for char in text if not unicodedata.combining(char)).replace("'", "").replace("\u2019", ""))
     return " ".join(words[1:] if words and words[0] in ("the", "a", "an") else words)
 
 

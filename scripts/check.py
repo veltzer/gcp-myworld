@@ -23,15 +23,16 @@ from pathlib import Path
 # the myworld package is in src/, not installed: find it from any directory, no
 # PYTHONPATH needed; and work from the repository root, where the default
 # DATABASE_URL (db.gi/myworld.sqlite) is, rather than make an empty one elsewhere
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
-os.chdir(ROOT)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from myworld.checks import CHECKS, DATASETS
 from myworld.models import DisabledCheck, User, make_engine
+
+ROOT = Path(__file__).resolve().parent.parent
+os.chdir(ROOT)
 
 
 def main() -> int:

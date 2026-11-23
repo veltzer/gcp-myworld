@@ -85,7 +85,7 @@ def when(said: str) -> tuple[datetime.date | None, int | None]:
             return None, year
     long = _DATE_OUTPUT.fullmatch(said)
     if long:
-        return datetime.datetime.strptime(" ".join(long.groups()), "%b %d %Y").date(), None
+        return datetime.datetime.strptime(" ".join(long.groups()) + " +0000", "%b %d %Y %z").date(), None
     raise ChessXmlError(f"the date {said!r} is written in no way this knows")
 
 

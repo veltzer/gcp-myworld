@@ -13,6 +13,8 @@ import hashlib
 import re
 from typing import Any
 
+from myworld import timeutil
+
 RESULTS = ("1-0", "0-1", "1/2-1/2", "*")
 WHITE, BLACK = "white", "black"
 # the side the user played; "" where it is not known (a game recorded only by how it ended)
@@ -157,7 +159,7 @@ def _when(tags: dict[str, str]) -> dict[str, Any]:
     try:
         if utc and time:
             year, month, day, hour, minute, second = (int(part) for part in (*utc.groups(), *time.groups()))
-            when["date_utcz"] = datetime.datetime(year, month, day, hour, minute, second)
+            when["date_utcz"] = timeutil.naive_utc(year, month, day, hour, minute, second)
             return when
         date = re.fullmatch(r"(\d{4})\.(\d{2}|\?\?)\.(\d{2}|\?\?)", tags.get("Date", ""))
         if date is None:

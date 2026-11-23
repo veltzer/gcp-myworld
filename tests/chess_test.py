@@ -9,15 +9,16 @@ import datetime
 import gzip
 from pathlib import Path
 
-import import_chess
-import import_chess_xml
 import pytest
 import webtest
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
+import import_chess
+import import_chess_xml
 from myworld import checks, pgn
 from myworld.models import ChessGame, User
+from myworld.timeutil import naive_utc
 from tests.conftest import sign_in
 
 # a game as Chess.com writes it: a moment, an address, the clocks, where it ended
@@ -86,7 +87,7 @@ def test_a_game_is_read() -> None:
     assert [move.clock for move in live.moves] == ["0:02:58.4", "0:02:59.4", "0:02:57.7", "0:02:56.4"]
     fields = pgn.fields(live)
     assert fields["source_key"] == "chess.com:live:1621079688"
-    assert fields["date_utcz"] == datetime.datetime(2016, 6, 18, 7, 26, 42) and fields["date_ymd"] is None
+    assert fields["date_utcz"] == naive_utc(2016, 6, 18, 7, 26, 42) and fields["date_ymd"] is None
     assert (fields["white"], fields["black"], fields["white_elo"], fields["black_elo"]) == ("mark_veltzer", "nfloz84", 1031, 1156)
     assert (fields["result"], fields["termination"], fields["time_control"], fields["plies"]) == ("0-1", "nfloz84 won by checkmate", "180", 4)
     assert (fields["eco"], fields["opening"], fields["site"]) == ("A00", "Barnes Opening Fools Mate", "Chess.com")
@@ -213,7 +214,7 @@ def owner_of(session: Session, email: str) -> User:
 def test_what_the_import_refuses(engine: Engine, tmp_path: Path) -> None:
     with Session(engine) as session:
         me = owner(session)
-        with pytest.raises(import_chess.ChessImportError, match="no .pgn or .pgn.gz files"):
+        with pytest.raises(import_chess.ChessImportError, match=r"no \.pgn or \.pgn\.gz files"):
             import_chess.files(tmp_path)
         both = tmp_path / "both.pgn"
         both.write_text(OLD.replace("AreaFiftyOne", "mark"), encoding="UTF8")

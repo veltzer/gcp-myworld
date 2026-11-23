@@ -34,9 +34,7 @@ import sys
 from pathlib import Path
 
 # the myworld package is in src/, not installed (see scripts/check.py)
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
-os.chdir(ROOT)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -44,6 +42,9 @@ from sqlalchemy.orm import Session
 from myworld import languages
 from myworld.models import Read, UserWork, make_engine
 from myworld.notes import without_said_twice
+
+ROOT = Path(__file__).resolve().parent.parent
+os.chdir(ROOT)
 
 READING = re.compile(r"(\w+) \((date unknown|\d{4}-\d{2}-\d{2})(?:, rated (\d+))?(?:, (.+))?\)")
 
@@ -98,8 +99,9 @@ def tidy_entry(entry: UserWork, codes: dict[str, str]) -> tuple[int, str] | None
     have = list(entry.reads)
     ordered: list[Read] = []
     gained = 0
-    for read in said:
-        match = next((old for old in have if (old.read_on, old.locale) == (read.read_on, read.locale)), None)
+    for wanted in said:
+        read = wanted
+        match = next((old for old in have if (old.read_on, old.locale) == (wanted.read_on, wanted.locale)), None)
         if match is not None:
             have.remove(match)
             read = Read(read_on=match.read_on, locale=match.locale, status=match.status, rating=match.rating, review=match.review, started_on=match.started_on)

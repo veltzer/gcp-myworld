@@ -342,7 +342,7 @@ function audioCourseCard(item) {
 
 // where a course is sold, in its card's corner: The Great Courses (by its page's slug) and Audible (by its ASIN)
 const COURSE_CATALOGS = [
-	["great_courses_slug", "greatcourses", (slug) => `https://www.thegreatcourses.com/courses/${slug}`],
+	["great_courses_slug", "greatcourses", (courseSlug) => `https://www.thegreatcourses.com/courses/${courseSlug}`],
 	["audible_asin", "audible", (asin) => `https://www.audible.com/pd/${asin}`],
 ];
 
@@ -556,9 +556,9 @@ export function showYouTubeFacts(item) {
 	const facts = [
 		["Channel", item?.channel],
 		["Category", item?.category],
-		["Length", item?.duration == null ? null : formatDuration(item.duration)],
+		["Length", item?.duration === null || item?.duration === undefined ? null : formatDuration(item.duration)],
 		["Uploaded", item?.uploaded],
-		["Views", item?.views == null ? null : item.views.toLocaleString()],
+		["Views", item?.views === null || item?.views === undefined ? null : item.views.toLocaleString()],
 		["On YouTube", item ? (item.unavailable ? "No longer" : "Yes") : null],
 	];
 	showFacts("youtube-facts", facts.map(([label, value]) => [label, dash(value)]));
@@ -622,9 +622,9 @@ function chessCard(item) {
 	detail(list, "Played", formatDate(item));
 	detail(list, "Result", item.result === "*" ? "No result" : item.result);
 	detail(list, "Ended", item.termination);
-	const rated = (elo) => (elo === null ? "unrated" : String(elo));
+	const showElo = (elo) => (elo === null ? "unrated" : String(elo));
 	if (item.rating !== null || item.opponent_rating !== null) {
-		detail(list, "Ratings", `${rated(item.rating)} (me), ${rated(item.opponent_rating)} (${item.opponent})`);
+		detail(list, "Ratings", `${showElo(item.rating)} (me), ${showElo(item.opponent_rating)} (${item.opponent})`);
 	}
 	detail(list, "Moves", item.plies ? String(Math.ceil(item.plies / 2)) : "Not recorded");
 	detail(list, "Time control", item.time_control);

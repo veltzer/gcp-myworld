@@ -26,6 +26,7 @@ store_library writes as audio books whose source is "audible".
 """
 
 import base64
+import contextlib
 import datetime
 import hashlib
 import os
@@ -662,10 +663,8 @@ def disconnect() -> tuple[str, int]:
     db = flask.g.db
     kept = connection(db, flask.g.user)
     if kept is not None:
-        try:
+        with contextlib.suppress(AudibleError):
             deregister(unseal(kept.refresh_token), kept.marketplace)
-        except AudibleError:
-            pass
         db.delete(kept)
         db.commit()
     return "", 204
