@@ -31,7 +31,7 @@ target=()
 expect_target=""
 for argument in "$@"
 do
-	if [ -n "${expect_target}" ]
+	if [[ -n "${expect_target}" ]]
 	then
 		target=("${argument}")
 		expect_target=""
@@ -56,10 +56,10 @@ do
 done
 
 state="$("${run[@]}" scripts/migrations/run.py state)"
-if [ "${step}" = "drift" ]
+if [[ "${step}" == "drift" ]]
 then
 	"${run[@]}" scripts/migrations/run.py drift
-elif [ "${state}" = "legacy" ]
+elif [[ "${state}" == "legacy" ]]
 then
 	scripts/history/migrate_legacy.sh "${legacy[@]}"
 	"${run[@]}" scripts/migrations/run.py baseline

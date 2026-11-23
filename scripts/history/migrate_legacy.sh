@@ -1002,10 +1002,6 @@ if [[ -z "${present}" ]]; then
 	echo "${0}: could not read the schema of ${gcp_sql_instance}/${gcp_db_name}: nothing migrated, run it again" >&2
 	exit 1
 fi
-
-has() {
-	grep -qx "${1}" <<<"${present}"
-}
 # whether users.email is unique already (create_all makes it so; a migrated table needs it added)
 email_unique="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
 	SELECT count(*) FROM pg_constraint c
@@ -1021,18 +1017,18 @@ need() {
 	statements+=("${2};")
 }
 # the old sign-in columns, until logins hold what they did
-if ! has "logins.subject:.*" && has "users.google_sub:.*"; then
-	has "users.password_hash:.*" || need users.password_hash "ALTER TABLE users ADD COLUMN password_hash VARCHAR(300)"
-	has "users.google_sub:400" || need "users.google_sub (wider)" "ALTER TABLE users ALTER COLUMN google_sub TYPE VARCHAR(400)"
+if ! grep -qx "logins.subject:.*" <<<"${present}" && grep -qx "users.google_sub:.*" <<<"${present}"; then
+	grep -qx "users.password_hash:.*" <<<"${present}" || need users.password_hash "ALTER TABLE users ADD COLUMN password_hash VARCHAR(300)"
+	grep -qx "users.google_sub:400" <<<"${present}" || need "users.google_sub (wider)" "ALTER TABLE users ALTER COLUMN google_sub TYPE VARCHAR(400)"
 fi
 # these steps use the old table names: they only apply to a database that still has them
-if has "works.id:.*"; then
-	has "works.imdb_id:.*" || need works.imdb_id "ALTER TABLE works ADD COLUMN imdb_id VARCHAR(20) NOT NULL DEFAULT ''"
-	has "works.tmdb_id:.*" || need works.tmdb_id "ALTER TABLE works ADD COLUMN tmdb_id INTEGER"
-	has "works.rotten_tomatoes_id:.*" || need works.rotten_tomatoes_id "ALTER TABLE works ADD COLUMN rotten_tomatoes_id VARCHAR(200) NOT NULL DEFAULT ''"
+if grep -qx "works.id:.*" <<<"${present}"; then
+	grep -qx "works.imdb_id:.*" <<<"${present}" || need works.imdb_id "ALTER TABLE works ADD COLUMN imdb_id VARCHAR(20) NOT NULL DEFAULT ''"
+	grep -qx "works.tmdb_id:.*" <<<"${present}" || need works.tmdb_id "ALTER TABLE works ADD COLUMN tmdb_id INTEGER"
+	grep -qx "works.rotten_tomatoes_id:.*" <<<"${present}" || need works.rotten_tomatoes_id "ALTER TABLE works ADD COLUMN rotten_tomatoes_id VARCHAR(200) NOT NULL DEFAULT ''"
 fi
-! has "people.company:.*" || need "people.company (dropped)" "ALTER TABLE people DROP COLUMN company"
-if has "companies.id:.*" && has "organizations.id:.*"; then
+! grep -qx "people.company:.*" <<<"${present}" || need "people.company (dropped)" "ALTER TABLE people DROP COLUMN company"
+if grep -qx "companies.id:.*" <<<"${present}" && grep -qx "organizations.id:.*" <<<"${present}"; then
 	rows="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "SELECT (SELECT count(*) FROM companies) + (SELECT count(*) FROM person_companies)")"
 	if [[ "${rows}" != "0" ]]; then
 		echo "both companies and organizations exist and companies has rows; merge them by hand" >&2
@@ -1040,14 +1036,14 @@ if has "companies.id:.*" && has "organizations.id:.*"; then
 	fi
 	# an empty pair made by an old version of the app after the rename
 	need "dropped the empty companies tables left by an old version" "DROP TABLE person_companies; DROP TABLE companies"
-elif has "companies.id:.*"; then
+elif grep -qx "companies.id:.*" <<<"${present}"; then
 	need "companies -> organizations" "ALTER TABLE companies RENAME TO organizations;
 		ALTER TABLE organizations RENAME CONSTRAINT uq_company_name TO uq_organization_name;
 		ALTER INDEX ix_companies_owner_id RENAME TO ix_organizations_owner_id;
 		ALTER TABLE person_companies RENAME TO person_organizations;
 		ALTER TABLE person_organizations RENAME COLUMN company_id TO organization_id"
 fi
-if { has "companies.id:.*" || has "organizations.id:.*"; } && ! has "organizations.type_id:.*"; then
+if { grep -qx "companies.id:.*" <<<"${present}" || grep -qx "organizations.id:.*" <<<"${present}"; } && ! grep -qx "organizations.type_id:.*" <<<"${present}"; then
 	need "organization_types, organizations.type_id" "CREATE TABLE IF NOT EXISTS organization_types (
 			id SERIAL PRIMARY KEY,
 			owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -1058,7 +1054,7 @@ if { has "companies.id:.*" || has "organizations.id:.*"; } && ! has "organizatio
 		ALTER TABLE organizations ADD COLUMN type_id INTEGER REFERENCES organization_types (id) ON DELETE SET NULL"
 fi
 
-if has "concerts.performers:.*"; then
+if grep -qx "concerts.performers:.*" <<<"${present}"; then
 	need "concerts.performers -> people, concert_performers" "CREATE TABLE IF NOT EXISTS concert_performers (
 			concert_id INTEGER NOT NULL REFERENCES concerts (id) ON DELETE CASCADE,
 			person_id INTEGER NOT NULL REFERENCES people (id) ON DELETE CASCADE,
@@ -1075,7 +1071,7 @@ if has "concerts.performers:.*"; then
 		ALTER TABLE concerts DROP COLUMN performers"
 fi
 
-if ! has "person_types.id:.*"; then
+if ! grep -qx "person_types.id:.*" <<<"${present}"; then
 	need "person_types, people.type_id" "CREATE TABLE IF NOT EXISTS person_types (
 			id SERIAL PRIMARY KEY,
 			owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -1085,7 +1081,7 @@ if ! has "person_types.id:.*"; then
 		CREATE INDEX IF NOT EXISTS ix_person_types_owner_id ON person_types (owner_id);
 		ALTER TABLE people ADD COLUMN type_id INTEGER REFERENCES person_types (id) ON DELETE SET NULL"
 fi
-if has "people.name:.*"; then
+if grep -qx "people.name:.*" <<<"${present}"; then
 	need "people.name -> first_name, surname (not unique)" "ALTER TABLE people DROP CONSTRAINT IF EXISTS uq_person_name;
 		ALTER TABLE people RENAME COLUMN name TO first_name;
 		ALTER TABLE people ADD COLUMN surname VARCHAR(200) NOT NULL DEFAULT '';
@@ -1094,7 +1090,7 @@ if has "people.name:.*"; then
 				surname = substring(first_name from '^[A-Z][^ ]* ([A-Z][^ ]*)\$')
 			WHERE first_name ~ '^[A-Z][^ ]* [A-Z][^ ]*\$' AND first_name NOT LIKE 'The %'"
 fi
-if has "people.type_id:.*" || ! has "person_types.id:.*"; then
+if grep -qx "people.type_id:.*" <<<"${present}" || ! grep -qx "person_types.id:.*" <<<"${present}"; then
 	need "people.type_id -> person_person_types" "CREATE TABLE IF NOT EXISTS person_person_types (
 			person_id INTEGER NOT NULL REFERENCES people (id) ON DELETE CASCADE,
 			type_id INTEGER NOT NULL REFERENCES person_types (id) ON DELETE CASCADE,
@@ -1105,7 +1101,7 @@ if has "people.type_id:.*" || ! has "person_types.id:.*"; then
 		ALTER TABLE people DROP COLUMN type_id"
 fi
 
-if has "organizations.functions:.*"; then
+if grep -qx "organizations.functions:.*" <<<"${present}"; then
 	# relation_words: every word to its type name (the six of RELATION_TYPES in
 	# scripts/import_world.py, any other capitalized), standard for those six
 	need "organizations.functions -> relation_types, organization_relation_types" "CREATE TABLE IF NOT EXISTS relation_types (
@@ -1144,41 +1140,50 @@ if has "organizations.functions:.*"; then
 			ON CONFLICT DO NOTHING;
 		ALTER TABLE organizations DROP COLUMN functions"
 fi
-if ! has "users.role:.*"; then
+if ! grep -qx "users.role:.*" <<<"${present}"; then
 	need users.role "ALTER TABLE users ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'user'"
 fi
 # no admin (the column is new, or every admin was removed by hand): the oldest account becomes one
-if ! has "users.role:.*" || [[ "$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM users WHERE role = 'admin'")" == "0" ]]; then
+no_admin=false
+if ! grep -qx "users.role:.*" <<<"${present}"; then
+	no_admin=true
+else
+	admins="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM users WHERE role = 'admin'")"
+	if [[ "${admins}" == "0" ]]; then
+		no_admin=true
+	fi
+fi
+if [[ "${no_admin}" == true ]]; then
 	need "the oldest account made the first admin" "UPDATE users SET role = 'admin'
 		WHERE id = (SELECT min(id) FROM users) AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'admin')"
 fi
 # where a museum or an organization is (adding columns: run before the deploy)
 located=(organizations)
-if has "museums.id:.*"; then
+if grep -qx "museums.id:.*" <<<"${present}"; then
 	located+=(museums)
-	has "museums.address:.*" || need museums.address "ALTER TABLE museums ADD COLUMN address VARCHAR(500) NOT NULL DEFAULT ''"
+	grep -qx "museums.address:.*" <<<"${present}" || need museums.address "ALTER TABLE museums ADD COLUMN address VARCHAR(500) NOT NULL DEFAULT ''"
 	# a museum visit made alone, told apart from one whose company is not filled in
-	has "museums.alone:.*" || need museums.alone "ALTER TABLE museums ADD COLUMN alone BOOLEAN NOT NULL DEFAULT false"
+	grep -qx "museums.alone:.*" <<<"${present}" || need museums.alone "ALTER TABLE museums ADD COLUMN alone BOOLEAN NOT NULL DEFAULT false"
 fi
 for table in "${located[@]}"; do
 	for column in latitude longitude; do
-		has "${table}.${column}:.*" || need "${table}.${column}" "ALTER TABLE ${table} ADD COLUMN ${column} DOUBLE PRECISION"
+		grep -qx "${table}.${column}:.*" <<<"${present}" || need "${table}.${column}" "ALTER TABLE ${table} ADD COLUMN ${column} DOUBLE PRECISION"
 	done
 done
 # a page about an audio course that is not sold any more (adding a column: run before the deploy)
-has "audio_courses.link:.*" || need audio_courses.link "ALTER TABLE audio_courses ADD COLUMN link VARCHAR(1000) NOT NULL DEFAULT ''"
+grep -qx "audio_courses.link:.*" <<<"${present}" || need audio_courses.link "ALTER TABLE audio_courses ADD COLUMN link VARCHAR(1000) NOT NULL DEFAULT ''"
 # what YouTube says about a video (the watch history): adding columns, run before the deploy
-if has "youtube_videos.youtube_id:.*"; then
-	has "youtube_videos.channel:.*" || need youtube_videos.channel "ALTER TABLE youtube_videos ADD COLUMN channel VARCHAR(200) NOT NULL DEFAULT ''"
-	has "youtube_videos.category:.*" || need youtube_videos.category "ALTER TABLE youtube_videos ADD COLUMN category VARCHAR(100) NOT NULL DEFAULT ''"
-	has "youtube_videos.duration:.*" || need youtube_videos.duration "ALTER TABLE youtube_videos ADD COLUMN duration INTEGER"
-	has "youtube_videos.uploaded:.*" || need youtube_videos.uploaded "ALTER TABLE youtube_videos ADD COLUMN uploaded DATE"
-	has "youtube_videos.views:.*" || need youtube_videos.views "ALTER TABLE youtube_videos ADD COLUMN views BIGINT"
-	has "youtube_videos.unavailable:.*" || need youtube_videos.unavailable "ALTER TABLE youtube_videos ADD COLUMN unavailable BOOLEAN NOT NULL DEFAULT false"
+if grep -qx "youtube_videos.youtube_id:.*" <<<"${present}"; then
+	grep -qx "youtube_videos.channel:.*" <<<"${present}" || need youtube_videos.channel "ALTER TABLE youtube_videos ADD COLUMN channel VARCHAR(200) NOT NULL DEFAULT ''"
+	grep -qx "youtube_videos.category:.*" <<<"${present}" || need youtube_videos.category "ALTER TABLE youtube_videos ADD COLUMN category VARCHAR(100) NOT NULL DEFAULT ''"
+	grep -qx "youtube_videos.duration:.*" <<<"${present}" || need youtube_videos.duration "ALTER TABLE youtube_videos ADD COLUMN duration INTEGER"
+	grep -qx "youtube_videos.uploaded:.*" <<<"${present}" || need youtube_videos.uploaded "ALTER TABLE youtube_videos ADD COLUMN uploaded DATE"
+	grep -qx "youtube_videos.views:.*" <<<"${present}" || need youtube_videos.views "ALTER TABLE youtube_videos ADD COLUMN views BIGINT"
+	grep -qx "youtube_videos.unavailable:.*" <<<"${present}" || need youtube_videos.unavailable "ALTER TABLE youtube_videos ADD COLUMN unavailable BOOLEAN NOT NULL DEFAULT false"
 fi
 # an audio course's device name -> the account's own devices (drops the name
 # column the new code no longer has: deploy first, then run this right away)
-if has "audio_courses.device:.*"; then
+if grep -qx "audio_courses.device:.*" <<<"${present}"; then
 	need "audio_courses.device -> devices, audio_courses.device_id" "CREATE TABLE IF NOT EXISTS devices (
 			id SERIAL PRIMARY KEY,
 			owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -1294,36 +1299,36 @@ if [[ "${stale}" != "0" ]]; then
 	need "tables renamed to what a row is, and what Postgres named after them" "${renames}"
 fi
 # books (adding columns: run before the deploy); after the renames, as these are the new tables
-if has "works.id:.*" || has "library_works.id:.*"; then
-	has "library_works.goodreads_id:.*" || need library_works.goodreads_id "ALTER TABLE library_works ADD COLUMN goodreads_id VARCHAR(20) NOT NULL DEFAULT ''"
-	has "library_works.simania_id:.*" || need library_works.simania_id "ALTER TABLE library_works ADD COLUMN simania_id VARCHAR(20) NOT NULL DEFAULT ''"
-	has "library_entries.image_id:.*" || need library_entries.image_id "ALTER TABLE library_entries ADD COLUMN image_id INTEGER REFERENCES images (id) ON DELETE SET NULL"
+if grep -qx "works.id:.*" <<<"${present}" || grep -qx "library_works.id:.*" <<<"${present}"; then
+	grep -qx "library_works.goodreads_id:.*" <<<"${present}" || need library_works.goodreads_id "ALTER TABLE library_works ADD COLUMN goodreads_id VARCHAR(20) NOT NULL DEFAULT ''"
+	grep -qx "library_works.simania_id:.*" <<<"${present}" || need library_works.simania_id "ALTER TABLE library_works ADD COLUMN simania_id VARCHAR(20) NOT NULL DEFAULT ''"
+	grep -qx "library_entries.image_id:.*" <<<"${present}" || need library_entries.image_id "ALTER TABLE library_entries ADD COLUMN image_id INTEGER REFERENCES images (id) ON DELETE SET NULL"
 fi
 # people.middle_name (adding a column: run before the deploy)
-has "people.middle_name:.*" || need people.middle_name "ALTER TABLE people ADD COLUMN middle_name VARCHAR(200) NOT NULL DEFAULT ''"
+grep -qx "people.middle_name:.*" <<<"${present}" || need people.middle_name "ALTER TABLE people ADD COLUMN middle_name VARCHAR(200) NOT NULL DEFAULT ''"
 # people.honorific ("Dr.", "Sir"; adding a column: run before the deploy)
-has "people.honorific:.*" || need people.honorific "ALTER TABLE people ADD COLUMN honorific VARCHAR(50) NOT NULL DEFAULT ''"
+grep -qx "people.honorific:.*" <<<"${present}" || need people.honorific "ALTER TABLE people ADD COLUMN honorific VARCHAR(50) NOT NULL DEFAULT ''"
 # people.is_self, the account owner's own person (adding a column: run before the deploy)
-has "people.is_self:.*" || need people.is_self "ALTER TABLE people ADD COLUMN is_self BOOLEAN NOT NULL DEFAULT false"
+grep -qx "people.is_self:.*" <<<"${present}" || need people.is_self "ALTER TABLE people ADD COLUMN is_self BOOLEAN NOT NULL DEFAULT false"
 # the language of a work's main title and the one the user read it in (adding columns: run before the deploy)
-if has "library_works.id:.*"; then
-	has "library_works.title_locale:.*" || need library_works.title_locale "ALTER TABLE library_works ADD COLUMN title_locale VARCHAR(10) NOT NULL DEFAULT 'en'"
+if grep -qx "library_works.id:.*" <<<"${present}"; then
+	grep -qx "library_works.title_locale:.*" <<<"${present}" || need library_works.title_locale "ALTER TABLE library_works ADD COLUMN title_locale VARCHAR(10) NOT NULL DEFAULT 'en'"
 fi
 # a book's ISBN (copied from external_id) and Open Library work (adding columns: run before the deploy);
 # external_id goes in a run after deploying the version that no longer reads it
-if has "library_works.id:.*"; then
-	if ! has "library_works.isbn:.*"; then
+if grep -qx "library_works.id:.*" <<<"${present}"; then
+	if ! grep -qx "library_works.isbn:.*" <<<"${present}"; then
 		copy=""
-		has "library_works.external_id:.*" && copy="; UPDATE library_works SET isbn = left(external_id, 20) WHERE external_id <> ''"
+		grep -qx "library_works.external_id:.*" <<<"${present}" && copy="; UPDATE library_works SET isbn = left(external_id, 20) WHERE external_id <> ''"
 		need library_works.isbn "ALTER TABLE library_works ADD COLUMN isbn VARCHAR(20) NOT NULL DEFAULT ''${copy}"
-	elif has "library_works.external_id:.*"; then
+	elif grep -qx "library_works.external_id:.*" <<<"${present}"; then
 		need "library_works.external_id (dropped)" "UPDATE library_works SET isbn = left(external_id, 20) WHERE isbn = '' AND external_id <> '';
 			ALTER TABLE library_works DROP COLUMN external_id"
 	fi
-	has "library_works.openlibrary_id:.*" || need library_works.openlibrary_id "ALTER TABLE library_works ADD COLUMN openlibrary_id VARCHAR(20) NOT NULL DEFAULT ''"
+	grep -qx "library_works.openlibrary_id:.*" <<<"${present}" || need library_works.openlibrary_id "ALTER TABLE library_works ADD COLUMN openlibrary_id VARCHAR(20) NOT NULL DEFAULT ''"
 fi
 # concert venues become places (right after deploying the version that has them)
-if has "concert_visits.venue:.*"; then
+if grep -qx "concert_visits.venue:.*" <<<"${present}"; then
 	need "concert venues -> places, concert_visits.place_id" "CREATE TABLE IF NOT EXISTS places (
 			id SERIAL PRIMARY KEY,
 			owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -1345,7 +1350,7 @@ if has "concert_visits.venue:.*"; then
 		ALTER TABLE concert_visits DROP COLUMN venue, DROP COLUMN city, DROP COLUMN country"
 fi
 # a kind for every person-organization link (right after deploying the version that has them)
-if has "person_organizations.person_id:.*" && ! has "person_organizations.relation_type_id:.*"; then
+if grep -qx "person_organizations.person_id:.*" <<<"${present}" && ! grep -qx "person_organizations.relation_type_id:.*" <<<"${present}"; then
 	need "person_organizations.relation_type_id (every link Worked at)" "CREATE TABLE IF NOT EXISTS person_organization_types (
 			id SERIAL PRIMARY KEY,
 			owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -1371,7 +1376,7 @@ fi
 # cities: the table and the links (adding: run before the deploy)
 for table in places museum_visits organizations; do
 	# visits that hang on their museums already (museum_id) have their city there
-	if ! has "${table}.city_id:.*" && ! { [[ "${table}" == museum_visits ]] && has "museum_visits.museum_id:.*"; }; then
+	if ! grep -qx "${table}.city_id:.*" <<<"${present}" && ! { [[ "${table}" == museum_visits ]] && grep -qx "museum_visits.museum_id:.*" <<<"${present}"; }; then
 		need "${table}.city_id" "CREATE TABLE IF NOT EXISTS countries (
 				id SERIAL PRIMARY KEY,
 				owner_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -1393,20 +1398,20 @@ for table in places museum_visits organizations; do
 done
 # addresses in parts (adding columns: run before the deploy; scripts/history/split_addresses.py fills them)
 for table in places museum_visits organizations; do
-	if ! has "${table}.street:.*" && ! { [[ "${table}" == museum_visits ]] && has "museum_visits.museum_id:.*"; }; then
+	if ! grep -qx "${table}.street:.*" <<<"${present}" && ! { [[ "${table}" == museum_visits ]] && grep -qx "museum_visits.museum_id:.*" <<<"${present}"; }; then
 		need "${table}.street" "ALTER TABLE ${table} ADD COLUMN street VARCHAR(300) NOT NULL DEFAULT '';
 			ALTER TABLE ${table} ADD COLUMN neighbourhood VARCHAR(200) NOT NULL DEFAULT '';
 			ALTER TABLE ${table} ADD COLUMN postcode VARCHAR(20) NOT NULL DEFAULT ''"
 	fi
 done
 # an organization's headquarters city (adding a column: run before the deploy; scripts/history/link_cities.py fills it)
-if has "organizations.street:.*" && ! has "organizations.headquarters_id:.*"; then
+if grep -qx "organizations.street:.*" <<<"${present}" && ! grep -qx "organizations.headquarters_id:.*" <<<"${present}"; then
 	need organizations.headquarters_id "ALTER TABLE organizations ADD COLUMN headquarters_id INTEGER REFERENCES cities (id) ON DELETE SET NULL;
 		CREATE INDEX IF NOT EXISTS ix_organizations_headquarters_id ON organizations (headquarters_id)"
 fi
 # a photo for every city, country, group, device, profession and place (adding columns: run before the deploy)
 for table in cities countries groups devices person_types places; do
-	if has "${table}.id:.*" && ! has "${table}.image_id:.*"; then
+	if grep -qx "${table}.id:.*" <<<"${present}" && ! grep -qx "${table}.image_id:.*" <<<"${present}"; then
 		need "${table}.image_id" "ALTER TABLE ${table} ADD COLUMN image_id INTEGER REFERENCES images (id) ON DELETE SET NULL;
 			ALTER TABLE ${table} ADD COLUMN image_source VARCHAR(1000) NOT NULL DEFAULT '';
 			ALTER TABLE ${table} ADD COLUMN image_license VARCHAR(100) NOT NULL DEFAULT '';
@@ -1414,19 +1419,27 @@ for table in cities countries groups devices person_types places; do
 	fi
 done
 # the old city text goes once every row that names a city is linked (right after deploying the version without it)
-if { has "places.city:.*" || has "museum_visits.city:.*"; } && has "places.city_id:.*" && has "museum_visits.city_id:.*"; then
+if { grep -qx "places.city:.*" <<<"${present}" || grep -qx "museum_visits.city:.*" <<<"${present}"; } && grep -qx "places.city_id:.*" <<<"${present}" && grep -qx "museum_visits.city_id:.*" <<<"${present}"; then
+	places_unlinked=0
+	if grep -qx "places.city:.*" <<<"${present}"; then
+		places_unlinked="(SELECT count(*) FROM places WHERE (btrim(city) <> '' AND city_id IS NULL) OR (btrim(city) = '' AND btrim(country) <> '' AND remark NOT LIKE '%the city is not known%'))"
+	fi
+	visits_unlinked=0
+	if grep -qx "museum_visits.city:.*" <<<"${present}"; then
+		visits_unlinked="(SELECT count(*) FROM museum_visits WHERE btrim(city) <> '' AND city_id IS NULL)"
+	fi
 	unlinked="$(gcloud_sql_psql.sh -q -t -A -v ON_ERROR_STOP=1 -c "
-		SELECT $(has "places.city:.*" && echo "(SELECT count(*) FROM places WHERE (btrim(city) <> '' AND city_id IS NULL) OR (btrim(city) = '' AND btrim(country) <> '' AND remark NOT LIKE '%the city is not known%'))" || echo 0)
-			+ $(has "museum_visits.city:.*" && echo "(SELECT count(*) FROM museum_visits WHERE btrim(city) <> '' AND city_id IS NULL)" || echo 0)")"
+		SELECT ${places_unlinked}
+			+ ${visits_unlinked}")"
 	if [[ "${unlinked}" != "0" ]]; then
 		echo "${unlinked} places and museum visits name a city they are not linked to: run scripts/history/link_cities.py, then this again" >&2
 	else
-		if has "places.city:.*"; then
+		if grep -qx "places.city:.*" <<<"${present}"; then
 			need "places.city, places.country (in cities now)" "ALTER TABLE places DROP CONSTRAINT IF EXISTS uq_place_name;
 				ALTER TABLE places DROP COLUMN city, DROP COLUMN country;
 				ALTER TABLE places ADD CONSTRAINT uq_place_name UNIQUE (owner_id, name, city_id)"
 		fi
-		if has "museum_visits.city:.*"; then
+		if grep -qx "museum_visits.city:.*" <<<"${present}"; then
 			need "museum_visits.city (in cities now)" "ALTER TABLE museum_visits DROP COLUMN city"
 		fi
 	fi
@@ -1481,11 +1494,11 @@ BEGIN
 END
 $$
 SQL
-if has "users.google_sub:.*"; then
-	if ! has "logins.subject:.*"; then
+if grep -qx "users.google_sub:.*" <<<"${present}"; then
+	if ! grep -qx "logins.subject:.*" <<<"${present}"; then
 		adds=""
-		has "users.verified:.*" || adds+="ALTER TABLE users ADD COLUMN verified BOOLEAN NOT NULL DEFAULT false;"
-		has "users.last_login:.*" || adds+="ALTER TABLE users ADD COLUMN last_login TIMESTAMP WITHOUT TIME ZONE;"
+		grep -qx "users.verified:.*" <<<"${present}" || adds+="ALTER TABLE users ADD COLUMN verified BOOLEAN NOT NULL DEFAULT false;"
+		grep -qx "users.last_login:.*" <<<"${present}" || adds+="ALTER TABLE users ADD COLUMN last_login TIMESTAMP WITHOUT TIME ZONE;"
 		need "logins (one per account), accounts of one verified email joined" "CREATE TABLE logins (
 				id SERIAL PRIMARY KEY,
 				subject VARCHAR(400) NOT NULL,
@@ -1566,17 +1579,17 @@ BEGIN
 END
 $$
 SQL
-if has "logins.subject:.*" && ! has "users.google_sub:.*"; then
-	has "logins.password_hash:.*" || need logins.password_hash "ALTER TABLE logins ADD COLUMN password_hash VARCHAR(300)"
-	has "email_verifications.email:.*" || need email_verifications "CREATE TABLE email_verifications (
+if grep -qx "logins.subject:.*" <<<"${present}" && ! grep -qx "users.google_sub:.*" <<<"${present}"; then
+	grep -qx "logins.password_hash:.*" <<<"${present}" || need logins.password_hash "ALTER TABLE logins ADD COLUMN password_hash VARCHAR(300)"
+	grep -qx "email_verifications.email:.*" <<<"${present}" || need email_verifications "CREATE TABLE email_verifications (
 			email VARCHAR(320) NOT NULL,
 			token_hash VARCHAR(64) NOT NULL,
 			sent_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
 			CONSTRAINT email_verifications_pkey PRIMARY KEY (email),
 			CONSTRAINT email_verifications_token_hash_key UNIQUE (token_hash))"
-	if has "users.verified:.*" && has "logins.verified:.*"; then
+	if grep -qx "users.verified:.*" <<<"${present}" && grep -qx "logins.verified:.*" <<<"${present}"; then
 		need "unproven logins and the accounts without a proven email dropped, users.verified and logins.verified" "${drop_unproven}"
-	elif has "users.verified:.*" || has "logins.verified:.*"; then
+	elif grep -qx "users.verified:.*" <<<"${present}" || grep -qx "logins.verified:.*" <<<"${present}"; then
 		echo "users.verified and logins.verified are expected together: one of them is missing, look at the database" >&2
 		exit 1
 	fi
@@ -1584,7 +1597,7 @@ if has "logins.subject:.*" && ! has "users.google_sub:.*"; then
 		need "users.email unique" "${check_emails};
 			ALTER TABLE users ADD CONSTRAINT users_email_key UNIQUE (email)"
 	fi
-elif has "users.google_sub:.*"; then
+elif grep -qx "users.google_sub:.*" <<<"${present}"; then
 	echo "the logins step above is not done yet: run this again for the proven-email step" >&2
 fi
 
@@ -1676,16 +1689,16 @@ INSERT INTO library_reads (user_id, work_id, read_on, locale)
 	ORDER BY e.user_id, e.work_id;
 ALTER TABLE library_entries DROP COLUMN locale, DROP COLUMN finished_on
 SQL
-if has "library_entries.finished_on:.*" && has "library_entries.locale:.*"; then
+if grep -qx "library_entries.finished_on:.*" <<<"${present}" && grep -qx "library_entries.locale:.*" <<<"${present}"; then
 	need "library_reads (a read per entry read, from library_entries.finished_on and locale, which are dropped)" "${entries_to_reads}"
 fi
 
 # the language an account prefers: English, for every account there is. After the locales
 # step above (in the same transaction), which makes the table it points at.
-has "users.locale:.*" || need users.locale "ALTER TABLE users ADD COLUMN locale VARCHAR(10) NOT NULL DEFAULT 'en' CONSTRAINT users_locale_fkey REFERENCES locales (code)"
+grep -qx "users.locale:.*" <<<"${present}" || need users.locale "ALTER TABLE users ADD COLUMN locale VARCHAR(10) NOT NULL DEFAULT 'en' CONSTRAINT users_locale_fkey REFERENCES locales (code)"
 
 # what the user thought of a book, beside its notes; not once it went to the readings (below)
-has "library_entries.review:.*" || has "library_reads.status:.*" || need library_entries.review "ALTER TABLE library_entries ADD COLUMN review TEXT NOT NULL DEFAULT ''"
+grep -qx "library_entries.review:.*" <<<"${present}" || grep -qx "library_reads.status:.*" <<<"${present}" || need library_entries.review "ALTER TABLE library_entries ADD COLUMN review TEXT NOT NULL DEFAULT ''"
 
 # a reading has its own status, rating, review and day started (see the header): those of
 # each entry go to the reading it went by, and then the four columns go. After the reads
@@ -1708,20 +1721,20 @@ UPDATE library_reads r SET status = e.status, rating = e.rating, started_on = e.
 		ORDER BY r2.read_on IS NULL, r2.read_on DESC, r2.id DESC LIMIT 1);
 ALTER TABLE library_entries DROP COLUMN status, DROP COLUMN rating, DROP COLUMN started_on, DROP COLUMN review
 SQL
-if has "library_entries.status:.*" && ! has "library_reads.status:.*"; then
+if grep -qx "library_entries.status:.*" <<<"${present}" && ! grep -qx "library_reads.status:.*" <<<"${present}"; then
 	need "library_reads.status, rating, started_on and review (from library_entries, where they are dropped)" "${entries_into_reads}"
 fi
 
 # what a language is called in itself (see the header): adding a column, run before the deploy
-if has "locales.code:.*" && ! has "locales.native:.*"; then
+if grep -qx "locales.code:.*" <<<"${present}" && ! grep -qx "locales.native:.*" <<<"${present}"; then
 	need locales.native "ALTER TABLE locales ADD COLUMN native VARCHAR(100) NOT NULL DEFAULT ''; UPDATE locales SET native = 'English' WHERE code = 'en' AND native = ''; UPDATE locales SET native = 'עברית' WHERE code = 'he' AND native = ''; UPDATE locales SET native = 'العربية' WHERE code = 'ar' AND native = ''; UPDATE locales SET native = 'ייִדיש' WHERE code = 'yi' AND native = ''; UPDATE locales SET native = 'Français' WHERE code = 'fr' AND native = ''; UPDATE locales SET native = 'Deutsch' WHERE code = 'de' AND native = ''; UPDATE locales SET native = 'Español' WHERE code = 'es' AND native = ''; UPDATE locales SET native = 'Italiano' WHERE code = 'it' AND native = ''; UPDATE locales SET native = 'Português' WHERE code = 'pt' AND native = ''; UPDATE locales SET native = 'Русский' WHERE code = 'ru' AND native = ''; UPDATE locales SET native = 'Čeština' WHERE code = 'cs' AND native = ''; UPDATE locales SET native = 'Ελληνικά' WHERE code = 'el' AND native = ''"
 fi
 
 # went alone, owns no copy (see the header): adding columns, run before the deploy
-if has "concert_visits.id:.*" && ! has "concert_visits.alone:.*"; then
+if grep -qx "concert_visits.id:.*" <<<"${present}" && ! grep -qx "concert_visits.alone:.*" <<<"${present}"; then
 	need concert_visits.alone "ALTER TABLE concert_visits ADD COLUMN alone BOOLEAN NOT NULL DEFAULT false"
 fi
-if has "library_entries.image_id:.*" && ! has "library_entries.not_owned:.*"; then
+if grep -qx "library_entries.image_id:.*" <<<"${present}" && ! grep -qx "library_entries.not_owned:.*" <<<"${present}"; then
 	need library_entries.not_owned "ALTER TABLE library_entries ADD COLUMN not_owned BOOLEAN NOT NULL DEFAULT false"
 fi
 
@@ -1758,12 +1771,12 @@ CREATE INDEX ix_museum_visits_museum_id ON museum_visits (museum_id);
 ALTER TABLE museum_visits DROP COLUMN owner_id, DROP COLUMN name, DROP COLUMN city_id, DROP COLUMN url, DROP COLUMN image_id,
 	DROP COLUMN street, DROP COLUMN neighbourhood, DROP COLUMN postcode, DROP COLUMN latitude, DROP COLUMN longitude
 SQL
-if has "museum_visits.name:.*" && ! has "museum_visits.museum_id:.*"; then
+if grep -qx "museum_visits.name:.*" <<<"${present}" && ! grep -qx "museum_visits.museum_id:.*" <<<"${present}"; then
 	need "museum_sites (the museums, made from the visits) and museum_visits.museum_id (what is the museum's is dropped from the visits)" "${visits_on_museums}"
 fi
 
 # the language a work was first written in (see the header): adding a column, run before the deploy
-if has "library_works.id:.*" && ! has "library_works.original_locale:.*"; then
+if grep -qx "library_works.id:.*" <<<"${present}" && ! grep -qx "library_works.original_locale:.*" <<<"${present}"; then
 	need library_works.original_locale "ALTER TABLE library_works ADD COLUMN original_locale VARCHAR(10) REFERENCES locales (code)"
 fi
 
@@ -1779,7 +1792,7 @@ UPDATE person_names SET
 	middle_name = CASE WHEN name ~ '^[^ ]+ .+ [^ ]+$' THEN regexp_replace(name, '^[^ ]+ (.*) [^ ]+$', '\1') ELSE '' END,
 	surname = CASE WHEN name LIKE '% %' THEN regexp_replace(name, '^.* ', '') ELSE '' END
 SQL
-if has "person_names.id:.*" && ! has "person_names.first_name:.*"; then
+if grep -qx "person_names.id:.*" <<<"${present}" && ! grep -qx "person_names.first_name:.*" <<<"${present}"; then
 	need "person_names.honorific, first_name, middle_name and surname" "${name_parts}"
 fi
 
