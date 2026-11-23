@@ -101,6 +101,48 @@ items:
     kind: professional
 """
 
+TRIPS = """
+items:
+  - where: "Lisbon and Athens"
+    countries: ["Portugal", "Greece"]
+    date_ymd: "2010-02-23"
+    date_timezone: "Europe/Madrid"
+    duration_days: 15
+    remark: "by myself"
+    with: []
+  - where: "Nahal Kziv"
+    countries: ["Israel"]
+    date_my: "10-2003"
+    duration_days: 1
+    with: ["Alice Friend", "Bob Buddy"]
+"""
+
+LECTURES = """
+items:
+  - name: "Encryption"
+    description:
+      "Rolling keys over a
+      peer to peer network"
+    lecturers: ["Bob Buddy", "Prof. Dana Speaker"]
+    date_utcz: "2006-05-12T01:10:23Z"
+    date_timezone: "Asia/Jerusalem"
+    with: ["Alice Friend"]
+    location: "Michlelet Tel-Aviv Yafo"
+    country: "Israel"
+    rating: 9
+    review: "excellent ideas"
+"""
+
+RALLIES = """
+items:
+  - description: "Corruption demonstration"
+    location: "Kikar Rabin"
+    date_ymd: "2007-05-04"
+    country: "Israel"
+    with: ["Bob Buddy"]
+    review: "Not very interesting"
+"""
+
 CONCERTS = """
 items:
   - name: "The Band"
@@ -401,7 +443,7 @@ def write_source(root: Path, concerts: str = CONCERTS) -> Path:
     (root / "data" / "yaml").mkdir(parents=True)
     (root / "static" / "images").mkdir(parents=True)
     (root / "data" / "logos").mkdir(parents=True)
-    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("audible", AUDIBLE), ("audio_books", AUDIO_BOOKS), ("podcasts", PODCASTS), ("video_youtube", YOUTUBE), ("books_read", BOOKS), ("text_books", TEXT_BOOKS), ("certifications", CERTIFICATIONS)):
+    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("audible", AUDIBLE), ("audio_books", AUDIO_BOOKS), ("podcasts", PODCASTS), ("video_youtube", YOUTUBE), ("books_read", BOOKS), ("text_books", TEXT_BOOKS), ("certifications", CERTIFICATIONS), ("trips", TRIPS), ("lectures", LECTURES), ("political_rallies", RALLIES)):
         (root / "data" / "yaml" / f"{name}.yaml").write_text(text, encoding="UTF8")
     (root / "data" / "logos" / "acme.svg").write_bytes(LOGO)
     (root / "static" / "data").mkdir(parents=True)
@@ -432,8 +474,9 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         counts = import_world.import_world(session, owner(session), write_source(tmp_path))
         session.commit()
     assert counts == {
-        "people": 7, "organizations": 3, "organization types": 9, "relation types": 6, "person types": 3, "people with a profession": 4, "people related to the user": 2,
+        "people": 8, "organizations": 3, "organization types": 9, "relation types": 6, "person types": 3, "people with a profession": 5, "people related to the user": 2,
         "concerts": 3, "places": 1, "museums": 2, "museum visits": 3, "audio courses": 2, "audio books": 4, "podcasts": 2, "podcast episodes": 3, "films": 0, "film watches": 0, "certifications": 2,
+        "trips": 2, "lectures": 1, "rallies": 1,
         "YouTube videos": 4, "devices": 4, "books": 3, "images": 9}
     return app
 
@@ -635,7 +678,8 @@ def test_cities_and_countries(imported: webtest.TestApp) -> None:
     imported.delete(f"/api/cities/{cities['Paris']['id']}", status=204)
     assert all(m["city"] is None for m in imported.get("/api/museum-visits").json if m["name"] == "The Louvre")
     stats = imported.get("/api/stats").json
-    assert (stats["cities"], stats["countries"]) == (len(cities) + 2 - 1, 1)
+    # Israel, and the two countries a trip was in (Portugal, Greece)
+    assert (stats["cities"], stats["countries"]) == (len(cities) + 2 - 1, 3)
 
 
 def test_performers_are_people(imported: webtest.TestApp) -> None:
@@ -975,7 +1019,8 @@ def test_a_source_without_concerts_museums_or_people(app: webtest.TestApp, engin
     sign_in_admin(app, engine)
     source = write_source(tmp_path)
     # the site keeps none of these any more: the full import imports none of them, and the rest as before
-    for name in ("organizations", "certifications", "concerts", "museums", "people"):
+    # (the trips, lectures and rallies name people of people.yaml, and the site keeps none of them either)
+    for name in ("organizations", "certifications", "concerts", "museums", "people", "trips", "lectures", "political_rallies"):
         (source / "data" / "yaml" / f"{name}.yaml").unlink()
     with Session(engine) as session:
         counts = import_world.import_world(session, owner(session), source)
@@ -1134,6 +1179,45 @@ def test_certifications(imported: webtest.TestApp) -> None:
     imported.delete(f"/api/organizations/{school_id}")
     assert {c["organization"] is None for c in imported.get("/api/certifications").json} == {True}
     assert imported.get("/api/stats").json["certifications"] == 2
+
+
+def test_trips_lectures_and_rallies(imported: webtest.TestApp) -> None:
+    trips = imported.get("/api/trips").json
+    # the latest first
+    assert [t["name"] for t in trips] == ["Lisbon and Athens", "Nahal Kziv"]
+    europe, kziv = trips
+    assert ([c["name"] for c in europe["countries"]], europe["days"], europe["date"], europe["remark"], europe["alone"], europe["people"]) == (
+        ["Greece", "Portugal"], 15, "2010-02-23", "by myself", True, [])
+    assert (kziv["date"], kziv["date_precision"], kziv["alone"], kziv["with"]) == ("2003-10", "month", False, ["Alice Friend", "Bob Buddy"])
+    [lecture] = imported.get("/api/lectures").json
+    assert (lecture["description"], [p["name"] for p in lecture["lecturers"]], lecture["location"], lecture["country"]["name"], lecture["rating"]) == (
+        "Rolling keys over a peer to peer network", ["Bob Buddy", "Prof. Dana Speaker"], "Michlelet Tel-Aviv Yafo", "Israel", 9)
+    assert (lecture["review"], lecture["with"], lecture["date_precision"]) == ("excellent ideas", ["Alice Friend"], "time")
+    # a lecturer the account did not have is a new person, with the honorific apart
+    speaker = next(p for p in imported.get("/api/people").json if p["name"] == "Prof. Dana Speaker")
+    assert (speaker["honorific"], speaker["first_name"]) == ("Prof.", "Dana")
+    [rally] = imported.get("/api/rallies").json
+    assert (rally["name"], rally["location"], rally["country"]["name"], rally["date"], rally["review"], rally["with"]) == (
+        "Corruption demonstration", "Kikar Rabin", "Israel", "2007-05-04", "Not very interesting", ["Bob Buddy"])
+    # alone with people is refused; a rating out of range is refused
+    imported.put_json(f"/api/rallies/{rally['id']}", {"name": "R", "alone": True, "people": [rally["people"][0]["id"]]}, status=400)
+    imported.put_json(f"/api/lectures/{lecture['id']}", {"name": "L", "rating": 11}, status=400)
+    edited = imported.put_json(f"/api/trips/{kziv['id']}", {"name": "Nahal Kziv", "countries": [], "days": "2", "date": "2003", "alone": True}).json
+    assert (edited["countries"], edited["days"], edited["date_precision"], edited["alone"], edited["people"]) == ([], 2, "year", True, [])
+    stats = imported.get("/api/stats").json
+    assert (stats["trips"], stats["lectures"], stats["rallies"]) == (2, 1, 1)
+
+
+def test_trips_lectures_and_rallies_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    del imported
+    source = write_source(tmp_path / "again")
+    with Session(engine) as session:
+        for what, run in import_world.OUTINGS.items():
+            assert run(session, owner(session), source)[f"{what} added"] == 0
+        # who came along must be the account's people already
+        (source / "data" / "yaml" / "trips.yaml").write_text(TRIPS + '  - where: "Nowhere"\n    countries: ["Israel"]\n    date_y: "1999"\n    with: ["Nobody Known"]\n', encoding="UTF8")
+        with pytest.raises(import_world.WorldImportError, match="Nobody Known"):
+            import_world.import_trips(session, owner(session), source)
 
 
 def test_certifications_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
@@ -1628,7 +1712,7 @@ def test_people(imported: webtest.TestApp) -> None:
     people = imported.get("/api/people").json
     # Robert Greenberg is a lecturer of audio_courses.yaml, Erich Kestner and J.R.R. Tolkien authors of books_read.yaml;
     # Alice is the account owner's own person, the one the others are related to
-    assert [p["name"] for p in people] == ["Alice", "Alice Friend", "Bob Buddy", "Erich Kestner", "J.R.R. Tolkien", "Robert Greenberg", "Singer", "The Band"]
+    assert [p["name"] for p in people] == ["Alice", "Alice Friend", "Bob Buddy", "Prof. Dana Speaker", "Erich Kestner", "J.R.R. Tolkien", "Robert Greenberg", "Singer", "The Band"]
     me, alice, bob, *_ = people
     assert (me["is_self"], alice["is_self"]) == (True, False)
     assert alice["description"] == "Old friend"
@@ -1924,7 +2008,7 @@ def test_reimport_replaces(imported: webtest.TestApp, engine: Engine, tmp_path: 
         import_world.import_world(session, owner(session), tmp_path, replace=True)
         session.commit()
         # the shared rows (places, the museums among them) are found again, not added twice
-        for model, count in ((Concert, 3), (Place, 3), (Visit, 3), (AudioCourse, 2), (Person, 8), (Organization, 3), (AudioBook, 4), (Podcast, 2), (PodcastEpisode, 3), (Image, 9)):
+        for model, count in ((Concert, 3), (Place, 3), (Visit, 3), (AudioCourse, 2), (Person, 9), (Organization, 3), (AudioBook, 4), (Podcast, 2), (PodcastEpisode, 3), (Image, 9)):
             assert session.scalar(select(func.count()).select_from(model)) == count
         assert session.scalar(select(func.count()).select_from(concert_companions)) == 3
         assert session.scalar(select(func.count()).select_from(person_organizations)) == 3
@@ -2239,7 +2323,7 @@ def test_stats(imported: webtest.TestApp) -> None:
     imported.post_json("/api/library-entries", {"kind": "book", "title": "Dune", "status": "done"}, status=201)
     stats = imported.get("/api/stats").json
     assert (stats["concerts"], stats["museum_visits"], stats["museums"], stats["audio_courses"]) == (3, 3, 2, 2)
-    assert (stats["people"], stats["organizations"], stats["images"]) == (8, 3, 9)
+    assert (stats["people"], stats["organizations"], stats["images"]) == (9, 3, 9)
     assert (stats["podcasts"], stats["podcast_episodes"], stats["podcasts_heard"], stats["episodes_heard"]) == (2, 3, 2, 3)
     assert (stats["organization_types"], stats["person_types"]) == (9, 3)
     # Bob, Singer and The Band performed; Bob also went with the user, he counts once
@@ -2248,7 +2332,7 @@ def test_stats(imported: webtest.TestApp) -> None:
     # Dune and the three imported books
     assert books["total"] == 4
     assert books["by_status"] == {"Done": 3, "Want to": 1}
-    assert {t["name"]: t["count"] for t in stats["people_by_type"]} == {"Performer": 3, "Book Author": 2, "Lecturer": 1, "No profession": 2}
+    assert {t["name"]: t["count"] for t in stats["people_by_type"]} == {"Performer": 3, "Book Author": 2, "Lecturer": 2, "No profession": 2}
     assert {t["name"]: t["count"] for t in stats["organizations_by_type"]} == {"Company": 2, "University": 1}
     assert stats["concerts_by_year"] == [{"year": 1989, "count": 1}, {"year": 2001, "count": 1}, {"year": 2020, "count": 1}]
     assert stats["museums_by_year"] == [{"year": 2010, "count": 2}, {"year": 2011, "count": 1}]

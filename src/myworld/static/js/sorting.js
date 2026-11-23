@@ -143,6 +143,21 @@ const SORTS = {
 		["duration", "Length", (v) => v.duration, "desc"],
 		["uploaded", "Uploaded", (v) => v.uploaded, "desc"],
 	],
+	trips: [
+		["date", "Began", (t) => t.date_sort, "desc"],
+		["name", "Where to", (t) => t.name, "asc"],
+		["days", "Days", (t) => t.days, "desc"],
+	],
+	lectures: [
+		["date", "Date", (l) => l.date_sort, "desc"],
+		["name", "Name", (l) => l.name, "asc"],
+		["rating", "Rating", (l) => l.rating, "desc"],
+	],
+	rallies: [
+		["date", "Date", (r) => r.date_sort, "desc"],
+		["name", "Name", (r) => r.name, "asc"],
+		["rating", "Rating", (r) => r.rating, "desc"],
+	],
 	certifications: [
 		["date", "Given", (c) => c.date_sort, "desc"],
 		["name", "Name", (c) => c.name, "asc"],

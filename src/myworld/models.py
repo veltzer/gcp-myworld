@@ -622,6 +622,42 @@ audio_course_lecturers = Table(
 )
 
 # who a film was watched with: each one of the user's own people
+# who went along on a trip, to a lecture, to a rally; who gave a lecture; the countries a trip was in
+trip_companions = Table(
+    "trip_companions",
+    Base.metadata,
+    Column("trip_id", ForeignKey("trips.id", ondelete="CASCADE"), primary_key=True),
+    Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
+)
+
+trip_countries = Table(
+    "trip_countries",
+    Base.metadata,
+    Column("trip_id", ForeignKey("trips.id", ondelete="CASCADE"), primary_key=True),
+    Column("country_id", ForeignKey("countries.id", ondelete="CASCADE"), primary_key=True),
+)
+
+lecture_companions = Table(
+    "lecture_companions",
+    Base.metadata,
+    Column("lecture_id", ForeignKey("lectures.id", ondelete="CASCADE"), primary_key=True),
+    Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
+)
+
+lecture_lecturers = Table(
+    "lecture_lecturers",
+    Base.metadata,
+    Column("lecture_id", ForeignKey("lectures.id", ondelete="CASCADE"), primary_key=True),
+    Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
+)
+
+rally_companions = Table(
+    "rally_companions",
+    Base.metadata,
+    Column("rally_id", ForeignKey("rallies.id", ondelete="CASCADE"), primary_key=True),
+    Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
+)
+
 film_watch_companions = Table(
     "film_watch_companions",
     Base.metadata,
@@ -751,6 +787,11 @@ class Person(Base):
     lectured: Mapped[list[AudioCourse]] = relationship(
         secondary=audio_course_lecturers, back_populates="lecturers",
     )
+    # the trips, lectures and rallies gone to with them, and the lectures they gave
+    trips: Mapped[list[Trip]] = relationship(secondary=trip_companions, back_populates="people")
+    lectures: Mapped[list[Lecture]] = relationship(secondary=lecture_companions, back_populates="people")
+    lectures_given: Mapped[list[Lecture]] = relationship(secondary=lecture_lecturers, back_populates="lecturers")
+    rallies: Mapped[list[Rally]] = relationship(secondary=rally_companions, back_populates="people")
     # the films watched with them, and those they recommended
     film_watches: Mapped[list[FilmWatch]] = relationship(
         secondary=film_watch_companions, back_populates="people",
@@ -1146,6 +1187,82 @@ class Certification(_Dated, Base):
     organization: Mapped[Organization | None] = relationship(back_populates="certifications")
     kind: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class Trip(_Dated, Base):
+    """
+    A trip the user took: where to ("Barcelona, Paris, London", "Nahal
+    Kziv"), the countries it was in, when it began (_Dated), how many days it
+    lasted, who came along (or that the user went alone) and a remark.
+    Imported from veltzer.github.io's trips.yaml (scripts/import_world.py
+    --trips).
+    """
+    __tablename__ = "trips"
+    __table_args__ = (CheckConstraint("days IS NULL OR days >= 1", name="ck_trip_days"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # went alone: no one is missing from people, there was no one; never true with people
+    alone: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    countries: Mapped[list[Country]] = relationship(secondary=trip_countries, order_by=lambda: Country.name)
+    people: Mapped[list[Person]] = relationship(secondary=trip_companions, back_populates="trips")
+
+
+class Lecture(_Dated, Base):
+    """
+    A lecture the user went to: its name and what it was about, who gave it
+    (people), where (free text, and the country), when (_Dated), what the
+    user thought of it (a rating and a review), who came along (or alone)
+    and a remark. Imported from veltzer.github.io's lectures.yaml
+    (scripts/import_world.py --lectures).
+    """
+    __tablename__ = "lectures"
+    __table_args__ = (
+        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_lecture_rating_range"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    location: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    country_id: Mapped[int | None] = mapped_column(ForeignKey("countries.id", ondelete="SET NULL", name="fk_lectures_country_id"), nullable=True, index=True)
+    country: Mapped[Country | None] = relationship()
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    review: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    alone: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    lecturers: Mapped[list[Person]] = relationship(secondary=lecture_lecturers, back_populates="lectures_given")
+    people: Mapped[list[Person]] = relationship(secondary=lecture_companions, back_populates="lectures")
+
+
+class Rally(_Dated, Base):
+    """
+    A rally or demonstration the user went to: what it was ("Corruption
+    demonstration"), where (free text, and the country), when (_Dated), what
+    the user thought of it, who came along (or alone) and a remark. Imported
+    from veltzer.github.io's political_rallies.yaml (scripts/import_world.py
+    --rallies).
+    """
+    __tablename__ = "rallies"
+    __table_args__ = (
+        CheckConstraint(f"rating IS NULL OR (rating >= {RATING_MIN} AND rating <= {RATING_MAX})", name="ck_rally_rating_range"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    location: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    country_id: Mapped[int | None] = mapped_column(ForeignKey("countries.id", ondelete="SET NULL", name="fk_rallies_country_id"), nullable=True, index=True)
+    country: Mapped[Country | None] = relationship()
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    review: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    alone: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    people: Mapped[list[Person]] = relationship(secondary=rally_companions, back_populates="rallies")
 
 
 class PlaceKind(Base):
@@ -1922,7 +2039,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0035"
+SCHEMA_REVISION = "0036"
 
 
 def prepare_schema(engine: Engine) -> None:

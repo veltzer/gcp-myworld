@@ -28,6 +28,10 @@ export const WORLDS = {
 	chess: ["Chess games", "/api/chess-games", "chess game", "Chess"],
 	// the certifications the user holds, each with the organization that issued it
 	certifications: ["Certifications", "/api/certifications", "certification", "Certifications"],
+	// the trips the user took, the lectures and the rallies they went to
+	trips: ["Trips", "/api/trips", "trip", "Trips"],
+	lectures: ["Lectures", "/api/lectures", "lecture", "Lectures"],
+	rallies: ["Rallies", "/api/rallies", "rally", "Rallies"],
 	places: ["Places", "/api/places", "place", "Places"],
 	// every podcast, and every episode of them its feed has
 	podcasts: ["Podcasts", "/api/podcasts", "podcast", "Podcasts"],

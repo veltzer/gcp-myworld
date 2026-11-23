@@ -840,6 +840,88 @@
 					<button type="submit">Add</button>
 				</div>
 			</form>
+			<form id="trip-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="Where you went: a city, a region, a trail" class="wide">Where to <input name="name" required placeholder="e.g. Barcelona, Paris, London"></label>
+				</div>
+				<div class="row">
+					<label title="The countries the trip was in, each one of Countries; add a new one on the Countries page" class="wide">Countries <select multiple data-chips="countries" data-field="countries" data-placeholder="Type a country"><option value=""></option></select></label>
+				</div>
+				<div class="row">
+					<label title="When the trip began: how much of the date is known">Began <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
+					<label title="How many days the trip lasted">Days <input name="days" type="number" min="1" max="10000"></label>
+				</div>
+				<div class="row">
+					<label title="The people who came along, each one of People; add a new one on the People page" class="wide">With <select multiple data-chips="people" data-field="people" data-placeholder="Type a name from People"><option value=""></option></select></label>
+					<label title="Tick when you went by yourself: With then stays empty" class="check"><input name="alone" type="checkbox"> I went alone</label>
+				</div>
+				<div class="row">
+					<label title="Anything worth keeping about the trip" class="wide">Remark <input name="remark"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="lecture-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="The lecture's title, or its subject" class="wide">Name <input name="name" required></label>
+				</div>
+				<div class="row">
+					<label title="What the lecture was about" class="wide">Description <input name="description"></label>
+				</div>
+				<div class="row">
+					<label title="Who gave the lecture, each one of People; add a new one on the People page" class="wide">Lecturers <select multiple data-chips="people" data-field="lecturers" data-placeholder="Type a name from People"><option value=""></option></select></label>
+					<label title="How much of the date is known">Date <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
+				</div>
+				<div class="row">
+					<label title="Where it was, in your own words: a hall, a square, an address" class="wide">Where <input name="location"></label>
+					<label title="The country it was in: add a new one on the Countries page">Country <select name="country_id" data-picker="countries" data-placeholder="Type a country" title="The country it was in: add a new one on the Countries page"></select></label>
+				</div>
+				<div class="row">
+					<label title="The people who came along, each one of People; add a new one on the People page" class="wide">With <select multiple data-chips="people" data-field="people" data-placeholder="Type a name from People"><option value=""></option></select></label>
+					<label title="Tick when you went by yourself: With then stays empty" class="check"><input name="alone" type="checkbox"> I went alone</label>
+				</div>
+				<div class="row">
+					<label title="Your rating of it, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
+					<label title="What you thought of the lecture, in your own words" class="wide">Review <input name="review"></label>
+				</div>
+				<div class="row">
+					<label title="Anything else worth keeping about the lecture" class="wide">Remark <input name="remark"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="rally-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="What the rally or demonstration was about" class="wide">Name <input name="name" required placeholder="e.g. Corruption demonstration"></label>
+					<label title="How much of the date is known">Date <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
+				</div>
+				<div class="row">
+					<label title="Where it was, in your own words: a hall, a square, an address" class="wide">Where <input name="location"></label>
+					<label title="The country it was in: add a new one on the Countries page">Country <select name="country_id" data-picker="countries" data-placeholder="Type a country" title="The country it was in: add a new one on the Countries page"></select></label>
+				</div>
+				<div class="row">
+					<label title="The people who came along, each one of People; add a new one on the People page" class="wide">With <select multiple data-chips="people" data-field="people" data-placeholder="Type a name from People"><option value=""></option></select></label>
+					<label title="Tick when you went by yourself: With then stays empty" class="check"><input name="alone" type="checkbox"> I went alone</label>
+				</div>
+				<div class="row">
+					<label title="Your rating of it, from 1 (worst) to 10 (best); empty when you have not rated it">Rating <input name="rating" type="number"></label>
+					<label title="What you thought of the rally, in your own words" class="wide">Review <input name="review"></label>
+				</div>
+				<div class="row">
+					<label title="Anything else worth keeping about the rally" class="wide">Remark <input name="remark"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
 			<form id="person-form" class="dialog-form" hidden>
 				<div class="row">
 					<!-- every name of the person, each in its language and in its parts, none of them set apart: the

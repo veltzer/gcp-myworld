@@ -122,6 +122,28 @@ const VALUE_FILTERS = {
 		all: "All videos",
 		groups: [["device", "Device", (v) => named(v.device)]],
 	},
+	trips: {
+		all: "All trips",
+		groups: [
+			["country", "Country", (t) => t.countries.map((c) => c.name)],
+			["with", "With", (t) => (t.alone ? ["Alone"] : t.people.map((p) => p.name))],
+		],
+	},
+	lectures: {
+		all: "All lectures",
+		groups: [
+			["lecturer", "Lecturer", (l) => l.lecturers.map((p) => p.name)],
+			["country", "Country", (l) => named(l.country)],
+			["with", "With", (l) => (l.alone ? ["Alone"] : l.people.map((p) => p.name))],
+		],
+	},
+	rallies: {
+		all: "All rallies",
+		groups: [
+			["country", "Country", (r) => named(r.country)],
+			["with", "With", (r) => (r.alone ? ["Alone"] : r.people.map((p) => p.name))],
+		],
+	},
 	certifications: {
 		all: "All certifications",
 		groups: [

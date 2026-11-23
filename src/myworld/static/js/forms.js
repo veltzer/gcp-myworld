@@ -331,6 +331,35 @@ const WORLD_BODIES = {
 			watched_at: value("watched_at"),
 		};
 	},
+	trips: async (form) => {
+		const value = (name) => form.elements[name].value;
+		return {
+			...Object.fromEntries(["name", "date", "days", "remark"].map((name) => [name, value(name)])),
+			date_timezone: state.editing?.date_timezone || where(),
+			countries: chosen(form, "countries"),
+			people: chosen(form, "people"),
+			alone: form.elements.alone.checked,
+		};
+	},
+	lectures: async (form) => {
+		const value = (name) => form.elements[name].value;
+		return {
+			...Object.fromEntries(["name", "description", "date", "location", "country_id", "rating", "review", "remark"].map((name) => [name, value(name)])),
+			date_timezone: state.editing?.date_timezone || where(),
+			lecturers: chosen(form, "lecturers"),
+			people: chosen(form, "people"),
+			alone: form.elements.alone.checked,
+		};
+	},
+	rallies: async (form) => {
+		const value = (name) => form.elements[name].value;
+		return {
+			...Object.fromEntries(["name", "date", "location", "country_id", "rating", "review", "remark"].map((name) => [name, value(name)])),
+			date_timezone: state.editing?.date_timezone || where(),
+			people: chosen(form, "people"),
+			alone: form.elements.alone.checked,
+		};
+	},
 	certifications: async (form) => {
 		const value = (name) => form.elements[name].value;
 		const body = Object.fromEntries(["name", "organization_id", "kind", "date", "remark"].map((name) => [name, value(name)]));

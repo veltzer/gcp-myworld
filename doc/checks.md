@@ -200,6 +200,14 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `certification-kinds`: every certification says what kind it is,
   instructor (may teach the course) or professional (has the skill).
 
+### Trips, lectures and rallies (`trips`, `lectures`, `rallies`)
+
+- `trip-company`, `lecture-company`, `rally-company`: every trip, lecture
+  and rally either has the people who came along or is marked "I went
+  alone", and none is both.
+- `trip-countries`: every trip names at least one country it was in.
+- `lecture-lecturers`: every lecture names who gave it.
+
 ### Groups (`groups`)
 
 - `group-members`: every group has at least one member (a person).
@@ -309,7 +317,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `people-photos`: every person with a profession has a photo.
 - `people-duplicates`: no account has two people of the same name.
 - `people-used`: every person is linked to something: a concert, a museum
-  visit, a book, a course, a group, an organization or another person.
+  visit, a trip, a lecture or a rally (along, or giving the lecture), a
+  book, a course, a group, an organization or another person.
 - `people-credits`: every photo of a person that has a credit says its
   source and its license (its author only when one is known).
 

@@ -240,6 +240,56 @@ function certificationCard(item) {
 	return card;
 }
 
+// who came along: "alone", or the people, each a link to People
+function companyDetail(list, item) {
+	if (item.alone) {
+		detail(list, "With", "alone");
+	}
+	linksDetail(list, "With", "people", item.people);
+}
+
+function rating(item) {
+	return item.rating !== null && item.rating !== undefined ? `${item.rating}/${state.config.rating_max}` : "";
+}
+
+function tripCard(item) {
+	const { card, list } = cardShell(item, item.countries.map((c) => c.name).join(", "));
+	detail(list, "Began", formatDate(item));
+	detail(list, "Days", item.days);
+	linksDetail(list, "Countries", "countries", item.countries);
+	companyDetail(list, item);
+	detail(list, "Remark", item.remark);
+	return card;
+}
+
+// where a lecture or a rally was: the place in words, then its country
+function whereText(item) {
+	return [item.location, item.country?.name].filter(Boolean).join(", ");
+}
+
+function lectureCard(item) {
+	const { card, list } = cardShell(item, item.lecturers.map((p) => p.name).join(", "));
+	detail(list, "About", item.description);
+	linksDetail(list, "Lecturer", "people", item.lecturers);
+	detail(list, "Date", formatDate(item));
+	detail(list, "Where", whereText(item));
+	companyDetail(list, item);
+	detail(list, "Rating", rating(item));
+	detail(list, "Review", item.review);
+	detail(list, "Remark", item.remark);
+	return card;
+}
+
+function rallyCard(item) {
+	const { card, list } = cardShell(item, whereText(item));
+	detail(list, "Date", formatDate(item));
+	companyDetail(list, item);
+	detail(list, "Rating", rating(item));
+	detail(list, "Review", item.review);
+	detail(list, "Remark", item.remark);
+	return card;
+}
+
 function audioCourseCard(item) {
 	const { card, list } = cardShell(item, item.lecturers.map((p) => p.name).join(", "));
 	linksDetail(list, "Lecturer", "people", item.lecturers);
@@ -577,6 +627,9 @@ export const CARDS = {
 	youtube: youtubeCard,
 	chess: chessCard,
 	certifications: certificationCard,
+	trips: tripCard,
+	lectures: lectureCard,
+	rallies: rallyCard,
 	places: placeCard,
 	cities: cityCard,
 	countries: countryCard,

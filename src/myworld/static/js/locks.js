@@ -274,13 +274,15 @@ export function setupAddDialog() {
 		}
 	}, true);
 	$("museum-visit-form").elements.alone.onchange = () => syncAlone($("museum-visit-form"));
-	$("concert-form").elements.alone.onchange = () => syncAlone($("concert-form"));
+	for (const id of ["concert-form", "trip-form", "lecture-form", "rally-form"]) {
+		$(id).elements.alone.onchange = () => syncAlone($(id));
+	}
 	const { rating_min, rating_max } = state.config;
 	$("museum-visit-rating").min = rating_min;
 	$("museum-visit-rating").max = rating_max;
 	$("audio-course-form").elements.rating.min = rating_min;
 	$("audio-course-form").elements.rating.max = rating_max;
-	for (const id of ["audio-book-heard-form", "podcast-heard-form", "episode-heard-form", "film-watch-form", "series-watch-form"]) {
+	for (const id of ["audio-book-heard-form", "podcast-heard-form", "episode-heard-form", "film-watch-form", "series-watch-form", "lecture-form", "rally-form"]) {
 		$(id).elements.rating.min = rating_min;
 		$(id).elements.rating.max = rating_max;
 	}

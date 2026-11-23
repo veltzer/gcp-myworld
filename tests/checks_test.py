@@ -39,6 +39,7 @@ from myworld.models import (
     EpisodeHeard,
     Group,
     Image,
+    Lecture,
     Login,
     Organization,
     Person,
@@ -49,9 +50,11 @@ from myworld.models import (
     Podcast,
     PodcastEpisode,
     PodcastHeard,
+    Rally,
     Read,
     Region,
     RelationType,
+    Trip,
     User,
     UserWork,
     Visit,
@@ -934,3 +937,34 @@ def test_certification_checks(engine: Engine) -> None:
         assert [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS["certification-kinds"].run(session).problems] == [
             ("Kindless", "has no kind (instructor or professional)"),
         ]
+
+
+def test_trip_lecture_and_rally_checks(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        bob = Person(owner_id=alice.id, first_name="Bob")
+        israel = Country(name="Testland")
+        session.add_all([
+            Trip(owner_id=alice.id, name="Fine trip", countries=[israel], people=[bob]),
+            # no one along and not alone, and no country
+            Trip(owner_id=alice.id, name="Gap trip"),
+            Lecture(owner_id=alice.id, name="Fine lecture", lecturers=[bob], alone=True),
+            # alone with people, and no lecturer
+            Lecture(owner_id=alice.id, name="Odd lecture", alone=True, people=[bob]),
+            Rally(owner_id=alice.id, name="Fine rally", people=[bob]),
+            Rally(owner_id=alice.id, name="Gap rally"),
+        ])
+        session.commit()
+
+        def who(check_id: str) -> list[tuple[str, str]]:
+            return [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS[check_id].run(session).problems]
+
+        assert who("trip-company") == [("Gap trip", "has no one in With and is not marked alone")]
+        assert who("trip-countries") == [("Gap trip", "has no country")]
+        assert who("lecture-company") == [("Odd lecture", "is marked alone but has people in With")]
+        assert who("lecture-lecturers") == [("Odd lecture", "has no lecturer")]
+        assert who("rally-company") == [("Gap rally", "has no one in With and is not marked alone")]
+        # going along to them is being linked to something
+        assert "Bob" not in [p.subject for p in checks.CHECKS["people-used"].run(session).problems]

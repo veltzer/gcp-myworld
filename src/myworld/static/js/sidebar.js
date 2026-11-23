@@ -9,7 +9,7 @@ import { FILTERED_VIEWS, SHARED_VIEWS, WORLDS, el } from "./worlds.js";
 // the sidebar's groups of views: first what is the user's own (the library's kinds, from the config, ahead
 // of the rest), then what everyone shares (SHARED_VIEWS), apart, under a heading of its own
 const NAV_GROUPS = [
-	["Yours", ["concerts", "museums", "audio-courses", "audio-books-heard", "audio-book-listens", "podcasts-heard", "episodes-heard", "film-watches", "series-watches", "youtube", "chess", "certifications"]],
+	["Yours", ["concerts", "museums", "audio-courses", "audio-books-heard", "audio-book-listens", "podcasts-heard", "episodes-heard", "film-watches", "series-watches", "youtube", "chess", "certifications", "trips", "lectures", "rallies"]],
 	["Your people", ["people", "groups", "organizations"]],
 	["Your types", ["organization-types", "person-types", "relation-types", "person-relation-types", "person-organization-types", "devices"]],
 	["Shared by everyone", ["places", "podcasts", "podcast-episodes", "audio-books", "audio-book-versions", "films", "series", "cities", "countries", "currencies", "place-kinds", "visit-types", "locales"]],
@@ -107,7 +107,7 @@ export async function loadCounts() {
 		setCount(kind.kind, kind.total);
 	}
 	const keys = {
-		concerts: "concerts", museums: "museum_visits", "audio-courses": "audio_courses", "audio-books-heard": "audio_books_heard", "audio-book-listens": "audio_book_listens", "audio-books": "audio_books", "audio-book-versions": "audio_book_versions", "podcasts-heard": "podcasts_heard", "episodes-heard": "episodes_heard", podcasts: "podcasts", "podcast-episodes": "podcast_episodes", films: "films", "film-watches": "film_watches", series: "series", "series-watches": "series_watches", youtube: "youtube_videos", chess: "chess_games", certifications: "certifications",
+		concerts: "concerts", museums: "museum_visits", "audio-courses": "audio_courses", "audio-books-heard": "audio_books_heard", "audio-book-listens": "audio_book_listens", "audio-books": "audio_books", "audio-book-versions": "audio_book_versions", "podcasts-heard": "podcasts_heard", "episodes-heard": "episodes_heard", podcasts: "podcasts", "podcast-episodes": "podcast_episodes", films: "films", "film-watches": "film_watches", series: "series", "series-watches": "series_watches", youtube: "youtube_videos", chess: "chess_games", certifications: "certifications", trips: "trips", lectures: "lectures", rallies: "rallies",
 		places: "places", cities: "cities", countries: "countries", currencies: "currencies", people: "people", groups: "groups", organizations: "organizations", "organization-types": "organization_types",
 		"person-types": "person_types", "relation-types": "relation_types", "person-relation-types": "person_relation_types",
 		"person-organization-types": "person_organization_types", devices: "devices", locales: "locales",

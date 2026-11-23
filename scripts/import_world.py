@@ -80,12 +80,23 @@ organization of that one's name. A certification is found again by its
 name, so --certifications can run again; the full import includes them when
 the source has the file.
 
+Trips come from data/yaml/trips.yaml (where to, the countries, when, how many
+days, who came along, a remark), lectures from data/yaml/lectures.yaml (the
+name, the description, the lecturers, where, the country, when, the rating,
+the review, who came along) and rallies from data/yaml/political_rallies.yaml
+(what it was, where, the country, when, the review, who came along). Who came
+along are the account's people, found by name exactly (one not found stops
+the import); an empty with is going alone. A lecturer is the account's person
+of that name, or a new one. Each is found again by its name and date, so
+--trips, --lectures and --rallies can run again; the full import includes
+them when the source has the file.
+
 The full import (no mode flag) replaces everything the user had in these
 tables, in one transaction. It is meant for an empty account: when the
 account has any of these rows already it stops, since replacing them would
 lose every edit made in the app since the last import, unless
 --replace-everything is given with the account's email again. The --books,
---audio-books, --podcasts, --films, --certifications, --youtube-history and --only-types modes add to what is
+--audio-books, --podcasts, --films, --certifications, --trips, --lectures, --rallies, --youtube-history and --only-types modes add to what is
 there and are safe to run again. Unknown fields in the YAML stop the import rather than being
 dropped, so nothing is lost on the way in.
 
@@ -157,6 +168,7 @@ from myworld.models import (
     FilmWatch,
     Group,
     Image,
+    Lecture,
     Organization,
     OrganizationType,
     Owning,
@@ -172,8 +184,10 @@ from myworld.models import (
     Podcast,
     PodcastEpisode,
     PodcastHeard,
+    Rally,
     Read,
     RelationType,
+    Trip,
     User,
     UserWork,
     Visit,
@@ -187,13 +201,18 @@ from myworld.models import (
     concert_performers,
     film_watch_companions,
     group_members,
+    lecture_companions,
+    lecture_lecturers,
     library_entry_authors,
     make_engine,
     organization_relation_types,
     organization_type_links,
     person_organizations,
     person_type_links,
+    rally_companions,
     region_for,
+    trip_companions,
+    trip_countries,
     visit_companions,
 )
 
@@ -333,6 +352,10 @@ PODCAST_EPISODE_FIELDS = DATE_FIELDS | {
 }
 # certifications.yaml: a certification held, its issuer by its id in organizations.yaml, and the day it was given (YYYY-MM-DD)
 CERTIFICATION_FIELDS = {"id", "name", "organization", "kind", "date", "remark"}
+TRIP_FIELDS = DATE_FIELDS | {"where", "countries", "duration_days", "remark", "with"}
+LECTURE_FIELDS = DATE_FIELDS | {"name", "description", "lecturers", "location", "country", "rating", "review", "with"}
+# a rally's description is what it was: its name here
+RALLY_FIELDS = DATE_FIELDS | {"description", "location", "country", "review", "with"}
 YOUTUBE_FIELDS = DATE_FIELDS | {"id", "name", "rating", "review", "device", "location"}
 # video_features.yaml: a time a film was watched; the ids are its IMDb number ("0816692"), Wikidata item and Rotten Tomatoes page
 FILM_FIELDS = DATE_FIELDS | {"name", "imdb_id", "wikidata_id", "rotten_tomatoes_id", "location", "device", "rating", "review", "with"}
@@ -445,7 +468,7 @@ def _profession(person: Person) -> str | None:
     """ A first guess at a person's profession, from what the data says; None when nothing does. """
     if person.performed:
         return "Performer"
-    if person.lectured:
+    if person.lectured or person.lectures_given:
         return "Lecturer"
     if person.wrote:
         return "Book Author"
@@ -585,7 +608,7 @@ def find_owner(session: Session, email: str, subject: str | None) -> User:
 # what the full import deletes and makes again, so what an account must not have unless it is replaced on purpose;
 # the shared rows (countries, cities, places) are everyone's: never deleted, found again or added
 REPLACED_MODELS = (
-    AudioCourse, AudioBookListen, AudioBookHeard, EpisodeHeard, PodcastHeard, FilmWatch, YouTubeVideo, Device, Concert, Visit, Certification, Group, Person, Organization,
+    AudioCourse, AudioBookListen, AudioBookHeard, EpisodeHeard, PodcastHeard, FilmWatch, YouTubeVideo, Device, Concert, Visit, Certification, Trip, Lecture, Rally, Group, Person, Organization,
     OrganizationType, PersonType, RelationType, PersonRelationType, PersonOrganizationType, Image,
 )
 
@@ -636,6 +659,11 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     session.execute(delete(concert_groups).where(concert_groups.c.concert_id.in_(concerts_of_owner)))
     session.execute(delete(group_members).where(group_members.c.group_id.in_(select(Group.id).where(Group.owner_id == owner.id))))
     session.execute(delete(visit_companions).where(visit_companions.c.visit_id.in_(select(Visit.id).where(Visit.owner_id == owner.id))))
+    session.execute(delete(trip_countries).where(trip_countries.c.trip_id.in_(select(Trip.id).where(Trip.owner_id == owner.id))))
+    session.execute(delete(trip_companions).where(trip_companions.c.trip_id.in_(select(Trip.id).where(Trip.owner_id == owner.id))))
+    session.execute(delete(lecture_companions).where(lecture_companions.c.lecture_id.in_(select(Lecture.id).where(Lecture.owner_id == owner.id))))
+    session.execute(delete(lecture_lecturers).where(lecture_lecturers.c.lecture_id.in_(select(Lecture.id).where(Lecture.owner_id == owner.id))))
+    session.execute(delete(rally_companions).where(rally_companions.c.rally_id.in_(select(Rally.id).where(Rally.owner_id == owner.id))))
     session.execute(delete(film_watch_companions).where(
         film_watch_companions.c.film_watch_id.in_(select(FilmWatch.id).where(FilmWatch.owner_id == owner.id)),
     ))
@@ -842,15 +870,20 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     films = import_films(session, owner, source) if _films_path(source).exists() else {"films added": 0, "film watches added": 0, "posters added": 0, "devices added": 0}
     books = import_books(session, owner, source)
     certifications = import_certifications(session, owner, source) if _certifications_path(source).exists() else {"certifications added": 0}
+    outings = {
+        what: OUTINGS[what](session, owner, source) if _yaml_path(source, file).exists() else {f"{what} added": 0, "lecturers added": 0}
+        for what, file in OUTING_FILES.items()
+    }
     typed = give_types(session, owner)
     return {
-        "people": len(people) + courses["lecturers added"] + books["authors added"], "organizations": len(organizations), "organization types": len(types),
+        "people": len(people) + courses["lecturers added"] + books["authors added"] + sum(o.get("lecturers added", 0) for o in outings.values()), "organizations": len(organizations), "organization types": len(types),
         "relation types": len(relation_types), "person types": len(PERSON_TYPES), "people with a profession": typed["people given a profession"], "people related to the user": typed["people given a relation"],
         "concerts": len(concert_items), "places": place.added, "museums": len(museums), "museum visits": len(museum_items), "audio courses": courses["audio courses"],
         "audio books": audio_books["audio books added"],
         "podcasts": podcasts["podcasts added"], "podcast episodes": podcasts["podcast episodes added"],
         "films": films["films added"], "film watches": films["film watches added"],
         "certifications": certifications["certifications added"],
+        **{what: outings[what][f"{what} added"] for what in OUTING_FILES},
         "YouTube videos": videos["YouTube videos"] + history["YouTube videos added"], "devices": courses["devices added"] + audio_books["devices added"] + podcasts["devices added"] + films["devices added"] + videos["devices added"],
         "books": books["books"], "images": len(images) + courses["images"] + audio_books["images"] + podcasts["covers added"] + films["posters added"] + books["covers"],
     }
@@ -1474,6 +1507,147 @@ def import_certifications(session: Session, owner: User, source: Path) -> dict[s
     return {"certifications added": added}
 
 
+def _yaml_path(source: Path, name: str) -> Path:
+    return source / "data" / "yaml" / f"{name}.yaml"
+
+
+class _Company:
+    """
+    The account's people by name, for who came along (each must be there:
+    one not found stops the import) and for lecturers (one not found is
+    added). Two people of one name stop it too: which one is meant is not
+    known.
+    """
+
+    def __init__(self, session: Session, owner: User, file: str) -> None:
+        self.session, self.owner, self.file = session, owner, file
+        self.by_name: dict[str, list[Person]] = {}
+        for person in session.scalars(select(Person).where(Person.owner_id == owner.id)):
+            self.by_name.setdefault(naming.key(person.name), []).append(person)
+        self.added = 0
+
+    def _one(self, name: str) -> Person | None:
+        found = self.by_name.get(naming.key(name), [])
+        if len(found) > 1:
+            raise WorldImportError(f"{self.file}: {len(found)} people are called {name!r}; make the names differ first")
+        return found[0] if found else None
+
+    def came(self, item: dict[str, Any], what: str) -> list[Person]:
+        names = list(dict.fromkeys(item.get("with") or []))
+        missing = [name for name in names if self._one(name) is None]
+        if missing:
+            raise WorldImportError(f"{self.file}: {what!r}: with names people the account does not have: {missing}")
+        return [p for name in names if (p := self._one(name)) is not None]
+
+    def lecturer(self, name: str) -> Person:
+        found = self._one(name)
+        if found is None:
+            honorific, first_name, middle_name, surname = split_name(name)
+            found = Person(owner_id=self.owner.id, honorific=honorific, first_name=first_name, middle_name=middle_name, surname=surname, description="")
+            self.session.add(found)
+            self.by_name[naming.key(name)] = [found]
+            self.added += 1
+        return found
+
+
+def _date_key(row: Trip | Lecture | Rally) -> tuple[Any, ...]:
+    """ A row's date as the columns keep it, to find a row again by its name and date. """
+    return (row.date_utcz, row.date_ymd, row.date_my or "", row.date_y)
+
+
+def _item_date_key(item: dict[str, Any], name: str) -> tuple[Any, ...]:
+    dates = _dates({**item, "name": name})
+    return (dates.get("date_utcz"), dates.get("date_ymd"), dates.get("date_my", ""), dates.get("date_y"))
+
+
+def import_trips(session: Session, owner: User, source: Path) -> dict[str, int]:
+    """
+    Add the trips of trips.yaml that owner does not have yet (found again by
+    where to and when), with their countries and who came along. Safe to
+    run again. Does not commit.
+    """
+    items = _items(source, "trips", TRIP_FIELDS)
+    company = _Company(session, owner, "trips.yaml")
+    have = {(t.name, _date_key(t)) for t in session.scalars(select(Trip).where(Trip.owner_id == owner.id))}
+    cities = Cities(session, owner)
+    added = 0
+    for item in items:
+        key = (item["where"], _item_date_key(item, item["where"]))
+        if key in have:
+            continue
+        people = company.came(item, item["where"])
+        countries = [c for name in dict.fromkeys(item.get("countries") or []) if (c := cities.country(name)) is not None]
+        session.add(Trip(
+            owner_id=owner.id, name=item["where"], countries=countries, days=item.get("duration_days"), remark=item.get("remark", ""),
+            people=people, alone="with" in item and not people, **_dates({**item, "name": item["where"]}),
+        ))
+        have.add(key)
+        added += 1
+    session.flush()
+    return {"trips added": added}
+
+
+def import_lectures(session: Session, owner: User, source: Path) -> dict[str, int]:
+    """
+    Add the lectures of lectures.yaml that owner does not have yet (found
+    again by name and date), with who gave them (the account's person of
+    each name, or a new one) and who came along. Safe to run again. Does not
+    commit.
+    """
+    items = _items(source, "lectures", LECTURE_FIELDS)
+    company = _Company(session, owner, "lectures.yaml")
+    have = {(lecture.name, _date_key(lecture)) for lecture in session.scalars(select(Lecture).where(Lecture.owner_id == owner.id))}
+    cities = Cities(session, owner)
+    added = 0
+    for item in items:
+        key = (item["name"], _item_date_key(item, item["name"]))
+        if key in have:
+            continue
+        people = company.came(item, item["name"])
+        session.add(Lecture(
+            owner_id=owner.id, name=item["name"], description=" ".join(item.get("description", "").split()),
+            lecturers=[company.lecturer(name) for name in dict.fromkeys(item.get("lecturers") or [])],
+            location=item.get("location", ""), country=cities.country(item.get("country", "")), rating=item.get("rating"),
+            review=item.get("review", ""), people=people, alone="with" in item and not people, **_dates(item),
+        ))
+        have.add(key)
+        added += 1
+    session.flush()
+    return {"lectures added": added, "lecturers added": company.added}
+
+
+def import_rallies(session: Session, owner: User, source: Path) -> dict[str, int]:
+    """
+    Add the rallies of political_rallies.yaml that owner does not have yet
+    (found again by what it was and when), with who came along. Safe to run
+    again. Does not commit.
+    """
+    items = _items(source, "political_rallies", RALLY_FIELDS)
+    company = _Company(session, owner, "political_rallies.yaml")
+    have = {(r.name, _date_key(r)) for r in session.scalars(select(Rally).where(Rally.owner_id == owner.id))}
+    cities = Cities(session, owner)
+    added = 0
+    for item in items:
+        name = item["description"]
+        key = (name, _item_date_key(item, name))
+        if key in have:
+            continue
+        people = company.came(item, name)
+        session.add(Rally(
+            owner_id=owner.id, name=name, location=item.get("location", ""), country=cities.country(item.get("country", "")),
+            review=item.get("review", ""), people=people, alone="with" in item and not people, **_dates({**item, "name": name}),
+        ))
+        have.add(key)
+        added += 1
+    session.flush()
+    return {"rallies added": added}
+
+
+# the trips, lectures and rallies: the file each comes from, and its import
+OUTING_FILES = {"trips": "trips", "lectures": "lectures", "rallies": "political_rallies"}
+OUTINGS = {"trips": import_trips, "lectures": import_lectures, "rallies": import_rallies}
+
+
 def import_youtube(session: Session, owner: User, source: Path) -> dict[str, int]:
     """ Add owner's YouTube videos from source. Stops when owner has YouTube videos already. Does not commit. """
     if not (source / "data" / "yaml" / "video_youtube.yaml").exists():
@@ -1908,6 +2082,11 @@ def main() -> int:
         "--certifications", action="store_true",
         help="import only the certifications, adding those the account does not have yet (their issuers must be its organizations already); safe to run again",
     )
+    for what, file in OUTING_FILES.items():
+        parser.add_argument(
+            f"--{what}", action="store_true",
+            help=f"import only the {what} ({file}.yaml), adding those the account does not have yet (who came along must be its people already); safe to run again",
+        )
     parser.add_argument(
         "--youtube", action="store_true",
         help="import only the YouTube videos, adding them to what the account has (stops if it has YouTube videos already)",
@@ -1949,6 +2128,12 @@ def main() -> int:
                 counts = import_films(session, owner, args.source)
             elif args.certifications:
                 counts = import_certifications(session, owner, args.source)
+            elif any(getattr(args, what) for what in OUTINGS):
+                counts = {}
+                for what, run in OUTINGS.items():
+                    if getattr(args, what):
+                        counts |= run(session, owner, args.source)
+                counts["people given a profession"] = give_types(session, owner)["people given a profession"]
             elif args.youtube:
                 counts = import_youtube(session, owner, args.source)
             elif args.audio_courses:

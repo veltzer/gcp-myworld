@@ -1,6 +1,6 @@
 """
 JSON API for what the signed-in user keeps: concerts, their museum visits,
-audio courses, audio books, podcasts and their episodes, YouTube videos, chess games, certifications, people, organizations and
+audio courses, audio books, podcasts and their episodes, YouTube videos, chess games, certifications, trips, lectures, rallies, people, organizations and
 groups; and for what everyone shares: places (and their kinds), visit
 types, cities and countries. For each: what a row looks like as JSON, how a
 request body is applied to it, and the routes that list, add, edit and
@@ -63,6 +63,7 @@ from myworld.models import (
     FilmWatch,
     Group,
     Image,
+    Lecture,
     Organization,
     OrganizationType,
     Person,
@@ -78,8 +79,10 @@ from myworld.models import (
     Podcast,
     PodcastEpisode,
     PodcastHeard,
+    Rally,
     Region,
     RelationType,
+    Trip,
     Visit,
     VisitType,
     YouTubeVideo,
@@ -810,6 +813,56 @@ def certification_json(certification: Certification) -> dict[str, Any]:
     }
 
 
+def _company_json(row: Trip | Lecture | Rally) -> dict[str, Any]:
+    """ Who came along, or that the user went alone. """
+    return {"alone": row.alone, "with": _names(row.people), "people": _refs(row.people)}
+
+
+def trip_json(trip: Trip) -> dict[str, Any]:
+    return {
+        "id": trip.id,
+        "name": trip.name,
+        "countries": _refs(trip.countries),
+        **date_json(trip),
+        "date_timezone": trip.date_timezone,
+        "days": trip.days,
+        "remark": trip.remark,
+        **_company_json(trip),
+    }
+
+
+def lecture_json(lecture: Lecture) -> dict[str, Any]:
+    return {
+        "id": lecture.id,
+        "name": lecture.name,
+        "description": lecture.description,
+        "lecturers": _refs(lecture.lecturers),
+        "location": lecture.location,
+        "country": country_ref(lecture.country),
+        **date_json(lecture),
+        "date_timezone": lecture.date_timezone,
+        "rating": lecture.rating,
+        "review": lecture.review,
+        "remark": lecture.remark,
+        **_company_json(lecture),
+    }
+
+
+def rally_json(rally: Rally) -> dict[str, Any]:
+    return {
+        "id": rally.id,
+        "name": rally.name,
+        "location": rally.location,
+        "country": country_ref(rally.country),
+        **date_json(rally),
+        "date_timezone": rally.date_timezone,
+        "rating": rally.rating,
+        "review": rally.review,
+        "remark": rally.remark,
+        **_company_json(rally),
+    }
+
+
 def _newest_first(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(items, key=lambda item: (item["date_sort"], item["name"]), reverse=True)
 
@@ -1152,6 +1205,30 @@ def api_certifications() -> flask.Response:
     return flask.jsonify(_newest_first([certification_json(c) for c in flask.g.db.scalars(query)]))
 
 
+@bp.route("/api/trips", methods=["GET"])
+@auth.login_required
+def api_trips() -> flask.Response:
+    query = select(Trip).where(Trip.owner_id == flask.g.user.id).options(selectinload(Trip.countries), selectinload(Trip.people))
+    # the latest first; those of no known date after them
+    return flask.jsonify(_newest_first([trip_json(t) for t in flask.g.db.scalars(query)]))
+
+
+@bp.route("/api/lectures", methods=["GET"])
+@auth.login_required
+def api_lectures() -> flask.Response:
+    query = select(Lecture).where(Lecture.owner_id == flask.g.user.id).options(
+        selectinload(Lecture.country), selectinload(Lecture.lecturers), selectinload(Lecture.people),
+    )
+    return flask.jsonify(_newest_first([lecture_json(lecture) for lecture in flask.g.db.scalars(query)]))
+
+
+@bp.route("/api/rallies", methods=["GET"])
+@auth.login_required
+def api_rallies() -> flask.Response:
+    query = select(Rally).where(Rally.owner_id == flask.g.user.id).options(selectinload(Rally.country), selectinload(Rally.people))
+    return flask.jsonify(_newest_first([rally_json(r) for r in flask.g.db.scalars(query)]))
+
+
 @bp.route("/api/places", methods=["GET"])
 @auth.login_required
 def api_places() -> flask.Response:
@@ -1228,7 +1305,7 @@ def api_currencies() -> flask.Response:
 
 
 
-def _apply_dates(row: Concert | Visit | AudioCourse | AudioBookListen | EpisodeHeard | FilmWatch | YouTubeVideo | Certification, body: dict[str, Any]) -> None:
+def _apply_dates(row: Concert | Visit | AudioCourse | AudioBookListen | EpisodeHeard | FilmWatch | YouTubeVideo | Certification | Trip | Lecture | Rally, body: dict[str, Any]) -> None:
     """
     The date as typed: YYYY, YYYY-MM or YYYY-MM-DD, stored at that precision,
     or nothing. date_timezone is where it happened (an IANA name). A date
@@ -1481,6 +1558,46 @@ def _apply_certification(certification: Certification, body: dict[str, Any]) -> 
     certification.kind = kind
     certification.remark = text(body, "remark")
     _apply_dates(certification, body)
+
+
+def _apply_company(row: Trip | Lecture | Rally, body: dict[str, Any], what: str) -> None:
+    row.people = _owned_people(body)
+    row.alone = body.get("alone") is True
+    if row.alone and row.people:
+        raise ApiError(400, f"a {what} gone to alone has no one in With")
+
+
+def _apply_trip(trip: Trip, body: dict[str, Any]) -> None:
+    trip.name = text(body, "name", required=True)
+    trip.countries = owned_list(body, "countries", Country)
+    trip.days = opt_int(body, "days", 1, 10000)
+    trip.remark = text(body, "remark")
+    _apply_company(trip, body, "trip")
+    _apply_dates(trip, body)
+
+
+def _apply_lecture(lecture: Lecture, body: dict[str, Any]) -> None:
+    lecture.name = text(body, "name", required=True)
+    lecture.description = text(body, "description")
+    lecture.lecturers = owned_list(body, "lecturers", Person)
+    lecture.location = text(body, "location")
+    lecture.country = owned_ref(body, "country_id", Country, "country")
+    lecture.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
+    lecture.review = text(body, "review")
+    lecture.remark = text(body, "remark")
+    _apply_company(lecture, body, "lecture")
+    _apply_dates(lecture, body)
+
+
+def _apply_rally(rally: Rally, body: dict[str, Any]) -> None:
+    rally.name = text(body, "name", required=True)
+    rally.location = text(body, "location")
+    rally.country = owned_ref(body, "country_id", Country, "country")
+    rally.rating = opt_int(body, "rating", RATING_MIN, RATING_MAX)
+    rally.review = text(body, "review")
+    rally.remark = text(body, "remark")
+    _apply_company(rally, body, "rally")
+    _apply_dates(rally, body)
 
 
 def _opt_number(body: dict[str, Any], key: str, low: float, high: float) -> float | None:
@@ -2094,6 +2211,9 @@ VIEWS: dict[str, _View] = {
     "youtube-videos": _View(YouTubeVideo, _apply_youtube_video, youtube_video_json),
     "chess-games": _View(ChessGame, _apply_chess_game, chess_game_json),
     "certifications": _View(Certification, _apply_certification, certification_json),
+    "trips": _View(Trip, _apply_trip, trip_json),
+    "lectures": _View(Lecture, _apply_lecture, lecture_json),
+    "rallies": _View(Rally, _apply_rally, rally_json),
     "people": _View(Person, _apply_person, person_json),
     "organizations": _View(Organization, _apply_organization, organization_json),
     "places": _View(Place, _apply_place, place_json),
