@@ -456,6 +456,27 @@ button.with-icon .login-icon,
 	font-size: 1.1rem;
 }
 
+/* the About page's facts of the build: a label, then its value; a time in UTC, then in the reader's zone */
+.about-facts {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 0.5rem 1rem;
+	margin: 0 0 0.75rem;
+}
+
+.about-facts dt {
+	color: var(--muted);
+}
+
+.about-facts dd {
+	margin: 0;
+}
+
+.about-facts .muted {
+	color: var(--muted);
+	font-size: 0.9em;
+}
+
 /* the three ways in, one tile each: Google, GitHub, Email */
 .methods {
 	display: grid;

@@ -32,8 +32,20 @@ def test_static_assets(app: webtest.TestApp) -> None:
 def test_version(app: webtest.TestApp) -> None:
     response = app.get("/app/version")
     assert response.status_int == 200
-    for key in ("deploy_date", "git_describe", "revision"):
+    for key in ("deploy_date", "git_describe", "built_at", "started_at", "revision"):
         assert key in response.json
+    # when this server started, in UTC
+    assert response.json["started_at"].endswith("+00:00")
+
+
+def test_the_about_page_and_no_build_in_the_footers(app: webtest.TestApp) -> None:
+    # the build serving is on the About page alone: the other pages are the same for every build
+    about = app.get("/about")
+    assert 'data-page="about"' in about.text and 'id="about-facts"' in about.text
+    for path in ("/", "/privacy", "/verify", "/about"):
+        page = app.get(path).text
+        assert 'id="build"' not in page
+        assert 'href="/about"' in page
 
 
 def test_health(app: webtest.TestApp) -> None:
@@ -88,7 +100,7 @@ def test_library_requires_login(app: webtest.TestApp) -> None:
 
 def test_pages_are_asked_for_again(app: webtest.TestApp) -> None:
     # the scripts are no-cache: a page kept from before a deploy would run them against old markup
-    for path in ("/", "/privacy", "/verify"):
+    for path in ("/", "/privacy", "/verify", "/about"):
         assert app.get(path).headers["Cache-Control"] == "no-cache"
     sign_in(app)
     assert app.get("/library").headers["Cache-Control"] == "no-cache"

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<!-- the user's theme (Settings), as the last page they saw kept it, before anything is drawn: no flash of the other one -->
+		<script>
+			try {
+				const theme = localStorage.getItem("theme");
+				if (theme === "light" || theme === "dark") {
+					document.documentElement.dataset.theme = theme;
+				}
+			} catch {
+				// no storage here: the device's theme
+			}
+		</script>
+		<title>About · My World</title>
+		<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+		<link rel="stylesheet" href="/static/style.css">
+		<script type="module" src="/static/app.js"></script>
+	</head>
+	<body data-page="about" class="landing">
+		<div class="landing-grid">
+			<aside class="scene">
+				<img class="scene-art" src="/static/scene.svg" alt="">
+				<div class="scene-copy">
+					<p class="scene-kicker">Books · Concerts · Museums · Courses · YouTube</p>
+					<h2>Everything you read, watch, hear and play, in one place.</h2>
+				</div>
+			</aside>
+			<main class="panel">
+				<div class="card privacy">
+					<a class="brand brand-lg" href="/">
+						<img class="brand-mark" src="/static/favicon.svg" alt="">
+						My World
+					</a>
+					<h1>About</h1>
+					<p class="lede">
+						My World keeps everything you read, watch, hear, play and go to, and the people and places in it,
+						in one place. It is written by Mark Veltzer, and its source is on GitHub.
+					</p>
+					<h2>This build</h2>
+					<!-- filled by app.js (about.js) from /app/version: each time in UTC and in your own time zone -->
+					<dl id="about-facts" class="about-facts"></dl>
+					<h2>Contact</h2>
+					<p>Mark Veltzer &lt;<a href="mailto:mark.veltzer@gmail.com">mark.veltzer@gmail.com</a>&gt; &middot; <a href="https://veltzer.org">veltzer.org</a></p>
+				</div>
+				<footer class="footer">
+					<p>&copy; <span class="copyright-year">2026</span> Mark Veltzer &middot; <a href="https://veltzer.org">veltzer.org</a></p>
+					<p class="inscription">My World is a system written by Mark Veltzer &lt;<a href="mailto:mark.veltzer@gmail.com">mark.veltzer@gmail.com</a>&gt; &middot; <a href="/privacy">Privacy</a> &middot; <a href="/about">About</a></p>
+				</footer>
+			</main>
+		</div>
+	</body>
+</html>

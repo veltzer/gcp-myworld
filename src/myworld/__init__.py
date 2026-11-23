@@ -5,6 +5,7 @@ Runs on Cloud Run with Cloud SQL (PostgreSQL) in production and on sqlite
 locally.
 """
 
+import datetime
 import gzip
 import json
 import os
@@ -42,17 +43,29 @@ from myworld.models import make_engine
 # JSON responses longer than this are sent gzipped to clients that take it
 GZIP_MIN_BYTES = 4096
 
-# build_info.json is written next to src/, at the repo (and image) root.
-BUILD_INFO = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "build_info.json")
+# build_info.json is written next to src/, at the repo (and image) root; build_time beside it by the Dockerfile
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+BUILD_INFO = os.path.join(ROOT, "build_info.json")
+BUILD_TIME = os.path.join(ROOT, "build_time")
 
 
 def load_build_info() -> dict[str, str]:
-    """ Load the deploy stamp written by gcloud_deploy.sh; absent in dev. """
+    """
+    The deploy stamp written by gcloud_deploy.sh (deploy_date: when it was
+    deployed; git_describe: the commit), and built_at, when the image was
+    built (the Dockerfile writes it); absent in dev.
+    """
     try:
         with open(BUILD_INFO, encoding="UTF8") as fp:
-            return json.load(fp)
+            info = json.load(fp)
     except FileNotFoundError:
-        return {"deploy_date": "unknown", "git_describe": "dev"}
+        info = {"deploy_date": "unknown", "git_describe": "dev"}
+    try:
+        with open(BUILD_TIME, encoding="UTF8") as fp:
+            info["built_at"] = fp.read().strip()
+    except FileNotFoundError:
+        info["built_at"] = "unknown"
+    return info
 
 
 def secret_key() -> str:
@@ -84,6 +97,8 @@ def create_app(engine: Engine | None = None, mail: verification.Mailer | None = 
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.config["SESSION_COOKIE_SECURE"] = "K_SERVICE" in os.environ
     app.config["build_info"] = load_build_info()
+    # when this server started: a deploy starts new ones, and so does Cloud Run as it scales
+    app.config["started_at"] = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
     app.config["engine"] = engine or make_engine()
     app.config["MAILER"] = mail or mailer()
     app.config["GZIP_MIN_BYTES"] = GZIP_MIN_BYTES

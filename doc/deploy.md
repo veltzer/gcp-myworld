@@ -17,6 +17,17 @@ needs (Cloud SQL attachment, environment, secrets, scaling, the service
 account) lives in `.gcp.conf` as `gcp_run_args`, so a redeploy always
 converges the service to what that file says.
 
+What is serving is on the About page (`/about`, linked from every page's
+footer), from `GET /app/version`: the commit (`git_describe`) and when it
+was deployed (`deploy_date`), both from the stamp `gcloud_deploy.sh` writes
+(`build_info.json`); when the image was built (`built_at`, which the
+`Dockerfile` writes into `build_time` as Cloud Build builds it); when the
+server answering started (`started_at`: a deploy starts new ones, and so
+does Cloud Run as it scales); and the revision (`K_REVISION`). The page
+says each time in UTC and in the reader's own time zone. No other page
+says anything of the build, so a page is the same whatever build serves it,
+and every page is served `no-cache`.
+
 ## One-time project setup
 
 1. Create the resources: `gcloud_project_setup.sh`. Driven by `.gcp.conf`

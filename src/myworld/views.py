@@ -87,11 +87,19 @@ def privacy() -> werkzeug.Response:
     return _page("privacy.html")
 
 
+@bp.route("/about", methods=["GET"])
+def about() -> werkzeug.Response:
+    """ What My World is, who wrote it, and the build serving: the commit, when it was built and deployed (app/version). """
+    return _page("about.html")
+
+
 @bp.route("/app/version", methods=["GET"])
 def version() -> flask.Response:
+    """ The build serving: deploy_date and git_describe (the deploy stamp), built_at, started_at and revision. """
     info = dict(flask.current_app.config["build_info"])
     # Cloud Run injects the serving revision name at runtime.
     info["revision"] = os.environ.get("K_REVISION", "local")
+    info["started_at"] = flask.current_app.config["started_at"]
     return flask.jsonify(info)
 
 

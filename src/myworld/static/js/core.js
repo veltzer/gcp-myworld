@@ -1,7 +1,5 @@
 // What every page uses: the API, the error line and the footer.
 
-import { el } from "./worlds.js";
-
 export const $ = (id) => document.getElementById(id);
 
 // The user's theme (Settings): "light" or "dark" on <html>, nothing for "system" (the
@@ -73,33 +71,10 @@ export function showError(message) {
 	box.hidden = !message;
 }
 
-// The footer's provenance, in the spirit of veltzer.github.io: the year and
-// the commit come from the deploy stamp, so the same deploy always says the same.
-export async function showBuild() {
-	try {
-		const info = await api("/app/version");
-		const deployed = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(info.deploy_date || "") ? info.deploy_date : null;
-		for (const year of document.querySelectorAll(".copyright-year")) {
-			year.textContent = (deployed || new Date().toISOString()).slice(0, 4);
-		}
-		const build = $("build");
-		const commit = (info.git_describe || "").match(/(?:-g)?([0-9a-f]{7,40})(?:-dirty)?$/);
-		build.append("Built");
-		if (commit) {
-			const repo = el("a", null, "veltzer/gcp-myworld");
-			repo.href = "https://github.com/veltzer/gcp-myworld";
-			const link = el("a");
-			link.href = `https://github.com/veltzer/gcp-myworld/commit/${commit[1]}`;
-			link.appendChild(el("code", null, commit[1]));
-			build.append(" from ", repo, " commit ", link);
-		}
-		if (deployed) {
-			const time = el("time", null, `${deployed.slice(0, 16).replace("T", " ")} UTC`);
-			time.dateTime = deployed;
-			build.append(" on ", time);
-		}
-		build.append(info.revision && info.revision !== "local" ? `, serving as ${info.revision}` : " (local)");
-	} catch (e) {
-		// cosmetic only
+// The footer's copyright year: this year, as the reader's clock says it. (The build serving is on the
+// About page, not on every page: a page the same for every build is one the browser may keep.)
+export function showYear() {
+	for (const year of document.querySelectorAll(".copyright-year")) {
+		year.textContent = String(new Date().getFullYear());
 	}
 }
