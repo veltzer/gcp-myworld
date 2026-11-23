@@ -44,6 +44,17 @@ HTML_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "html")
 
 # ─── pages ───────────────────────────────────────────────────────────────────
 
+def _page(name: str) -> werkzeug.Response:
+    """
+    A page of html/, which the browser asks for again every time: its
+    scripts are no-cache, so a page kept from before a deploy would run the
+    new scripts against the old markup (a form they look for not there).
+    """
+    response = flask.send_from_directory(HTML_DIR, name)
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @bp.route("/", methods=["GET"])
 def index() -> werkzeug.Response:
     if auth.current_user() is not None:
@@ -54,26 +65,26 @@ def index() -> werkzeug.Response:
     origin = f"{scheme}://{flask.request.host}"
     with open(os.path.join(HTML_DIR, "index.html"), encoding="utf-8") as f:
         page = f.read().replace("__ORIGIN__", origin)
-    return flask.Response(page, mimetype="text/html")
+    return flask.Response(page, mimetype="text/html", headers={"Cache-Control": "no-cache"})
 
 
 @bp.route("/library", methods=["GET"])
 def library() -> werkzeug.Response:
     if auth.current_user() is None:
         return flask.redirect(flask.url_for("views.index"))
-    return flask.send_from_directory(HTML_DIR, "library.html")
+    return _page("library.html")
 
 
 @bp.route("/verify", methods=["GET"])
 def verify() -> werkzeug.Response:
     """ Where the mailed link leads: choose the password of an email login (the token is read by app.js). """
-    return flask.send_from_directory(HTML_DIR, "verify.html")
+    return _page("verify.html")
 
 
 @bp.route("/privacy", methods=["GET"])
 def privacy() -> werkzeug.Response:
     """ The privacy policy: what is kept and what is done with it (the OAuth consent screen links to it). """
-    return flask.send_from_directory(HTML_DIR, "privacy.html")
+    return _page("privacy.html")
 
 
 @bp.route("/app/version", methods=["GET"])

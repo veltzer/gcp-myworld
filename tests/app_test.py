@@ -86,6 +86,14 @@ def test_library_requires_login(app: webtest.TestApp) -> None:
     app.post_json("/api/library-entries", {"kind": "book", "title": "x"}, status=401)
 
 
+def test_pages_are_asked_for_again(app: webtest.TestApp) -> None:
+    # the scripts are no-cache: a page kept from before a deploy would run them against old markup
+    for path in ("/", "/privacy", "/verify"):
+        assert app.get(path).headers["Cache-Control"] == "no-cache"
+    sign_in(app)
+    assert app.get("/library").headers["Cache-Control"] == "no-cache"
+
+
 def test_login_rejects_csrf_mismatch(app: webtest.TestApp) -> None:
     app.set_cookie("g_csrf_token", "one")
     app.post("/auth/login", {"credential": "x", "g_csrf_token": "two"}, status=400)
