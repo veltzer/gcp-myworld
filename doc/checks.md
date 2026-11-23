@@ -205,6 +205,11 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `course-providers`: every course names the organization it was taken
   through.
 
+### Loans and websites (`loans`, `websites`)
+
+- `loan-borrowers`: every loan names the person it was lent to.
+- `website-topics`: every website has a topic, which its page filters by.
+
 ### Trips, lectures and rallies (`trips`, `lectures`, `rallies`)
 
 - `trip-company`, `lecture-company`, `rally-company`: every trip, lecture
@@ -323,7 +328,8 @@ By dataset: the key is the page's name in the app (`#book`) and what
 - `people-duplicates`: no account has two people of the same name.
 - `people-used`: every person is linked to something: a concert, a museum
   visit, a trip, a lecture or a rally (along, or giving the lecture), a
-  book, a course (an audio course, or another course they taught), a group, an organization or another person.
+  book, a course (an audio course, or another course they taught),
+  something they borrowed, a group, an organization or another person.
 - `people-credits`: every photo of a person that has a credit says its
   source and its license (its author only when one is known).
 

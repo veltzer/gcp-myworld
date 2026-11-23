@@ -264,6 +264,23 @@ function courseCard(item) {
 	return card;
 }
 
+function loanCard(item) {
+	const { card, list } = cardShell(item, item.person ? `to ${item.person.name}` : "");
+	linksDetail(list, "To", "people", item.person ? [item.person] : []);
+	detail(list, "Lent", formatDate(item));
+	detail(list, "Returned", item.returned ? "Yes" : "");
+	detail(list, "Remark", item.remark);
+	return card;
+}
+
+function websiteCard(item) {
+	const { card, list } = cardShell(item, item.topic);
+	detail(list, "Address", item.url);
+	detail(list, "Remark", item.remark);
+	websiteButton(card, item.url);
+	return card;
+}
+
 function tripCard(item) {
 	const { card, list } = cardShell(item, item.countries.map((c) => c.name).join(", "));
 	detail(list, "Began", formatDate(item));
@@ -640,6 +657,8 @@ export const CARDS = {
 	chess: chessCard,
 	certifications: certificationCard,
 	courses: courseCard,
+	loans: loanCard,
+	websites: websiteCard,
 	trips: tripCard,
 	lectures: lectureCard,
 	rallies: rallyCard,

@@ -27,7 +27,7 @@ from myworld.logos import logo_problems
 # a module registers its checks as it is imported; a page lists its checks in this order
 for _module in (
     "organizations", "people", "museums", "audio_courses", "audio_books", "podcasts", "films", "library", "concerts", "enumerations",
-    "groups", "places", "cities", "countries", "currencies", "shared_names", "locales", "youtube", "chess", "certifications", "outings", "common",
+    "groups", "places", "cities", "countries", "currencies", "shared_names", "locales", "youtube", "chess", "certifications", "outings", "loans", "common",
 ):
     importlib.import_module(f"myworld.checks.{_module}")
 

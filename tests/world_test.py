@@ -113,6 +113,25 @@ items:
     remark: "the classroom course"
 """
 
+LOANS = """
+items:
+  - to: "Bob Buddy"
+    what: "The Hobbit"
+  - to: "Alice Friend"
+    what: "Moby Dick"
+    date_y: "2005"
+    returned: true
+    remark: "came back with a coffee stain"
+"""
+
+WEBSITES = """
+items:
+  - url: "http://www.ted.com"
+    name: "TED"
+    topic: "Free study"
+  - url: "http://oyc.yale.edu"
+"""
+
 TRIPS = """
 items:
   - where: "Lisbon and Athens"
@@ -455,7 +474,7 @@ def write_source(root: Path, concerts: str = CONCERTS) -> Path:
     (root / "data" / "yaml").mkdir(parents=True)
     (root / "static" / "images").mkdir(parents=True)
     (root / "data" / "logos").mkdir(parents=True)
-    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("audible", AUDIBLE), ("audio_books", AUDIO_BOOKS), ("podcasts", PODCASTS), ("video_youtube", YOUTUBE), ("books_read", BOOKS), ("text_books", TEXT_BOOKS), ("certifications", CERTIFICATIONS), ("courses", COURSES), ("trips", TRIPS), ("lectures", LECTURES), ("political_rallies", RALLIES)):
+    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("audible", AUDIBLE), ("audio_books", AUDIO_BOOKS), ("podcasts", PODCASTS), ("video_youtube", YOUTUBE), ("books_read", BOOKS), ("text_books", TEXT_BOOKS), ("certifications", CERTIFICATIONS), ("courses", COURSES), ("books_loans", LOANS), ("study_sites", WEBSITES), ("trips", TRIPS), ("lectures", LECTURES), ("political_rallies", RALLIES)):
         (root / "data" / "yaml" / f"{name}.yaml").write_text(text, encoding="UTF8")
     (root / "data" / "logos" / "acme.svg").write_bytes(LOGO)
     (root / "static" / "data").mkdir(parents=True)
@@ -488,7 +507,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
     assert counts == {
         "people": 8, "organizations": 3, "organization types": 9, "relation types": 6, "person types": 3, "people with a profession": 5, "people related to the user": 2,
         "concerts": 3, "places": 1, "museums": 2, "museum visits": 3, "audio courses": 2, "audio books": 4, "podcasts": 2, "podcast episodes": 3, "films": 0, "film watches": 0, "certifications": 2,
-        "courses": 2, "trips": 2, "lectures": 1, "rallies": 1,
+        "courses": 2, "loans": 2, "websites": 2, "trips": 2, "lectures": 1, "rallies": 1,
         "YouTube videos": 4, "devices": 4, "books": 3, "images": 9}
     return app
 
@@ -1191,6 +1210,30 @@ def test_certifications(imported: webtest.TestApp) -> None:
     imported.delete(f"/api/organizations/{school_id}")
     assert {c["organization"] is None for c in imported.get("/api/certifications").json} == {True}
     assert imported.get("/api/stats").json["certifications"] == 2
+
+
+def test_loans_and_websites(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    loans = imported.get("/api/loans").json
+    # the latest lent first, those of no known date after them
+    assert [(loan["name"], loan["person"]["name"], loan["returned"]) for loan in loans] == [("Moby Dick", "Alice Friend", True), ("The Hobbit", "Bob Buddy", False)]
+    assert (loans[0]["date"], loans[0]["remark"]) == ("2005", "came back with a coffee stain")
+    hobbit = loans[1]
+    edited = imported.put_json(f"/api/loans/{hobbit['id']}", {"name": "The Hobbit", "person_id": "", "returned": True, "date": "2010-03"}).json
+    assert (edited["person"], edited["returned"], edited["date_precision"]) == (None, True, "month")
+    websites = imported.get("/api/websites").json
+    # by name; one with no name is named by its address's host
+    assert [(w["name"], w["url"], w["topic"]) for w in websites] == [("oyc.yale.edu", "http://oyc.yale.edu", ""), ("TED", "http://www.ted.com", "Free study")]
+    imported.post_json("/api/websites", {"name": "Again", "url": "http://www.ted.com"}, status=409)
+    imported.post_json("/api/websites", {"name": "Not one", "url": "ted.com"}, status=400)
+    stats = imported.get("/api/stats").json
+    assert (stats["loans"], stats["websites"]) == (2, 2)
+    # it runs again and adds only what is missing (the Hobbit is lent to no one known now: lent to Bob, it is missing);
+    # a borrower the account does not have is added
+    source = write_source(tmp_path / "again")
+    (source / "data" / "yaml" / "books_loans.yaml").write_text(LOANS + '  - to: "Ofra Rozen"\n    what: "Chess"\n', encoding="UTF8")
+    with Session(engine) as session:
+        assert import_world.import_loans(session, owner(session), source) == {"loans added": 2, "people added": 1}
+        assert import_world.import_websites(session, owner(session), source) == {"websites added": 0}
 
 
 def test_courses(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:

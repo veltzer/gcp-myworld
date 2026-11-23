@@ -148,6 +148,15 @@ const SORTS = {
 		["name", "Name", (c) => c.name, "asc"],
 		["provider", "Through", (c) => c.provider?.name, "asc"],
 	],
+	loans: [
+		["date", "Lent", (l) => l.date_sort, "desc"],
+		["name", "What", (l) => l.name, "asc"],
+		["person", "To", (l) => l.person?.name, "asc"],
+	],
+	websites: [
+		["name", "Name", (w) => w.name, "asc"],
+		["topic", "Topic", (w) => w.topic, "asc"],
+	],
 	trips: [
 		["date", "Began", (t) => t.date_sort, "desc"],
 		["name", "Where to", (t) => t.name, "asc"],

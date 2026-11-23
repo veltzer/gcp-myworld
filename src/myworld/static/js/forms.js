@@ -339,6 +339,15 @@ const WORLD_BODIES = {
 			lecturers: chosen(form, "lecturers"),
 		};
 	},
+	loans: async (form) => {
+		const value = (name) => form.elements[name].value;
+		return {
+			...Object.fromEntries(["name", "person_id", "date", "remark"].map((name) => [name, value(name)])),
+			date_timezone: state.editing?.date_timezone || "",
+			returned: form.elements.returned.checked,
+		};
+	},
+	websites: async (form) => Object.fromEntries(["name", "url", "topic", "remark"].map((name) => [name, form.elements[name].value])),
 	trips: async (form) => {
 		const value = (name) => form.elements[name].value;
 		return {

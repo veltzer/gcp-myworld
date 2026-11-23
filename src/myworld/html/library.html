@@ -861,6 +861,45 @@
 					<button type="submit">Add</button>
 				</div>
 			</form>
+			<form id="loan-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="What you lent: a book's title, or what it is" class="wide">What <input name="name" required placeholder="e.g. The Hobbit"></label>
+				</div>
+				<div class="row">
+					<label title="Who you lent it to, one of People: add a new one on the People page" class="wide">To <select name="person_id" data-picker="people" data-placeholder="Type a name from People" title="Who you lent it to, one of People: add a new one on the People page"></select></label>
+					<label title="When you lent it: how much of the date is known">Lent <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
+				</div>
+				<div class="row">
+					<label title="Tick when you have it back" class="check"><input name="returned" type="checkbox"> Returned</label>
+				</div>
+				<div class="row">
+					<label title="Anything worth keeping about it" class="wide">Remark <input name="remark"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
+			<form id="website-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="The website's name" class="wide">Name <input name="name" required></label>
+				</div>
+				<div class="row">
+					<label title="Its address, starting with http:// or https://" class="wide">Address <input name="url" type="url" required placeholder="https://"></label>
+				</div>
+				<div class="row">
+					<label title="What it is about, for the filter: Free study, ..." class="wide">Topic <input name="topic" placeholder="e.g. Free study"></label>
+				</div>
+				<div class="row">
+					<label title="Anything worth keeping about it" class="wide">Remark <input name="remark"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
 			<form id="trip-form" class="dialog-form" hidden>
 				<div class="row">
 					<label title="Where you went: a city, a region, a trail" class="wide">Where to <input name="name" required placeholder="e.g. Barcelona, Paris, London"></label>

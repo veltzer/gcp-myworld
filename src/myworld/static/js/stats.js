@@ -115,6 +115,8 @@ function renderStats(stats) {
 		statTile("Trips", stats.trips, "", "trips"),
 		statTile("Lectures", stats.lectures, "", "lectures"),
 		statTile("Rallies", stats.rallies, "", "rallies"),
+		statTile("Loans", stats.loans, "", "loans"),
+		statTile("Websites", stats.websites, "", "websites"),
 		statTile("Places", stats.places, "", "places"),
 		statTile("Podcasts", stats.podcasts, `${stats.podcast_episodes.toLocaleString()} episodes`, "podcasts"),
 		statTile("Audio books", stats.audio_books, `${stats.audio_book_versions.toLocaleString()} versions`, "audio-books"),

@@ -41,6 +41,7 @@ from myworld.models import (
     Group,
     Image,
     Lecture,
+    Loan,
     Login,
     Organization,
     Person,
@@ -60,6 +61,7 @@ from myworld.models import (
     UserWork,
     Visit,
     VisitType,
+    Website,
     Work,
     WorkTitle,
     YouTubeVideo,
@@ -985,3 +987,22 @@ def test_course_checks(engine: Engine) -> None:
         assert [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS["course-providers"].run(session).problems] == [("Through no one", "has no provider")]
         # teaching a course is being linked to something
         assert "Gary" not in [p.subject for p in checks.CHECKS["people-used"].run(session).problems]
+
+
+def test_loan_and_website_checks(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        bob = Person(owner_id=alice.id, first_name="Bob")
+        session.add_all([
+            Loan(owner_id=alice.id, name="The Hobbit", person=bob),
+            Loan(owner_id=alice.id, name="Chess"),
+            Website(owner_id=alice.id, name="TED", url="https://www.ted.com", topic="Free study"),
+            Website(owner_id=alice.id, name="Yale", url="https://oyc.yale.edu"),
+        ])
+        session.commit()
+        assert [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS["loan-borrowers"].run(session).problems] == [("Chess", "is lent to no one known")]
+        assert [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS["website-topics"].run(session).problems] == [("Yale", "has no topic")]
+        # borrowing something is being linked to something
+        assert "Bob" not in [p.subject for p in checks.CHECKS["people-used"].run(session).problems]

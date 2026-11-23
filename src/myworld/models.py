@@ -799,6 +799,8 @@ class Person(Base):
     lectures: Mapped[list[Lecture]] = relationship(secondary=lecture_companions, back_populates="people")
     lectures_given: Mapped[list[Lecture]] = relationship(secondary=lecture_lecturers, back_populates="lecturers")
     rallies: Mapped[list[Rally]] = relationship(secondary=rally_companions, back_populates="people")
+    # what the user lent them
+    loans: Mapped[list[Loan]] = relationship(back_populates="person")
     # the courses they taught the user (other than audio courses)
     courses_given: Mapped[list[Course]] = relationship(secondary=course_lecturers, back_populates="lecturers")
     # the films watched with them, and those they recommended
@@ -1301,6 +1303,43 @@ class Course(_Dated, Base):
     school: Mapped[Organization | None] = relationship(foreign_keys=[school_id])
     remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
     lecturers: Mapped[list[Person]] = relationship(secondary=course_lecturers, back_populates="courses_given")
+
+
+class Loan(_Dated, Base):
+    """
+    Something the user lent (a book, mostly): what it is ("The Hobbit"),
+    to whom (one of the user's people; a person deleted leaves it lent to no
+    one known), when (_Dated), whether it came back, and a remark.
+    Imported from veltzer.github.io's books_loans.yaml
+    (scripts/import_world.py --loans).
+    """
+    __tablename__ = "loans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    person_id: Mapped[int | None] = mapped_column(ForeignKey("people.id", ondelete="SET NULL", name="fk_loans_person_id"), nullable=True, index=True)
+    person: Mapped[Person | None] = relationship(back_populates="loans")
+    returned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class Website(Base):
+    """
+    A website the user keeps: its name, its address, what it is about
+    (topic: "Free study", ...) and a remark. A website is in an account once
+    by its address. Imported from veltzer.github.io's study_sites.yaml
+    (scripts/import_world.py --websites).
+    """
+    __tablename__ = "websites"
+    __table_args__ = (UniqueConstraint("owner_id", "url", name="uq_website_url"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    topic: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
 class PlaceKind(Base):
@@ -2077,7 +2116,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0037"
+SCHEMA_REVISION = "0038"
 
 
 def prepare_schema(engine: Engine) -> None:

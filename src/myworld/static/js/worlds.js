@@ -30,6 +30,9 @@ export const WORLDS = {
 	certifications: ["Certifications", "/api/certifications", "certification", "Certifications"],
 	// the courses the user took, other than audio courses
 	courses: ["Courses", "/api/courses", "course", "Courses"],
+	// what the user lent, and to whom; the websites they keep
+	loans: ["Loans", "/api/loans", "loan", "Loans"],
+	websites: ["Websites", "/api/websites", "website", "Websites"],
 	// the trips the user took, the lectures and the rallies they went to
 	trips: ["Trips", "/api/trips", "trip", "Trips"],
 	lectures: ["Lectures", "/api/lectures", "lecture", "Lectures"],

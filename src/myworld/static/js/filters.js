@@ -130,6 +130,17 @@ const VALUE_FILTERS = {
 			["lecturer", "Lecturer", (c) => c.lecturers.map((p) => p.name)],
 		],
 	},
+	loans: {
+		all: "All loans",
+		groups: [
+			["person", "To", (l) => named(l.person)],
+			["returned", "Returned", (l) => [l.returned ? "Returned" : "Not returned"]],
+		],
+	},
+	websites: {
+		all: "All websites",
+		groups: [["topic", "Topic", (w) => (w.topic ? [w.topic] : [])]],
+	},
 	trips: {
 		all: "All trips",
 		groups: [
