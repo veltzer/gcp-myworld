@@ -69,6 +69,8 @@ READS: dict[str, Callable[[Mapping[str, Any]], str | None]] = {
     "world.api_lectures": lambda _args: "lectures",
     "world.api_rallies": lambda _args: "rallies",
     "world.api_people": lambda _args: "people",
+    # what ties a person to the user: only the groups of the data sets the view shows (flask.g.view_datasets)
+    "world.api_person_connections": lambda _args: "people",
     "world.api_groups": lambda _args: "groups",
     "world.api_organizations": lambda _args: "organizations",
     # the types of people and organizations, for their type filter
@@ -238,5 +240,7 @@ def api_visit_data(username: str, name: str, what: str) -> Any:
     # past login_required: the owner is who it is read as
     flask.g.user = view.owner
     flask.g.image_address = _image_address(view)
+    # what a route that reads more than its own data set may show (a person's connections)
+    flask.g.view_datasets = set(view.datasets)
     return getattr(function, "__wrapped__", function)(**args)
 

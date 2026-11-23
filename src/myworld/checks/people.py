@@ -5,7 +5,7 @@ Checks of the people.
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from myworld import languages, names
+from myworld import connections, languages, names
 from myworld.checks.core import (
     Result,
     check,
@@ -17,23 +17,11 @@ from myworld.checks.core import (
     twice,
 )
 from myworld.models import (
-    Loan,
     Person,
     PersonPhoto,
     PersonRelation,
-    audio_course_lecturers,
-    concert_companions,
-    concert_performers,
-    course_lecturers,
-    group_members,
-    lecture_companions,
-    lecture_lecturers,
-    library_entry_authors,
     person_organizations,
     person_type_links,
-    rally_companions,
-    trip_companions,
-    visit_companions,
 )
 
 
@@ -159,15 +147,13 @@ def check_people_duplicates(session: Session) -> Result:
 @check("people-used", "Every person is linked to something", "people", "people")
 def check_people_used(session: Session) -> Result:
     """
-    Every person, of every account, is someone to something: went along to
-    a concert, a visit (a museum, ...), a trip, a lecture or a rally, performed, wrote a book, lectured a course, taught a course or gave a lecture, borrowed something, is in
-    a group or at an organization, or is related to someone. The user's own
-    row is theirs whatever it is linked to.
+    Every person, of every account, is someone to something: named by a row
+    of the account's data (a concert they came to or played at, a museum
+    visit, a trip, a lecture they came to or gave, a rally, a film watched
+    together or recommended, a course they taught, a book they wrote, a
+    group, a loan: connections.PERSON_LINKS), at an organization, or related
+    to someone. The user's own row is theirs whatever it is linked to.
     """
-    used = ids(
-        session, concert_companions.c.person_id, concert_performers.c.person_id, visit_companions.c.person_id, library_entry_authors.c.person_id,
-        audio_course_lecturers.c.person_id, trip_companions.c.person_id, course_lecturers.c.person_id, lecture_companions.c.person_id, lecture_lecturers.c.person_id,
-        rally_companions.c.person_id, Loan.person_id, group_members.c.person_id, person_organizations.c.person_id, PersonRelation.person_id, PersonRelation.other_id,
-    )
+    used = ids(session, *(link.column for link in connections.PERSON_LINKS), *connections.LINKED_ELSEWHERE_COLUMNS)
     people = rows(session, Person)
     return Result(checked=len(people), problems=[problem(person, "is linked to nothing") for person in people if person.id not in used and not person.is_self])

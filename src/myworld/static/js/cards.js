@@ -2,7 +2,6 @@
 
 import { boardImage } from "./board.js";
 import { $, api, pageHref, showError } from "./core.js";
-import { worldList } from "./dialog.js";
 import { editable, state } from "./library.js";
 import { placeButton } from "./map.js";
 import { localeName } from "./names.js";
@@ -688,34 +687,24 @@ export const CARDS = {
 // Material "link"
 const LINK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>';
 
-// Everything that ties a person to the user, grouped, each entry a link to its card.
+// Everything that ties a person to the user, grouped, each entry a link to its card: the rows that name
+// them, as the server finds them (connections.PERSON_LINKS: every table that points at a person; in a
+// view, only the pages it shows), then how they are related to other people and to organizations.
 async function showConnections(person) {
-	const [concerts, museums, courses, books, bands] = await Promise.all([
-		// in a view, only what it shows
-		...["concerts", "museums", "audio-courses"].map((view) => (inView(view) ? worldList(view) : [])),
-		inView("book") ? api("/api/library-entries?kind=book") : [], inView("groups") ? worldList("groups") : [],
-	]);
-	const has = (list) => list.some((p) => p.id === person.id);
-	// a book is known by its work: #book/<work id>
-	const wrote = books.filter((b) => has(b.authors)).map((b) => ({ id: b.work_id, name: b.title }));
+	const named = await api(`/api/people/${person.id}/connections`);
 	const groups = [
-		["Concerts you went to together", "concerts", concerts.filter((c) => has(c.people))],
-		["Concerts they performed at", "concerts", concerts.filter((c) => has(c.performers))],
-		["Museums you visited together", "museums", museums.filter((m) => has(m.people))],
-		["Audio courses they taught", "audio-courses", courses.filter((c) => has(c.lecturers))],
-		["Books they wrote", "book", wrote],
-		["Groups they are in", "groups", bands.filter((g) => has(g.members))],
+		...named.map((group) => [group.label, group.items]),
 		// how they are related to other people, both ways; each links to the other person
-		["Related people", "people", [...person.relations, ...person.related].map((r) => ({ id: r.person.id, name: r.name }))],
-		["Organizations", "organizations", person.organization_links.map((link) => ({ id: link.organization.id, name: link.name }))],
-	].filter(([, view, items]) => items.length > 0 && inView(view));
+		["Related people", [...person.relations, ...person.related].map((r) => ({ id: r.person.id, name: r.name, view: "people" }))],
+		["Organizations", person.organization_links.map((link) => ({ id: link.organization.id, name: link.name, view: "organizations" }))],
+	].map(([label, items]) => [label, items.filter((item) => inView(item.view))]).filter(([, items]) => items.length > 0);
 	$("connections-title").textContent = person.name;
 	const body = $("connections-body");
 	body.replaceChildren();
 	if (groups.length === 0) {
-		body.appendChild(el("p", "empty", "No concerts, museums, courses, books, groups or organizations link you yet."));
+		body.appendChild(el("p", "empty", "Nothing links you yet: no concert, trip, lecture, book, group, organization or anything else."));
 	}
-	for (const [label, view, items] of groups) {
+	for (const [label, items] of groups) {
 		body.appendChild(el("h3", null, `${label} (${items.length})`));
 		const ul = el("ul");
 		for (const item of items) {
@@ -725,11 +714,11 @@ async function showConnections(person) {
 				li.appendChild(el("span", "when", when));
 			}
 			const a = el("a", "person-link", item.name);
-			a.href = pageHref(`${view}/${item.id}`);
+			a.href = pageHref(`${item.view}/${item.id}`);
 			a.onclick = (event) => {
 				event.preventDefault();
 				$("connections-dialog").close();
-				showRow(view, item.id).catch((e) => showError(e.message));
+				showRow(item.view, item.id).catch((e) => showError(e.message));
 			};
 			li.appendChild(a);
 			ul.appendChild(li);

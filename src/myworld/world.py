@@ -21,7 +21,7 @@ import flask
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from myworld import auth, languages, names, pgn
+from myworld import auth, connections, languages, names, pgn
 from myworld.api import (
     ApiError,
     coordinates,
@@ -1195,6 +1195,20 @@ def api_museum_delete(place_id: int) -> flask.Response:
         flask.g.db.delete(visit)
     flask.g.db.commit()
     return flask.Response(status=204)
+
+
+@bp.route("/api/people/<int:person_id>/connections", methods=["GET"])
+@auth.login_required
+def api_person_connections(person_id: int) -> flask.Response:
+    """
+    Every group of the user's rows that names the person (connections.PERSON_LINKS): the
+    dialog behind the link on their card. In a shared view, only the pages the view shows.
+    """
+    person = owned(Person, person_id)
+    shown = flask.g.get("view_datasets")
+    return flask.jsonify(connections.connections(
+        flask.g.db, person, lambda view: shown is None or view in shown, lambda row: date_json(row) if hasattr(row, "date_utcz") else {},
+    ))
 
 
 @bp.route("/api/people", methods=["GET"])
