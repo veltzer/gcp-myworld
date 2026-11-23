@@ -5,7 +5,7 @@ Runs on Cloud Run with Cloud SQL (PostgreSQL) in production and on sqlite
 locally.
 """
 
-import datetime
+import datetime as dt
 import gzip
 import json
 import os
@@ -97,7 +97,7 @@ def create_app(engine: Engine | None = None, mail: verification.Mailer | None = 
     app.config["SESSION_COOKIE_SECURE"] = "K_SERVICE" in os.environ
     app.config["build_info"] = load_build_info()
     # when this server started: a deploy starts new ones, and so does Cloud Run as it scales
-    app.config["started_at"] = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
+    app.config["started_at"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     app.config["engine"] = engine or make_engine()
     app.config["MAILER"] = mail or mailer()
     app.config["GZIP_MIN_BYTES"] = GZIP_MIN_BYTES
@@ -128,6 +128,13 @@ def create_app(engine: Engine | None = None, mail: verification.Mailer | None = 
         db: Session | None = flask.g.pop("db", None)
         if db is not None:
             db.close()
+
+    @app.after_request
+    def no_content_type_without_content(response: flask.Response) -> flask.Response:
+        # a 204 has no body, so it has no type for it either (HTTP says so; Flask would say text/html)
+        if response.status_code == 204:
+            response.headers.pop("Content-Type", None)
+        return response
 
     @app.after_request
     def compress(response: flask.Response) -> flask.Response:

@@ -6,7 +6,7 @@ requests, importing the library, and that a second run adds nothing.
 """
 
 import base64
-import datetime
+import datetime as dt
 import urllib.parse
 from typing import Any
 
@@ -71,7 +71,8 @@ class FakeAudible:
                 "extensions": {"customer_info": {"name": "Alice"}, "device_info": {"device_name": "Alice's My World"}},
             }}}
         if url == "https://api.amazon.com/auth/token":
-            assert data is not None and data["source_token"] == REFRESH
+            assert data is not None
+            assert data["source_token"] == REFRESH
             return {"access_token": "access-of-alice", "expires_in": 3600}
         if url == "https://api.amazon.com/auth/deregister":
             assert headers == {"Authorization": "Bearer access-of-alice"}
@@ -83,7 +84,8 @@ class FakeAudible:
         parts = urllib.parse.urlsplit(url)
         assert (parts.scheme, parts.netloc, parts.path) == ("https", "api.audible.com", "/1.0/library")
         # signed as the device: method, path and query, moment, body, ADP token
-        assert headers["x-adp-token"] == ADP_TOKEN and headers["x-adp-alg"] == "SHA256withRSA:1.0"
+        assert headers["x-adp-token"] == ADP_TOKEN
+        assert headers["x-adp-alg"] == "SHA256withRSA:1.0"
         signature, moment = headers["x-adp-signature"].split(":", 1)
         signed = f"GET\n{parts.path}?{parts.query}\n{moment}\n\n{ADP_TOKEN}".encode()
         KEY.public_key().verify(base64.b64decode(signature), signed, padding.PKCS1v15(), hashes.SHA256())
@@ -161,14 +163,17 @@ def test_connecting_registers_a_device_and_keeps_its_tokens_sealed(app: webtest.
     assert (status["connected"], status["name"], status["store"]) == (True, "Alice", "audible.com")
     # the code was traded with the verifier of the same sign-in, for the device begun there
     sent = fake.registered[0]
-    assert sent["auth_data"]["authorization_code"] == "good-code" and sent["auth_data"]["code_verifier"]
+    assert sent["auth_data"]["authorization_code"] == "good-code"
+    assert sent["auth_data"]["code_verifier"]
     assert sent["registration_data"]["device_type"] == audible.DEVICE_TYPE
     assert sent["auth_data"]["client_id"] == audible.client_id(sent["registration_data"]["device_serial"])
     with Session(engine) as session:
         kept = session.scalars(select(AudibleConnection)).one()
         # nothing of the tokens is in the database as it is
         for value in (kept.adp_token, kept.private_key, kept.refresh_token):
-            assert ADP_TOKEN not in value and "PRIVATE KEY" not in value and REFRESH not in value
+            assert ADP_TOKEN not in value
+            assert "PRIVATE KEY" not in value
+            assert REFRESH not in value
     # one sign-in, one finish
     app.post_json("/audible/connect/finish", {"address": "https://www.amazon.com/ap/maplanding?openid.oa2.authorization_code=good-code"}, status=400)
 
@@ -268,7 +273,7 @@ def test_connecting_again_deregisters_the_device_before(app: webtest.TestApp, en
 
 
 def test_a_request_is_signed_with_the_devices_key() -> None:
-    moment = datetime.datetime(2026, 11, 21, 10, 0, 0, tzinfo=datetime.UTC)
+    moment = dt.datetime(2026, 11, 21, 10, 0, 0, tzinfo=dt.UTC)
     headers = audible.signed_headers("GET", "/1.0/library?page=1", "", ADP_TOKEN, PRIVATE_KEY, moment)
     signature, said = headers["x-adp-signature"].split(":", 1)
     assert said == "2026-11-21T10:00:00.000000Z"

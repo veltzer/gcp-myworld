@@ -4,7 +4,7 @@ readers every check shares and the way a problem is told; and the small
 functions the checks of several pages are built from.
 """
 
-import datetime
+import datetime as dt
 from typing import Any
 
 import pytest
@@ -118,6 +118,7 @@ def fixture_world(engine: Engine) -> Any:
         # a museum (a shared place of the kind Museum) and alice's visit to it
         museum = session.scalars(select(PlaceKind).where(PlaceKind.name == MUSEUM_KIND)).one()
         louvre = Place(name="Louvre", city=paris, kinds=[museum])
+        session.add(louvre)
         visited = session.scalars(select(VisitType).where(VisitType.name == MUSEUM_VISIT)).one()
         session.add_all([louvre, Visit(owner_id=alice.id, place=louvre, type=visited)])
         session.add(UserWork(owner_id=alice.id, work_id=book.id, reads=[Read()]))
@@ -178,8 +179,9 @@ def test_ids_and_dated(world: Session) -> None:
     assert core.ids(world, Place.city_id, City.country_id) == {1}
     assert core.ids(world, Organization.city_id) == set()
     concert = world.get(Concert, 1)
-    assert concert is not None and not core.dated(concert)
-    for field, value in (("date_y", 2003), ("date_my", "07-2003"), ("date_ymd", datetime.date(2003, 7, 14)), ("date_utcz", naive_utc(2003, 7, 14, 20, 0))):
+    assert concert is not None
+    assert not core.dated(concert)
+    for field, value in (("date_y", 2003), ("date_my", "07-2003"), ("date_ymd", dt.date(2003, 7, 14)), ("date_utcz", naive_utc(2003, 7, 14, 20, 0))):
         setattr(concert, field, value)
         assert core.dated(concert), field
         setattr(concert, field, "" if field == "date_my" else None)
@@ -204,11 +206,11 @@ def test_one_of() -> None:
     (("https://example.com/a", "CC0", " "), []),
 ])
 def test_a_credit_says_its_source_and_license_or_is_absent(credit: tuple[str, str, str], gaps: list[str]) -> None:
-    assert common._credit_gaps(*credit) == gaps  # pylint: disable=protected-access
+    assert common.credit_gaps(*credit) == gaps
 
 
 def test_km() -> None:
-    km = common._km  # pylint: disable=protected-access
+    km = common.km
     tel_aviv, jerusalem, paris = (32.0853, 34.7818), (31.7683, 35.2137), (48.8566, 2.3522)
     assert km(paris, paris) == 0
     assert km(tel_aviv, jerusalem) == pytest.approx(54, abs=2)

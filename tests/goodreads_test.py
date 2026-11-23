@@ -84,7 +84,8 @@ def test_an_export_is_read_as_the_books_of_a_shelf() -> None:
     assert (dune.goodreads_id, dune.title, dune.author, dune.isbn, dune.year) == ("234225", "Dune (Dune, #1)", "Frank Herbert", "9780441172719", 1965)
     # the export has no covers: Open Library's, by ISBN
     assert dune.image_url == "https://covers.openlibrary.org/b/isbn/9780441172719-L.jpg?default=false"
-    assert dune.added is not None and dune.added.isoformat() == "2019-03-12"
+    assert dune.added is not None
+    assert dune.added.isoformat() == "2019-03-12"
     # no ISBN: no cover; no original year: the edition's
     assert (hobbit.isbn, hobbit.image_url, hobbit.year) == ("", "", 1937)
     assert kitchen.year == 2000
@@ -111,28 +112,33 @@ def test_the_to_read_shelf_comes_in_as_wanted_books(app: webtest.TestApp, engine
     # the profession a new author is given, when the account keeps it
     app.post_json("/api/person-types", {"name": "Book Author"})
     dry = run(app, EXPORT, dry_run=True)
-    assert dry["status"] == "done" and "books added, wanted" in dry["log"]
+    assert dry["status"] == "done"
+    assert "books added, wanted" in dry["log"]
     assert len(app.get("/api/library-entries").json) == 1
     # a dry run does it all, covers too, and keeps nothing
     fake.covers.clear()
     done = run(app, EXPORT)
     assert done["status"] == "done", done["log"]
     # the log says what the file was, not what was in it; only the to-read shelf is kept of it
-    assert "a library export with 3 books to read" in done["log"] and "private review" not in str(done)
+    assert "a library export with 3 books to read" in done["log"]
+    assert "private review" not in str(done)
     entries = {e["title"]: e for e in app.get("/api/library-entries").json}
     assert set(entries) == {"Dune", "The Hobbit", "Kitchen Confidential"}
     dune = entries["Dune"]
     assert (dune["status"], dune["creator"], dune["year"], dune["isbn"], dune["goodreads_id"]) == ("wishlist", "Frank Herbert", 1965, "9780441172719", "234225")
     assert [a["name"] for a in dune["authors"]] == ["Frank Herbert"]
-    assert dune["image"] and entries["Kitchen Confidential"]["image"] is None
+    assert dune["image"]
+    assert entries["Kitchen Confidential"]["image"] is None
     assert fake.covers == ["https://covers.openlibrary.org/b/isbn/9780441172719-L.jpg?default=false"]
     hobbit_now = entries["The Hobbit"]
     assert (hobbit_now["status"], hobbit_now["goodreads_id"], hobbit_now["work_id"]) == ("done", "5907", hobbit["work_id"])
     with Session(engine) as session:
         notes = session.get(UserWork, (alice(engine).id, dune["work_id"]))
-        assert notes is not None and notes.notes == "Series: Dune, #1\nOn my Goodreads to-read shelf since 2019-03-12"
+        assert notes is not None
+        assert notes.notes == "Series: Dune, #1\nOn my Goodreads to-read shelf since 2019-03-12"
         author = session.scalars(select(Person).where(Person.surname == "Herbert")).one()
         assert [t.name for t in author.types] == ["Book Author"]
     # again: nothing new
     again = run(app, EXPORT)
-    assert "books added" not in again["log"] and len(app.get("/api/library-entries").json) == 3
+    assert "books added" not in again["log"]
+    assert len(app.get("/api/library-entries").json) == 3

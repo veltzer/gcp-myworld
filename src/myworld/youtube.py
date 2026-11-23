@@ -19,7 +19,7 @@ both are set.
 
 import base64
 import contextlib
-import datetime
+import datetime as dt
 import hashlib
 import hmac
 import os
@@ -234,7 +234,7 @@ def video_details(client: Client, ids: list[str]) -> dict[str, dict[str, Any]]:
                 "channel": (snippet.get("channelTitle") or "")[:200],
                 "category": snippet.get("categoryId") or "",
                 "duration": seconds((item.get("contentDetails") or {}).get("duration") or ""),
-                "uploaded": datetime.date.fromisoformat(published[:10]) if published else None,
+                "uploaded": dt.date.fromisoformat(published[:10]) if published else None,
                 "views": int(views) if views is not None else None,
             }
     # the categories come as numbers: one more call names them

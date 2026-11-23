@@ -13,7 +13,7 @@ on the shelf.
 
 import csv
 import dataclasses
-import datetime
+import datetime as dt
 import io
 import re
 from typing import Any
@@ -36,7 +36,7 @@ class Book:
     isbn: str
     year: int | None
     image_url: str
-    added: datetime.date | None
+    added: dt.date | None
 
 
 def book_json(book: Book) -> dict[str, Any]:
@@ -50,7 +50,7 @@ def book_from_json(value: dict[str, Any]) -> Book:
     return Book(
         goodreads_id=str(value["goodreads_id"]), title=str(value["title"]), author=str(value.get("author") or ""),
         isbn=str(value.get("isbn") or ""), year=int(year) if year is not None else None, image_url=str(value.get("image_url") or ""),
-        added=datetime.date.fromisoformat(added) if added else None,
+        added=dt.date.fromisoformat(added) if added else None,
     )
 
 
@@ -64,9 +64,9 @@ def _year(value: str) -> int | None:
     return int(found[-1]) if found else None
 
 
-def _day(value: str, fmt: str) -> datetime.date:
+def _day(value: str, fmt: str) -> dt.date:
     """ A day as written (no time, so no zone: read as UTC's); ValueError when it is not one. """
-    return datetime.datetime.strptime(value, fmt).replace(tzinfo=datetime.UTC).date()
+    return dt.datetime.strptime(value, fmt).replace(tzinfo=dt.UTC).date()
 
 
 def _isbn(value: str) -> str:

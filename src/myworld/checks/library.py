@@ -73,7 +73,7 @@ def check_book_links(session: Session) -> Result:
 def check_book_authors(session: Session) -> Result:
     """ Every book in a library, of every account, has an author: one of the account's people (a Book Author), linked to it. """
     books = entries_of(session, "book")
-    written = set(session.execute(select(library_entry_authors.c.owner_id, library_entry_authors.c.work_id)).tuples())
+    written = set(session.execute(select(library_entry_authors.c.owner_id, library_entry_authors.c.work_id)))
     return Result(checked=len(books), problems=[problem(b, "has no author") for b in books if (b.owner_id, b.work_id) not in written])
 
 

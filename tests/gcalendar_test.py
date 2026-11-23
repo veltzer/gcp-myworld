@@ -87,7 +87,8 @@ def test_connecting_keeps_the_refresh_token_sealed(app: webtest.TestApp, engine:
     sign_in(app)
     assert app.get("/calendar/status").json["connected"] is False
     back = connect(app)
-    assert back.location is not None and back.location.endswith("/library#imports")
+    assert back.location is not None
+    assert back.location.endswith("/library#imports")
     status = app.get("/calendar/status").json
     assert (status["configured"], status["connected"], status["account"]) == (True, True, "alice@example.com")
     # the Imports page shows it too
@@ -131,7 +132,8 @@ def test_calendar_access_left_unticked_is_not_a_connection(app: webtest.TestApp,
     sign_in(app)
     fake.scope = "openid"
     back = connect(app)
-    assert "calendar_error=" in str(back.location) and "not+granted" in str(back.location)
+    assert "calendar_error=" in str(back.location)
+    assert "not+granted" in str(back.location)
     assert app.get("/calendar/status").json["connected"] is False
 
 

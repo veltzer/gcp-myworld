@@ -137,7 +137,7 @@ see doc/deploy.md.
 """
 
 import argparse
-import datetime
+import datetime as dt
 import email.utils
 import gzip
 import hashlib
@@ -334,7 +334,7 @@ RELATION_TYPES = {
     "publisher": ("Publisher", "I consumed media they published"),
     "education": ("Education", "I studied there"),
 }
-# what _profession and _relation_to_user read a person from
+# what profession and relation_to_user read a person from
 FAMILY_NAME = "Veltzer"
 FAMILY_DESCRIPTION = re.compile(r"my (brother|sister|mother|father|son|daughter|wife|husband|cousin|uncle|aunt)\b", re.IGNORECASE)
 GIRLFRIEND_DESCRIPTION = re.compile(r"(ex-)?girlfriend\b", re.IGNORECASE)
@@ -419,10 +419,10 @@ def _optional_items(source: Path, name: str, fields: set[str]) -> list[dict[str,
 def _dates(item: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {"date_timezone": item.get("date_timezone", "")}
     if "date_utcz" in item:
-        stamp = datetime.datetime.fromisoformat(str(item["date_utcz"]))
-        out["date_utcz"] = stamp.astimezone(datetime.UTC).replace(tzinfo=None)
+        stamp = dt.datetime.fromisoformat(str(item["date_utcz"]))
+        out["date_utcz"] = stamp.astimezone(dt.UTC).replace(tzinfo=None)
     if "date_ymd" in item:
-        out["date_ymd"] = datetime.date.fromisoformat(str(item["date_ymd"]))
+        out["date_ymd"] = dt.date.fromisoformat(str(item["date_ymd"]))
     if "date_my" in item:
         value = str(item["date_my"])
         month, year = value.split("-")
@@ -445,7 +445,7 @@ def _person_organizations(item: dict[str, Any]) -> list[str]:
 
 def _json_safe(value: Any) -> Any:
     """ YAML may hand over dates; JSON columns want strings. """
-    if isinstance(value, datetime.date):
+    if isinstance(value, dt.date):
         return value.isoformat()
     if isinstance(value, dict):
         return {k: _json_safe(v) for k, v in value.items()}
@@ -486,7 +486,7 @@ def split_name(name: str) -> tuple[str, str, str, str]:
     return naming.split_name(name) or ("", name, "", "")
 
 
-def _profession(person: Person) -> str | None:
+def profession(person: Person) -> str | None:
     """ A first guess at a person's profession, from what the data says; None when nothing does. """
     if person.performed:
         return "Performer"
@@ -497,7 +497,7 @@ def _profession(person: Person) -> str | None:
     return None
 
 
-def _relation_to_user(person: Person) -> str | None:
+def relation_to_user(person: Person) -> str | None:
     """ A first guess at how a person is related to the user (a person relation type); None when nothing says. """
     if person.name.endswith(f" {FAMILY_NAME}") or FAMILY_DESCRIPTION.match(person.description):
         return "Relative of"
@@ -550,8 +550,8 @@ def give_types(session: Session, owner: User) -> dict[str, int]:
     (TYPE_TO_RELATION: Friend, Co-Worker, ...) into person relations to it and
     drop them; then give what has none a first guess: every organization a
     type (by name, else Company), every person without a profession one
-    (_profession), and every person related to no one a relation to owner
-    (_relation_to_user). Everything else is left as it is. Does not commit.
+    (profession), and every person related to no one a relation to owner
+    (relation_to_user). Everything else is left as it is. Does not commit.
     """
     org_types, org_added = _starting_types(session, owner, OrganizationType, ORGANIZATION_TYPES)
     professions, person_added = _starting_types(session, owner, PersonType, PERSON_TYPES)
@@ -601,11 +601,11 @@ def give_types(session: Session, owner: User) -> dict[str, int]:
     for person in people:
         if person is me:
             continue
-        name = _profession(person)
+        name = profession(person)
         if name is not None and not person.types:
             person.types = [professions[name]]
             given_profession += 1
-        relation = _relation_to_user(person)
+        relation = relation_to_user(person)
         if relation is not None and not person.relations and not person.related:
             given_relation += relate(person, relation)
     session.flush()
@@ -859,11 +859,11 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
             found = place.find(item["name"], where)
             if found is None:
                 found = Place(name=item["name"], city=where, website=item.get("url", ""))
+                session.add(found)
                 photo = image(image_dir / f"museum-{item['internal_id']}.jpg", required=False)
                 if photo is not None:
                     session.flush()
                     found.image_id = photo.id
-                session.add(found)
                 place.remember(found)
             if museum_kind not in found.kinds:
                 found.kinds.append(museum_kind)
@@ -916,11 +916,11 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     }
 
 
-def _stamp(item: dict[str, Any], key: str) -> datetime.datetime | None:
+def _stamp(item: dict[str, Any], key: str) -> dt.datetime | None:
     """ A UTC timestamp field of the YAML, as the naive UTC the columns keep. """
     if key not in item:
         return None
-    return datetime.datetime.fromisoformat(str(item[key])).astimezone(datetime.UTC).replace(tzinfo=None)
+    return dt.datetime.fromisoformat(str(item[key])).astimezone(dt.UTC).replace(tzinfo=None)
 
 
 def _course_cover(item: dict[str, Any]) -> str:
@@ -1162,11 +1162,11 @@ def _strip_parts(notes: str, parts: list[str]) -> str:
     return notes
 
 
-def _reading_day(reading: dict[str, Any]) -> datetime.date | None:
+def _reading_day(reading: dict[str, Any]) -> dt.date | None:
     """ The day a reading ended, where the reader was (its timezone). """
     if reading.get("undated"):
         return None
-    stamp = datetime.datetime.fromisoformat(str(reading["date"]))
+    stamp = dt.datetime.fromisoformat(str(reading["date"]))
     return stamp.astimezone(zoneinfo.ZoneInfo(reading.get("timezone") or "UTC")).date()
 
 
@@ -1414,7 +1414,7 @@ def _podcasts_path(source: Path) -> Path:
     return source / "data" / "yaml" / "podcasts.yaml"
 
 
-def _published(value: str, where: str) -> datetime.datetime:
+def _published(value: str, where: str) -> dt.datetime:
     """ A feed's pubDate ("Wed, 28 Oct 2020 13:00:00 -0000"), as the naive UTC the columns keep. """
     try:
         stamp = email.utils.parsedate_to_datetime(value)
@@ -1422,7 +1422,7 @@ def _published(value: str, where: str) -> datetime.datetime:
         raise WorldImportError(f"{where}: pubDate {value!r} is not a date") from e
     if stamp.tzinfo is None:
         return stamp
-    return stamp.astimezone(datetime.UTC).replace(tzinfo=None)
+    return stamp.astimezone(dt.UTC).replace(tzinfo=None)
 
 
 def import_podcasts(session: Session, owner: User, source: Path) -> dict[str, int]:
@@ -1526,7 +1526,7 @@ def import_certifications(session: Session, owner: User, source: Path) -> dict[s
             raise WorldImportError(f"certification {item['name']!r}: kind {kind!r} is not one of {CERTIFICATION_KINDS}")
         session.add(Certification(
             owner_id=owner.id, name=item["name"], organization=organizations[name], kind=kind, remark=item.get("remark", ""),
-            date_ymd=datetime.date.fromisoformat(str(item["date"])) if "date" in item else None,
+            date_ymd=dt.date.fromisoformat(str(item["date"])) if "date" in item else None,
         ))
         have.add(item["name"])
         added += 1
@@ -1989,7 +1989,7 @@ def _history_details(item: dict[str, Any]) -> dict[str, Any]:
         "channel": item.get("channel") or "",
         "category": item.get("categories") or "",
         "duration": item.get("duration"),
-        "uploaded": datetime.date.fromisoformat(upload) if upload else None,
+        "uploaded": dt.date.fromisoformat(upload) if upload else None,
         "views": item.get("view_count"),
         "unavailable": False,
     }

@@ -4,7 +4,7 @@ object and gives its value, or refuses it with an ApiError that says which
 field and why.
 """
 
-import datetime
+import datetime as dt
 from typing import Any
 
 import pytest
@@ -41,23 +41,34 @@ def test_text_required(body: dict[str, Any]) -> None:
     assert (caught.value.status, caught.value.message) == (400, "name: required")
 
 
-@pytest.mark.parametrize(("value", "wanted"), [(7, 7), ("7", 7), (" 7 ", 7), (1, 1), (10, 10), (None, None), ("", None)])
+@pytest.mark.parametrize(
+    ("value", "wanted"),
+    [
+        pytest.param(7, 7, id="int"),
+        pytest.param("7", 7, id="digit-string"),
+        pytest.param(" 7 ", 7, id="padded-string"),
+        pytest.param(1, 1, id="lower-bound"),
+        pytest.param(10, 10, id="upper-bound"),
+        pytest.param(None, None, id="none"),
+        pytest.param("", None, id="empty-string"),
+    ],
+)
 def test_opt_int(value: Any, wanted: int | None) -> None:
     assert opt_int({"rating": value}, "rating", 1, 10) == wanted
     assert opt_int({}, "rating", 1, 10) is None
 
 
-@pytest.mark.parametrize("value", [True, False, 7.5, "seven", "7.5", [7], {"n": 7}])
+@pytest.mark.parametrize("value", [True, False, 7.5, "seven", pytest.param("7.5", id="float-string"), [7], {"n": 7}])
 def test_opt_int_is_a_number(value: Any) -> None:
     assert refused(opt_int, {"rating": value}, "rating", 1, 10) == (400, "rating: expected a number")
 
 
-@pytest.mark.parametrize("value", [0, 11, -3, "0", "11"])
+@pytest.mark.parametrize("value", [0, 11, -3, pytest.param("0", id="zero-string"), pytest.param("11", id="eleven-string")])
 def test_opt_int_has_bounds(value: Any) -> None:
     assert refused(opt_int, {"rating": value}, "rating", 1, 10) == (400, "rating: must be between 1 and 10")
 
 
-@pytest.mark.parametrize(("value", "wanted"), [(32.07, 32.07), ("32.07", 32.07), (32, 32.0), (-90, -90.0), (90, 90.0), (None, None), ("", None)])
+@pytest.mark.parametrize(("value", "wanted"), [(32.07, 32.07), pytest.param("32.07", 32.07, id="string"), (32, 32.0), (-90, -90.0), (90, 90.0), (None, None), ("", None)])
 def test_opt_float(value: Any, wanted: float | None) -> None:
     assert opt_float({"latitude": value}, "latitude", -90, 90) == wanted
 
@@ -83,8 +94,8 @@ def test_coordinates_are_both_or_neither() -> None:
 
 
 def test_opt_date() -> None:
-    assert opt_date({"on": "2003-07-14"}, "on") == datetime.date(2003, 7, 14)
-    assert opt_date({"on": " 2003-07-14 "}, "on") == datetime.date(2003, 7, 14)
+    assert opt_date({"on": "2003-07-14"}, "on") == dt.date(2003, 7, 14)
+    assert opt_date({"on": " 2003-07-14 "}, "on") == dt.date(2003, 7, 14)
     assert opt_date({"on": ""}, "on") is None
     assert opt_date({}, "on") is None
     for value in ("2003", "2003-07", "14/07/2003", "2003-02-30", "yesterday"):

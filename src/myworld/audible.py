@@ -27,7 +27,7 @@ store_library writes as audio books whose source is "audible".
 
 import base64
 import contextlib
-import datetime
+import datetime as dt
 import hashlib
 import os
 import secrets
@@ -291,13 +291,13 @@ def _private_key(pem: str) -> rsa.RSAPrivateKey:
     return key
 
 
-def signed_headers(method: str, path: str, body: str, adp_token: str, private_key: str, now: datetime.datetime | None = None) -> dict[str, str]:
+def signed_headers(method: str, path: str, body: str, adp_token: str, private_key: str, now: dt.datetime | None = None) -> dict[str, str]:
     """
     The headers that sign a request as the device: the method, the path
     (with its query), the moment, the body and the ADP token, one a line,
     signed with the device's key (RSA, SHA-256), said with the moment.
     """
-    moment = (now or datetime.datetime.now(datetime.UTC)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    moment = (now or dt.datetime.now(dt.UTC)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     data = f"{method}\n{path}\n{moment}\n{body}\n{adp_token}"
     signature = _private_key(private_key).sign(data.encode(), padding.PKCS1v15(), hashes.SHA256())
     return {
@@ -427,12 +427,12 @@ def _optional(value: Any, kind: type[int | float]) -> int | float | None:
     return int(float(written)) if kind is int else float(written)
 
 
-def _stamp(value: Any) -> datetime.datetime | None:
+def _stamp(value: Any) -> dt.datetime | None:
     """ A moment the library writes ("2021-08-10T08:55:06.867Z"), as the naive UTC the columns keep. """
     written = _text(value).strip()
     if not written:
         return None
-    return datetime.datetime.fromisoformat(written).astimezone(datetime.UTC).replace(tzinfo=None)
+    return dt.datetime.fromisoformat(written).astimezone(dt.UTC).replace(tzinfo=None)
 
 
 def _genres(item: dict[str, Any]) -> list[str]:
@@ -579,7 +579,7 @@ def store_library(
                 narrators=_text(item.get("narrators")).strip(),
                 genres=_genres(item),
                 minutes=_optional(item.get("runtime_length_min"), int),
-                released=datetime.date.fromisoformat(release) if release else None,
+                released=dt.date.fromisoformat(release) if release else None,
                 image=image,
                 **_version_values(item),
             )

@@ -2,7 +2,7 @@
 Checks of the audio courses.
 """
 
-import datetime
+import datetime as dt
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -21,7 +21,7 @@ from myworld.models import (
 )
 
 # in progress for longer than this, a course is reported as stalled
-STALLED_AFTER = datetime.timedelta(days=365)
+STALLED_AFTER = dt.timedelta(days=365)
 
 
 @check("audio-course-lecturers", "Every audio course has a lecturer", "audio courses", "audio-courses")
@@ -96,7 +96,7 @@ def check_audio_course_stalled(session: Session) -> Result:
     finished) for more than a year: finish it, or say how far it got and
     give up on it.
     """
-    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    now = dt.datetime.now(dt.UTC).replace(tzinfo=None)
     running = [c for c in rows(session, AudioCourse) if not dated(c) and c.started_utcz is not None]
     problems = []
     for course in running:

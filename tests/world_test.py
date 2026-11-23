@@ -745,7 +745,8 @@ def test_a_museum_has_its_visits(imported: webtest.TestApp) -> None:
     kept = dict(first, people=[p["id"] for p in first["people"]], rating=10)
     changed = imported.put_json(f"/api/museum-visits/{louvre['id']}", {"visits": [kept, {"date": "2024-03", "alone": True, "review": "crowded"}]}).json
     assert [(v["date"], v["rating"], v["alone"], v["review"] == "crowded") for v in changed["visits"]] == [("2024-03", None, True, True), (first["date"], 10, False, False)]
-    assert changed["visits"][1]["id"] == first["id"] and changed["rating"] == 10
+    assert changed["visits"][1]["id"] == first["id"]
+    assert changed["rating"] == 10
     # visits are what is sent; a visit of another museum, or one sent twice, is no visit of this one
     imported.put_json(f"/api/museum-visits/{louvre['id']}", {}, status=400)
     imported.put_json(f"/api/museum-visits/{louvre['id']}", {"visits": [{"id": museums[0]["visits"][0]["id"]}]}, status=400)
@@ -852,9 +853,12 @@ def test_devices(imported: webtest.TestApp) -> None:
     upload = imported.post("/api/images", upload_files=[("file", "clip.jpg", JPEG)]).json
     photo = {"image_id": upload["id"], "image_source": "https://commons.wikimedia.org/wiki/File:Clip.jpg", "image_license": "CC BY-SA 3.0", "image_author": "Hinrik"}
     pictured = imported.put_json(f"/api/devices/{sansa['id']}", dict(sansa, **photo)).json
-    assert pictured["image"] and pictured["image_license"] == "CC BY-SA 3.0" and pictured["image_author"] == "Hinrik"
+    assert pictured["image"]
+    assert pictured["image_license"] == "CC BY-SA 3.0"
+    assert pictured["image_author"] == "Hinrik"
     kept = imported.put_json(f"/api/devices/{sansa['id']}", dict(pictured, image_id=None, description="An MP3 player")).json
-    assert kept["image"] == pictured["image"] and kept["description"] == "An MP3 player"
+    assert kept["image"] == pictured["image"]
+    assert kept["description"] == "An MP3 player"
     assert imported.get(pictured["image"]).content_type == "image/jpeg"
     edited = imported.put_json(f"/api/audio-courses/{music['id']}", dict(body, device_id=sansa["id"])).json
     assert edited["device"]["name"] == "Sansa Clip 2"
@@ -891,7 +895,8 @@ def test_audio_books(imported: webtest.TestApp) -> None:
     assert (order["series"], order["series_sequence"], order["image"]) == ("Political Order", "2", None)
     # heard elsewhere: MP3 files
     assert ([v["name"] for v in letter["versions"]], letter["authors"], letter["url"]) == (["MP3"], "Sam Harris", "")
-    assert "rating" not in letter and "finished" not in letter
+    assert "rating" not in letter
+    assert "finished" not in letter
     # the versions: what Audible says of an Audible one, everything as Audible gives it (the genres repeats too)
     versions = {v["name"]: v for v in imported.get("/api/audio-book-versions").json}
     audible = versions["Making Sense (Audible)"]
@@ -1092,8 +1097,10 @@ def test_podcasts(imported: webtest.TestApp) -> None:
     assert (history["url"], history["rss_feed"], history["episodes"]) == (
         "https://therestishistory.com/club", "https://feeds.megaphone.fm/GLT4787413333", 2)
     # the same for everyone: what the user heard of it is in Your podcasts
-    assert "heard" not in history and "listened" not in history
-    assert "rating" not in history and history["published"] == "2020-11-02T02:00:00Z"
+    assert "heard" not in history
+    assert "listened" not in history
+    assert "rating" not in history
+    assert history["published"] == "2020-11-02T02:00:00Z"
     assert imported.get(history["image"]).body == b"\xff\xd8history"
     assert (mindscape["episodes"], mindscape["image"]) == (1, None)
     # and so are their episodes, the latest published first, each saying when the user heard it
@@ -1414,7 +1421,8 @@ def test_films_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_
         2014, "Christopher Nolan", "tt0816692", "m/interstellar_2014",
     )
     # the site's poster is kept; the one it has not, TMDB's; and each its TMDB id
-    assert films["Interstellar"]["image"] and films["Grizzly Man"]["image"]
+    assert films["Interstellar"]["image"]
+    assert films["Grizzly Man"]["image"]
     assert (films["Interstellar"]["tmdb_id"], films["Grizzly Man"]["tmdb_id"]) == (157336, 501)
     assert (films["Grizzly Man"]["directors"], films["Grizzly Man"]["genres"], films["Grizzly Man"]["wikidata_id"]) == ("Werner Herzog", ["documentary"], "Q1067409")
     # what was edited stays; a run again adds nothing, and asks Wikidata of nothing (every film has all it says)
@@ -1461,7 +1469,8 @@ def test_youtube(imported: webtest.TestApp) -> None:
     assert imported.put_json(f"/api/youtube-videos/{gone['id']}", dict(gone, device_id="", rating=5)).json["rating"] == 5
     assert (debate["date"], debate["rating"], debate["watched_at"], debate["device"]["name"]) == ("2015-11-30T16:24:31Z", 7, "Home", "Desktop")
     # the page builds YouTube's URLs from the id
-    assert "url" not in debate and "image" not in debate
+    assert "url" not in debate
+    assert "image" not in debate
     # a link pasted in place of the id is taken apart
     added = imported.post_json("/api/youtube-videos", {"name": "Talk", "youtube_id": "https://youtu.be/JbNJoHFsQnc?t=10", "date": "2024-05-01"}, status=201).json
     assert added["youtube_id"] == "JbNJoHFsQnc"
@@ -1871,9 +1880,11 @@ def test_professions_and_relations(imported: webtest.TestApp) -> None:
     upload = imported.post("/api/images", upload_files=[("file", "coder.jpg", JPEG)]).json
     photo = {"image_id": upload["id"], "image_source": "https://commons.wikimedia.org/wiki/File:Coder.jpg", "image_license": "CC BY 2.0", "image_author": "Someone"}
     pictured = imported.put_json(f"/api/person-types/{programmer['id']}", dict(programmer, **photo)).json
-    assert pictured["image"] and pictured["image_license"] == "CC BY 2.0"
+    assert pictured["image"]
+    assert pictured["image_license"] == "CC BY 2.0"
     kept = imported.put_json(f"/api/person-types/{programmer['id']}", dict(pictured, image_id=None, description="Writes code")).json
-    assert kept["image"] == pictured["image"] and kept["description"] == "Writes code"
+    assert kept["image"] == pictured["image"]
+    assert kept["description"] == "Writes code"
     alice = people["Alice Friend"]
     edited = imported.put_json(f"/api/people/{alice['id']}", {
         "first_name": "Alice", "surname": "Friend",
@@ -1980,13 +1991,13 @@ def test_guessing_professions_and_relations() -> None:
     def person(name: str, description: str = "") -> Person:
         honorific, first_name, middle_name, surname = import_world.split_name(name)
         return Person(honorific=honorific, first_name=first_name, middle_name=middle_name, surname=surname, description=description)
-    assert import_world._relation_to_user(person("Doron Veltzer")) == "Relative of"
-    assert import_world._relation_to_user(person("X", "My brother")) == "Relative of"
-    assert import_world._relation_to_user(person("X", "My brothers ex-girlfriend")) is None
-    assert import_world._relation_to_user(person("X", "Ex-girlfriend")) == "Girlfriend of"
-    assert import_world._relation_to_user(person("X", "Yaron's girlfriend")) is None
-    assert import_world._relation_to_user(person("X", "Physics guy from MAFAT")) == "Co-worker of"
-    assert import_world._profession(person("X")) is None
+    assert import_world.relation_to_user(person("Doron Veltzer")) == "Relative of"
+    assert import_world.relation_to_user(person("X", "My brother")) == "Relative of"
+    assert import_world.relation_to_user(person("X", "My brothers ex-girlfriend")) is None
+    assert import_world.relation_to_user(person("X", "Ex-girlfriend")) == "Girlfriend of"
+    assert import_world.relation_to_user(person("X", "Yaron's girlfriend")) is None
+    assert import_world.relation_to_user(person("X", "Physics guy from MAFAT")) == "Co-worker of"
+    assert import_world.profession(person("X")) is None
 
 
 def test_give_types_fills_only_what_is_missing(imported: webtest.TestApp, engine: Engine) -> None:
@@ -2438,8 +2449,11 @@ def test_a_title_is_in_the_language_of_its_letters(imported: webtest.TestApp, en
     # the table starts with the languages of the code, in their order
     assert [(code, locale.name, locale.script) for code, locale in locales.items()] == SEED_LOCALES
     assert [languages.locale_of(locales, text) for text in ("בעלת הארמון", "Война и мир", "Emma", "源氏物語")] == ["he", "ru", "en", ""]
-    assert languages.fits(locales["yi"], "בעלת הארמון") and languages.fits(locales["fr"], "Émile") and languages.fits(locales["he"], "1984")
-    assert not languages.fits(locales["en"], "בעלת הארמון") and not languages.fits(locales["he"], "Emma")
+    assert languages.fits(locales["yi"], "בעלת הארמון")
+    assert languages.fits(locales["fr"], "Émile")
+    assert languages.fits(locales["he"], "1984")
+    assert not languages.fits(locales["en"], "בעלת הארמון")
+    assert not languages.fits(locales["he"], "Emma")
     config = imported.get("/api/config").json
     assert list(config["locales"].items())[:2] == [("en", "English"), ("he", "Hebrew")]
     assert imported.get("/api/config").json["locale_scripts"]["he"] == "Hebrew"
@@ -2465,7 +2479,8 @@ def test_fix_languages(imported: webtest.TestApp, engine: Engine) -> None:
     person = imported.get("/api/people").json[0]
     with Session(engine) as session:
         work, second = session.get(Work, book["work_id"]), session.get(Work, other["work_id"])
-        assert work is not None and second is not None
+        assert work is not None
+        assert second is not None
         work.title, second.titles[0].locale = "שיחות על תורת המשחקים", "fr"
         session.add(PersonName(person_id=person["id"], locale="ru", name="חיים שפירא"))
         session.commit()
@@ -2531,7 +2546,8 @@ def test_reads(imported: webtest.TestApp) -> None:
     kept = imported.put_json(url, {"notes": "kept"}).json
     assert kept["reads"] == book["reads"]
     changed = imported.put_json(url, {"locale": "en", "finished_on": "2002-02-02"}).json
-    assert changed["reads"][0] == reading(date="2002-02-02", locale="en") and len(changed["reads"]) == 3
+    assert changed["reads"][0] == reading(date="2002-02-02", locale="en")
+    assert len(changed["reads"]) == 3
     # readings sent replace them all, and none is a book with no reading: wanted
     assert imported.put_json(url, {"reads": [{"locale": "he"}]}).json["reads"] == [reading(locale="he")]
     none = imported.put_json(url, {"reads": []}).json
@@ -2700,7 +2716,8 @@ def test_notes_lose_what_the_book_says_elsewhere(imported: webtest.TestApp, engi
     with Session(engine) as session:
         changed, gained, left = tidy_book_notes.tidy(session)
         session.commit()
-        assert (gained, left) == (1, 0) and changed >= 2
+        assert (gained, left) == (1, 0)
+        assert changed >= 2
         assert tidy_book_notes.tidy(session) == (0, 0, 0)
     books = {b["work_id"]: b for b in imported.get("/api/library-entries?kind=book").json}
     after = books[book["work_id"]]
@@ -2719,7 +2736,8 @@ def test_alone_and_owned_in_none(imported: webtest.TestApp) -> None:
     imported.post_json("/api/concert-visits", {"name": "Odd", "alone": True, "people": [person["id"]]}, status=400)
     # a book owned in no language is one the user owns no copy of: nothing more says so
     book = imported.post_json("/api/library-entries", {"kind": "book", "title": "Borrowed"}).json
-    assert book["owned"] == [] and "not_owned" not in book
+    assert book["owned"] == []
+    assert "not_owned" not in book
     url = f"/api/library-entries/{book['work_id']}"
     assert imported.put_json(url, {"owned": ["en"]}).json["owned"] == ["en"]
     assert imported.put_json(url, {"notes": "x"}).json["owned"] == ["en"]
@@ -2731,26 +2749,34 @@ def test_a_name_that_is_the_title() -> None:
     # a part of the title, the title but for its spelling, its punctuation, a leading article or an & for an and
     assert same("The Blind Watchmaker", ["The Blind Watchmaker: Why the Evidence of Evolution Reveals a Universe Without Design"])
     assert same("The Strange Case of Dr. Jekyll and Mr. Hyde", ["Strange Case Of Dr. Jekyll & Mr. Hyde"])
-    assert same("Ulysees", ["Ulysses"]) and same("Godel, Escher & Bach", ["Gödel, Escher, Bach: An Eternal Golden Braid"])
+    assert same("Ulysees", ["Ulysses"])
+    assert same("Godel, Escher & Bach", ["Gödel, Escher, Bach: An Eternal Golden Braid"])
     assert same("Guide to Movies and Videos 1996", ["Blockbuster Video Guide to Movies and Videos 1996"])
     # another name is not the title
-    assert not same("Kufsa Shora", ["Black Box"]) and not same("Pipes", ["Pipelines"]) and not same("", ["Dune"])
+    assert not same("Kufsa Shora", ["Black Box"])
+    assert not same("Pipes", ["Pipelines"])
+    assert not same("", ["Dune"])
 
 
 def test_languages_are_a_page(imported: webtest.TestApp, engine: Engine) -> None:
     """ The locales table is listed, and kept by an admin: a language is added, renamed, and deleted only when nothing is said in it. """
     listed = imported.get("/api/locales").json
     assert [(row["code"], row["name"], row["script"]) for row in listed][:2] == [("en", "English", "Latin"), ("he", "Hebrew", "Hebrew")]
-    assert all(row["count"] >= 0 for row in listed) and len({row["id"] for row in listed}) == len(listed)
+    assert all(row["count"] >= 0 for row in listed)
+    assert len({row["id"] for row in listed}) == len(listed)
     assert imported.get("/api/stats").json["locales"] == len(listed)
     # each has a picture: what it is called in itself, in its own script, drawn
     hebrew = listed[1]
-    assert hebrew["native"] == "עברית" and hebrew["image"].startswith(f"/api/locales/{hebrew['id']}/picture.svg?v=")
+    assert hebrew["native"] == "עברית"
+    assert hebrew["image"].startswith(f"/api/locales/{hebrew['id']}/picture.svg?v=")
     picture = imported.get(hebrew["image"])
-    assert picture.content_type == "image/svg+xml" and "עברית" in picture.text and "<script" not in picture.text
+    assert picture.content_type == "image/svg+xml"
+    assert "עברית" in picture.text
+    assert "<script" not in picture.text
     # every language is drawn on the same ground, whatever its script
     grounds = {imported.get(row["image"]).text.split('<rect width="400" height="300" fill="')[1][:7] for row in listed}
-    assert len(grounds) == 1 and len({row["script"] for row in listed}) > 1
+    assert len(grounds) == 1
+    assert len({row["script"] for row in listed}) > 1
     with Session(engine) as session:
         me = owner(session)
         role, me.role = me.role, "user"
@@ -2773,7 +2799,8 @@ def test_languages_are_a_page(imported: webtest.TestApp, engine: Engine) -> None
     # its own name is in its own script, and its picture shows it (escaped), at a new address
     imported.put_json(url, {"code": "nl", "name": "Dutch", "script": "Latin", "native": "עברית"}, status=400)
     named = imported.put_json(url, {"code": "nl", "name": "Dutch", "script": "Latin", "native": "Neder<lands"}).json
-    assert named["native"] == "Neder<lands" and named["image"] != dutch["image"]
+    assert named["native"] == "Neder<lands"
+    assert named["image"] != dutch["image"]
     assert "Neder&lt;lands" in imported.get(named["image"]).text
     with Session(engine) as session:
         assert checks.CHECKS["locale-native-names"].run(session).problems == []
@@ -2817,7 +2844,8 @@ def test_a_person_has_photos(imported: webtest.TestApp, engine: Engine) -> None:
     # one taken away goes, with its image
     assert [p["id"] for p in imported.put_json(url, {"first_name": "Ann", "photos": [{"image_id": third}]}).json["photos"]] == [third]
     with Session(engine) as session:
-        assert session.get(Image, first) is None and session.get(Image, third) is not None
+        assert session.get(Image, first) is None
+        assert session.get(Image, third) is not None
     assert imported.put_json(url, {"first_name": "Ann", "photos": []}).json["image"] is None
 
 

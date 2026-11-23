@@ -38,6 +38,8 @@ package = false
 [tool.pyrefly]
 # Type checking (rsconstruct's pyrefly processor), with pyrefly's default
 # error set. "." on the search path is mypy's implicit current directory.
+# Warnings fail the check like errors (pyrefly lets them pass by default).
+min-severity = "warn"
 search-path = [
     "src",
     "scripts",
@@ -49,6 +51,11 @@ ignore-missing-imports = [
 ]
 
 [tool.pytest.ini_options]
+# Every strictness check pytest has (strict_config, strict_markers,
+# strict_xfail, strict_parametrization_ids), and every warning fails the
+# test that raised it rather than scrolling past in the summary.
+strict = true
+filterwarnings = ["error"]
 # Tests import from here: the myworld package lives in src/ and is not installed;
 # scripts/ holds import_world.py, which the tests exercise too.
 pythonpath = ["src", "scripts"]

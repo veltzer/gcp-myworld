@@ -4,7 +4,7 @@ the tables the models declare, the app marks a database it made as being at
 the newest of them, and one the migrations keep is changed by them alone.
 """
 
-import datetime
+import datetime as dt
 import os
 import subprocess
 import sys
@@ -59,7 +59,8 @@ def fixture_url(tmp_path: Path) -> str:
 
 def test_the_models_are_at_the_newest_migration() -> None:
     versions = sorted(path.stem.split("_")[0] for path in (ROOT / "scripts" / "migrations" / "versions").glob("*.py"))
-    assert versions and versions[-1] == SCHEMA_REVISION
+    assert versions
+    assert versions[-1] == SCHEMA_REVISION
     # numbered in order, each once
     assert versions == [f"{n:04d}" for n in range(1, len(versions) + 1)]
 
@@ -100,7 +101,8 @@ def test_a_database_the_migrations_keep_is_changed_by_them_alone(url: str) -> No
     assert "city_photos" not in tables(url)
     drift = run(url, "drift").stdout
     # the table and its index
-    assert "city_photos" in drift and drift.splitlines()[-1] == "2 differences between the database and the models"
+    assert "city_photos" in drift
+    assert drift.splitlines()[-1] == "2 differences between the database and the models"
 
 
 def test_a_database_from_before_the_migrations(url: str) -> None:
@@ -112,10 +114,12 @@ def test_a_database_from_before_the_migrations(url: str) -> None:
     assert run(url, "state").stdout.strip() == "legacy"
     # it is not upgraded as it is: the legacy script brings it up to date first
     refused = run(url, "upgrade")
-    assert refused.returncode != 0 and "before the migrations kept count" in refused.stderr
+    assert refused.returncode != 0
+    assert "before the migrations kept count" in refused.stderr
     # the app gives it the tables it lacks, as it always did, and does not mark it
     make_engine(url).dispose()
-    assert "city_photos" in tables(url) and "alembic_version" not in tables(url)
+    assert "city_photos" in tables(url)
+    assert "alembic_version" not in tables(url)
     # brought up to date, it is marked as being at the first migration
     marked = run(url, "baseline")
     assert marked.returncode == 0, marked.stderr
@@ -123,7 +127,8 @@ def test_a_database_from_before_the_migrations(url: str) -> None:
     assert run(url, "state").stdout.strip() == SCHEMA_REVISION
     # and only once
     again = run(url, "baseline")
-    assert again.returncode != 0 and "only a database from before" in again.stderr
+    assert again.returncode != 0
+    assert "only a database from before" in again.stderr
 
 
 def test_a_step_is_named() -> None:
@@ -143,7 +148,8 @@ def test_migrate_sh(url: str) -> None:
     # stopped at a step on the way, then taken to the end
     assert run(url, "--local", "--to", "0002", script=script).stdout.strip() == f"nothing to migrate: the database is at {SCHEMA_REVISION}"
     wrong = run(url, "--sideways", script=script)
-    assert wrong.returncode == 2 and "usage:" in wrong.stderr
+    assert wrong.returncode == 2
+    assert "usage:" in wrong.stderr
 
 
 def test_the_oldest_account_is_the_first_admin(url: str) -> None:
@@ -291,7 +297,8 @@ def test_a_work_is_its_accounts_own(url: str) -> None:
     with engine.connect() as connection:
         for table in ("logins", "disabled_checks", "library_entries", "library_reads", "library_covers", "library_ownings", "library_entry_authors", "library_works"):
             names = {column["name"] for column in inspect(engine).get_columns(table)}
-            assert "owner_id" in names and "user_id" not in names, table
+            assert "owner_id" in names, table
+            assert "user_id" not in names, table
         assert connection.execute(text("SELECT subject, owner_id FROM logins ORDER BY id")).all() == [("google:1", 1), ("google:2", 2)]
         assert connection.execute(text("SELECT owner_id, check_name FROM disabled_checks")).all() == [(1, "logos")]
         # the second account's Dune is a row of its own (5), as the first's is, and the work nobody had is the oldest account's
@@ -307,7 +314,8 @@ def test_a_work_is_its_accounts_own(url: str) -> None:
     # as the models read it
     with Session(engine) as session:
         entry = session.get(UserWork, (2, 5))
-        assert entry is not None and (entry.work.owner_id, entry.work.title, entry.rating, entry.owned, entry.cover_ids) == (2, "Dune", 4, ["he"], [2, 2])
+        assert entry is not None
+        assert (entry.work.owner_id, entry.work.title, entry.rating, entry.owned, entry.cover_ids) == (2, "Dune", 4, ["he"], [2, 2])
     engine.dispose()
     assert run(url, "drift").stdout.strip() == "0 differences between the database and the models"
     # run again, it finds nothing to do
@@ -476,7 +484,7 @@ def test_audio_books_become_shared_each_in_versions_and_what_was_heard_each_acco
         # and a listen of each version it heard, as it heard it
         listens = text("SELECT owner_id, version_id, finished, percent_heard, listened_at, device_id, date_ymd FROM audio_book_listens ORDER BY owner_id, version_id")
         assert [tuple(row) for row in connection.execute(listens).all()] == [
-            (1, 1, True, 100.0, "", None, None), (1, 2, True, None, "Night Walks", 1, datetime.date(2016, 5, 1) if url.startswith("postgresql") else "2016-05-01"),
+            (1, 1, True, 100.0, "", None, None), (1, 2, True, None, "Night Walks", 1, dt.date(2016, 5, 1) if url.startswith("postgresql") else "2016-05-01"),
             (1, 3, False, 12.5, "", None, None), (2, 3, True, 100.0, "", None, None)]
     assert not {"owner_id", "image_id"} & {column["name"] for column in inspect(engine).get_columns("audio_books")}
     engine.dispose()

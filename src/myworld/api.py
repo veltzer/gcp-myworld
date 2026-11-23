@@ -4,7 +4,7 @@ answer, the readers that validate fields of a request body, and the ones
 that turn the ids it sends into rows of the signed-in user.
 """
 
-import datetime
+import datetime as dt
 from typing import Any
 
 import flask
@@ -82,12 +82,12 @@ def coordinates(body: dict[str, Any]) -> tuple[float | None, float | None]:
     return latitude, longitude
 
 
-def opt_date(body: dict[str, Any], key: str) -> datetime.date | None:
+def opt_date(body: dict[str, Any], key: str) -> dt.date | None:
     value = text(body, key)
     if not value:
         return None
     try:
-        return datetime.date.fromisoformat(value)
+        return dt.date.fromisoformat(value)
     except ValueError as e:
         raise ApiError(400, f"{key}: expected a date as YYYY-MM-DD") from e
 

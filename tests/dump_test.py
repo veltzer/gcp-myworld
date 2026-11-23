@@ -3,6 +3,7 @@ An admin's copy of the whole database: SQL, gzipped, every account's rows;
 pg_dump's on Postgres, connected as the app is.
 """
 
+import contextlib
 import gzip
 import sqlite3
 
@@ -26,9 +27,9 @@ def test_only_an_admin_downloads_the_database(app: webtest.TestApp, engine: Engi
     assert "CREATE TABLE concert_visits" in sql or 'CREATE TABLE "concert_visits"' in sql
     assert "Jarrett" in sql
     # and it loads into an empty database
-    copy = sqlite3.connect(":memory:")
-    copy.executescript(sql)
-    assert copy.execute("SELECT name FROM concert_visits").fetchall() == [("Jarrett",)]
+    with contextlib.closing(sqlite3.connect(":memory:")) as copy:
+        copy.executescript(sql)
+        assert copy.execute("SELECT name FROM concert_visits").fetchall() == [("Jarrett",)]
 
 
 def test_pg_dump_connects_as_the_app_does() -> None:

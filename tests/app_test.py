@@ -41,7 +41,8 @@ def test_version(app: webtest.TestApp) -> None:
 def test_the_about_page_and_no_build_in_the_footers(app: webtest.TestApp) -> None:
     # the build serving is on the About page alone: the other pages are the same for every build
     about = app.get("/about")
-    assert 'data-page="about"' in about.text and 'id="about-facts"' in about.text
+    assert 'data-page="about"' in about.text
+    assert 'id="about-facts"' in about.text
     for path in ("/", "/privacy", "/verify", "/about"):
         page = app.get(path).text
         assert 'id="build"' not in page
@@ -514,7 +515,8 @@ def test_oauth_callback_failures_return_to_landing(app: webtest.TestApp, monkeyp
     response = app.get(f"/auth/oauth/github/callback?state={state}&error=access_denied")
     assert response.status_int == 302
     assert response.location is not None
-    assert "error=" in response.location and "cancelled" in response.location
+    assert "error=" in response.location
+    assert "cancelled" in response.location
 
     start = app.get("/auth/oauth/github")
     assert start.location is not None

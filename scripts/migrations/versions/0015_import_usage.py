@@ -7,7 +7,7 @@ deleted, as Clear now does. Nothing the runs imported is touched.
 Adding: run before the deploy (0016 drops cleared_at after it).
 """
 
-import datetime
+import datetime as dt
 from typing import Any
 
 import sqlalchemy as sa
@@ -31,11 +31,11 @@ def upgrade() -> None:
     usage = sa.table("import_usage", sa.column("owner_id", sa.Integer()), sa.column("month", sa.Date()), sa.column("runs", sa.Integer()))
     if bind.execute(sa.select(sa.func.count()).select_from(usage)).scalar():
         return
-    counts: dict[tuple[int, datetime.date], int] = {}
+    counts: dict[tuple[int, dt.date], int] = {}
     for owner_id, started_at in bind.execute(sa.text("SELECT owner_id, started_at FROM import_runs")):
         started: Any = started_at
         if isinstance(started, str):
-            started = datetime.datetime.fromisoformat(started)
+            started = dt.datetime.fromisoformat(started)
         month = started.date().replace(day=1)
         counts[(owner_id, month)] = counts.get((owner_id, month), 0) + 1
     if counts:

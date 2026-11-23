@@ -18,7 +18,7 @@ right after the first adds nothing and changes nothing.
 """
 
 import dataclasses
-import datetime
+import datetime as dt
 import logging
 import os
 import threading
@@ -237,7 +237,7 @@ def runs_allowed(owner: User) -> int | None:
     return int(os.environ.get("IMPORT_RUNS_PER_MONTH", RUNS_PER_MONTH))
 
 
-def _month() -> datetime.date:
+def _month() -> dt.date:
     """ The first day of this calendar month (UTC). """
     return utcnow().date().replace(day=1)
 
@@ -297,7 +297,7 @@ def start(session: Session, owner: User, importer: Importer, given: Any, dry_run
     return found
 
 
-class _Heartbeat(threading.Thread):
+class Heartbeat(threading.Thread):
     """ While a run goes: every HEARTBEAT_SECONDS, that it is alive and what it has done so far, in a session of its own. """
 
     def __init__(self, engine: Engine, run_id: int, report: Report) -> None:
@@ -354,7 +354,7 @@ def execute(engine: Engine, run_id: int) -> None:
         dry_run = record.dry_run
         report = Report()
         status = "done"
-        beat = _Heartbeat(engine, run_id, report)
+        beat = Heartbeat(engine, run_id, report)
         beat.start()
         captured = _Captured(report)
         logging.getLogger().addHandler(captured)
@@ -407,11 +407,11 @@ def settle(session: Session) -> None:
     """ Fail the runs whose jobs stopped: running ones no longer saying they are alive, queued ones never started. """
     now = utcnow()
     session.execute(
-        update(ImportRun).where(ImportRun.status == "running", ImportRun.heartbeat_at < now - datetime.timedelta(seconds=STALE_SECONDS))
+        update(ImportRun).where(ImportRun.status == "running", ImportRun.heartbeat_at < now - dt.timedelta(seconds=STALE_SECONDS))
         .values(status="failed", log=ImportRun.log + "\n" + stamped("Failed: its job stopped answering (it died, ran out of time or was cancelled)"), finished_at=now)
     )
     session.execute(
-        update(ImportRun).where(ImportRun.status == "queued", ImportRun.started_at < now - datetime.timedelta(seconds=QUEUED_SECONDS))
+        update(ImportRun).where(ImportRun.status == "queued", ImportRun.started_at < now - dt.timedelta(seconds=QUEUED_SECONDS))
         .values(status="failed", log=stamped("Failed: its job never started"), finished_at=now)
     )
     session.commit()

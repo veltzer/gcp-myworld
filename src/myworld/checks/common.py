@@ -45,7 +45,7 @@ _CREDITED: dict[str, tuple[Any, str]] = {
 }
 
 
-def _credit_gaps(source: str, license_: str, author: str) -> list[str]:
+def credit_gaps(source: str, license_: str, author: str) -> list[str]:
     """
     What the credit of a picture taken from elsewhere lacks: a picture with
     any of it says where it is from and its license. Who made it is said
@@ -67,7 +67,7 @@ def _credit_checks(dataset: str, model: Any, what: str) -> None:
             # a city's further photos, each with its own credit
             cities = {city.id: city for city in session.scalars(select(City))}
             pictures += [(cities[photo.city_id], photo.image_source, photo.image_license, photo.image_author) for photo in session.scalars(select(CityPhoto).order_by(CityPhoto.id))]
-        credited = [(row, _credit_gaps(source, license_, author)) for row, source, license_, author in pictures if source.strip() or license_.strip() or author.strip()]
+        credited = [(row, credit_gaps(source, license_, author)) for row, source, license_, author in pictures if source.strip() or license_.strip() or author.strip()]
         problems = [
             problem(row, f"has a {what} credited with no {' and no '.join(gaps)}")
             for row, gaps in credited
@@ -97,7 +97,7 @@ def check_people_credits(session: Session) -> Result:
     photos = [photo for photo in session.scalars(select(PersonPhoto).order_by(PersonPhoto.person_id, PersonPhoto.position)) if photo.image_source.strip() or photo.image_license.strip() or photo.image_author.strip()]
     problems = []
     for photo in photos:
-        gaps = _credit_gaps(photo.image_source, photo.image_license, photo.image_author)
+        gaps = credit_gaps(photo.image_source, photo.image_license, photo.image_author)
         if gaps:
             problems.append(problem(people[photo.person_id], f"has a photo credited with no {' and no '.join(gaps)}"))
     return Result(checked=len(photos), problems=problems)
@@ -107,7 +107,7 @@ def check_people_credits(session: Session) -> Result:
 NEAR_KM = 50
 
 
-def _km(a: tuple[float, float], b: tuple[float, float]) -> float:
+def km(a: tuple[float, float], b: tuple[float, float]) -> float:
     """ The distance between two (latitude, longitude) points on the globe, in kilometers. """
     lat1, lon1, lat2, lon2 = (math.radians(value) for value in (*a, *b))
     h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
@@ -125,7 +125,7 @@ def _near_city_check(dataset: str, model: Any, noun: str) -> None:
         ]
         problems = []
         for row in placed:
-            far = _km((row.latitude, row.longitude), (row.city.latitude, row.city.longitude))
+            far = km((row.latitude, row.longitude), (row.city.latitude, row.city.longitude))
             if far > NEAR_KM:
                 problems.append(problem(row, f"is {far:.0f} km from {row.city.name}, the city it is in"))
         return Result(checked=len(placed), problems=problems)

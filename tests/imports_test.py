@@ -6,7 +6,7 @@ run adds nothing and changes nothing.
 """
 
 import dataclasses
-import datetime
+import datetime as dt
 import logging
 import re
 import urllib.parse
@@ -262,10 +262,11 @@ def test_importing_playlists_adds_each_video_once_and_again_adds_nothing(app: we
     assert sorted(have) == ["vidGone0001", "vidMusic001", "vidMusic002", "vidTalks001"]
     song = have["vidMusic001"]
     assert (song.name, song.channel, song.category, song.duration, song.uploaded, song.views, song.unavailable) == (
-        "Song", "Band", "Music", 3723, datetime.date(2019, 5, 6), 5000, False,
+        "Song", "Band", "Music", 3723, dt.date(2019, 5, 6), 5000, False,
     )
     # a playlist does not say when it was watched
-    assert song.date_utcz is None and song.date_ymd is None
+    assert song.date_utcz is None
+    assert song.date_ymd is None
     gone = have["vidGone0001"]
     assert (gone.name, gone.channel, gone.unavailable) == ("", "", True)
     # again: nothing added, nothing changed
@@ -280,7 +281,7 @@ def test_a_video_the_user_has_keeps_what_they_wrote(app: webtest.TestApp, engine
     with Session(engine) as session:
         session.add(YouTubeVideo(
             owner_id=alice(engine).id, youtube_id="vidMusic001", name="My name for it", rating=9, review="Great",
-            watched_at="Home", date_ymd=datetime.date(2022, 1, 1), channel="Old", views=1,
+            watched_at="Home", date_ymd=dt.date(2022, 1, 1), channel="Old", views=1,
         ))
         session.commit()
     done = run(app, ["PLmusic"])
@@ -288,7 +289,7 @@ def test_a_video_the_user_has_keeps_what_they_wrote(app: webtest.TestApp, engine
     song = videos(engine)["vidMusic001"]
     # YouTube's details are YouTube's as they are now; the rest is the user's
     assert (song.channel, song.views, song.duration) == ("Band", 5000, 3723)
-    assert (song.name, song.rating, song.review, song.watched_at, song.date_ymd) == ("My name for it", 9, "Great", "Home", datetime.date(2022, 1, 1))
+    assert (song.name, song.rating, song.review, song.watched_at, song.date_ymd) == ("My name for it", 9, "Great", "Home", dt.date(2022, 1, 1))
     # one YouTube took down since keeps what was known of it, and says it is gone
     del fake.videos["vidMusic001"]
     assert run(app, ["PLmusic"])["counts"] == {"YouTube videos given YouTube's details": 1, "YouTube videos unchanged": 2}
@@ -420,14 +421,16 @@ def test_every_importer_adds_to_a_page_there_is() -> None:
     for importer in importers.IMPORTERS.values():
         # a test adds to nothing
         assert importer.dataset in DATASETS or (importer.dataset is None and importer.admin_only), importer.name
-        assert importer.title and importer.description
+        assert importer.title
+        assert importer.description
 
 
 def test_the_privacy_page_says_what_youtube_access_is_for(app: webtest.TestApp) -> None:
     """ The OAuth consent screen links to it: it is open to anyone, signed in or not, and the landing page links to it. """
     page = app.get("/privacy")
     assert page.status_int == 200
-    assert "youtube.readonly" in page.text and "Limited Use" in page.text
+    assert "youtube.readonly" in page.text
+    assert "Limited Use" in page.text
     assert 'href="/privacy"' in app.get("/").text
 
 
@@ -522,7 +525,8 @@ def test_a_run_is_queued_and_its_job_does_it(app: webtest.TestApp, engine: Engin
     assert fixture_inline_jobs == [done["id"]]
     assert done["execution"].endswith(f"/executions/run-{done['id']}")
     assert (done["status"], done["ended"]) == ("done", True)
-    assert done["heartbeat_at"] and done["finished_at"]
+    assert done["heartbeat_at"]
+    assert done["finished_at"]
     # a job started again for a run that ended does nothing
     core.execute(engine, done["id"])
     assert run(app, ["LLalice"])["counts"] == {"YouTube videos unchanged": 1}
@@ -549,8 +553,8 @@ def test_runs_going_and_ended_and_ones_whose_jobs_stopped(app: webtest.TestApp, 
     now = core.utcnow()
     alive = queue(engine, owner, "running", heartbeat_at=now, started_at=now)
     waiting = queue(engine, owner, "queued", started_at=now)
-    died = queue(engine, owner, "running", heartbeat_at=now - datetime.timedelta(seconds=core.STALE_SECONDS + 5), started_at=now, log="10:00:00 Sleeping")
-    never = queue(engine, owner, "queued", started_at=now - datetime.timedelta(seconds=core.QUEUED_SECONDS + 5))
+    died = queue(engine, owner, "running", heartbeat_at=now - dt.timedelta(seconds=core.STALE_SECONDS + 5), started_at=now, log="10:00:00 Sleeping")
+    never = queue(engine, owner, "queued", started_at=now - dt.timedelta(seconds=core.QUEUED_SECONDS + 5))
     runs = app.get("/api/import-runs").json
     assert [r["id"] for r in runs["running"]] == [waiting, alive]
     assert [(r["id"], r["status"]) for r in runs["ended"]] == [(never, "failed"), (died, "failed")]
@@ -611,7 +615,7 @@ def test_a_user_may_start_so_many_runs_a_month_and_an_admin_any_number(app: webt
     connect(app)
     owner = alice(engine).id
     # one of last month does not count
-    queue(engine, owner, "done", started_at=core.utcnow().replace(day=1) - datetime.timedelta(days=3))
+    queue(engine, owner, "done", started_at=core.utcnow().replace(day=1) - dt.timedelta(days=3))
     assert app.get("/api/importers").json["limit"] == {"used": 0, "allowed": 2}
     run(app, ["LLalice"], dry_run=True)
     run(app, ["LLalice"])
@@ -625,12 +629,12 @@ def test_a_user_may_start_so_many_runs_a_month_and_an_admin_any_number(app: webt
 
 def test_a_running_job_says_it_is_alive_and_what_it_did_so_far(app: webtest.TestApp, engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
     sign_in(app)
-    run_id = queue(engine, alice(engine).id, "running", heartbeat_at=core.utcnow() - datetime.timedelta(seconds=60), started_at=core.utcnow())
+    run_id = queue(engine, alice(engine).id, "running", heartbeat_at=core.utcnow() - dt.timedelta(seconds=60), started_at=core.utcnow())
     monkeypatch.setattr(core, "HEARTBEAT_SECONDS", 0.01)
     report = core.Report()
     report.say("Sleeping for 300 seconds")
     report.count("seconds slept", 30)
-    beat = core._Heartbeat(engine, run_id, report)
+    beat = core.Heartbeat(engine, run_id, report)
     beat.start()
     try:
         for _ in range(500):
@@ -643,7 +647,8 @@ def test_a_running_job_says_it_is_alive_and_what_it_did_so_far(app: webtest.Test
     finally:
         beat.stop()
     assert (unstamped(record.log), record.counts) == ("Sleeping for 300 seconds", {"seconds slept": 30})
-    assert record.heartbeat_at is not None and record.heartbeat_at > record.started_at.replace(tzinfo=None) - datetime.timedelta(seconds=1)
+    assert record.heartbeat_at is not None
+    assert record.heartbeat_at > record.started_at.replace(tzinfo=None) - dt.timedelta(seconds=1)
 
 
 def test_a_cloud_run_jobs_execution_is_asked_for_with_the_run_id(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -663,7 +668,8 @@ def test_a_cloud_run_jobs_execution_is_asked_for_with_the_run_id(monkeypatch: py
             assert self.ok
 
     def get(_url: str, headers: dict[str, str], timeout: int) -> Answer:
-        assert headers == {"Metadata-Flavor": "Google"} and timeout
+        assert headers == {"Metadata-Flavor": "Google"}
+        assert timeout
         return Answer(200, {"access_token": "sa-token"})
 
     def post(url: str, headers: dict[str, str], json: Any, timeout: int) -> Answer:

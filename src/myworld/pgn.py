@@ -8,7 +8,7 @@ scripts/import_chess.py does when it imports).
 """
 
 import dataclasses
-import datetime
+import datetime as dt
 import hashlib
 import re
 from typing import Any
@@ -166,7 +166,7 @@ def _when(tags: dict[str, str]) -> dict[str, Any]:
             return when
         said_year, said_month, said_day = date.groups()
         if "?" not in said_month and "?" not in said_day:
-            when["date_ymd"] = datetime.date(int(said_year), int(said_month), int(said_day))
+            when["date_ymd"] = dt.date(int(said_year), int(said_month), int(said_day))
         elif "?" not in said_month and 1 <= int(said_month) <= 12:
             when["date_my"] = f"{said_month}-{said_year}"
         else:

@@ -60,7 +60,8 @@ def _pg_dump(url: URL) -> Iterator[bytes]:
         process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except FileNotFoundError as e:
         raise ApiError(500, "pg_dump is not installed here") from e
-    assert process.stdout is not None and process.stderr is not None
+    assert process.stdout is not None
+    assert process.stderr is not None
     # the first of it is read before answering, so a dump that cannot start says why (an error, not an empty file)
     first = process.stdout.read(CHUNK)
     if not first:
@@ -68,7 +69,8 @@ def _pg_dump(url: URL) -> Iterator[bytes]:
         raise ApiError(500, f"pg_dump failed: {process.stderr.read().decode(errors='replace').strip()}")
 
     def rest() -> Iterator[bytes]:
-        assert process.stdout is not None and process.stderr is not None
+        assert process.stdout is not None
+        assert process.stderr is not None
         yield first
         while chunk := process.stdout.read(CHUNK):
             yield chunk

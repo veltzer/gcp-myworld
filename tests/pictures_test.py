@@ -32,7 +32,7 @@ WEBP = b"RIFF\x24\x00\x00\x00WEBPVP8 " + b"0" * 24
     (b"%PDF-1.7", None),
 ])
 def test_an_image_is_told_by_its_first_bytes(data: bytes, content_type: str | None) -> None:
-    assert pictures._sniff(data) == content_type  # pylint: disable=protected-access
+    assert pictures.sniff(data) == content_type
 
 
 @pytest.mark.parametrize(("data", "extension", "content_type"), [(JPEG, ".jpg", "image/jpeg"), (PNG, ".png", "image/png"), (GIF, ".gif", "image/gif"), (WEBP, ".webp", "image/webp")])
@@ -208,4 +208,5 @@ def test_upload_svg(app: webtest.TestApp, data: str, canvas: str) -> None:
 def test_upload_svg_refuses(app: webtest.TestApp, data: str, wanted: str) -> None:
     sign_in(app)
     error = app.post("/api/images", upload_files=[("file", "logo.svg", data.encode())], status=400).json["error"]
-    assert error.startswith("file: an SVG image that cannot be a logo: ") and wanted in error, error
+    assert error.startswith("file: an SVG image that cannot be a logo: "), error
+    assert wanted in error, error

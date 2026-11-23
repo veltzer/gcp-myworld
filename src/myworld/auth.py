@@ -34,7 +34,7 @@ only the login's id.
 """
 
 import dataclasses
-import datetime
+import datetime as dt
 import functools
 import hashlib
 import hmac
@@ -48,6 +48,7 @@ from typing import Any
 import flask
 import requests
 import werkzeug
+import werkzeug.exceptions
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from sqlalchemy import select
@@ -64,8 +65,8 @@ logger = logging.getLogger(__name__)
 HTTP_TIMEOUT = 10
 PASSWORD_MIN_LENGTH = 8
 # how long a mailed link works, and how soon another may be mailed to the same address
-LINK_LIFETIME = datetime.timedelta(days=1)
-RESEND_INTERVAL = datetime.timedelta(minutes=1)
+LINK_LIFETIME = dt.timedelta(days=1)
+RESEND_INTERVAL = dt.timedelta(minutes=1)
 # what the sign-in page says when the provider does not vouch for the email
 UNVERIFIED = "{provider} did not confirm an email address for you: verify one with {provider} and sign in again"
 
@@ -109,6 +110,7 @@ def sign_in(session: Session, claims: dict[str, Any], password_hash: str | None 
         raise UnverifiedEmailError(claims["sub"])
     login = session.scalars(select(Login).where(Login.subject == claims["sub"])).one_or_none()
     now = utcnow()
+    is_new_login = login is None
     if login is None:
         login = Login(subject=claims["sub"], created_at=now)
         session.add(login)
@@ -118,8 +120,8 @@ def sign_in(session: Session, claims: dict[str, Any], password_hash: str | None 
     if password_hash is not None:
         login.password_hash = password_hash
     login.last_login = now
-    if login.user is None:
-        # a new login is not flushed before it has its user
+    if is_new_login:
+        # a new login is not flushed before it has its user (a stored login always has one: owner_id is NOT NULL)
         with session.no_autoflush:
             user = session.scalars(select(User).where(User.email == email)).one_or_none()
         if user is None:
@@ -235,9 +237,9 @@ def _email(body: dict[str, Any]) -> str:
     return email
 
 
-def _age(moment: datetime.datetime) -> datetime.timedelta:
+def _age(moment: dt.datetime) -> dt.timedelta:
     """ How long ago moment was; the database hands back UTC without its zone. """
-    return utcnow() - (moment if moment.tzinfo else moment.replace(tzinfo=datetime.UTC))
+    return utcnow() - (moment if moment.tzinfo else moment.replace(tzinfo=dt.UTC))
 
 
 def _token_hash(token: str) -> str:

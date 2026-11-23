@@ -27,7 +27,7 @@ It can run again: what is gone is not looked for.
 """
 
 import argparse
-import datetime
+import datetime as dt
 import os
 import re
 import sys
@@ -64,7 +64,7 @@ def readings_said(sentence: str, codes: dict[str, str]) -> list[Read] | None:
             return None
         language, day, rating, review = found.groups()
         reads.append(Read(
-            read_on=None if day == "date unknown" else datetime.date.fromisoformat(day),
+            read_on=None if day == "date unknown" else dt.date.fromisoformat(day),
             locale=codes[language.lower()], status="done", rating=int(rating) if rating else None, review=review or "",
         ))
     return reads

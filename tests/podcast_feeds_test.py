@@ -6,7 +6,7 @@ user's Next podcast episodes (myworld.importers.podcast_next): the next
 episodes after the last one heard, as heard now.
 """
 
-import datetime
+import datetime as dt
 from typing import Any
 
 import pytest
@@ -146,16 +146,20 @@ def test_the_feeds_are_an_admins_and_the_next_episodes_everyones(app: webtest.Te
     assert importer(app, "podcast-feeds") is None
     app.post_json("/api/importers/podcast-feeds/runs", {"params": {}}, status=404)
     nothing = importer(app, "podcast-next")
-    assert nothing is not None and nothing["unavailable"] == "No podcast has episodes yet: an admin brings them from the feeds (Podcast feeds)"
+    assert nothing is not None
+    assert nothing["unavailable"] == "No podcast has episodes yet: an admin brings them from the feeds (Podcast feeds)"
     history(app, engine)
     app.post_json("/api/podcasts", {"name": "No feed"}, status=201)
     feeds_importer = importer(app, "podcast-feeds")
-    assert feeds_importer is not None and (feeds_importer["shared"], feeds_importer["unavailable"]) == (True, "")
+    assert feeds_importer is not None
+    assert (feeds_importer["shared"], feeds_importer["unavailable"]) == (True, "")
     assert [c["label"] for c in feeds_importer["params"][0]["choices"]] == ["History"]
     feeds(app)
     sign_in(app, sub="someone")
     next_importer = importer(app, "podcast-next")
-    assert next_importer is not None and next_importer["unavailable"] == "" and next_importer["dataset"] == "episodes-heard"
+    assert next_importer is not None
+    assert next_importer["unavailable"] == ""
+    assert next_importer["dataset"] == "episodes-heard"
     assert [c["label"] for c in next_importer["params"][0]["choices"]] == ["History"]
     assert next_importer["params"][1]["single"] is True
 
@@ -173,7 +177,8 @@ def test_a_feed_brings_every_episode_and_fills_what_is_empty(app: webtest.TestAp
     with Session(engine) as session:
         shared = session.scalars(select(Podcast)).one()
         assert shared.url == "https://history.example.com"
-        assert shared.image is not None and (shared.image.data, shared.image.filename) == (COVER, f"podcast-feed-{shared.id}.jpg")
+        assert shared.image is not None
+        assert (shared.image.data, shared.image.filename) == (COVER, f"podcast-feed-{shared.id}.jpg")
     # the cover is everyone's to see
     sign_in(app, sub="someone")
     assert app.get(app.get("/api/podcasts").json[0]["image"]).body == COVER
@@ -204,7 +209,7 @@ def test_the_next_episodes_are_added_as_heard_now(app: webtest.TestApp, engine: 
     second = next(e for e in app.get("/api/podcast-episodes").json if e["guid"] == "g2")
     app.post_json("/api/episodes-heard", {"episode_id": second["id"], "date": "2026-03-02", "date_timezone": "Asia/Jerusalem",
                                           "listened_at": "Night Walks", "device_id": device}, status=201)
-    before = datetime.datetime.now(datetime.UTC).replace(tzinfo=None, microsecond=0)
+    before = dt.datetime.now(dt.UTC).replace(tzinfo=None, microsecond=0)
     assert next_heard(app, podcast, "2")["counts"] == {"episodes heard added": 2}
     added = heard(engine)[1:]
     assert [(e.episode.guid, e.listened_at, e.date_timezone, e.device_id) for e in added] == [
@@ -214,7 +219,8 @@ def test_the_next_episodes_are_added_as_heard_now(app: webtest.TestApp, engine: 
     # the next after those, as many as there are; then none
     assert next_heard(app, podcast, "10")["counts"] == {"episodes heard added": 1}
     record = next_heard(app, podcast, "10")
-    assert record["counts"] == {} and "none left after the last you heard" in record["log"]
+    assert record["counts"] == {}
+    assert "none left after the last you heard" in record["log"]
     # the ones before the first heard are not added: g1 was skipped
     assert sorted(e.episode.guid or "" for e in heard(engine)) == ["g2", "g3", "g4", "g5"]
     assert [p["name"] for p in app.get("/api/podcasts-heard").json] == ["History"]

@@ -3,7 +3,7 @@ The database checks: the logo rules themselves, the registry, the admin
 API that runs them and scripts/check.py, which runs the same ones.
 """
 
-import datetime
+import datetime as dt
 import os
 import re
 import subprocess
@@ -110,7 +110,9 @@ def test_every_check_describes_itself() -> None:
         "audio-course-covers", "audio-course-links", "audio-course-stalled", "audio-course-duplicates",
         "audio-book-authors", "audio-book-covers", "audio-book-reviews", "audio-book-duplicates"} <= set(checks.CHECKS)
     for chosen in checks.CHECKS.values():
-        assert chosen.title and chosen.description and chosen.noun
+        assert chosen.title
+        assert chosen.description
+        assert chosen.noun
         assert chosen.dataset in checks.DATASETS
     # every dataset has checks to run from its page
     assert {c.dataset for c in checks.CHECKS.values()} == set(checks.DATASETS)
@@ -224,13 +226,17 @@ def test_organization_addresses(engine: Engine) -> None:
 def museum(session: Session, name: str, **columns: Any) -> Place:
     """ A museum: a shared place of the kind Museum. """
     kind = session.scalars(select(PlaceKind).where(PlaceKind.name == MUSEUM_KIND)).one()
-    return Place(name=name, kinds=[kind], **columns)
+    place = Place(name=name, kinds=[kind], **columns)
+    session.add(place)
+    return place
 
 
 def visit(session: Session, owner_id: int, place: Place | None, **columns: Any) -> Visit:
     """ A user's museum visit to place. """
     kind = session.scalars(select(VisitType).where(VisitType.name == MUSEUM_VISIT)).one()
-    return Visit(owner_id=owner_id, place=place, type=kind, **columns)
+    made = Visit(owner_id=owner_id, place=place, type=kind, **columns)
+    session.add(made)
+    return made
 
 
 def test_museum_dates(engine: Engine) -> None:
@@ -244,7 +250,7 @@ def test_museum_dates(engine: Engine) -> None:
         session.flush()
         session.add_all([
             # any one precision is a date
-            visit(session, alice.id, louvre, date_ymd=datetime.date(2019, 5, 1)), visit(session, alice.id, louvre, date_my="06-2018"),
+            visit(session, alice.id, louvre, date_ymd=dt.date(2019, 5, 1)), visit(session, alice.id, louvre, date_my="06-2018"),
             visit(session, alice.id, tate, date_y=2015),
             visit(session, alice.id, moma, date_utcz=naive_utc(2020, 1, 2, 15, 0)),
             visit(session, alice.id, uffizi),
@@ -308,7 +314,7 @@ def test_museum_company(engine: Engine) -> None:
 
 
 def test_audio_courses(engine: Engine) -> None:
-    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    now = dt.datetime.now(dt.UTC).replace(tzinfo=None)
     with Session(engine) as session:
         alice = User(email="alice@example.com")
         session.add(alice)
@@ -319,9 +325,9 @@ def test_audio_courses(engine: Engine) -> None:
         good = {"lecturers": [lecturer], "device": phone, "image": cover, "great_courses_slug": "x"}
         session.add_all([
             # every rule kept: finished, rated and reviewed
-            AudioCourse(owner_id=alice.id, name="Good", date_ymd=datetime.date(2020, 1, 1), rating=8, review="Fine", **good),
+            AudioCourse(owner_id=alice.id, name="Good", date_ymd=dt.date(2020, 1, 1), rating=8, review="Fine", **good),
             # in progress a month: not stalled, and not asked for a review
-            AudioCourse(owner_id=alice.id, name="Running", started_utcz=now - datetime.timedelta(days=30), **good),
+            AudioCourse(owner_id=alice.id, name="Running", started_utcz=now - dt.timedelta(days=30), **good),
             # no longer sold: a link to any page about it will do
             AudioCourse(
                 owner_id=alice.id, name="Out of print", date_y=2016, rating=7, review="ok",
@@ -331,7 +337,7 @@ def test_audio_courses(engine: Engine) -> None:
             AudioCourse(owner_id=alice.id, name="Bare", date_y=2019, rating=7, review="ok"),
             AudioCourse(owner_id=alice.id, name="Limbo", **good),
             AudioCourse(owner_id=alice.id, name="Unrated", date_y=2018, review="ok", **good),
-            AudioCourse(owner_id=alice.id, name="Stalled", started_utcz=now - datetime.timedelta(days=800), progress="4/24", **good),
+            AudioCourse(owner_id=alice.id, name="Stalled", started_utcz=now - dt.timedelta(days=800), progress="4/24", **good),
             AudioCourse(owner_id=alice.id, name="Twice", date_y=2017, rating=6, review="a", **good),
             AudioCourse(owner_id=alice.id, name="twice ", date_y=2017, rating=6, review="b", **good),
         ])
@@ -416,7 +422,7 @@ def test_podcasts(engine: Engine) -> None:
         session.add_all([
             PodcastHeard(owner_id=alice.id, podcast=good),
             PodcastHeard(owner_id=alice.id, podcast=bare),
-            EpisodeHeard(owner_id=alice.id, episode=trailer, date_ymd=datetime.date(2026, 3, 22)),
+            EpisodeHeard(owner_id=alice.id, episode=trailer, date_ymd=dt.date(2026, 3, 22)),
             EpisodeHeard(owner_id=alice.id, episode=typed),
         ])
         session.commit()
@@ -498,19 +504,19 @@ def test_books(engine: Engine) -> None:
         good = session.get(UserWork, (alice.id, works["Good"].id))
         assert good is not None
         # the entry goes by its latest dated read
-        good.reads = [Read(read_on=datetime.date(2001, 5, 1), locale="he"), Read(read_on=datetime.date(1999, 1, 1), locale="en"), Read()]
+        good.reads = [Read(read_on=dt.date(2001, 5, 1), locale="he"), Read(read_on=dt.date(1999, 1, 1), locale="en"), Read()]
         session.commit()
-        assert (good.locale, good.finished_on) == ("he", datetime.date(2001, 5, 1))
+        assert (good.locale, good.finished_on) == ("he", dt.date(2001, 5, 1))
         assert found("book-languages") == [("Good", "has a reading that does not say the language it was read in")]
         assert [name for name, _ in found("book-read-dates")] == ["Good", "Twice", "twice ", "Good"]
         # it is rated by the latest reading rated, and where it is by a reading still open
-        good.reads = [Read(read_on=datetime.date(2001, 5, 1), locale="en", rating=8), Read(read_on=datetime.date(2003, 5, 1), locale="en")]
+        good.reads = [Read(read_on=dt.date(2001, 5, 1), locale="en", rating=8), Read(read_on=dt.date(2003, 5, 1), locale="en")]
         session.commit()
         assert (good.status, good.rating) == ("done", 8)
         good.reads = [*good.reads, Read(status="in_progress")]
         session.commit()
         assert (good.status, good.rating, good.finished_on) == ("in_progress", 8, None)
-        good.reads = [Read(read_on=datetime.date(2001, 5, 1), locale="en", rating=8)]
+        good.reads = [Read(read_on=dt.date(2001, 5, 1), locale="en", rating=8)]
         session.commit()
         assert found("book-ratings") == []
         assert checks.CHECKS["book-ratings"].run(session).checked == 4
@@ -620,24 +626,31 @@ def test_script(tmp_path: Path) -> None:
     fill(engine)
     engine.dispose()
     listed = run_script(url, "--list")
-    assert listed.returncode == 0 and "logos" in listed.stdout and "Books (--dataset book):" in listed.stdout
+    assert listed.returncode == 0
+    assert "logos" in listed.stdout
+    assert "Books (--dataset book):" in listed.stdout
     # one dataset's checks only: the organizations' fail, the books' (none there) pass
     organizations = run_script(url, "--dataset", "organizations")
-    assert organizations.returncode == 1 and "FAIL  logos" in organizations.stdout and "book-covers" not in organizations.stdout
+    assert organizations.returncode == 1
+    assert "FAIL  logos" in organizations.stdout
+    assert "book-covers" not in organizations.stdout
     books = run_script(url, "--dataset", "book")
     assert books.returncode == 0, books.stdout + books.stderr
-    assert "ok    book-covers: all 0 books pass" in books.stdout and "logos" not in books.stdout
+    assert "ok    book-covers: all 0 books pass" in books.stdout
+    assert "logos" not in books.stdout
     assert run_script(url, "--dataset", "book", "logos").returncode == 2
     failing = run_script(url)
     assert failing.returncode == 1
     assert "FAIL  logos: 1 problems in 2 logos" in failing.stdout
     assert "evil.svg (image 2, account 2: Evil): has a <script> element" in failing.stdout
     assert run_script(url, "nonesuch").returncode == 2
-    with Session(create_engine(url)) as session:
+    engine = create_engine(url)
+    with Session(engine) as session:
         session.execute(update(Organization).where(Organization.name.in_(["Evil", "Bare", "Bitmap"])).values(image_id=1))
         # an SVG nothing uses is still checked, so the bad one has to go
         session.execute(delete(Image).where(Image.filename == "evil.svg"))
         session.commit()
+    engine.dispose()
     # the two logo checks; the sample organizations have no relation types
     passing = run_script(url, "logos", "organization-logos")
     assert passing.returncode == 0, passing.stdout + passing.stderr
@@ -676,7 +689,8 @@ def test_every_page_has_checks() -> None:
     groups = re.search(r"const NAV_GROUPS = \[(.*?)\n\];", app_js, re.DOTALL)
     assert groups is not None
     pages = set(KINDS) | set(re.findall(r'"([a-z-]+)"', re.sub(r'\["[A-Z][a-z]+", ', "", groups.group(1))))
-    assert "concerts" in pages and "devices" in pages
+    assert "concerts" in pages
+    assert "devices" in pages
     assert pages == set(checks.DATASETS)
     for page in pages:
         assert any(c.dataset == page for c in checks.CHECKS.values()), f"{page} has no checks"
@@ -918,7 +932,9 @@ def test_more_checks(engine: Engine) -> None:
         assert [(subject, message.split(" km ")[1]) for subject, message in found("place-near-city")] == [(" louvre, Paris", "from Paris, the city it is in")]
         assert who("organization-near-city") == []
         assert who("place-websites") == [" louvre, Paris", "A lawn, Lyon"]
-        assert checks.CHECKS["place-websites"].description and checks.CHECKS["places-credits"].description and checks.CHECKS["place-near-city"].description
+        assert checks.CHECKS["place-websites"].description
+        assert checks.CHECKS["places-credits"].description
+        assert checks.CHECKS["place-near-city"].description
 
 
 def test_certification_checks(engine: Engine) -> None:

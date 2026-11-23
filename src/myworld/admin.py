@@ -156,7 +156,7 @@ def table_json(inspector: Any, name: str, rows: int) -> dict[str, Any]:
     primary = inspector.get_pk_constraint(name).get("constrained_columns") or []
     columns = [_column_json(c, primary) for c in inspector.get_columns(name)]
     model = Base.metadata.tables.get(name)
-    in_model: set[str] = set() if model is None else {str(c.name) for c in model.columns}
+    in_model: set[str] = set() if model is None else {c.name for c in model.columns}
     in_database: set[str] = {str(c["name"]) for c in columns}
     return {
         "name": name,

@@ -100,7 +100,7 @@ def api_image(image_id: int) -> werkzeug.Response:
     return response.make_conditional(flask.request)
 
 
-def _sniff(data: bytes) -> str | None:
+def sniff(data: bytes) -> str | None:
     for content_type, signatures in IMAGE_SIGNATURES.items():
         if data.startswith(signatures):
             return content_type
@@ -216,7 +216,7 @@ def api_images_add() -> tuple[flask.Response, int]:
     data = upload.read(IMAGE_MAX_BYTES + 1)
     if len(data) > IMAGE_MAX_BYTES:
         raise ApiError(413, f"file: larger than {IMAGE_MAX_BYTES // (1024 * 1024)} MB")
-    content_type = _sniff(data)
+    content_type = sniff(data)
     if content_type is None and is_svg(data):
         # an SVG is stored made to the logo convention (doc/logos.md), or refused when it runs code or reaches outside
         try:

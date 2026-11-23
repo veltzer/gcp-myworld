@@ -52,7 +52,7 @@ def check_organization_logos(session: Session) -> Result:
     """ Every organization, of every account, has a logo, and it is an SVG image (a logo is never a bitmap: doc/logos.md). """
     organizations = rows(session, Organization)
     logo_ids = [o.image_id for o in organizations if o.image_id is not None]
-    types = dict(session.execute(select(Image.id, Image.content_type).where(Image.id.in_(logo_ids))).tuples().all())
+    types = dict(session.execute(select(Image.id, Image.content_type).where(Image.id.in_(logo_ids))).all())
     problems = []
     for o in organizations:
         if o.image_id is None:

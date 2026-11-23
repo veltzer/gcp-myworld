@@ -14,7 +14,7 @@ attacks, the "billion laughs").
 """
 
 import dataclasses
-import datetime
+import datetime as dt
 import email.utils
 import html.parser
 import math
@@ -42,7 +42,7 @@ class Episode:
     """ An episode as its feed says it: the columns of models.PodcastEpisode it fills. """
     name: str
     description: str = ""
-    published_utcz: datetime.datetime | None = None
+    published_utcz: dt.datetime | None = None
     number: int | None = None
     duration: int | None = None
     episode_type: str = ""
@@ -112,7 +112,7 @@ def duration_seconds(value: str) -> int | None:
     return int(total) if math.isfinite(total) and total >= 0 else None
 
 
-def published(value: str) -> datetime.datetime | None:
+def published(value: str) -> dt.datetime | None:
     """ A pubDate ("Wed, 28 Oct 2020 13:00:00 -0000") as the naive UTC the columns keep; None when it is not a date. """
     try:
         stamp = email.utils.parsedate_to_datetime(value)
@@ -120,7 +120,7 @@ def published(value: str) -> datetime.datetime | None:
         return None
     if stamp.tzinfo is None:
         return stamp
-    return stamp.astimezone(datetime.UTC).replace(tzinfo=None)
+    return stamp.astimezone(dt.UTC).replace(tzinfo=None)
 
 
 class _Text(html.parser.HTMLParser):

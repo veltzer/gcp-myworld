@@ -85,9 +85,14 @@ def test_what_has_no_cover_is_given_one(app: webtest.TestApp, engine: Engine, as
     with Session(engine) as session:
         versions = {v.asin: v for v in session.scalars(select(AudioBookVersion))}
         films = {f.name: f for f in session.scalars(select(Film))}
-        assert versions["B1"].image is not None and versions["B1"].image.data == JPEG + b"audible"
-        assert versions["B2"].image is None and versions["B3"].image is not None and versions["B3"].image.data == JPEG + b"mine"
-        assert films["Interstellar"].image is not None and films["Interstellar"].tmdb_id == 157336 and films["Unknown"].image is None
+        assert versions["B1"].image is not None
+        assert versions["B1"].image.data == JPEG + b"audible"
+        assert versions["B2"].image is None
+        assert versions["B3"].image is not None
+        assert versions["B3"].image.data == JPEG + b"mine"
+        assert films["Interstellar"].image is not None
+        assert films["Interstellar"].tmdb_id == 157336
+        assert films["Unknown"].image is None
     # again: only those still missing one are asked about
     asked.clear()
     assert run(app)["counts"] == {"audio book covers not found": 1, "posters not found": 1}

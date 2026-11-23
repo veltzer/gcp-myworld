@@ -27,7 +27,7 @@ Their photos live in the images table, so the database alone holds all of it.
 They are loaded by scripts/import_world.py.
 """
 
-import datetime
+import datetime as dt
 import os
 from collections.abc import Callable
 from typing import Any, cast
@@ -106,8 +106,8 @@ RATING_MIN = 1
 RATING_MAX = 10
 
 
-def utcnow() -> datetime.datetime:
-    return datetime.datetime.now(datetime.UTC)
+def utcnow() -> dt.datetime:
+    return dt.datetime.now(dt.UTC)
 
 
 class Base(DeclarativeBase):
@@ -164,15 +164,15 @@ class User(Base):
     # an admin's own lock on the shared data (may_edit_shared): off, even an admin cannot change it by
     # hand, so it is not changed by accident; Settings turns it on. A regular user never may.
     edit_shared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
-    last_login: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    last_login: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
 
-    works: Mapped[list[UserWork]] = relationship(  # pylint: disable=used-before-assignment
+    works: Mapped[list[UserWork]] = relationship(
         back_populates="user", cascade="all, delete-orphan",
     )
     # every way this person signs in
     logins: Mapped[list[Login]] = relationship(
-        back_populates="user", cascade="all, delete-orphan", order_by=lambda: Login.id,  # pylint: disable=used-before-assignment
+        back_populates="user", cascade="all, delete-orphan", order_by=lambda: Login.id,
     )
 
 
@@ -201,8 +201,8 @@ class Login(Base):
     picture: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     # only for an email login; werkzeug hash
     password_hash: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
-    last_login: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    last_login: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
 
     user: Mapped[User] = relationship(back_populates="logins")
 
@@ -230,7 +230,7 @@ class EmailVerification(Base):
 
     email: Mapped[str] = mapped_column(String(320), primary_key=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    sent_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    sent_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
 
 class Locale(Base):
@@ -300,9 +300,9 @@ class Work(Base):
     # the language it was first written in (Dune: English, whatever it was read in); empty while not known
     original_locale: Mapped[str | None] = mapped_column(ForeignKey("locales.code"), nullable=True)
 
-    users: Mapped[list[UserWork]] = relationship(back_populates="work")  # pylint: disable=used-before-assignment
+    users: Mapped[list[UserWork]] = relationship(back_populates="work")
     titles: Mapped[list[WorkTitle]] = relationship(
-        back_populates="work", cascade="all, delete-orphan", order_by=lambda: WorkTitle.id,  # pylint: disable=used-before-assignment
+        back_populates="work", cascade="all, delete-orphan", order_by=lambda: WorkTitle.id,
     )
 
     def locale_for(self, preferred: str) -> str:
@@ -362,7 +362,7 @@ class UserWork(Base):
     # may have several: this is the first, the one its card shows, and the
     # others are in more_covers
     image_id: Mapped[int | None] = mapped_column(ForeignKey("images.id", ondelete="SET NULL"), nullable=True)
-    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
     user: Mapped[User] = relationship(back_populates="works")
     work: Mapped[Work] = relationship(back_populates="users", lazy="joined")
@@ -416,7 +416,7 @@ class UserWork(Base):
             return still_open[-1]
         dated = [read for read in self.reads if read.read_on is not None]
         if dated:
-            return max(dated, key=lambda read: read.read_on or datetime.date.min)
+            return max(dated, key=lambda read: read.read_on or dt.date.min)
         return self.reads[-1] if self.reads else None
 
     @property
@@ -426,13 +426,13 @@ class UserWork(Base):
         return read.locale if read else None
 
     @property
-    def finished_on(self) -> datetime.date | None:
+    def finished_on(self) -> dt.date | None:
         """ The day the user finished it, last. """
         read = self.last_read
         return read.read_on if read else None
 
     @property
-    def started_on(self) -> datetime.date | None:
+    def started_on(self) -> dt.date | None:
         """ The day the user started it, last. """
         read = self.last_read
         return read.started_on if read else None
@@ -449,7 +449,7 @@ class UserWork(Base):
         if read is not None and said(read):
             return read
         saying = [read for read in self.reads if said(read)]
-        return max(saying, key=lambda read: (read.read_on or datetime.date.min, read.id or 0)) if saying else None
+        return max(saying, key=lambda read: (read.read_on or dt.date.min, read.id or 0)) if saying else None
 
     @property
     def rating(self) -> int | None:
@@ -485,11 +485,11 @@ class Read(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[int] = mapped_column(Integer, nullable=False)
     work_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    read_on: Mapped[datetime.date | None] = mapped_column(nullable=True)
+    read_on: Mapped[dt.date | None] = mapped_column(nullable=True)
     locale: Mapped[str | None] = mapped_column(ForeignKey("locales.code"), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="done", server_default="done")
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    started_on: Mapped[datetime.date | None] = mapped_column(nullable=True)
+    started_on: Mapped[dt.date | None] = mapped_column(nullable=True)
     review: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
 
     entry: Mapped[UserWork] = relationship(back_populates="reads")
@@ -1101,7 +1101,7 @@ class City(_Pictured, _Located, Base):
         return self.region_row.name if self.region_row is not None else ""
 
     # its photos after the first (image_id and its credit), in the order they were added
-    more_photos: Mapped[list[CityPhoto]] = relationship(cascade="all, delete-orphan", order_by=lambda: CityPhoto.id)  # pylint: disable=used-before-assignment
+    more_photos: Mapped[list[CityPhoto]] = relationship(cascade="all, delete-orphan", order_by=lambda: CityPhoto.id)
 
     places: Mapped[list[Place]] = relationship(back_populates="city")
     organizations: Mapped[list[Organization]] = relationship(back_populates="city", foreign_keys=lambda: Organization.city_id)
@@ -1164,8 +1164,8 @@ class _Dated:
     columns is set. date_utcz is a full timestamp in UTC, date_ymd a day,
     date_my a month ("MM-YYYY"), date_y a year. date_timezone is where it was.
     """
-    date_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-    date_ymd: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    date_utcz: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    date_ymd: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     date_my: Mapped[str] = mapped_column(String(7), nullable=False, default="")
     date_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
     date_timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="")
@@ -1531,8 +1531,8 @@ class AudioCourse(_Dated, Base):
     # where it was listened to ("Night Walks", "Car")
     listened_at: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     # still in progress: when it was started, and how far it got ("4/24" lectures)
-    started_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-    ended_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    started_utcz: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    ended_utcz: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     progress: Mapped[str] = mapped_column(String(20), nullable=False, default="")
     # where it is sold: The Great Courses (id and URL slug) or Audible (ASIN)
     great_courses_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -1616,7 +1616,7 @@ class AudioBookVersion(Base):
     # its rating at Audible (of 5) and by how many
     source_rating: Mapped[float | None] = mapped_column(Double, nullable=True)
     source_ratings: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    released: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    released: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     # the address of its cover at Audible (the cover itself is image)
     cover_url: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     # MP3's: how many files (parts, discs) it comes in
@@ -1671,15 +1671,15 @@ class AudioBookListen(_Dated, Base):
     # how much of it was heard, 0 to 100, as Audible says
     percent_heard: Mapped[float | None] = mapped_column(Double, nullable=True)
     # not finished: when it was started, and how far it got ("did part03")
-    started_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    started_utcz: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     progress: Mapped[str] = mapped_column(String(20), nullable=False, default="")
     # where it was heard ("Night Walks"), and on what: one of the user's own devices
     listened_at: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id", ondelete="SET NULL", name="fk_audio_book_listens_device_id"), nullable=True)
     device: Mapped[Device | None] = relationship(back_populates="audio_book_listens")
     # Audible's: when it came into the user's library there, and when they bought it
-    added_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-    purchased_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    added_utcz: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    purchased_utcz: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Podcast(Base):
@@ -1726,7 +1726,7 @@ class PodcastEpisode(Base):
     # the feed says it), the audio (enclosure_url) and the episode's image, author, guid
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    published_utcz: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    published_utcz: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
     episode_type: Mapped[str] = mapped_column(String(20), nullable=False, default="")
@@ -1817,7 +1817,7 @@ class YouTubeVideo(_Dated, Base):
     channel: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     category: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    uploaded: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    uploaded: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     views: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # YouTube no longer has it (deleted or private): only its id is known
     unavailable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
@@ -1979,7 +1979,7 @@ class YouTubeConnection(Base):
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     refresh_token: Mapped[str] = mapped_column(Text, nullable=False)
     channel: Mapped[str] = mapped_column(String(200), nullable=False, default="")
-    connected_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    connected_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
 
 class CalendarConnection(Base):
@@ -1996,7 +1996,7 @@ class CalendarConnection(Base):
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     refresh_token: Mapped[str] = mapped_column(Text, nullable=False)
     account: Mapped[str] = mapped_column(String(200), nullable=False, default="")
-    connected_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    connected_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
 
 class AudibleConnection(Base):
@@ -2017,7 +2017,7 @@ class AudibleConnection(Base):
     private_key: Mapped[str] = mapped_column(Text, nullable=False)
     refresh_token: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
-    connected_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    connected_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
 
 # queued: waiting for its job to start (on Cloud Run, a Cloud Run Jobs execution);
@@ -2049,9 +2049,9 @@ class ImportRun(Base):
     counts: Mapped[dict[str, int]] = mapped_column(JSON, nullable=False, default=dict)
     log: Mapped[str] = mapped_column(Text, nullable=False, default="")
     # when it was asked for (queued), when its job last said it is alive, when it ended
-    started_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
-    heartbeat_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    heartbeat_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     # the Cloud Run Jobs execution doing it ("projects/.../executions/..."), "" when run in the app itself
     execution: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
 
@@ -2067,7 +2067,7 @@ class ImportUsage(Base):
 
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     # the first day of the month
-    month: Mapped[datetime.date] = mapped_column(Date, primary_key=True)
+    month: Mapped[dt.date] = mapped_column(Date, primary_key=True)
     runs: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
@@ -2095,8 +2095,8 @@ class SharedView(Base):
     datasets: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     # who may open it: "public" (anyone with the address); private views are still to come
     access: Mapped[str] = mapped_column(String(20), nullable=False, default=VIEW_ACCESS_PUBLIC, server_default=VIEW_ACCESS_PUBLIC)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
-    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
     owner: Mapped[User] = relationship()
 

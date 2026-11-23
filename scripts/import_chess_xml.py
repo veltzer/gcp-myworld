@@ -32,7 +32,7 @@ run it through the proxy: scripts/with_cloud_db.sh scripts/import_chess_xml.py .
 """
 
 import argparse
-import datetime
+import datetime as dt
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -67,7 +67,7 @@ class ChessXmlError(Exception):
     pass
 
 
-def when(said: str) -> tuple[datetime.date | None, int | None]:
+def when(said: str) -> tuple[dt.date | None, int | None]:
     """
     When a game was played, as the file says it: the day, or, where the file
     writes a day no calendar has ("31.11.01"), only its year, the one thing
@@ -80,12 +80,12 @@ def when(said: str) -> tuple[datetime.date | None, int | None]:
         number, month, year = (int(part) for part in short.groups())
         year += 1900 if year >= 50 else 2000
         try:
-            return datetime.date(year, month, number), None
+            return dt.date(year, month, number), None
         except ValueError:
             return None, year
     long = _DATE_OUTPUT.fullmatch(said)
     if long:
-        return datetime.datetime.strptime(" ".join(long.groups()) + " +0000", "%b %d %Y %z").date(), None
+        return dt.datetime.strptime(" ".join(long.groups()) + " +0000", "%b %d %Y %z").date(), None
     raise ChessXmlError(f"the date {said!r} is written in no way this knows")
 
 

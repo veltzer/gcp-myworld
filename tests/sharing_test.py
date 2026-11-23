@@ -23,7 +23,8 @@ def owner(app: webtest.TestApp) -> None:
 def test_the_owner_makes_changes_and_deletes_views(app: webtest.TestApp) -> None:
     owner(app)
     listed = app.get("/api/shared-views").json
-    assert listed["views"] == [] and listed["username"] == "veltzer"
+    assert listed["views"] == []
+    assert listed["username"] == "veltzer"
     assert {"book", "concerts", "people"} <= set(listed["datasets"])
     made = app.post_json("/api/shared-views", {"name": "Music", "title": "My concerts", "datasets": ["people", "concerts"]}, status=201).json
     # the name is taken lowercase; the data sets in the page's order

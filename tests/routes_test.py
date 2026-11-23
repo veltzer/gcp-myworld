@@ -449,7 +449,8 @@ def test_a_region_is_a_row_its_cities_share(app: webtest.TestApp, engine: Engine
     # one row for the two of them; the same name in another country is another region
     london = app.post_json("/api/cities", {"name": "London", "region": "Ontario", "country_id": canada}, status=201).json
     texas, = [region for region in app.get("/api/regions").json if region["name"] == "Texas"]
-    assert texas["country"] == {"id": usa, "name": "USA"} and [city["name"] for city in texas["cities"]] == ["Austin", "Dallas"]
+    assert texas["country"] == {"id": usa, "name": "USA"}
+    assert [city["name"] for city in texas["cities"]] == ["Austin", "Dallas"]
     assert [(region["name"], region["country"]["name"]) for region in app.get("/api/regions").json] == [("Ontario", "Canada"), ("Texas", "USA")]
     # a city is a name once in a region of a country, and once more in another region
     app.post_json("/api/cities", {"name": "Austin", "region": "Texas", "country_id": usa}, status=409)

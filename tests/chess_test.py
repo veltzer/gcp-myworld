@@ -5,7 +5,7 @@ scripts/import_chess_xml.py of the games recorded without their moves) and
 the checks.
 """
 
-import datetime
+import datetime as dt
 import gzip
 from pathlib import Path
 
@@ -76,7 +76,8 @@ SCHOLARS_MATE = "r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR"
 def test_a_file_is_its_games() -> None:
     games = pgn.split(LIVE + "\n" + OLD + "\n\n" + ENGINES)
     assert [pgn.parse(game).tags["White"] for game in games] == ["mark_veltzer", "veltzer", "GNUChess"]
-    assert pgn.split("") == [] and pgn.split("\n\n") == []
+    assert pgn.split("") == []
+    assert pgn.split("\n\n") == []
     with pytest.raises(pgn.PgnError, match="no tags"):
         pgn.parse("1. e4 e5")
 
@@ -87,16 +88,18 @@ def test_a_game_is_read() -> None:
     assert [move.clock for move in live.moves] == ["0:02:58.4", "0:02:59.4", "0:02:57.7", "0:02:56.4"]
     fields = pgn.fields(live)
     assert fields["source_key"] == "chess.com:live:1621079688"
-    assert fields["date_utcz"] == naive_utc(2016, 6, 18, 7, 26, 42) and fields["date_ymd"] is None
+    assert fields["date_utcz"] == naive_utc(2016, 6, 18, 7, 26, 42)
+    assert fields["date_ymd"] is None
     assert (fields["white"], fields["black"], fields["white_elo"], fields["black_elo"]) == ("mark_veltzer", "nfloz84", 1031, 1156)
     assert (fields["result"], fields["termination"], fields["time_control"], fields["plies"]) == ("0-1", "nfloz84 won by checkmate", "180", 4)
     assert (fields["eco"], fields["opening"], fields["site"]) == ("A00", "Barnes Opening Fools Mate", "Chess.com")
     assert fields["pgn"] == LIVE
     old = pgn.fields(pgn.parse(OLD))
     # a day, the words in braces for how it ended, and a hash to tell it by
-    assert (old["date_ymd"], old["date_utcz"]) == (datetime.date(2001, 3, 4), None)
+    assert (old["date_ymd"], old["date_utcz"]) == (dt.date(2001, 3, 4), None)
     assert (old["termination"], old["black_elo"], old["link"], old["plies"]) == ("AreaFiftyOne checkmated", None, "", 7)
-    assert old["source_key"].startswith("sha256:") and old["source_key"] == pgn.key(pgn.parse(OLD + "\n\n"))
+    assert old["source_key"].startswith("sha256:")
+    assert old["source_key"] == pgn.key(pgn.parse(OLD + "\n\n"))
 
 
 def test_what_old_files_write() -> None:
@@ -300,12 +303,12 @@ def test_the_games_recorded_without_their_moves(engine: Engine, tmp_path: Path, 
         ]
         # the day, as either way the file writes it; the time control, else how long it was; a stalemate is a draw
         assert [(g.date_ymd, g.time_control, g.termination, g.remark) for g in games[3:5]] == [
-            (datetime.date(1999, 8, 19), "unlimited", "stalemate", "opponent's category: pub"), (datetime.date(2002, 12, 13), "", "", "on the beach; opponent's category: pub"),
+            (dt.date(1999, 8, 19), "unlimited", "stalemate", "opponent's category: pub"), (dt.date(2002, 12, 13), "", "", "on the beach; opponent's category: pub"),
         ]
         # what the file says of the opponent besides their name is in the remark; one without a name goes by their description
         # a game the file gives both a time control and a length: the time control is its time control, the length a remark
         assert games[0].remark == "length: unlimited; opponent: brother; opponent's category: family"
-        assert (games[0].date_ymd, games[0].time_control, games[3].opponent, games[4].outcome) == (datetime.date(2001, 6, 16), "1:50:1:50", "met in Rosh Pinah", "drawn")
+        assert (games[0].date_ymd, games[0].time_control, games[3].opponent, games[4].outcome) == (dt.date(2001, 6, 16), "1:50:1:50", "met in Rosh Pinah", "drawn")
         # run again, nothing is added; a game added to the file's end is
         assert import_chess_xml.import_chess_xml(session, me, path)["added"] == 0
         path.write_text(CHESS_XML.replace("\t</games>", "\t\t<game><opponentid>1</opponentid><result>won</result><date>unknown</date><length>unknown</length><timecontrol>unknown</timecontrol></game>\n\t</games>"), encoding="UTF8")

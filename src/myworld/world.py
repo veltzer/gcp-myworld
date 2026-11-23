@@ -11,7 +11,7 @@ thinks of a place is in their visits).
 """
 
 import dataclasses
-import datetime
+import datetime as dt
 import re
 import zoneinfo
 from collections.abc import Callable
@@ -109,7 +109,7 @@ bp = flask.Blueprint("world", __name__)
 def date_json(row: Any) -> dict[str, Any]:
     """ The date as precisely as it is known, and a sortable key for it. """
     if row.date_utcz is not None:
-        utc = row.date_utcz.replace(tzinfo=datetime.UTC)
+        utc = row.date_utcz.replace(tzinfo=dt.UTC)
         return {"date": utc.isoformat().replace("+00:00", "Z"), "date_precision": "time", "date_sort": utc.date().isoformat()}
     if row.date_ymd is not None:
         return {"date": row.date_ymd.isoformat(), "date_precision": "day", "date_sort": row.date_ymd.isoformat()}
@@ -324,8 +324,8 @@ def museum_json(museum: Place, mine: list[Visit]) -> dict[str, Any]:
     }
 
 
-def _stamp_json(stamp: datetime.datetime | None) -> str:
-    return "" if stamp is None else stamp.replace(tzinfo=datetime.UTC).isoformat().replace("+00:00", "Z")
+def _stamp_json(stamp: dt.datetime | None) -> str:
+    return "" if stamp is None else stamp.replace(tzinfo=dt.UTC).isoformat().replace("+00:00", "Z")
 
 
 def audio_course_json(course: AudioCourse) -> dict[str, Any]:
@@ -1155,9 +1155,9 @@ def _apply_museum_visits(place: Place, had: list[Visit], body: dict[str, Any]) -
         if visit_id is not None and (visit_id not in by_id or visit_id in {visit.id for visit in visits}):
             raise ApiError(400, "visits: unknown visit")
         visit = by_id[visit_id] if visit_id is not None else Visit(owner_id=flask.g.user.id, place=place, type=kind)
+        flask.g.db.add(visit)
         _apply_visit(visit, item)
         visits.append(visit)
-        flask.g.db.add(visit)
     for visit in had:
         if visit not in visits:
             flask.g.db.delete(visit)
@@ -1409,7 +1409,7 @@ def _apply_dates(row: Concert | Visit | AudioCourse | AudioBookListen | EpisodeH
         my = f"{month.group(2)}-{month.group(1)}"
     elif value:
         try:
-            ymd = datetime.date.fromisoformat(value)
+            ymd = dt.date.fromisoformat(value)
         except ValueError as e:
             raise ApiError(400, "date: expected YYYY, YYYY-MM or YYYY-MM-DD") from e
     row.date_utcz, row.date_ymd, row.date_my, row.date_y = utcz, ymd, my, y
@@ -1585,7 +1585,7 @@ def _apply_named(model: type[PlaceKind | VisitType], what: str) -> Callable[[Any
     return apply
 
 
-def _stamp(body: dict[str, Any], key: str, current: datetime.datetime | None) -> datetime.datetime | None:
+def _stamp(body: dict[str, Any], key: str, current: dt.datetime | None) -> dt.datetime | None:
     """ A moment as YYYY-MM-DD or a full UTC timestamp; sent back as shown, it is kept as it was. """
     value = text(body, key)
     if not value:
@@ -1594,8 +1594,8 @@ def _stamp(body: dict[str, Any], key: str, current: datetime.datetime | None) ->
         return current
     try:
         if len(value) == 10:
-            return datetime.datetime.fromisoformat(value)
-        return datetime.datetime.fromisoformat(value).astimezone(datetime.UTC).replace(tzinfo=None)
+            return dt.datetime.fromisoformat(value)
+        return dt.datetime.fromisoformat(value).astimezone(dt.UTC).replace(tzinfo=None)
     except ValueError as e:
         raise ApiError(400, f"{key}: expected YYYY-MM-DD") from e
 
@@ -1773,7 +1773,7 @@ def _apply_audio_book_version(version: AudioBookVersion, body: dict[str, Any]) -
     version.parts = opt_int(body, "parts", 1, 10_000)
     released = text(body, "released")
     try:
-        version.released = datetime.date.fromisoformat(released) if released else None
+        version.released = dt.date.fromisoformat(released) if released else None
     except ValueError as e:
         raise ApiError(400, "released: expected YYYY-MM-DD") from e
     apply_image(version, body)
@@ -2371,7 +2371,9 @@ def api_world_add(what: str) -> tuple[flask.Response, int]:
     view = VIEWS[what]
     _may_change(view.model)
     row = view.model() if is_shared(view.model) else view.model(owner_id=flask.g.user.id)
-    view.apply(row, json_body())
+    # row is built from rows that exist already while it is not yet in the session: no flush until it is added
+    with flask.g.db.no_autoflush:
+        view.apply(row, json_body())
     flask.g.db.add(row)
     flask.g.db.commit()
     return flask.jsonify(view.json(row)), 201
@@ -2383,7 +2385,9 @@ def api_world_update(what: str, row_id: int) -> flask.Response:
     view = VIEWS[what]
     _may_change(view.model)
     row = owned(view.model, row_id)
-    view.apply(row, json_body())
+    # new rows made for row (links, visits, ...) are not in the session yet: no flush until they are
+    with flask.g.db.no_autoflush:
+        view.apply(row, json_body())
     # a picture taken away or replaced goes, with its image; so does a region no city says any more
     flask.g.db.flush()
     drop_unused_images()
