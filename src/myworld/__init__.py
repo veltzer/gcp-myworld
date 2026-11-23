@@ -25,6 +25,7 @@ from myworld import (
     dump,
     enumerations,
     gcalendar,
+    goodreads,
     imports,
     locales,
     pictures,
@@ -145,4 +146,5 @@ def create_app(engine: Engine | None = None, mail: verification.Mailer | None = 
     app.register_blueprint(youtube.bp)
     app.register_blueprint(audible.bp)
     app.register_blueprint(gcalendar.bp)
+    app.register_blueprint(goodreads.bp)
     return app

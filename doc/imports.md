@@ -203,6 +203,35 @@ GOOGLE_CLIENT_ID=<gcp_oauth_client_id> GOOGLE_CLIENT_SECRET="$(pass show keys/go
   MYWORLD_DEV_LOGIN=1 python src/main.py
 ```
 
+## Goodreads: books to read
+
+`goodreads-to-read` brings the books on the user's Goodreads to-read shelf
+in as books they want to read (`importers/goodreads_to_read.py`): each one
+the library does not have yet is added, wanted (a reading of the status
+Want to), with its author, year, ISBN, Goodreads id and cover, and notes
+saying when it went on the shelf and its series (Goodreads writes it into
+the title: "Dune (Dune, #1)" is the book Dune, notes "Series: Dune, #1").
+A book is found in the library by its Goodreads id, its ISBN, or its title
+and author; one there is left as it is, but for its Goodreads id and ISBN,
+given when it has none. The author is the user's person of that name, or a
+new one (a Book Author, when the user keeps that profession); a name two
+people share is left as the author text only. It only ever adds.
+
+## Connecting Goodreads
+
+Goodreads has had no API since 2020, and a profile that is not public
+shows its shelves to no one signed out. What it gives each user is an RSS
+feed of their shelves at an address with a key of their own: on
+goodreads.com, My Books, the RSS link at the bottom
+(`https://www.goodreads.com/review/list_rss/<number>?key=...`).
+
+- `POST /goodreads/connect` `{"address": ...}` tries it (the first page of
+  to-read) and keeps the number and the key in `goodreads_connections`,
+  the key sealed (Fernet) with a key derived from `SECRET_KEY`.
+- A run reads the shelf 100 books a page, until a page brings nothing new.
+- `POST /goodreads/disconnect` forgets it (nothing at Goodreads revokes the
+  key; a new one does, from Goodreads' settings); `GET /goodreads/status`.
+
 ## Connecting Google Calendar
 
 The calendar importers read the user's calendars through the Google
