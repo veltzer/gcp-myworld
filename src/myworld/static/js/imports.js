@@ -1,5 +1,5 @@
 // The Imports page: the importers, each with its parameters, Dry run and Run,
-// the YouTube and Audible connections they read through, and the runs: the ones going
+// the YouTube, Audible and Google Calendar connections they read through, and the runs: the ones going
 // (each done by a job of its own, in the background) and the last that ended,
 // each with its Log (all it said, in a dialog here; #imports/<id> opens it).
 // The page looks again every few seconds while any is going.
@@ -26,10 +26,11 @@ export async function selectImports() {
 	await fillTypeFilter("imports");
 	updateTools();
 	$("world-count").textContent = "";
-	const [{ importers, youtube, audible }, runs] = await Promise.all([api("/api/importers"), api("/api/import-runs")]);
+	const [{ importers, youtube, audible, calendar }, runs] = await Promise.all([api("/api/importers"), api("/api/import-runs")]);
 	if (state.view === "imports") {
 		renderConnection(youtube);
 		renderAudible(audible);
+		renderCalendar(calendar);
 		$("world-count").textContent = `${importers.length} importer${importers.length === 1 ? "" : "s"}`;
 		renderImporters(importers);
 		renderRuns(runs);
@@ -57,10 +58,11 @@ function schedulePoll(going) {
 	}
 }
 
-// Connecting YouTube comes back to /library?youtube_error=...#imports when it failed: say it once, and clean the address.
+// Connecting YouTube or Google Calendar comes back to /library?youtube_error=...#imports (calendar_error) when it
+// failed: say it once, and clean the address.
 function takeConnectError() {
 	const params = new URLSearchParams(window.location.search);
-	const error = params.get("youtube_error") || "";
+	const error = params.get("youtube_error") || params.get("calendar_error") || "";
 	if (error) {
 		window.history.replaceState(window.history.state, "", `/library${window.location.hash}`);
 	}
@@ -95,6 +97,39 @@ function renderConnection(youtube) {
 		button.title = "Go to Google and allow My World to read your YouTube account";
 		button.onclick = () => {
 			window.location.href = "/youtube/connect";
+		};
+	}
+	box.replaceChildren(el("span", "", summary), button);
+}
+
+// The Google Calendar the calendar importers read: whose it is, and Connect or Disconnect in the same spot.
+function renderCalendar(calendar) {
+	const box = $("calendar-connection");
+	const button = el("button", "", calendar.connected ? "Disconnect" : "Connect Google Calendar");
+	button.type = "button";
+	let summary;
+	if (!calendar.configured) {
+		summary = "Google Calendar: connecting is not set up on this site.";
+		button.disabled = true;
+		button.title = "The site has no Google client secret (GOOGLE_CLIENT_SECRET)";
+	} else if (calendar.connected) {
+		summary = `Google Calendar: connected${calendar.account ? ` as ${calendar.account}` : ""}, read only.`;
+		button.title = "Forget the connection, and tell Google to revoke it";
+		button.onclick = async () => {
+			button.disabled = true;
+			try {
+				await api("/calendar/disconnect", { method: "POST" });
+				await selectImports();
+			} catch (e) {
+				showError(e.message);
+				button.disabled = false;
+			}
+		};
+	} else {
+		summary = "Google Calendar: not connected. Connecting lets the importers read your calendars, nothing else.";
+		button.title = "Go to Google and allow My World to read your Google Calendar";
+		button.onclick = () => {
+			window.location.href = "/calendar/connect";
 		};
 	}
 	box.replaceChildren(el("span", "", summary), button);

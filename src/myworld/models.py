@@ -1982,6 +1982,23 @@ class YouTubeConnection(Base):
     connected_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
 
+class CalendarConnection(Base):
+    """
+    The user's Google Calendar, connected from the Imports page so its
+    importers can read it (myworld.gcalendar): Google's refresh token for
+    the calendar.readonly scope, encrypted with a key derived from
+    SECRET_KEY (a new SECRET_KEY makes it unreadable, and the user connects
+    again), and the account's name (its primary calendar's, the email), to
+    show which account is connected.
+    """
+    __tablename__ = "calendar_connections"
+
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    refresh_token: Mapped[str] = mapped_column(Text, nullable=False)
+    account: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    connected_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+
+
 class AudibleConnection(Base):
     """
     The user's Audible account, connected from the Imports page so its
@@ -2116,7 +2133,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0038"
+SCHEMA_REVISION = "0039"
 
 
 def prepare_schema(engine: Engine) -> None:

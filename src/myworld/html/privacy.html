@@ -41,7 +41,7 @@
 					<p>
 						Your account: your email address, your name and picture as the way you sign in gives
 						them (Google or GitHub), and how you sign in. Your data: what you add to My World or
-						import into it (books, concerts, museums, courses, audio books, podcasts, YouTube videos, games, certifications, courses, trips, lectures, rallies, loans, websites, people,
+						import into it (books, concerts, museums, courses, audio books, podcasts, YouTube videos, games, certifications, trips, lectures, rallies, loans, websites, people,
 						places and the rest). It is kept in a database on Google Cloud and is yours: no other
 						account can see it.
 					</p>
@@ -56,6 +56,16 @@
 						Nothing is ever written to your YouTube account. Disconnecting on the Imports page
 						revokes the token at Google and deletes it; so does revoking My World's access in your
 						Google account's settings.
+					</p>
+					<h2>Google Calendar</h2>
+					<p>
+						If you connect your Google Calendar on the Imports page, My World asks Google for
+						read-only access to it (the <code>calendar.readonly</code> scope) and keeps the token
+						Google gives, encrypted. It is used only when you run a calendar importer, to read the
+						calendars you choose and their events, which are added to your own data in My World.
+						Nothing is ever written to your calendars. Disconnecting on the Imports page revokes
+						the token at Google and deletes it; so does revoking My World's access in your Google
+						account's settings.
 					</p>
 					<h2>Audible</h2>
 					<p>

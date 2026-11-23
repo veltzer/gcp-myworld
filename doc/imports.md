@@ -203,6 +203,39 @@ GOOGLE_CLIENT_ID=<gcp_oauth_client_id> GOOGLE_CLIENT_SECRET="$(pass show keys/go
   MYWORLD_DEV_LOGIN=1 python src/main.py
 ```
 
+## Connecting Google Calendar
+
+The calendar importers read the user's calendars through the Google
+Calendar API, as the YouTube ones read YouTube: the user connects their
+Google Calendar on the page once ("Connect Google Calendar"), which asks
+Google's consent for the `calendar.readonly` scope, read only
+(`myworld.gcalendar`).
+
+- `GET /calendar/connect` sends the user to Google's consent screen;
+  `/calendar/callback` trades the code for a refresh token and keeps it in
+  `calendar_connections` (with the account's name, its primary calendar's,
+  which is its email), sealed (Fernet) with a key derived from
+  `SECRET_KEY`, not the YouTube token's key. A new `SECRET_KEY` makes it
+  unreadable, and the user connects again.
+- Each run trades it for an access token, which lasts an hour and is never
+  kept. `gcalendar.my_calendars` lists the calendars the user sees, the
+  primary one first.
+- `POST /calendar/disconnect` revokes it at Google and forgets it;
+  `GET /calendar/status` says whether it is connected, and as whom.
+
+### One-time setup
+
+The same OAuth web client and secret as YouTube's (`GOOGLE_CLIENT_SECRET`;
+without it the page says connecting is not set up). Then:
+
+1. Enable the Google Calendar API in the project
+   (`gcloud services enable calendar-json.googleapis.com`).
+2. On the OAuth consent screen (`Google Auth Platform -> Data access`) add
+   the scope `https://www.googleapis.com/auth/calendar.readonly`.
+3. On the web client (`Google Auth Platform -> Clients`) add the authorized
+   redirect URIs `https://myworld.stream/calendar/callback` and
+   `http://localhost:8080/calendar/callback`.
+
 ## Audible library
 
 `audible-library` brings the books of the user's Audible library in as

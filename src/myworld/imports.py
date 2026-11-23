@@ -12,7 +12,7 @@ from typing import Any
 import flask
 from sqlalchemy import delete, select
 
-from myworld import audible, auth, importers, youtube
+from myworld import audible, auth, gcalendar, importers, youtube
 from myworld.api import ApiError, json_body
 from myworld.checks import DATASETS
 from myworld.importers import jobs
@@ -80,7 +80,8 @@ def api_importers() -> flask.Response:
             "params": [_param_json(param, unavailable, _last_params(importer)) for param in importer.params],
         })
     return flask.jsonify({"importers": out, "youtube": youtube.status_json(flask.g.db, flask.g.user),
-                          "audible": audible.status_json(flask.g.db, flask.g.user), "limit": _limit_json()})
+                          "audible": audible.status_json(flask.g.db, flask.g.user),
+                          "calendar": gcalendar.status_json(flask.g.db, flask.g.user), "limit": _limit_json()})
 
 
 @bp.route("/api/importers/<name>/runs", methods=["POST"])

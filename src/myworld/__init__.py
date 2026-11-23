@@ -24,6 +24,7 @@ from myworld import (
     auth,
     dump,
     enumerations,
+    gcalendar,
     imports,
     locales,
     pictures,
@@ -143,4 +144,5 @@ def create_app(engine: Engine | None = None, mail: verification.Mailer | None = 
     app.register_blueprint(sharing.bp)
     app.register_blueprint(youtube.bp)
     app.register_blueprint(audible.bp)
+    app.register_blueprint(gcalendar.bp)
     return app
