@@ -1483,6 +1483,21 @@ button.danger {
 	padding: 0.15rem 0;
 }
 
+/* a long text cut to its first lines (an episode's About); the list layout cuts all its details already */
+.cards:not(.layout-list) .world-details li.clamp {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 4;
+	line-clamp: 4;
+	overflow: hidden;
+}
+
+/* Episodes heard: every card the size of the largest, whatever its row (the About is cut, so none runs long) */
+.cards.layout-cards[data-view="episodes-heard"],
+.cards.layout-tiles[data-view="episodes-heard"] {
+	grid-auto-rows: 1fr;
+}
+
 .world-details .label {
 	color: var(--muted);
 	margin-right: 0.4rem;

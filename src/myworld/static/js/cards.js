@@ -450,7 +450,12 @@ function feedDetails(list, item) {
 	detail(list, "Number", item.number === null ? "" : String(item.number));
 	detail(list, "Published", item.published.slice(0, 10));
 	detail(list, "Length", formatDuration(item.duration));
-	detail(list, "About", item.description);
+	// an episode's description may run for pages: its first lines, all of it on hover and in the dialog
+	const about = detail(list, "About", item.description);
+	if (about) {
+		about.classList.add("clamp");
+		about.title = item.description;
+	}
 }
 
 function rated(list, item) {

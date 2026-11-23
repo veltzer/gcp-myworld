@@ -204,9 +204,10 @@ export function formatDate(item) {
 // the longest value of a card kept on one line
 const VALUE_WHOLE = 40;
 
+// A line of a card's details, "Label value", appended to list and returned (null when there is no value).
 export function detail(list, label, value) {
 	if (value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0)) {
-		return;
+		return null;
 	}
 	const text = Array.isArray(value) ? value.join(", ") : String(value);
 	// a label with a short value (a date, a length, a place: "Last heard 2026-03-27") is never broken across lines;
@@ -214,6 +215,7 @@ export function detail(list, label, value) {
 	const li = el("li", text.length > VALUE_WHOLE ? "" : "nowrap");
 	li.append(el("span", "label nowrap", label), text);
 	list.appendChild(li);
+	return li;
 }
 
 // Names as links to their place in the People or Organizations view, appended to parent.

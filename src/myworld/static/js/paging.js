@@ -96,6 +96,8 @@ export function renderWorld() {
 	// a page at a time, but the map shows every place
 	const page = pageOf(shown, listKey(view), !map);
 	$("cards").hidden = map;
+	// which page it shows: a page may lay its cards out a way of its own (style.css)
+	$("cards").dataset.view = view;
 	$("cards").replaceChildren(...(map ? [] : page.map(CARDS[view])));
 	$("world-map").hidden = !map;
 	// "Audio courses" -> "audio courses"; a name with capitals inside ("YouTube videos") stays
