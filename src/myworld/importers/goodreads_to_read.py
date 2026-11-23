@@ -4,7 +4,8 @@ each one their library does not have yet is added as a book, wanted (a
 reading of the status Want to), with its author, year, ISBN, Goodreads id
 and cover, and a note of when it went on the shelf (and its series, which
 Goodreads writes into the title: "Dune (Dune, #1)" is the book Dune, of
-the series Dune, #1).
+the series Dune, #1), from a Goodreads library export the user uploads with
+the run (myworld.goodreads): Goodreads gives a shelf to no one signed out.
 
 A book is found in the library by its Goodreads id, its ISBN, or its title
 (with or without that series) and author; one there is left as it is, but
@@ -23,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from myworld import goodreads, languages
 from myworld import names as naming
-from myworld.importers.core import Importer, ImporterError, Report, register
+from myworld.importers.core import Importer, Param, ParamError, Report, register
 from myworld.models import DEFAULT_LOCALE, Image, Person, PersonType, Read, User, UserWork, Work
 from myworld.pictures import IMAGE_EXTENSIONS
 
@@ -31,10 +32,6 @@ SHELF = "to-read"
 # "Dune (Dune, #1)": the series Goodreads adds to a title
 SERIES = re.compile(r"^(?P<title>.+?)\s*\((?P<series>[^()]+?,?\s*#[\d.]+(?:-[\d.]+)?)\)$")
 BOOK_AUTHOR = "Book Author"
-
-
-def unavailable(session: Session, owner: User) -> str:
-    return "" if goodreads.connection(session, owner) is not None else "Connect Goodreads first"
 
 
 def split_series(title: str) -> tuple[str, str]:
@@ -163,27 +160,39 @@ def store_wanted(session: Session, owner: User, books: list[goodreads.Book], rep
         report.count("authors added to People", authors.added)
 
 
-def run(session: Session, owner: User, params: dict[str, Any], report: Report) -> None:
-    del params
+def read_export(data: str) -> list[dict[str, Any]]:
+    """ An uploaded library export, as the books of its to-read shelf: all a run keeps of the file. """
     try:
-        user, key = goodreads.kept_feed(session, owner)
-        books = goodreads.shelf_books(user, key, SHELF)
+        return [goodreads.book_json(book) for book in goodreads.parse_export(data, SHELF)]
     except goodreads.GoodreadsError as e:
-        raise ImporterError(str(e)) from e
-    report.say(f"The to-read shelf has {len(books)} books")
+        raise ParamError(str(e)) from e
+
+
+def run_export(session: Session, owner: User, params: dict[str, Any], report: Report) -> None:
+    books = [goodreads.book_from_json(item) for item in params["export"] or []]
+    report.say(f"The export's to-read shelf has {len(books)} books")
     store_wanted(session, owner, books, report)
 
+
+DONE_AS = (
+    "each one your library does not have yet is added, with its author, year, ISBN, Goodreads id and cover, and a note of "
+    "when it went on the shelf. A book you have is left as it is (it only gets its Goodreads id and ISBN, when it has none). "
+    "Safe to run again: it only ever adds."
+)
 
 IMPORTER = register(Importer(
     name="goodreads-to-read",
     title="Goodreads: books to read",
     description=(
-        "The books on your Goodreads to-read shelf, as books you want to read: each one your library does not have yet is "
-        "added, with its author, year, ISBN, Goodreads id and cover, and a note of when it went on the shelf. A book you "
-        "have is left as it is (it only gets its Goodreads id and ISBN, when it has none). Safe to run again: it only ever adds."
+        "The books on the to-read shelf of a Goodreads library export, as books you want to read: " + DONE_AS + " Goodreads "
+        "shows a shelf to no one signed out, so each run takes a fresh export: on goodreads.com open My Books, Import and "
+        "export, Export Library, and pick the file it makes here. Only the to-read shelf's books are kept of it, not the file."
     ),
     dataset="book",
-    params=(),
-    run=run,
-    unavailable=unavailable,
+    params=(Param(
+        name="export", title="Library export", kind="file", required=True, accept=".csv",
+        description="The CSV Goodreads' Export Library makes (goodreads_library_export.csv)",
+        read=read_export, said=lambda books: f"a library export with {len(books or [])} books to read",
+    ),),
+    run=run_export,
 ))

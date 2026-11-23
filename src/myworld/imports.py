@@ -12,7 +12,7 @@ from typing import Any
 import flask
 from sqlalchemy import delete, select
 
-from myworld import audible, auth, gcalendar, goodreads, importers, youtube
+from myworld import audible, auth, gcalendar, importers, youtube
 from myworld.api import ApiError, json_body
 from myworld.checks import DATASETS
 from myworld.importers import jobs
@@ -41,7 +41,7 @@ def _param_json(param: importers.Param, unavailable: str, last: dict[str, Any]) 
     out: dict[str, Any] = {
         "name": param.name, "title": param.title, "kind": param.kind,
         "description": param.description, "required": param.required,
-        "single": param.single, "choices": [], "chosen": [], "error": "",
+        "single": param.single, "accept": param.accept, "choices": [], "chosen": [], "error": "",
     }
     # the choices are asked of the source only when the importer can run
     if param.choices is not None and not unavailable:
@@ -81,8 +81,7 @@ def api_importers() -> flask.Response:
         })
     return flask.jsonify({"importers": out, "youtube": youtube.status_json(flask.g.db, flask.g.user),
                           "audible": audible.status_json(flask.g.db, flask.g.user),
-                          "calendar": gcalendar.status_json(flask.g.db, flask.g.user),
-                          "goodreads": goodreads.status_json(flask.g.db, flask.g.user), "limit": _limit_json()})
+                          "calendar": gcalendar.status_json(flask.g.db, flask.g.user), "limit": _limit_json()})
 
 
 @bp.route("/api/importers/<name>/runs", methods=["POST"])

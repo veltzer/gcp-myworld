@@ -56,8 +56,12 @@ STALE_SECONDS = 120
 QUEUED_SECONDS = 600
 
 # the kinds of parameter there are, as the Imports page draws them:
-# "choices" is one or more of a list the importer gives for the user (a list of strings)
-PARAM_KINDS = ("choices",)
+# "choices" is one or more of a list the importer gives for the user (a list of strings);
+# "file" is a file the user uploads with the run (its text), which the importer's read turns
+# into what the run keeps: only that is kept, never the file itself
+PARAM_KINDS = ("choices", "file")
+# the most an uploaded file may be
+FILE_MAX_CHARS = 20 * 1024 * 1024
 
 
 class ImporterError(Exception):
@@ -83,6 +87,12 @@ class Param:
     choices: Callable[[Session, User], list[tuple[str, str]]] | None = None
     # one choice at most, not as many as wanted
     single: bool = False
+    # for "file": what the file is turned into for the run (JSON), ParamError when it is not what is wanted;
+    # and what the run's log says of that, as one line ("12 books")
+    read: Callable[[str], Any] | None = None
+    said: Callable[[Any], str] | None = None
+    # for "file": the kinds of file the page offers to pick (".csv")
+    accept: str = ""
 
 
 def stamped(line: str) -> str:
@@ -167,6 +177,8 @@ def register(importer: Importer) -> Importer:
             raise ValueError(f"importer {importer.name!r}: parameter {param.name!r} is of no kind there is ({param.kind!r})")
         if param.kind == "choices" and param.choices is None:
             raise ValueError(f"importer {importer.name!r}: parameter {param.name!r} has nothing to choose from")
+        if param.kind == "file" and param.read is None:
+            raise ValueError(f"importer {importer.name!r}: parameter {param.name!r} has nothing to read its file")
     IMPORTERS[importer.name] = importer
     return importer
 
@@ -182,7 +194,9 @@ def parse_params(session: Session, owner: User, importer: Importer, given: Any) 
     params: dict[str, Any] = {}
     for param in importer.params:
         value = given.get(param.name)
-        # "choices", the only kind so far
+        if param.kind == "file":
+            params[param.name] = _read_file(param, value)
+            continue
         if value is None:
             value = []
         if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
@@ -200,6 +214,20 @@ def parse_params(session: Session, owner: User, importer: Importer, given: Any) 
         # each once, in the order given
         params[param.name] = list(dict.fromkeys(value))
     return params
+
+
+def _read_file(param: Param, value: Any) -> Any:
+    """ An uploaded file's text as what the run keeps of it; ParamError when it is missing, too large or not what is wanted. """
+    if value is None or value == "":
+        if param.required:
+            raise ParamError(f"{param.title}: choose a file")
+        return None
+    if not isinstance(value, str):
+        raise ParamError(f"{param.title}: expected the file's text")
+    if len(value) > FILE_MAX_CHARS:
+        raise ParamError(f"{param.title}: the file is larger than {FILE_MAX_CHARS // (1024 * 1024)} MB")
+    assert param.read is not None
+    return param.read(value)
 
 
 def runs_allowed(owner: User) -> int | None:
@@ -297,6 +325,14 @@ class _Heartbeat(threading.Thread):
         self.join()
 
 
+def _said(importer: Importer | None, key: str, value: Any) -> str:
+    """ A parameter of a run as its log says it: "playlists = a, b"; a file as its importer says it ("file = 12 books"). """
+    param = next((p for p in importer.params if p.name == key), None) if importer else None
+    if param is not None and param.said is not None:
+        return f"{key} = {param.said(value)}"
+    return f"{key} = {', '.join(map(str, value)) if isinstance(value, list) else value}"
+
+
 def execute(engine: Engine, run_id: int) -> None:
     """
     Do a queued run: what its job does. It is marked running and says it is
@@ -324,7 +360,7 @@ def execute(engine: Engine, run_id: int) -> None:
         logging.getLogger().addHandler(captured)
         started = time.monotonic()
         # how it began: which importer, for whom, with what (the log says the rest as it goes)
-        given = ", ".join(f"{key} = {', '.join(map(str, value)) if isinstance(value, list) else value}" for key, value in params.items() if value not in (None, "", []))
+        given = ", ".join(_said(importer, key, value) for key, value in params.items() if value not in (None, "", []))
         report.say(" ".join(filter(None, (
             f"Started {importer.title if importer else record.importer}",
             f"for {owner.email}" if owner else "",

@@ -1999,22 +1999,6 @@ class CalendarConnection(Base):
     connected_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
 
-class GoodreadsConnection(Base):
-    """
-    The user's Goodreads shelves, connected from the Imports page so its
-    importers can read them (myworld.goodreads): the user's Goodreads
-    number and the key of their shelves' RSS feeds, the key encrypted with a
-    key derived from SECRET_KEY (a new SECRET_KEY makes it unreadable, and
-    the user connects again).
-    """
-    __tablename__ = "goodreads_connections"
-
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-    user_id: Mapped[str] = mapped_column(String(20), nullable=False)
-    feed_key: Mapped[str] = mapped_column(Text, nullable=False)
-    connected_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
-
-
 class AudibleConnection(Base):
     """
     The user's Audible account, connected from the Imports page so its
@@ -2149,7 +2133,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0040"
+SCHEMA_REVISION = "0041"
 
 
 def prepare_schema(engine: Engine) -> None:

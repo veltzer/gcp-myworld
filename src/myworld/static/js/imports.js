@@ -1,5 +1,5 @@
 // The Imports page: the importers, each with its parameters, Dry run and Run,
-// the YouTube, Audible, Google Calendar and Goodreads connections they read through, and the runs: the ones going
+// the YouTube, Audible and Google Calendar connections they read through, and the runs: the ones going
 // (each done by a job of its own, in the background) and the last that ended,
 // each with its Log (all it said, in a dialog here; #imports/<id> opens it).
 // The page looks again every few seconds while any is going.
@@ -26,12 +26,11 @@ export async function selectImports() {
 	await fillTypeFilter("imports");
 	updateTools();
 	$("world-count").textContent = "";
-	const [{ importers, youtube, audible, calendar, goodreads }, runs] = await Promise.all([api("/api/importers"), api("/api/import-runs")]);
+	const [{ importers, youtube, audible, calendar }, runs] = await Promise.all([api("/api/importers"), api("/api/import-runs")]);
 	if (state.view === "imports") {
 		renderConnection(youtube);
 		renderAudible(audible);
 		renderCalendar(calendar);
-		renderGoodreads(goodreads);
 		$("world-count").textContent = `${importers.length} importer${importers.length === 1 ? "" : "s"}`;
 		renderImporters(importers);
 		renderRuns(runs);
@@ -134,49 +133,6 @@ function renderCalendar(calendar) {
 		};
 	}
 	box.replaceChildren(el("span", "", summary), button);
-}
-
-// The Goodreads shelves the Goodreads importers read: whose they are, and Disconnect; or the address
-// to paste (a shelf's RSS link, which carries the key Goodreads gives its feeds) and Connect, in the same spot.
-function renderGoodreads(goodreads) {
-	const box = $("goodreads-connection");
-	if (goodreads.connected) {
-		const button = el("button", "", "Disconnect");
-		button.type = "button";
-		button.title = "Forget the shelves' RSS address";
-		button.onclick = async () => {
-			button.disabled = true;
-			try {
-				await api("/goodreads/disconnect", { method: "POST" });
-				await selectImports();
-			} catch (e) {
-				showError(e.message);
-				button.disabled = false;
-			}
-		};
-		box.replaceChildren(el("span", "", `Goodreads: connected (Goodreads user ${goodreads.user_id}), reading your shelves only.`), button);
-		return;
-	}
-	const address = el("input");
-	address.type = "url";
-	address.placeholder = "https://www.goodreads.com/review/list_rss/...?key=...";
-	address.setAttribute("aria-label", "Your Goodreads shelf's RSS address");
-	address.title = "On goodreads.com open My Books and copy the RSS link at the bottom of the page";
-	address.size = 40;
-	const button = el("button", "", "Connect Goodreads");
-	button.type = "button";
-	button.title = "Try the address, and keep it for the Goodreads importers";
-	button.onclick = async () => {
-		button.disabled = true;
-		try {
-			await api("/goodreads/connect", { method: "POST", body: { address: address.value } });
-			await selectImports();
-		} catch (e) {
-			showError(e.message);
-			button.disabled = false;
-		}
-	};
-	box.replaceChildren(el("span", "", "Goodreads: not connected. Paste your shelf's RSS link (My Books, at the bottom) to let the importers read your shelves."), address, button);
 }
 
 // The Audible account the Audible library importer reads: who it is, and Connect or Disconnect in the same spot.
@@ -287,10 +243,24 @@ function importerCard(importer) {
 	summary.appendChild(el("span", "importer-dataset", into));
 	card.appendChild(summary);
 	// one with choices to make says how they are picked
-	const picking = importer.params.length ? " The choices of your last run are picked to start with." : "";
+	const picking = importer.params.some((p) => p.kind === "choices") ? " The choices of your last run are picked to start with." : "";
 	card.append(el("p", "checks-intro", `${importer.description}${picking}`));
 	const fields = [];
 	for (const param of importer.params) {
+		if (param.kind === "file") {
+			// a file to upload with the run: its text is sent, and the server keeps only what it reads of it
+			const row = el("label", "importer-param");
+			row.appendChild(el("span", "importer-param-title", param.title));
+			const input = el("input");
+			input.type = "file";
+			input.accept = param.accept;
+			input.title = param.description;
+			input.disabled = Boolean(importer.unavailable);
+			row.appendChild(input);
+			card.appendChild(row);
+			fields.push({ param, input });
+			continue;
+		}
 		const row = el("label", "importer-param");
 		row.appendChild(el("span", "importer-param-title", `${param.title}${param.single ? " (one)" : " (as many as you like)"}`));
 		const select = document.createElement("select");
@@ -342,8 +312,8 @@ function importerCard(importer) {
 
 async function runImporter(importer, fields, dryRun, buttons, result) {
 	const params = {};
-	for (const { param, picker } of fields) {
-		params[param.name] = picker.items.filter(Boolean);
+	for (const { param, picker, input } of fields) {
+		params[param.name] = input ? ((await input.files[0]?.text()) ?? "") : picker.items.filter(Boolean);
 	}
 	for (const button of buttons) {
 		button.disabled = true;
