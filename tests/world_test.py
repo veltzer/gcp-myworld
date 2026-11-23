@@ -956,6 +956,21 @@ def test_a_source_without_the_audible_library(app: webtest.TestApp, engine: Engi
             import_world.import_audio_books(session, owner(session), source)
 
 
+def test_a_source_without_organizations(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    sign_in_admin(app, engine)
+    source = write_source(tmp_path)
+    # the site no longer keeps them, nor the certifications that name them: the full import imports none of either
+    for name in ("organizations", "certifications"):
+        (source / "data" / "yaml" / f"{name}.yaml").unlink()
+    with Session(engine) as session:
+        counts = import_world.import_world(session, owner(session), source)
+        # only those the people name, by name
+        named = set(session.scalars(select(Organization.name)))
+    assert counts["certifications"] == 0
+    assert counts["organizations"] == len(named)
+    assert "Old School" not in named
+
+
 def test_a_source_without_youtube(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
     sign_in_admin(app, engine)
     source = write_source(tmp_path)

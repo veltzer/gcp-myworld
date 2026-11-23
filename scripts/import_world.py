@@ -11,7 +11,8 @@ museum-<internal_id>.jpg for the first visit of each museum, which every
 later visit of the same museum shares) and the organization logos in
 data/logos/.
 
-The organizations are those of organizations.yaml plus every one a person
+The organizations are those of organizations.yaml (when the source still has
+it: veltzer.github.io no longer does, since 2026-11-23) plus every one a person
 names (the company field of people.yaml) that is not among them; each person
 is linked to the organizations they name.
 
@@ -615,7 +616,9 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
             f" Add only what is missing with --books, --audio-books, --podcasts, --films, --certifications, --youtube-history or --only-types, or pass --replace-everything {owner.email} to replace it anyway",
         )
     people_items = _items(source, "people", PERSON_FIELDS)
-    organization_items = _items(source, "organizations", ORGANIZATION_FIELDS)
+    # the site no longer keeps them (My World does, since 2026-11-23): a source without them has none to import
+    has_organizations = (source / "data" / "yaml" / "organizations.yaml").exists()
+    organization_items = _items(source, "organizations", ORGANIZATION_FIELDS) if has_organizations else []
     concert_items = _items(source, "concerts", CONCERT_FIELDS)
     museum_items = _items(source, "museums", MUSEUM_FIELDS)
     image_dir = source / "static" / "images"

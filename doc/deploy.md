@@ -400,7 +400,12 @@ in the YAML (a name or a list of them) would win. The publishers (Audible, Pengu
 live only in My World now: they left `organizations.yaml`. So does the
 consulting: the companies consulted for are those with the relation
 Consulting here, and `organizations.yaml` has no `consulting` function any
-more (the ones that were only that left it). `--only-types` imports nothing and only adds the
+more (the ones that were only that left it). Since 2026-11-23 the blog
+keeps no organizations at all: those taught at (Teaching), taught for
+(Training provider), studied at (Education) and certified by
+(Certification), and `certifications.yaml` too, live only in My World; the
+full import of a source without `organizations.yaml` imports only the
+organizations people name. `--only-types` imports nothing and only adds the
 starting types a user lacks and types the organizations and people that
 have none.
 
