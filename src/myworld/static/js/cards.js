@@ -226,6 +226,20 @@ function organizationCard(item) {
 	return card;
 }
 
+// instructor -> "Instructor"
+const CERTIFICATION_KINDS = { instructor: "Instructor", professional: "Professional" };
+
+function certificationCard(item) {
+	// its picture is the logo of the organization that issued it, and its website that one's
+	const { card, list } = cardShell(item, item.organization?.name || "", "logo");
+	linksDetail(list, "Issued by", "organizations", item.organization ? [item.organization] : []);
+	detail(list, "Kind", CERTIFICATION_KINDS[item.kind] || item.kind);
+	detail(list, "Given", formatDate(item));
+	detail(list, "Remark", item.remark);
+	websiteButton(card, item.url);
+	return card;
+}
+
 function audioCourseCard(item) {
 	const { card, list } = cardShell(item, item.lecturers.map((p) => p.name).join(", "));
 	linksDetail(list, "Lecturer", "people", item.lecturers);
@@ -562,6 +576,7 @@ export const CARDS = {
 	"series-watches": filmWatchCard,
 	youtube: youtubeCard,
 	chess: chessCard,
+	certifications: certificationCard,
 	places: placeCard,
 	cities: cityCard,
 	countries: countryCard,

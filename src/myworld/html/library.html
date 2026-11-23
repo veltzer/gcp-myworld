@@ -820,6 +820,26 @@
 					<button type="submit">Add</button>
 				</div>
 			</form>
+			<form id="certification-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="The certification's name, as its certificate says it" class="wide">Name <input name="name" required></label>
+				</div>
+				<div class="row">
+					<label title="The organization that issued it, one of Organizations: add a new one there" class="wide">Issued by <select name="organization_id" data-picker="organizations" data-placeholder="Type an organization" title="The organization that issued it, one of Organizations: add a new one there"></select></label>
+				</div>
+				<div class="row">
+					<label title="What it says you are: an instructor, who may teach the course, or a professional, who has the skill">Kind <select name="kind"><option value=""></option><option value="instructor">Instructor</option><option value="professional">Professional</option></select></label>
+					<label title="How much of the date it was given is known">Given <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
+				</div>
+				<div class="row">
+					<label title="Anything you want to remember about it" class="wide">Remark <input name="remark"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
 			<form id="person-form" class="dialog-form" hidden>
 				<div class="row">
 					<!-- every name of the person, each in its language and in its parts, none of them set apart: the

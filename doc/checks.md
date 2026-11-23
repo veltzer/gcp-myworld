@@ -193,6 +193,13 @@ By dataset: the key is the page's name in the app (`#book`) and what
   could not play its moves has none. A game with no move (none made, or
   none recorded) has no position to show and is not asked for one.
 
+### Certifications (`certifications`)
+
+- `certification-issuers`: every certification names the organization
+  that issued it, whose logo its card shows and whose website it links.
+- `certification-kinds`: every certification says what kind it is,
+  instructor (may teach the course) or professional (has the skill).
+
 ### Groups (`groups`)
 
 - `group-members`: every group has at least one member (a person).

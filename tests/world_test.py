@@ -86,6 +86,21 @@ items:
     from_date: 2008-03-21
 """
 
+# certifications.yaml: by the issuer's id in ORGANIZATIONS; the second has no known date
+CERTIFICATIONS = """
+items:
+  - id: 1
+    name: "Acme Certified Instructor"
+    organization: 1
+    kind: instructor
+    date: '2008-03-21'
+    remark: "the first in Israel"
+  - id: 2
+    name: "Old School Graduate Certificate"
+    organization: 2
+    kind: professional
+"""
+
 CONCERTS = """
 items:
   - name: "The Band"
@@ -386,7 +401,7 @@ def write_source(root: Path, concerts: str = CONCERTS) -> Path:
     (root / "data" / "yaml").mkdir(parents=True)
     (root / "static" / "images").mkdir(parents=True)
     (root / "data" / "logos").mkdir(parents=True)
-    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("audible", AUDIBLE), ("audio_books", AUDIO_BOOKS), ("podcasts", PODCASTS), ("video_youtube", YOUTUBE), ("books_read", BOOKS), ("text_books", TEXT_BOOKS)):
+    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("audible", AUDIBLE), ("audio_books", AUDIO_BOOKS), ("podcasts", PODCASTS), ("video_youtube", YOUTUBE), ("books_read", BOOKS), ("text_books", TEXT_BOOKS), ("certifications", CERTIFICATIONS)):
         (root / "data" / "yaml" / f"{name}.yaml").write_text(text, encoding="UTF8")
     (root / "data" / "logos" / "acme.svg").write_bytes(LOGO)
     (root / "static" / "data").mkdir(parents=True)
@@ -418,7 +433,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
         session.commit()
     assert counts == {
         "people": 7, "organizations": 3, "organization types": 9, "relation types": 6, "person types": 3, "people with a profession": 4, "people related to the user": 2,
-        "concerts": 3, "places": 1, "museums": 2, "museum visits": 3, "audio courses": 2, "audio books": 4, "podcasts": 2, "podcast episodes": 3, "films": 0, "film watches": 0,
+        "concerts": 3, "places": 1, "museums": 2, "museum visits": 3, "audio courses": 2, "audio books": 4, "podcasts": 2, "podcast episodes": 3, "films": 0, "film watches": 0, "certifications": 2,
         "YouTube videos": 4, "devices": 4, "books": 3, "images": 9}
     return app
 
@@ -1065,6 +1080,47 @@ def test_podcasts_import_runs_again(imported: webtest.TestApp, engine: Engine, t
         counts = import_world.import_podcasts(session, bob, source)
         session.commit()
     assert counts == {"podcasts added": 0, "podcast episodes added": 0, "covers added": 0, "podcasts heard added": 2, "episodes heard added": 4, "devices added": 1}
+
+
+def test_certifications(imported: webtest.TestApp) -> None:
+    # the latest given first, those of no known date after them
+    certifications = imported.get("/api/certifications").json
+    assert [c["name"] for c in certifications] == ["Acme Certified Instructor", "Old School Graduate Certificate"]
+    acme, school = certifications
+    assert (acme["organization"]["name"], acme["kind"], acme["date"], acme["date_precision"], acme["remark"]) == (
+        "Acme", "instructor", "2008-03-21", "day", "the first in Israel")
+    # the issuer's logo is its picture, and the issuer's website its link
+    organizations = {o["name"]: o for o in imported.get("/api/organizations").json}
+    assert (acme["image"], acme["url"]) == (organizations["Acme"]["image"], "https://acme.example")
+    assert (school["date"], school["kind"], school["image"], school["url"]) == (None, "professional", None, "")
+    # edited: another issuer, a month only, no kind
+    school_id = organizations["Old School"]["id"]
+    edited = imported.put_json(f"/api/certifications/{acme['id']}", {
+        "name": "Acme Instructor", "organization_id": school_id, "kind": "", "date": "2009-04", "remark": "",
+    }).json
+    assert (edited["organization"]["id"], edited["kind"], edited["date"], edited["date_precision"]) == (school_id, "", "2009-04", "month")
+    # a kind there is not, and a name the account has already, are refused
+    imported.post_json("/api/certifications", {"name": "Another", "kind": "expert"}, status=400)
+    imported.post_json("/api/certifications", {"name": "Acme Instructor"}, status=409)
+    # an issuer deleted leaves its certifications, issued by no one known
+    imported.delete(f"/api/organizations/{school_id}")
+    assert {c["organization"] is None for c in imported.get("/api/certifications").json} == {True}
+    assert imported.get("/api/stats").json["certifications"] == 2
+
+
+def test_certifications_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    acme = imported.get("/api/certifications").json[0]
+    imported.put_json(f"/api/certifications/{acme['id']}", {**acme, "organization_id": acme["organization"]["id"], "remark": "edited"})
+    source = write_source(tmp_path / "again")
+    with Session(engine) as session:
+        assert import_world.import_certifications(session, owner(session), source) == {"certifications added": 0}
+        session.commit()
+    assert imported.get("/api/certifications").json[0]["remark"] == "edited"
+    # one whose issuer is not an organization of the account stops the import
+    yaml_file = source / "data" / "yaml" / "certifications.yaml"
+    yaml_file.write_text(CERTIFICATIONS + "  - id: 3\n    name: \"Nowhere\"\n    organization: 9\n", encoding="UTF8")
+    with Session(engine) as session, pytest.raises(import_world.WorldImportError, match="Nowhere"):
+        import_world.import_certifications(session, owner(session), source)
 
 
 FILMS = """

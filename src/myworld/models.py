@@ -1102,6 +1102,8 @@ class Organization(_Addressed, _Located, Base):
     person_links: Mapped[list[PersonOrganization]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     people: Mapped[list[Person]] = relationship(secondary=lambda: person_organizations, viewonly=True, order_by=lambda: Person.id)
     relations: Mapped[list[RelationType]] = relationship(secondary=organization_relation_types, back_populates="organizations")
+    # the certifications it issued the user
+    certifications: Mapped[list[Certification]] = relationship(back_populates="organization")
 
 
 class _Dated:
@@ -1115,6 +1117,35 @@ class _Dated:
     date_my: Mapped[str] = mapped_column(String(7), nullable=False, default="")
     date_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
     date_timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+
+
+# what a certification says the user is: one who may teach the course, or one who has the skill
+CERTIFICATION_KINDS = ("instructor", "professional")
+
+
+class Certification(_Dated, Base):
+    """
+    A certification the user holds: its name ("AWS Certified Solutions
+    Architect - Associate"), the organization that issued it (one of the
+    user's own, whose logo the card shows), what kind it is
+    (CERTIFICATION_KINDS), when it was given (_Dated; some are not known)
+    and a remark. A certification is in an account once by its name.
+    Imported from veltzer.github.io's certifications.yaml
+    (scripts/import_world.py --certifications).
+    """
+    __tablename__ = "certifications"
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_certification_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    # the issuer: an organization deleted leaves its certifications, issued by no one known
+    organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="SET NULL", name="fk_certifications_organization_id"), nullable=True, index=True,
+    )
+    organization: Mapped[Organization | None] = relationship(back_populates="certifications")
+    kind: Mapped[str] = mapped_column(String(50), nullable=False, default="")
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
 class PlaceKind(Base):
@@ -1891,7 +1922,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0034"
+SCHEMA_REVISION = "0035"
 
 
 def prepare_schema(engine: Engine) -> None:

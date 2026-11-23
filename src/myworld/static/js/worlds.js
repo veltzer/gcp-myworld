@@ -26,6 +26,8 @@ export const WORLDS = {
 	"series-watches": ["Series watches", "/api/series-watches", "series watch", "Series watches"],
 	youtube: ["YouTube videos", "/api/youtube-videos", "YouTube video", "YouTube"],
 	chess: ["Chess games", "/api/chess-games", "chess game", "Chess"],
+	// the certifications the user holds, each with the organization that issued it
+	certifications: ["Certifications", "/api/certifications", "certification", "Certifications"],
 	places: ["Places", "/api/places", "place", "Places"],
 	// every podcast, and every episode of them its feed has
 	podcasts: ["Podcasts", "/api/podcasts", "podcast", "Podcasts"],

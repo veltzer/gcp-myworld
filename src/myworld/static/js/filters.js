@@ -122,6 +122,13 @@ const VALUE_FILTERS = {
 		all: "All videos",
 		groups: [["device", "Device", (v) => named(v.device)]],
 	},
+	certifications: {
+		all: "All certifications",
+		groups: [
+			["organization", "Issued by", (c) => named(c.organization)],
+			["kind", "Kind", (c) => (c.kind ? [c.kind[0].toUpperCase() + c.kind.slice(1)] : [])],
+		],
+	},
 };
 
 // The views whose rows also have relations, filtered by them too: what the

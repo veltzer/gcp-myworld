@@ -71,12 +71,18 @@ where and on what each episode was heard to their episodes heard. Only
 what is missing is added, so --podcasts can run again; the full import
 includes them when the source has the file.
 
+Certifications come from data/yaml/certifications.yaml: each names its
+issuer by its id in organizations.yaml, and is issued by the account's
+organization of that one's name. A certification is found again by its
+name, so --certifications can run again; the full import includes them when
+the source has the file.
+
 The full import (no mode flag) replaces everything the user had in these
 tables, in one transaction. It is meant for an empty account: when the
 account has any of these rows already it stops, since replacing them would
 lose every edit made in the app since the last import, unless
 --replace-everything is given with the account's email again. The --books,
---audio-books, --podcasts, --films, --youtube-history and --only-types modes add to what is
+--audio-books, --podcasts, --films, --certifications, --youtube-history and --only-types modes add to what is
 there and are safe to run again. Unknown fields in the YAML stop the import rather than being
 dropped, so nothing is lost on the way in.
 
@@ -127,6 +133,7 @@ from myworld import names as naming
 from myworld.addresses import parse_address
 from myworld.cities import city_key, country_name, parse_location
 from myworld.models import (
+    CERTIFICATION_KINDS,
     CONCERT_VENUE_KIND,
     DEFAULT_LOCALE,
     MUSEUM_KIND,
@@ -136,6 +143,7 @@ from myworld.models import (
     AudioBookListen,
     AudioBookVersion,
     AudioCourse,
+    Certification,
     City,
     Concert,
     Country,
@@ -320,6 +328,8 @@ PODCAST_FIELDS = {"name", "url", "rss_feed", "rating", "review", "internal_id", 
 PODCAST_EPISODE_FIELDS = DATE_FIELDS | {
     "title", "description", "pubDate", "episode", "duration", "episodeType", "explicit", "enclosure_url", "image", "author", "guid", "location", "device",
 }
+# certifications.yaml: a certification held, its issuer by its id in organizations.yaml, and the day it was given (YYYY-MM-DD)
+CERTIFICATION_FIELDS = {"id", "name", "organization", "kind", "date", "remark"}
 YOUTUBE_FIELDS = DATE_FIELDS | {"id", "name", "rating", "review", "device", "location"}
 # video_features.yaml: a time a film was watched; the ids are its IMDb number ("0816692"), Wikidata item and Rotten Tomatoes page
 FILM_FIELDS = DATE_FIELDS | {"name", "imdb_id", "wikidata_id", "rotten_tomatoes_id", "location", "device", "rating", "review", "with"}
@@ -567,7 +577,7 @@ def find_owner(session: Session, email: str, subject: str | None) -> User:
 # what the full import deletes and makes again, so what an account must not have unless it is replaced on purpose;
 # the shared rows (countries, cities, places) are everyone's: never deleted, found again or added
 REPLACED_MODELS = (
-    AudioCourse, AudioBookListen, AudioBookHeard, EpisodeHeard, PodcastHeard, FilmWatch, YouTubeVideo, Device, Concert, Visit, Group, Person, Organization,
+    AudioCourse, AudioBookListen, AudioBookHeard, EpisodeHeard, PodcastHeard, FilmWatch, YouTubeVideo, Device, Concert, Visit, Certification, Group, Person, Organization,
     OrganizationType, PersonType, RelationType, PersonRelationType, PersonOrganizationType, Image,
 )
 
@@ -602,7 +612,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
         what = ", ".join(f"{count} {table}" for table, count in existing.items())
         raise WorldImportError(
             f"the account has data already ({what}); the full import deletes it all and loses every edit made in the app."
-            f" Add only what is missing with --books, --audio-books, --podcasts, --films, --youtube-history or --only-types, or pass --replace-everything {owner.email} to replace it anyway",
+            f" Add only what is missing with --books, --audio-books, --podcasts, --films, --certifications, --youtube-history or --only-types, or pass --replace-everything {owner.email} to replace it anyway",
         )
     people_items = _items(source, "people", PERSON_FIELDS)
     organization_items = _items(source, "organizations", ORGANIZATION_FIELDS)
@@ -822,6 +832,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     history = import_youtube_history(session, owner, source) if _history_path(source).exists() else {"YouTube videos added": 0}
     films = import_films(session, owner, source) if _films_path(source).exists() else {"films added": 0, "film watches added": 0, "posters added": 0, "devices added": 0}
     books = import_books(session, owner, source)
+    certifications = import_certifications(session, owner, source) if _certifications_path(source).exists() else {"certifications added": 0}
     typed = give_types(session, owner)
     return {
         "people": len(people) + courses["lecturers added"] + books["authors added"], "organizations": len(organizations), "organization types": len(types),
@@ -830,6 +841,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
         "audio books": audio_books["audio books added"],
         "podcasts": podcasts["podcasts added"], "podcast episodes": podcasts["podcast episodes added"],
         "films": films["films added"], "film watches": films["film watches added"],
+        "certifications": certifications["certifications added"],
         "YouTube videos": videos["YouTube videos"] + history["YouTube videos added"], "devices": courses["devices added"] + audio_books["devices added"] + podcasts["devices added"] + films["devices added"] + videos["devices added"],
         "books": books["books"], "images": len(images) + courses["images"] + audio_books["images"] + podcasts["covers added"] + films["posters added"] + books["covers"],
     }
@@ -1417,6 +1429,42 @@ def import_podcasts(session: Session, owner: User, source: Path) -> dict[str, in
     return {**counts, "devices added": device.added}
 
 
+def _certifications_path(source: Path) -> Path:
+    return source / "data" / "yaml" / "certifications.yaml"
+
+
+def import_certifications(session: Session, owner: User, source: Path) -> dict[str, int]:
+    """
+    Add the certifications of certifications.yaml that owner does not have
+    yet (found again by name), each issued by owner's organization of the
+    name organizations.yaml gives its issuer's id. Safe to run again. Does
+    not commit.
+    """
+    items = _items(source, "certifications", CERTIFICATION_FIELDS)
+    with (source / "data" / "yaml" / "organizations.yaml").open(encoding="UTF8") as fp:
+        issuer_names = {o["id"]: o["name"] for o in yaml.safe_load(fp)["items"]}
+    organizations = {o.name: o for o in session.scalars(select(Organization).where(Organization.owner_id == owner.id))}
+    have = set(session.scalars(select(Certification.name).where(Certification.owner_id == owner.id)))
+    added = 0
+    for item in items:
+        if item["name"] in have:
+            continue
+        name = issuer_names.get(item["organization"])
+        if name is None or name not in organizations:
+            raise WorldImportError(f"certification {item['name']!r}: its issuer, organization {item['organization']}, is not one of the account's organizations")
+        kind = item.get("kind", "")
+        if kind and kind not in CERTIFICATION_KINDS:
+            raise WorldImportError(f"certification {item['name']!r}: kind {kind!r} is not one of {CERTIFICATION_KINDS}")
+        session.add(Certification(
+            owner_id=owner.id, name=item["name"], organization=organizations[name], kind=kind, remark=item.get("remark", ""),
+            date_ymd=datetime.date.fromisoformat(str(item["date"])) if "date" in item else None,
+        ))
+        have.add(item["name"])
+        added += 1
+    session.flush()
+    return {"certifications added": added}
+
+
 def import_youtube(session: Session, owner: User, source: Path) -> dict[str, int]:
     """ Add owner's YouTube videos from source. Stops when owner has YouTube videos already. Does not commit. """
     if not (source / "data" / "yaml" / "video_youtube.yaml").exists():
@@ -1848,6 +1896,10 @@ def main() -> int:
         help="import only the films and series watched and the films to see (from ../data), adding what the account does not have yet; safe to run again",
     )
     parser.add_argument(
+        "--certifications", action="store_true",
+        help="import only the certifications, adding those the account does not have yet (their issuers must be its organizations already); safe to run again",
+    )
+    parser.add_argument(
         "--youtube", action="store_true",
         help="import only the YouTube videos, adding them to what the account has (stops if it has YouTube videos already)",
     )
@@ -1886,6 +1938,8 @@ def main() -> int:
                 counts = import_podcasts(session, owner, args.source)
             elif args.films:
                 counts = import_films(session, owner, args.source)
+            elif args.certifications:
+                counts = import_certifications(session, owner, args.source)
             elif args.youtube:
                 counts = import_youtube(session, owner, args.source)
             elif args.audio_courses:

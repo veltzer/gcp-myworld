@@ -6,7 +6,7 @@ import { uploadPhoto } from "./forms.js";
 import { el, fetchWorld, worldCache } from "./worlds.js";
 
 // One dialog, opened by the + button, showing the form of whatever is on screen.
-export const DIALOG_FORMS = ["add-form", "concert-form", "museum-visit-form", "audio-course-form", "audio-book-form", "audio-book-version-form", "audio-book-heard-form", "audio-book-listen-form", "podcast-form", "podcast-episode-form", "podcast-heard-form", "episode-heard-form", "film-form", "film-watch-form", "series-form", "series-watch-form", "youtube-video-form", "chess-game-form", "place-form", "place-kind-form", "visit-type-form", "city-form", "country-form", "currency-form", "person-form", "group-form", "organization-form", "organization-type-form", "profession-form", "relation-type-form", "person-relation-type-form", "person-org-relation-type-form", "device-form", "language-form"];
+export const DIALOG_FORMS = ["add-form", "concert-form", "museum-visit-form", "audio-course-form", "audio-book-form", "audio-book-version-form", "audio-book-heard-form", "audio-book-listen-form", "podcast-form", "podcast-episode-form", "podcast-heard-form", "episode-heard-form", "film-form", "film-watch-form", "series-form", "series-watch-form", "youtube-video-form", "chess-game-form", "certification-form", "place-form", "place-kind-form", "visit-type-form", "city-form", "country-form", "currency-form", "person-form", "group-form", "organization-form", "organization-type-form", "profession-form", "relation-type-form", "person-relation-type-form", "person-org-relation-type-form", "device-form", "language-form"];
 
 export const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 

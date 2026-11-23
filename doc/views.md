@@ -31,7 +31,7 @@ with them. Renaming a view changes its address: the old one stops working
 A view shows only the owner's *own* data, and of that only what it enables:
 
 - the library kinds: books, films, ... (`/api/library-entries?kind=...`)
-- concerts, museum visits, audio courses, your audio books, audio book listens, your podcasts, episodes heard, film watches, series watches, YouTube videos, chess games
+- concerts, museum visits, audio courses, your audio books, audio book listens, your podcasts, episodes heard, film watches, series watches, YouTube videos, chess games, certifications
 - people, groups, organizations (with their types, for the type filter)
 
 The shared data (places, podcasts, cities, countries, ...) is everyone's and is not a

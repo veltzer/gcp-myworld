@@ -110,6 +110,7 @@ function renderStats(stats) {
 		statTile("Series watched", stats.series_watched, `${stats.series_watches} series watches`, "series-watches"),
 		statTile("YouTube videos", stats.youtube_videos, "", "youtube"),
 		statTile("Chess games", stats.chess_games, stats.chess_by_outcome.map((o) => `${o.count.toLocaleString()} ${o.name.toLowerCase()}`).join(" · "), "chess"),
+		statTile("Certifications", stats.certifications, "", "certifications"),
 		statTile("Places", stats.places, "", "places"),
 		statTile("Podcasts", stats.podcasts, `${stats.podcast_episodes.toLocaleString()} episodes`, "podcasts"),
 		statTile("Audio books", stats.audio_books, `${stats.audio_book_versions.toLocaleString()} versions`, "audio-books"),

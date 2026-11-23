@@ -30,6 +30,7 @@ from myworld.models import (
     AudioBookVersion,
     AudioCourse,
     Base,
+    Certification,
     City,
     Concert,
     Country,
@@ -911,3 +912,25 @@ def test_more_checks(engine: Engine) -> None:
         assert who("organization-near-city") == []
         assert who("place-websites") == [" louvre, Paris", "A lawn, Lyon"]
         assert checks.CHECKS["place-websites"].description and checks.CHECKS["places-credits"].description and checks.CHECKS["place-near-city"].description
+
+
+def test_certification_checks(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        aws = Organization(owner_id=alice.id, name="AWS")
+        session.add_all([
+            Certification(owner_id=alice.id, name="Architect", organization=aws, kind="professional"),
+            # each of these breaks one rule
+            Certification(owner_id=alice.id, name="Orphan", kind="instructor"),
+            Certification(owner_id=alice.id, name="Kindless", organization=aws),
+        ])
+        session.commit()
+        issuers = checks.CHECKS["certification-issuers"].run(session)
+        assert issuers.checked == 3
+        orphan = session.scalars(select(Certification).where(Certification.name == "Orphan")).one()
+        assert [(p.subject.split(" (")[0], p.message, p.link) for p in issuers.problems] == [("Orphan", "has no issuing organization", f"certifications/{orphan.id}")]
+        assert [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS["certification-kinds"].run(session).problems] == [
+            ("Kindless", "has no kind (instructor or professional)"),
+        ]

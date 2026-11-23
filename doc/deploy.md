@@ -343,7 +343,7 @@ the kinds of version heard; Audio book listens by kind (Audible, MP3),
 status and device; Audio books by the kinds of its versions; Audio book
 versions by kind and whether you heard it; Podcast episodes by podcast and
 whether you heard it; Episodes heard by podcast and device; YouTube by
-device. A group with a single value is left out, and a page with no group
+device; Certifications by issuer and kind. A group with a single value is left out, and a page with no group
 left keeps the control, disabled.
 
 The pickers over the user's own rows (performers, people they went with,
@@ -632,6 +632,18 @@ first `companies` tables to `organizations`, then making
   The user is whoever is called by one of `--handle`, written exactly; a
   game neither of whose players is the user is left out. It plays every
   game (with `python-chess`, a tool of the import only) to find where it ended.
+- `GET /api/certifications`: the certifications the user holds, the
+  latest given first (those of no known date after them), each with
+  `name`, `organization` (the one that issued it, one of the user's
+  organizations: id and name; `null` when it was deleted), `kind`
+  (`instructor` or `professional`, or `""`), the date (`date`,
+  `date_precision`) and `remark`; the issuer's logo is its `image` and the
+  issuer's website its `url`. A name is once in an account (409). They
+  were imported (2026-11-23) from `certifications.yaml` in
+  `veltzer.github.io`, each issuer found by name among the organizations,
+  by `scripts/import_world.py --certifications`, which adds only what is
+  missing; the site no longer keeps them. Migration 0035 (before the
+  deploy) made the table.
 - Books are imported from `books_read.yaml` in `veltzer.github.io` (with
   the rating and review of `text_books.yaml`) by
   `scripts/import_world.py --books`, which adds the books the account does
@@ -691,7 +703,7 @@ a person is written with `type_ids`, a list.
   (how it is related to the user: ids and names of relation types), status, website, location, address, `latitude` and `longitude`, the logo as
   `image`, and `people` (ids and names).
 - `POST` to the same paths adds,
-  `PUT /api/<concert-visits|museum-visits|audio-courses|audio-books|audio-book-versions|audio-books-heard|audio-book-listens|podcasts|podcast-episodes|podcasts-heard|episodes-heard|films|film-watches|series|series-watches|youtube-videos|chess-games|places|groups|people|organizations>/<id>` replaces the fields,
+  `PUT /api/<concert-visits|museum-visits|audio-courses|audio-books|audio-book-versions|audio-books-heard|audio-book-listens|podcasts|podcast-episodes|podcasts-heard|episodes-heard|films|film-watches|series|series-watches|youtube-videos|chess-games|certifications|places|groups|people|organizations>/<id>` replaces the fields,
   `DELETE` removes. The date is sent as `YYYY`, `YYYY-MM` or
   `YYYY-MM-DD` (the add and edit forms pick it with a date picker and a Day, Month
   only or Year only choice, so it is always a real date); a date sent back exactly as it came keeps its stored
@@ -898,7 +910,8 @@ The Imports page and its API are in `imports.md`.
   `audio_book_listens` (a shared version heard: finished, how far, when,
   where, on what), `podcasts_heard` (a
   shared podcast the user listens to, with their rating and review) and
-  `episodes_heard` (a shared episode heard, when, where, on what), `youtube_videos`, `chess_games`: one
+  `episodes_heard` (a shared episode heard, when, where, on what), `youtube_videos`, `chess_games`, `certifications`
+  (one held, with the organization that issued it): one
   row per thing done (see "Concerts, museums, people and organizations").
   A chess game keeps its text whole (`pgn`), and beside it what is listed
   and sorted by, read out of that text; one recorded without its moves has

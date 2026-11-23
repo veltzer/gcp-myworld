@@ -331,6 +331,11 @@ const WORLD_BODIES = {
 			watched_at: value("watched_at"),
 		};
 	},
+	certifications: async (form) => {
+		const value = (name) => form.elements[name].value;
+		const body = Object.fromEntries(["name", "organization_id", "kind", "date", "remark"].map((name) => [name, value(name)]));
+		return { ...body, date_timezone: state.editing?.date_timezone || "" };
+	},
 	chess: async (form) => ({
 		// the game's text is what it is added by; one that exists keeps its own
 		...(state.editing ? {} : { pgn: form.elements.pgn.value }),

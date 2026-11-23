@@ -143,6 +143,12 @@ const SORTS = {
 		["duration", "Length", (v) => v.duration, "desc"],
 		["uploaded", "Uploaded", (v) => v.uploaded, "desc"],
 	],
+	certifications: [
+		["date", "Given", (c) => c.date_sort, "desc"],
+		["name", "Name", (c) => c.name, "asc"],
+		["organization", "Issued by", (c) => c.organization?.name, "asc"],
+		["kind", "Kind", (c) => c.kind, "asc"],
+	],
 	chess: [
 		["date", "Played", (g) => g.date, "desc"],
 		["opponent", "Opponent", (g) => g.opponent, "asc"],
