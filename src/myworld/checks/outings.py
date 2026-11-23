@@ -1,6 +1,7 @@
 """
-Checks of the trips, lectures and rallies each account went to: who came
-along, the countries a trip was in, who gave a lecture.
+Checks of the courses each account took, and of the trips, lectures and
+rallies it went to: who a course was taken through, who came along, the
+countries a trip was in, who gave a lecture.
 """
 
 from sqlalchemy import Column, select
@@ -13,6 +14,7 @@ from myworld.checks.core import (
     rows,
 )
 from myworld.models import (
+    Course,
     Lecture,
     Rally,
     Trip,
@@ -69,3 +71,10 @@ def check_lecture_lecturers(session: Session) -> Result:
 def check_rally_company(session: Session) -> Result:
     """ Every rally, of every account, either has the people who came along or is marked "I went alone"; none is both. """
     return _company(session, Rally, rally_companions.c.rally_id)
+
+
+@check("course-providers", "Every course says who it was taken through", "courses", "courses")
+def check_course_providers(session: Session) -> Result:
+    """ Every course, of every account, names the organization it was taken through, whose logo its card shows when no school is named. """
+    found = rows(session, Course)
+    return Result(checked=len(found), problems=[problem(c, "has no provider") for c in found if c.provider_id is None])

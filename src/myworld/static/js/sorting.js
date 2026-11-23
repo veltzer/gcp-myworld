@@ -143,6 +143,11 @@ const SORTS = {
 		["duration", "Length", (v) => v.duration, "desc"],
 		["uploaded", "Uploaded", (v) => v.uploaded, "desc"],
 	],
+	courses: [
+		["date", "Finished", (c) => c.date_sort, "desc"],
+		["name", "Name", (c) => c.name, "asc"],
+		["provider", "Through", (c) => c.provider?.name, "asc"],
+	],
 	trips: [
 		["date", "Began", (t) => t.date_sort, "desc"],
 		["name", "Where to", (t) => t.name, "asc"],

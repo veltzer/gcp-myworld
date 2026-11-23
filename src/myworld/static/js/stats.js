@@ -111,6 +111,7 @@ function renderStats(stats) {
 		statTile("YouTube videos", stats.youtube_videos, "", "youtube"),
 		statTile("Chess games", stats.chess_games, stats.chess_by_outcome.map((o) => `${o.count.toLocaleString()} ${o.name.toLowerCase()}`).join(" · "), "chess"),
 		statTile("Certifications", stats.certifications, "", "certifications"),
+		statTile("Courses", stats.courses, "", "courses"),
 		statTile("Trips", stats.trips, "", "trips"),
 		statTile("Lectures", stats.lectures, "", "lectures"),
 		statTile("Rallies", stats.rallies, "", "rallies"),

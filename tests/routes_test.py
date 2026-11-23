@@ -58,6 +58,7 @@ MINIMAL: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
         {"pgn": '[White "me"]\n[Black "Deeper Blue"]\n[Result "1-0"]\n\n1. e4 e5 1-0', "color": "white"},
     ),
     "certifications": ({"name": "AWS Instructor"}, {"name": "AWS Certified Instructor", "kind": "instructor", "date": "2014-02"}),
+    "courses": ({"name": "Jazz"}, {"name": "Jazz Improvisation", "date": "2013", "remark": "via Coursera"}),
     "trips": ({"name": "Kiev"}, {"name": "Kiev and Lviv", "days": 5, "date": "2016-05-04", "alone": True}),
     "lectures": ({"name": "Nietzsche"}, {"name": "Friedrich Nietzsche", "location": "TalkHouse", "rating": 8, "date": "2016-11"}),
     "rallies": ({"name": "Memorial"}, {"name": "Rabin memorial", "location": "Kikar Rabin", "review": "Not very interesting", "date": "2016"}),

@@ -101,6 +101,18 @@ items:
     kind: professional
 """
 
+COURSES = """
+items:
+  - name: "Jazz Improvisation"
+    provider: "Startup"
+    school: "Old School"
+    lecturers: ["Bob Buddy"]
+  - name: "DevOps on AWS"
+    provider: "Acme"
+    date_y: "2016"
+    remark: "the classroom course"
+"""
+
 TRIPS = """
 items:
   - where: "Lisbon and Athens"
@@ -443,7 +455,7 @@ def write_source(root: Path, concerts: str = CONCERTS) -> Path:
     (root / "data" / "yaml").mkdir(parents=True)
     (root / "static" / "images").mkdir(parents=True)
     (root / "data" / "logos").mkdir(parents=True)
-    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("audible", AUDIBLE), ("audio_books", AUDIO_BOOKS), ("podcasts", PODCASTS), ("video_youtube", YOUTUBE), ("books_read", BOOKS), ("text_books", TEXT_BOOKS), ("certifications", CERTIFICATIONS), ("trips", TRIPS), ("lectures", LECTURES), ("political_rallies", RALLIES)):
+    for name, text in (("people", PEOPLE), ("concerts", concerts), ("museums", MUSEUMS), ("organizations", ORGANIZATIONS), ("audio_courses", AUDIO_COURSES), ("audible", AUDIBLE), ("audio_books", AUDIO_BOOKS), ("podcasts", PODCASTS), ("video_youtube", YOUTUBE), ("books_read", BOOKS), ("text_books", TEXT_BOOKS), ("certifications", CERTIFICATIONS), ("courses", COURSES), ("trips", TRIPS), ("lectures", LECTURES), ("political_rallies", RALLIES)):
         (root / "data" / "yaml" / f"{name}.yaml").write_text(text, encoding="UTF8")
     (root / "data" / "logos" / "acme.svg").write_bytes(LOGO)
     (root / "static" / "data").mkdir(parents=True)
@@ -476,7 +488,7 @@ def fixture_imported(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> we
     assert counts == {
         "people": 8, "organizations": 3, "organization types": 9, "relation types": 6, "person types": 3, "people with a profession": 5, "people related to the user": 2,
         "concerts": 3, "places": 1, "museums": 2, "museum visits": 3, "audio courses": 2, "audio books": 4, "podcasts": 2, "podcast episodes": 3, "films": 0, "film watches": 0, "certifications": 2,
-        "trips": 2, "lectures": 1, "rallies": 1,
+        "courses": 2, "trips": 2, "lectures": 1, "rallies": 1,
         "YouTube videos": 4, "devices": 4, "books": 3, "images": 9}
     return app
 
@@ -1003,8 +1015,8 @@ def test_a_source_without_the_audible_library(app: webtest.TestApp, engine: Engi
 def test_a_source_without_organizations(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
     sign_in_admin(app, engine)
     source = write_source(tmp_path)
-    # the site no longer keeps them, nor the certifications that name them: the full import imports none of either
-    for name in ("organizations", "certifications"):
+    # the site no longer keeps them, nor the certifications and courses that name them: the full import imports none of them
+    for name in ("organizations", "certifications", "courses"):
         (source / "data" / "yaml" / f"{name}.yaml").unlink()
     with Session(engine) as session:
         counts = import_world.import_world(session, owner(session), source)
@@ -1179,6 +1191,32 @@ def test_certifications(imported: webtest.TestApp) -> None:
     imported.delete(f"/api/organizations/{school_id}")
     assert {c["organization"] is None for c in imported.get("/api/certifications").json} == {True}
     assert imported.get("/api/stats").json["certifications"] == 2
+
+
+def test_courses(imported: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    courses = imported.get("/api/courses").json
+    # the latest finished first, those of no known date after them
+    assert [c["name"] for c in courses] == ["DevOps on AWS", "Jazz Improvisation"]
+    devops, jazz = courses
+    assert (devops["provider"]["name"], devops["school"], devops["date"], devops["remark"], devops["url"]) == ("Acme", None, "2016", "the classroom course", "https://acme.example")
+    organizations = {o["name"]: o for o in imported.get("/api/organizations").json}
+    # its picture is the school's logo, or the provider's
+    assert (jazz["provider"]["name"], jazz["school"]["name"], [p["name"] for p in jazz["lecturers"]]) == ("Startup", "Old School", ["Bob Buddy"])
+    assert devops["image"] == organizations["Acme"]["image"]
+    # a name the account has already is refused
+    imported.post_json("/api/courses", {"name": "DevOps on AWS"}, status=409)
+    edited = imported.put_json(f"/api/courses/{jazz['id']}", {"name": "Jazz", "provider_id": organizations["Acme"]["id"], "lecturers": [], "date": "2013-05"}).json
+    assert (edited["provider"]["name"], edited["school"], edited["lecturers"], edited["date_precision"]) == ("Acme", None, [], "month")
+    assert imported.get("/api/stats").json["courses"] == 2
+    # it runs again and adds only what is missing (the renamed one comes back under its old name); a provider
+    # the account does not have is added, a Company, and so is a lecturer
+    source = write_source(tmp_path / "again")
+    (source / "data" / "yaml" / "courses.yaml").write_text(COURSES + '  - name: "Games"\n    provider: "Coursera"\n    lecturers: ["Tom Morley"]\n', encoding="UTF8")
+    with Session(engine) as session:
+        counts = import_world.import_courses(session, owner(session), source)
+        assert (counts["courses added"], counts["organizations added"], counts["lecturers added"]) == (2, 1, 1)
+        coursera = session.scalars(select(Organization).where(Organization.name == "Coursera")).one()
+        assert [kind.name for kind in coursera.types] == ["Company"]
 
 
 def test_trips_lectures_and_rallies(imported: webtest.TestApp) -> None:

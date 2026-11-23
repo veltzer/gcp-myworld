@@ -34,6 +34,7 @@ from myworld.models import (
     City,
     Concert,
     Country,
+    Course,
     Device,
     DisabledCheck,
     EpisodeHeard,
@@ -968,3 +969,19 @@ def test_trip_lecture_and_rally_checks(engine: Engine) -> None:
         assert who("rally-company") == [("Gap rally", "has no one in With and is not marked alone")]
         # going along to them is being linked to something
         assert "Bob" not in [p.subject for p in checks.CHECKS["people-used"].run(session).problems]
+
+
+def test_course_checks(engine: Engine) -> None:
+    with Session(engine) as session:
+        alice = User(email="alice@example.com")
+        session.add(alice)
+        session.flush()
+        teacher = Person(owner_id=alice.id, first_name="Gary")
+        session.add_all([
+            Course(owner_id=alice.id, name="Fine", provider=Organization(owner_id=alice.id, name="Coursera"), lecturers=[teacher]),
+            Course(owner_id=alice.id, name="Through no one"),
+        ])
+        session.commit()
+        assert [(p.subject.split(" (")[0], p.message) for p in checks.CHECKS["course-providers"].run(session).problems] == [("Through no one", "has no provider")]
+        # teaching a course is being linked to something
+        assert "Gary" not in [p.subject for p in checks.CHECKS["people-used"].run(session).problems]

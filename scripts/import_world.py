@@ -80,6 +80,13 @@ organization of that one's name. A certification is found again by its
 name, so --certifications can run again; the full import includes them when
 the source has the file.
 
+Courses come from data/yaml/courses.yaml: each with the organization it was
+taken through (provider) and the one that gave it (school), the account's
+organizations of those names (one it does not have is added, a Company), who
+taught it (the account's person of each name, or a new one) and when it was
+finished. A course is found again by its name, so --courses can run again;
+the full import includes them when the source has the file.
+
 Trips come from data/yaml/trips.yaml (where to, the countries, when, how many
 days, who came along, a remark), lectures from data/yaml/lectures.yaml (the
 name, the description, the lecturers, where, the country, when, the rating,
@@ -96,7 +103,7 @@ tables, in one transaction. It is meant for an empty account: when the
 account has any of these rows already it stops, since replacing them would
 lose every edit made in the app since the last import, unless
 --replace-everything is given with the account's email again. The --books,
---audio-books, --podcasts, --films, --certifications, --trips, --lectures, --rallies, --youtube-history and --only-types modes add to what is
+--audio-books, --podcasts, --films, --certifications, --courses, --trips, --lectures, --rallies, --youtube-history and --only-types modes add to what is
 there and are safe to run again. Unknown fields in the YAML stop the import rather than being
 dropped, so nothing is lost on the way in.
 
@@ -161,6 +168,7 @@ from myworld.models import (
     City,
     Concert,
     Country,
+    Course,
     Cover,
     Device,
     EpisodeHeard,
@@ -199,6 +207,7 @@ from myworld.models import (
     concert_companions,
     concert_groups,
     concert_performers,
+    course_lecturers,
     film_watch_companions,
     group_members,
     lecture_companions,
@@ -352,6 +361,7 @@ PODCAST_EPISODE_FIELDS = DATE_FIELDS | {
 }
 # certifications.yaml: a certification held, its issuer by its id in organizations.yaml, and the day it was given (YYYY-MM-DD)
 CERTIFICATION_FIELDS = {"id", "name", "organization", "kind", "date", "remark"}
+COURSE_FIELDS = DATE_FIELDS | {"name", "provider", "school", "lecturers", "remark"}
 TRIP_FIELDS = DATE_FIELDS | {"where", "countries", "duration_days", "remark", "with"}
 LECTURE_FIELDS = DATE_FIELDS | {"name", "description", "lecturers", "location", "country", "rating", "review", "with"}
 # a rally's description is what it was: its name here
@@ -468,7 +478,7 @@ def _profession(person: Person) -> str | None:
     """ A first guess at a person's profession, from what the data says; None when nothing does. """
     if person.performed:
         return "Performer"
-    if person.lectured or person.lectures_given:
+    if person.lectured or person.lectures_given or person.courses_given:
         return "Lecturer"
     if person.wrote:
         return "Book Author"
@@ -608,7 +618,7 @@ def find_owner(session: Session, email: str, subject: str | None) -> User:
 # what the full import deletes and makes again, so what an account must not have unless it is replaced on purpose;
 # the shared rows (countries, cities, places) are everyone's: never deleted, found again or added
 REPLACED_MODELS = (
-    AudioCourse, AudioBookListen, AudioBookHeard, EpisodeHeard, PodcastHeard, FilmWatch, YouTubeVideo, Device, Concert, Visit, Certification, Trip, Lecture, Rally, Group, Person, Organization,
+    AudioCourse, AudioBookListen, AudioBookHeard, EpisodeHeard, PodcastHeard, FilmWatch, YouTubeVideo, Device, Concert, Visit, Certification, Course, Trip, Lecture, Rally, Group, Person, Organization,
     OrganizationType, PersonType, RelationType, PersonRelationType, PersonOrganizationType, Image,
 )
 
@@ -659,6 +669,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     session.execute(delete(concert_groups).where(concert_groups.c.concert_id.in_(concerts_of_owner)))
     session.execute(delete(group_members).where(group_members.c.group_id.in_(select(Group.id).where(Group.owner_id == owner.id))))
     session.execute(delete(visit_companions).where(visit_companions.c.visit_id.in_(select(Visit.id).where(Visit.owner_id == owner.id))))
+    session.execute(delete(course_lecturers).where(course_lecturers.c.course_id.in_(select(Course.id).where(Course.owner_id == owner.id))))
     session.execute(delete(trip_countries).where(trip_countries.c.trip_id.in_(select(Trip.id).where(Trip.owner_id == owner.id))))
     session.execute(delete(trip_companions).where(trip_companions.c.trip_id.in_(select(Trip.id).where(Trip.owner_id == owner.id))))
     session.execute(delete(lecture_companions).where(lecture_companions.c.lecture_id.in_(select(Lecture.id).where(Lecture.owner_id == owner.id))))
@@ -870,19 +881,21 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
     films = import_films(session, owner, source) if _films_path(source).exists() else {"films added": 0, "film watches added": 0, "posters added": 0, "devices added": 0}
     books = import_books(session, owner, source)
     certifications = import_certifications(session, owner, source) if _certifications_path(source).exists() else {"certifications added": 0}
+    courses_taken = import_courses(session, owner, source) if _yaml_path(source, "courses").exists() else {"courses added": 0, "lecturers added": 0}
     outings = {
         what: OUTINGS[what](session, owner, source) if _yaml_path(source, file).exists() else {f"{what} added": 0, "lecturers added": 0}
         for what, file in OUTING_FILES.items()
     }
     typed = give_types(session, owner)
     return {
-        "people": len(people) + courses["lecturers added"] + books["authors added"] + sum(o.get("lecturers added", 0) for o in outings.values()), "organizations": len(organizations), "organization types": len(types),
+        "people": len(people) + courses["lecturers added"] + books["authors added"] + sum(o.get("lecturers added", 0) for o in outings.values()) + courses_taken["lecturers added"], "organizations": len(organizations), "organization types": len(types),
         "relation types": len(relation_types), "person types": len(PERSON_TYPES), "people with a profession": typed["people given a profession"], "people related to the user": typed["people given a relation"],
         "concerts": len(concert_items), "places": place.added, "museums": len(museums), "museum visits": len(museum_items), "audio courses": courses["audio courses"],
         "audio books": audio_books["audio books added"],
         "podcasts": podcasts["podcasts added"], "podcast episodes": podcasts["podcast episodes added"],
         "films": films["films added"], "film watches": films["film watches added"],
         "certifications": certifications["certifications added"],
+        "courses": courses_taken["courses added"],
         **{what: outings[what][f"{what} added"] for what in OUTING_FILES},
         "YouTube videos": videos["YouTube videos"] + history["YouTube videos added"], "devices": courses["devices added"] + audio_books["devices added"] + podcasts["devices added"] + films["devices added"] + videos["devices added"],
         "books": books["books"], "images": len(images) + courses["images"] + audio_books["images"] + podcasts["covers added"] + films["posters added"] + books["covers"],
@@ -1560,6 +1573,44 @@ def _item_date_key(item: dict[str, Any], name: str) -> tuple[Any, ...]:
     return (dates.get("date_utcz"), dates.get("date_ymd"), dates.get("date_my", ""), dates.get("date_y"))
 
 
+def import_courses(session: Session, owner: User, source: Path) -> dict[str, int]:
+    """
+    Add the courses of courses.yaml that owner does not have yet (found
+    again by name), each with the organizations it was taken through and
+    from (owner's of those names; one owner does not have is added, a
+    Company) and who taught it (owner's person of each name, or a new one).
+    Safe to run again. Does not commit.
+    """
+    items = _items(source, "courses", COURSE_FIELDS)
+    company = _Company(session, owner, "courses.yaml")
+    organizations = {o.name: o for o in session.scalars(select(Organization).where(Organization.owner_id == owner.id))}
+    have = set(session.scalars(select(Course.name).where(Course.owner_id == owner.id)))
+    added = organizations_added = 0
+
+    def organization(name: str) -> Organization | None:
+        nonlocal organizations_added
+        if not name:
+            return None
+        if name not in organizations:
+            kind = session.scalars(select(OrganizationType).where(OrganizationType.owner_id == owner.id, OrganizationType.name == DEFAULT_ORGANIZATION_TYPE)).first()
+            organizations[name] = Organization(owner_id=owner.id, name=name, types=[kind] if kind else [])
+            session.add(organizations[name])
+            organizations_added += 1
+        return organizations[name]
+
+    for item in items:
+        if item["name"] in have:
+            continue
+        session.add(Course(
+            owner_id=owner.id, name=item["name"], provider=organization(item.get("provider", "")), school=organization(item.get("school", "")),
+            lecturers=[company.lecturer(name) for name in dict.fromkeys(item.get("lecturers") or [])], remark=item.get("remark", ""), **_dates(item),
+        ))
+        have.add(item["name"])
+        added += 1
+    session.flush()
+    return {"courses added": added, "lecturers added": company.added, "organizations added": organizations_added}
+
+
 def import_trips(session: Session, owner: User, source: Path) -> dict[str, int]:
     """
     Add the trips of trips.yaml that owner does not have yet (found again by
@@ -2082,6 +2133,10 @@ def main() -> int:
         "--certifications", action="store_true",
         help="import only the certifications, adding those the account does not have yet (their issuers must be its organizations already); safe to run again",
     )
+    parser.add_argument(
+        "--courses", action="store_true",
+        help="import only the courses (courses.yaml), adding those the account does not have yet; safe to run again",
+    )
     for what, file in OUTING_FILES.items():
         parser.add_argument(
             f"--{what}", action="store_true",
@@ -2128,6 +2183,9 @@ def main() -> int:
                 counts = import_films(session, owner, args.source)
             elif args.certifications:
                 counts = import_certifications(session, owner, args.source)
+            elif args.courses:
+                counts = import_courses(session, owner, args.source)
+                counts["people given a profession"] = give_types(session, owner)["people given a profession"]
             elif any(getattr(args, what) for what in OUTINGS):
                 counts = {}
                 for what, run in OUTINGS.items():

@@ -28,6 +28,8 @@ export const WORLDS = {
 	chess: ["Chess games", "/api/chess-games", "chess game", "Chess"],
 	// the certifications the user holds, each with the organization that issued it
 	certifications: ["Certifications", "/api/certifications", "certification", "Certifications"],
+	// the courses the user took, other than audio courses
+	courses: ["Courses", "/api/courses", "course", "Courses"],
 	// the trips the user took, the lectures and the rallies they went to
 	trips: ["Trips", "/api/trips", "trip", "Trips"],
 	lectures: ["Lectures", "/api/lectures", "lecture", "Lectures"],

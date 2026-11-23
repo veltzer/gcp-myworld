@@ -331,6 +331,14 @@ const WORLD_BODIES = {
 			watched_at: value("watched_at"),
 		};
 	},
+	courses: async (form) => {
+		const value = (name) => form.elements[name].value;
+		return {
+			...Object.fromEntries(["name", "provider_id", "school_id", "date", "remark"].map((name) => [name, value(name)])),
+			date_timezone: state.editing?.date_timezone || "",
+			lecturers: chosen(form, "lecturers"),
+		};
+	},
 	trips: async (form) => {
 		const value = (name) => form.elements[name].value;
 		return {

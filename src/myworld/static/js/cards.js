@@ -252,6 +252,18 @@ function rating(item) {
 	return item.rating !== null && item.rating !== undefined ? `${item.rating}/${state.config.rating_max}` : "";
 }
 
+function courseCard(item) {
+	// its picture is the logo of the school that gave it, or of the provider; its link the provider's website
+	const { card, list } = cardShell(item, [item.school?.name, item.provider?.name].filter(Boolean).join(", via "), "logo");
+	linksDetail(list, "From", "organizations", item.school ? [item.school] : []);
+	linksDetail(list, "Through", "organizations", item.provider ? [item.provider] : []);
+	linksDetail(list, "Lecturer", "people", item.lecturers);
+	detail(list, "Finished", formatDate(item));
+	detail(list, "Remark", item.remark);
+	websiteButton(card, item.url);
+	return card;
+}
+
 function tripCard(item) {
 	const { card, list } = cardShell(item, item.countries.map((c) => c.name).join(", "));
 	detail(list, "Began", formatDate(item));
@@ -627,6 +639,7 @@ export const CARDS = {
 	youtube: youtubeCard,
 	chess: chessCard,
 	certifications: certificationCard,
+	courses: courseCard,
 	trips: tripCard,
 	lectures: lectureCard,
 	rallies: rallyCard,

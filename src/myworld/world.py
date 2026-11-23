@@ -1,6 +1,6 @@
 """
 JSON API for what the signed-in user keeps: concerts, their museum visits,
-audio courses, audio books, podcasts and their episodes, YouTube videos, chess games, certifications, trips, lectures, rallies, people, organizations and
+audio courses, audio books, podcasts and their episodes, YouTube videos, chess games, certifications, courses, trips, lectures, rallies, people, organizations and
 groups; and for what everyone shares: places (and their kinds), visit
 types, cities and countries. For each: what a row looks like as JSON, how a
 request body is applied to it, and the routes that list, add, edit and
@@ -56,6 +56,7 @@ from myworld.models import (
     CityPhoto,
     Concert,
     Country,
+    Course,
     Currency,
     Device,
     EpisodeHeard,
@@ -813,6 +814,23 @@ def certification_json(certification: Certification) -> dict[str, Any]:
     }
 
 
+def course_json(course: Course) -> dict[str, Any]:
+    # its picture is the logo of the school that gave it, or of the provider when no school did
+    pictured = course.school or course.provider
+    return {
+        "id": course.id,
+        "name": course.name,
+        "provider": _ref(course.provider),
+        "school": _ref(course.school),
+        "lecturers": _refs(course.lecturers),
+        **date_json(course),
+        "date_timezone": course.date_timezone,
+        "remark": course.remark,
+        "url": course.provider.website if course.provider else "",
+        "image": image_url(pictured.image_id) if pictured else None,
+    }
+
+
 def _company_json(row: Trip | Lecture | Rally) -> dict[str, Any]:
     """ Who came along, or that the user went alone. """
     return {"alone": row.alone, "with": _names(row.people), "people": _refs(row.people)}
@@ -1205,6 +1223,16 @@ def api_certifications() -> flask.Response:
     return flask.jsonify(_newest_first([certification_json(c) for c in flask.g.db.scalars(query)]))
 
 
+@bp.route("/api/courses", methods=["GET"])
+@auth.login_required
+def api_courses() -> flask.Response:
+    query = select(Course).where(Course.owner_id == flask.g.user.id).options(
+        selectinload(Course.provider), selectinload(Course.school), selectinload(Course.lecturers),
+    )
+    # the latest finished first; those of no known date after them
+    return flask.jsonify(_newest_first([course_json(c) for c in flask.g.db.scalars(query)]))
+
+
 @bp.route("/api/trips", methods=["GET"])
 @auth.login_required
 def api_trips() -> flask.Response:
@@ -1305,7 +1333,7 @@ def api_currencies() -> flask.Response:
 
 
 
-def _apply_dates(row: Concert | Visit | AudioCourse | AudioBookListen | EpisodeHeard | FilmWatch | YouTubeVideo | Certification | Trip | Lecture | Rally, body: dict[str, Any]) -> None:
+def _apply_dates(row: Concert | Visit | AudioCourse | AudioBookListen | EpisodeHeard | FilmWatch | YouTubeVideo | Certification | Course | Trip | Lecture | Rally, body: dict[str, Any]) -> None:
     """
     The date as typed: YYYY, YYYY-MM or YYYY-MM-DD, stored at that precision,
     or nothing. date_timezone is where it happened (an IANA name). A date
@@ -1558,6 +1586,19 @@ def _apply_certification(certification: Certification, body: dict[str, Any]) -> 
     certification.kind = kind
     certification.remark = text(body, "remark")
     _apply_dates(certification, body)
+
+
+def _apply_course(course: Course, body: dict[str, Any]) -> None:
+    name = text(body, "name", required=True)
+    clash = flask.g.db.execute(select(Course.id).where(Course.owner_id == flask.g.user.id, Course.name == name, Course.id != course.id)).first()
+    if clash is not None:
+        raise ApiError(409, f"{name} is already in Courses")
+    course.name = name
+    course.provider = owned_ref(body, "provider_id", Organization, "provider")
+    course.school = owned_ref(body, "school_id", Organization, "school")
+    course.lecturers = owned_list(body, "lecturers", Person)
+    course.remark = text(body, "remark")
+    _apply_dates(course, body)
 
 
 def _apply_company(row: Trip | Lecture | Rally, body: dict[str, Any], what: str) -> None:
@@ -2211,6 +2252,7 @@ VIEWS: dict[str, _View] = {
     "youtube-videos": _View(YouTubeVideo, _apply_youtube_video, youtube_video_json),
     "chess-games": _View(ChessGame, _apply_chess_game, chess_game_json),
     "certifications": _View(Certification, _apply_certification, certification_json),
+    "courses": _View(Course, _apply_course, course_json),
     "trips": _View(Trip, _apply_trip, trip_json),
     "lectures": _View(Lecture, _apply_lecture, lecture_json),
     "rallies": _View(Rally, _apply_rally, rally_json),

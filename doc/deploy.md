@@ -343,7 +343,8 @@ the kinds of version heard; Audio book listens by kind (Audible, MP3),
 status and device; Audio books by the kinds of its versions; Audio book
 versions by kind and whether you heard it; Podcast episodes by podcast and
 whether you heard it; Episodes heard by podcast and device; YouTube by
-device; Certifications by issuer and kind; Trips by country and who came
+device; Certifications by issuer and kind; Courses by provider, school and
+lecturer; Trips by country and who came
 along; Lectures by lecturer, country and who came along; Rallies by
 country and who came along. A group with a single value is left out, and a page with no group
 left keeps the control, disabled.
@@ -654,6 +655,20 @@ first `companies` tables to `organizations`, then making
   by `scripts/import_world.py --certifications`, which adds only what is
   missing; the site no longer keeps them. Migration 0035 (before the
   deploy) made the table.
+- `GET /api/courses`: the courses the user took other than audio courses,
+  the latest finished first (those of no known date after them), each with
+  `name`, `provider` (the organization it was taken through) and `school`
+  (the one that gave it, when not the provider), both the user's
+  organizations (ids and names, `null` when none or deleted), `lecturers`
+  (the user's people), the date (`date`, `date_precision`) and `remark`;
+  the school's logo (else the provider's) is its `image`, the provider's
+  website its `url`. A name is once in an account (409). They were imported
+  (2026-11-23) from `courses.yaml` in `veltzer.github.io` by
+  `scripts/import_world.py --courses` (an organization not there added, a
+  Company; a lecturer not there added), which adds only what is missing;
+  the site no longer keeps them. The entries of that file that were
+  certifications are the Certifications page's. Migration 0037 (before the
+  deploy) made the tables.
 - `GET /api/trips`, `GET /api/lectures`, `GET /api/rallies`: the trips the
   user took and the lectures and rallies they went to, the latest first
   (those of no known date after them). Each has `name` (a trip's: where
@@ -728,7 +743,7 @@ a person is written with `type_ids`, a list.
   (how it is related to the user: ids and names of relation types), status, website, location, address, `latitude` and `longitude`, the logo as
   `image`, and `people` (ids and names).
 - `POST` to the same paths adds,
-  `PUT /api/<concert-visits|museum-visits|audio-courses|audio-books|audio-book-versions|audio-books-heard|audio-book-listens|podcasts|podcast-episodes|podcasts-heard|episodes-heard|films|film-watches|series|series-watches|youtube-videos|chess-games|certifications|trips|lectures|rallies|places|groups|people|organizations>/<id>` replaces the fields,
+  `PUT /api/<concert-visits|museum-visits|audio-courses|audio-books|audio-book-versions|audio-books-heard|audio-book-listens|podcasts|podcast-episodes|podcasts-heard|episodes-heard|films|film-watches|series|series-watches|youtube-videos|chess-games|certifications|courses|trips|lectures|rallies|places|groups|people|organizations>/<id>` replaces the fields,
   `DELETE` removes. The date is sent as `YYYY`, `YYYY-MM` or
   `YYYY-MM-DD` (the add and edit forms pick it with a date picker and a Day, Month
   only or Year only choice, so it is always a real date); a date sent back exactly as it came keeps its stored
@@ -936,7 +951,8 @@ The Imports page and its API are in `imports.md`.
   where, on what), `podcasts_heard` (a
   shared podcast the user listens to, with their rating and review) and
   `episodes_heard` (a shared episode heard, when, where, on what), `youtube_videos`, `chess_games`, `certifications`
-  (one held, with the organization that issued it), `trips` (with
+  (one held, with the organization that issued it), `courses` (with
+  `course_lecturers`), `trips` (with
   `trip_countries` and `trip_companions`), `lectures` (with
   `lecture_lecturers` and `lecture_companions`) and `rallies` (with
   `rally_companions`): one

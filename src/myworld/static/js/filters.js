@@ -122,6 +122,14 @@ const VALUE_FILTERS = {
 		all: "All videos",
 		groups: [["device", "Device", (v) => named(v.device)]],
 	},
+	courses: {
+		all: "All courses",
+		groups: [
+			["provider", "Through", (c) => named(c.provider)],
+			["school", "From", (c) => named(c.school)],
+			["lecturer", "Lecturer", (c) => c.lecturers.map((p) => p.name)],
+		],
+	},
 	trips: {
 		all: "All trips",
 		groups: [

@@ -840,6 +840,27 @@
 					<button type="submit">Add</button>
 				</div>
 			</form>
+			<form id="course-form" class="dialog-form" hidden>
+				<div class="row">
+					<label title="The course's name, as its provider lists it" class="wide">Name <input name="name" required></label>
+				</div>
+				<div class="row">
+					<label title="The organization you took it through (Coursera, Amazon Web Services), one of Organizations: add a new one there" class="wide">Through <select name="provider_id" data-picker="organizations" data-placeholder="Type an organization" title="The organization you took it through (Coursera, Amazon Web Services), one of Organizations: add a new one there"></select></label>
+					<label title="The school or company that gave it, when not the one you took it through, one of Organizations" class="wide">From <select name="school_id" data-picker="organizations" data-placeholder="Type an organization" title="The school or company that gave it, when not the one you took it through, one of Organizations"></select></label>
+				</div>
+				<div class="row">
+					<label title="Who taught it, each one of People; add a new one on the People page" class="wide">Lecturers <select multiple data-chips="people" data-field="lecturers" data-placeholder="Type a name from People"><option value=""></option></select></label>
+					<label title="When you finished it: how much of the date is known">Finished <span class="date-pick"><input type="date" class="date-day" min="1000-01-01" max="2999-12-31"><select class="date-precision" title="How much of the date is known" aria-label="How much of the date is known"><option value="day">Day</option><option value="month">Month only</option><option value="year">Year only</option></select><input type="hidden" name="date"></span></label>
+				</div>
+				<div class="row">
+					<label title="Anything you want to remember about it" class="wide">Remark <input name="remark"></label>
+				</div>
+				<div class="dialog-actions">
+					<button type="button" class="text danger delete" hidden>Delete</button>
+					<button type="button" class="text cancel">Cancel</button>
+					<button type="submit">Add</button>
+				</div>
+			</form>
 			<form id="trip-form" class="dialog-form" hidden>
 				<div class="row">
 					<label title="Where you went: a city, a region, a trail" class="wide">Where to <input name="name" required placeholder="e.g. Barcelona, Paris, London"></label>

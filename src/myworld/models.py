@@ -651,6 +651,13 @@ lecture_lecturers = Table(
     Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
 )
 
+course_lecturers = Table(
+    "course_lecturers",
+    Base.metadata,
+    Column("course_id", ForeignKey("courses.id", ondelete="CASCADE"), primary_key=True),
+    Column("person_id", ForeignKey("people.id", ondelete="CASCADE"), primary_key=True),
+)
+
 rally_companions = Table(
     "rally_companions",
     Base.metadata,
@@ -792,6 +799,8 @@ class Person(Base):
     lectures: Mapped[list[Lecture]] = relationship(secondary=lecture_companions, back_populates="people")
     lectures_given: Mapped[list[Lecture]] = relationship(secondary=lecture_lecturers, back_populates="lecturers")
     rallies: Mapped[list[Rally]] = relationship(secondary=rally_companions, back_populates="people")
+    # the courses they taught the user (other than audio courses)
+    courses_given: Mapped[list[Course]] = relationship(secondary=course_lecturers, back_populates="lecturers")
     # the films watched with them, and those they recommended
     film_watches: Mapped[list[FilmWatch]] = relationship(
         secondary=film_watch_companions, back_populates="people",
@@ -1263,6 +1272,35 @@ class Rally(_Dated, Base):
     remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
     alone: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     people: Mapped[list[Person]] = relationship(secondary=rally_companions, back_populates="rallies")
+
+
+class Course(_Dated, Base):
+    """
+    A course the user took, other than an audio course: its name ("Jazz
+    Improvisation"), the organization it was taken through (provider:
+    Coursera, Amazon Web Services), the one that gave it (school: Berklee
+    College of Music; often the provider itself, then none), who taught it
+    (people), when it was finished (_Dated) and a remark. A course is in an
+    account once by its name. Imported from veltzer.github.io's courses.yaml
+    (scripts/import_world.py --courses).
+    """
+    __tablename__ = "courses"
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_course_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    # an organization deleted leaves its courses, through or from no one known
+    provider_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="SET NULL", name="fk_courses_provider_id"), nullable=True, index=True,
+    )
+    provider: Mapped[Organization | None] = relationship(foreign_keys=[provider_id])
+    school_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="SET NULL", name="fk_courses_school_id"), nullable=True, index=True,
+    )
+    school: Mapped[Organization | None] = relationship(foreign_keys=[school_id])
+    remark: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    lecturers: Mapped[list[Person]] = relationship(secondary=course_lecturers, back_populates="courses_given")
 
 
 class PlaceKind(Base):
@@ -2039,7 +2077,7 @@ def make_engine(url: str | None = None) -> Engine:
 # The migration (scripts/migrations/versions/) these models are at: a database made
 # from them is marked as being there, so scripts/migrate.sh has nothing to do to it.
 # A change to the tables is a new migration, and its number goes here.
-SCHEMA_REVISION = "0036"
+SCHEMA_REVISION = "0037"
 
 
 def prepare_schema(engine: Engine) -> None:
