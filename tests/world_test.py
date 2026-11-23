@@ -971,6 +971,19 @@ def test_a_source_without_organizations(app: webtest.TestApp, engine: Engine, tm
     assert "Old School" not in named
 
 
+def test_a_source_without_concerts_museums_or_people(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
+    sign_in_admin(app, engine)
+    source = write_source(tmp_path)
+    # the site keeps none of these any more: the full import imports none of them, and the rest as before
+    for name in ("organizations", "certifications", "concerts", "museums", "people"):
+        (source / "data" / "yaml" / f"{name}.yaml").unlink()
+    with Session(engine) as session:
+        counts = import_world.import_world(session, owner(session), source)
+    assert (counts["concerts"], counts["museums"], counts["museum visits"], counts["organizations"]) == (0, 0, 0, 0)
+    assert counts["audio courses"] == 2
+    assert counts["books"] == 3
+
+
 def test_a_source_without_youtube(app: webtest.TestApp, engine: Engine, tmp_path: Path) -> None:
     sign_in_admin(app, engine)
     source = write_source(tmp_path)

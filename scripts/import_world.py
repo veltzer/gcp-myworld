@@ -11,8 +11,10 @@ museum-<internal_id>.jpg for the first visit of each museum, which every
 later visit of the same museum shares) and the organization logos in
 data/logos/.
 
-The organizations are those of organizations.yaml (when the source still has
-it: veltzer.github.io no longer does, since 2026-11-23) plus every one a person
+veltzer.github.io no longer has any of these files (My World keeps them, since
+2026-11-23): a source without one imports none of what it held.
+
+The organizations are those of organizations.yaml plus every one a person
 names (the company field of people.yaml) that is not among them; each person
 is linked to the organizations they name.
 
@@ -364,6 +366,11 @@ def _items(source: Path, name: str, fields: set[str]) -> list[dict[str, Any]]:
     return items
 
 
+def _optional_items(source: Path, name: str, fields: set[str]) -> list[dict[str, Any]]:
+    """ The items of data/yaml/<name>.yaml, or none when the source no longer has the file. """
+    return _items(source, name, fields) if (source / "data" / "yaml" / f"{name}.yaml").exists() else []
+
+
 def _dates(item: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {"date_timezone": item.get("date_timezone", "")}
     if "date_utcz" in item:
@@ -615,12 +622,11 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
             f"the account has data already ({what}); the full import deletes it all and loses every edit made in the app."
             f" Add only what is missing with --books, --audio-books, --podcasts, --films, --certifications, --youtube-history or --only-types, or pass --replace-everything {owner.email} to replace it anyway",
         )
-    people_items = _items(source, "people", PERSON_FIELDS)
-    # the site no longer keeps them (My World does, since 2026-11-23): a source without them has none to import
-    has_organizations = (source / "data" / "yaml" / "organizations.yaml").exists()
-    organization_items = _items(source, "organizations", ORGANIZATION_FIELDS) if has_organizations else []
-    concert_items = _items(source, "concerts", CONCERT_FIELDS)
-    museum_items = _items(source, "museums", MUSEUM_FIELDS)
+    # the site no longer keeps these (My World does, since 2026-11-23): a source without one has none of it to import
+    people_items = _optional_items(source, "people", PERSON_FIELDS)
+    organization_items = _optional_items(source, "organizations", ORGANIZATION_FIELDS)
+    concert_items = _optional_items(source, "concerts", CONCERT_FIELDS)
+    museum_items = _optional_items(source, "museums", MUSEUM_FIELDS)
     image_dir = source / "static" / "images"
 
     # the link rows explicitly: sqlite does not enforce ON DELETE CASCADE unless asked to

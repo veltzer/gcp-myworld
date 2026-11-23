@@ -412,7 +412,10 @@ have none.
 The data came from `veltzer.github.io` (`data/yaml/concerts.yaml`,
 `museums.yaml`, `people.yaml`, `organizations.yaml`, the photos in
 `static/images/` and the logos in `data/logos/`) and is loaded with
-`scripts/import_world.py`. The organizations are those of
+`scripts/import_world.py`. The blog keeps none of these files since
+2026-11-23 (the concerts, museums and people, with their photos, live only
+in My World too): the full import of a source without one imports none of
+what it held. The organizations are those of
 `organizations.yaml` plus every company a person names (the `company`
 field of `people.yaml`) that is not among them. The organization fields
 the app neither shows nor edits (old websites, map points, logo sources,
