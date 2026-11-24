@@ -22,10 +22,10 @@ are worth doing only when the specific pain is felt.
 ## 2. One pictures table for everything
 
 - **Today:** there are six shapes:
-  - a single photo with a credit (places, groups, countries);
-  - a single photo without a credit (museums, organizations);
-  - concerts with their own credit columns;
-  - three separate "many photos" tables for books, cities and people.
+    - a single photo with a credit (places, groups, countries);
+    - a single photo without a credit (museums, organizations);
+    - concerts with their own credit columns;
+    - three separate "many photos" tables for books, cities and people.
 - **Proposal:** one table: what it belongs to, the image, its position and
   its credit. Everything can then have several pictures with a default, and
   the credit is stored once per image.
