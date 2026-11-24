@@ -190,8 +190,8 @@ not set up and the importer stays, disabled.
    `http://localhost:8080/youtube/callback`. Connecting on the alias host
    comes back through the canonical one, as GitHub's sign-in does.
 4. Put the client's secret in the password store as
-   `keys/google.com.myworld-oauth`, add
-   `"${gcp_service}-google-client-secret=pass:keys/google.com.myworld-oauth"`
+   `gcp/id-veltzer-myworld/oauth-client-secret`, add
+   `"${gcp_service}-google-client-secret=pass:gcp/id-veltzer-myworld/oauth-client-secret"`
    to `gcp_secrets` and `GOOGLE_CLIENT_SECRET=${gcp_service}-google-client-secret:latest`
    to `--set-secrets` in `.gcp.conf`, run `gcloud_project_setup.sh` to
    create the secret, and deploy.
@@ -199,7 +199,7 @@ not set up and the importer stays, disabled.
 Locally:
 
 ```bash
-GOOGLE_CLIENT_ID=<gcp_oauth_client_id> GOOGLE_CLIENT_SECRET="$(pass show keys/google.com.myworld-oauth)" \
+GOOGLE_CLIENT_ID=<gcp_oauth_client_id> GOOGLE_CLIENT_SECRET="$(pass show gcp/id-veltzer-myworld/oauth-client-secret)" \
   MYWORLD_DEV_LOGIN=1 python src/main.py
 ```
 
