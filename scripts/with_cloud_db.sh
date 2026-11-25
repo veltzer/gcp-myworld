@@ -14,7 +14,7 @@ cd "$(dirname "${0}")/.."
 
 # shellcheck source=.gcp.conf
 source .gcp.conf
-export CLOUDSDK_ACTIVE_CONFIG_NAME="${gcp_configuration_name}"
+export CLOUDSDK_ACTIVE_CONFIG_NAME="${gcp_project}"
 
 for tool in cloud-sql-proxy pg_isready
 do

@@ -2,7 +2,7 @@
 
 The app runs as a Cloud Run service called `myworld` in `us-central1`, with
 its data in a Cloud SQL (PostgreSQL) instance in the same region. The
-gcloud configuration, region and resource names are in `.gcp.conf`.
+project, region and resource names are in `.gcp.conf`.
 
 ## Regular deploy
 
