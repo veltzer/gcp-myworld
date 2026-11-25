@@ -49,6 +49,14 @@ def test_the_about_page_and_no_build_in_the_footers(app: webtest.TestApp) -> Non
         assert 'href="/about"' in page
 
 
+def test_favicon_ico_is_the_site_icon(app: webtest.TestApp) -> None:
+    # clients that ask for /favicon.ico without reading the page get the icon the pages name
+    response = app.get("/favicon.ico")
+    assert response.content_type == "image/svg+xml"
+    assert response.body == app.get("/static/favicon.svg").body
+    assert "max-age=86400" in response.headers["Cache-Control"]
+
+
 def test_health(app: webtest.TestApp) -> None:
     assert app.get("/app/health").json == {"status": "ok"}
 

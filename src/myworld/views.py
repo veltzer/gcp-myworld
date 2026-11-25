@@ -40,6 +40,7 @@ from myworld.models import (
 bp = flask.Blueprint("views", __name__)
 
 HTML_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "html")
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 
 # ─── pages ───────────────────────────────────────────────────────────────────
@@ -91,6 +92,18 @@ def privacy() -> werkzeug.Response:
 def about() -> werkzeug.Response:
     """ What My World is, who wrote it, and the build serving: the commit, when it was built and deployed (app/version). """
     return _page("about.html")
+
+
+@bp.route("/favicon.ico", methods=["GET"])
+def favicon() -> werkzeug.Response:
+    """
+    The site's icon at the address browsers and other clients ask for without
+    reading a page's <link rel="icon">: the same SVG the pages name, which
+    every current browser takes at this address too. Kept a day.
+    """
+    response = flask.send_from_directory(STATIC_DIR, "favicon.svg", mimetype="image/svg+xml")
+    response.headers["Cache-Control"] = "public, max-age=86400"
+    return response
 
 
 @bp.route("/app/version", methods=["GET"])
