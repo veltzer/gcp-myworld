@@ -492,7 +492,7 @@ async function copyText(button, text) {
 	try {
 		await navigator.clipboard.writeText(text);
 		flash(button, "Copied");
-	} catch (e) {
+	} catch {
 		flash(button, "Could not copy");
 	}
 }

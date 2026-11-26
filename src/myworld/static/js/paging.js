@@ -21,7 +21,7 @@ function savedPageSize() {
 	try {
 		const saved = Number(window.localStorage.getItem(PAGE_SIZE_KEY));
 		return PAGE_SIZES.includes(saved) ? saved : 50;
-	} catch (e) {
+	} catch {
 		return 50;
 	}
 }
@@ -77,7 +77,7 @@ export function setupPager() {
 		paging.size = Number($("page-size").value);
 		try {
 			window.localStorage.setItem(PAGE_SIZE_KEY, String(paging.size));
-		} catch (e) {
+		} catch {
 			// the size is then only for this visit
 		}
 		goToPage(Math.floor(first / paging.size));

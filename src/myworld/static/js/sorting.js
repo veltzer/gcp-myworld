@@ -282,7 +282,7 @@ function sortFields() {
 function savedSorts() {
 	try {
 		return JSON.parse(window.localStorage.getItem(SORT_KEY) || "{}");
-	} catch (e) {
+	} catch {
 		return {};
 	}
 }
@@ -299,7 +299,7 @@ function saveSort(key, direction) {
 	sorts[state.view] = { key, direction };
 	try {
 		window.localStorage.setItem(SORT_KEY, JSON.stringify(sorts));
-	} catch (e) {
+	} catch {
 		// private window or blocked storage: the choice lasts until reload
 	}
 }

@@ -238,7 +238,7 @@ export function chosen(form, field) {
 export function where() {
 	try {
 		return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-	} catch (e) {
+	} catch {
 		return "";
 	}
 }

@@ -196,7 +196,7 @@ export function formatDate(item) {
 			month: "short",
 			year: "numeric",
 		});
-	} catch (e) {
+	} catch {
 		return item.date.slice(0, 10);
 	}
 }
@@ -377,7 +377,7 @@ function savedLayout() {
 	try {
 		const saved = window.localStorage.getItem(LAYOUT_KEY);
 		return saved in LAYOUTS ? saved : "cards";
-	} catch (e) {
+	} catch {
 		return "cards";
 	}
 }
@@ -405,7 +405,7 @@ export function setupLayouts() {
 			rerender();
 			try {
 				window.localStorage.setItem(LAYOUT_KEY, name);
-			} catch (e) {
+			} catch {
 				// private window or blocked storage: the choice lasts until reload
 			}
 		};

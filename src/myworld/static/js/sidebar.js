@@ -164,7 +164,7 @@ function setSidebarWidth(width, remember = true) {
 		} else {
 			localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
 		}
-	} catch (e) {
+	} catch {
 		// remembered for this page only
 	}
 }
@@ -177,7 +177,7 @@ function setupSash() {
 	let saved = null;
 	try {
 		saved = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY)) || null;
-	} catch (e) {
+	} catch {
 		// no storage: the stylesheet's width
 	}
 	setSidebarWidth(saved, false);
@@ -218,7 +218,7 @@ export function setupSidebar() {
 	setupSash();
 	try {
 		document.body.classList.toggle("sidebar-folded", localStorage.getItem(SIDEBAR_KEY) === "folded");
-	} catch (e) {
+	} catch {
 		// no storage (a private window): the sidebar starts shown
 	}
 	$("nav-toggle").onclick = () => {
@@ -228,7 +228,7 @@ export function setupSidebar() {
 			const folded = document.body.classList.toggle("sidebar-folded");
 			try {
 				localStorage.setItem(SIDEBAR_KEY, folded ? "folded" : "shown");
-			} catch (e) {
+			} catch {
 				// remembered for this page only
 			}
 		}

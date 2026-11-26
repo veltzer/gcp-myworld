@@ -48,7 +48,7 @@ const SCRIPT_PROPERTIES = { Cjk: "Han", Canadian: "Canadian_Aboriginal" };
 function scriptPattern(script) {
 	try {
 		return new RegExp(`\\p{Script=${SCRIPT_PROPERTIES[script] || script}}`, "gu");
-	} catch (e) {
+	} catch {
 		return null;
 	}
 }

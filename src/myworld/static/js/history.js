@@ -35,7 +35,7 @@ export function navigate(hash) {
 function saveNavTop() {
 	try {
 		window.sessionStorage.setItem(NAV_TOP_KEY, String(nav.top));
-	} catch (e) {
+	} catch {
 		// blocked storage: after a reload Forward may stay disabled; Back still works
 	}
 }
@@ -55,7 +55,7 @@ export function startHistory() {
 	let top = 0;
 	try {
 		top = Number(window.sessionStorage.getItem(NAV_TOP_KEY)) || 0;
-	} catch (e) {
+	} catch {
 		top = 0;
 	}
 	nav.top = Math.max(top, nav.index);
