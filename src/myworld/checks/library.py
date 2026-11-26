@@ -2,8 +2,9 @@
 Checks of the library: the books.
 """
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld import languages, notes
 from myworld.checks.core import (
@@ -20,6 +21,9 @@ from myworld.models import (
     UserWork,
     library_entry_authors,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 # what having done a library kind is called: a book read
 DONE_VERBS = {"book": "read"}

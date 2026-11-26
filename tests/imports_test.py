@@ -10,12 +10,10 @@ import datetime as dt
 import logging
 import re
 import urllib.parse
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
-import webtest
 from sqlalchemy import select
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld import importers, youtube
@@ -23,6 +21,10 @@ from myworld.checks import DATASETS
 from myworld.importers import core, jobs, sleep
 from myworld.models import ROLE_ADMIN, ImportRun, User, YouTubeConnection, YouTubeVideo
 from tests.conftest import sign_in
+
+if TYPE_CHECKING:
+    import webtest
+    from sqlalchemy.engine import Engine
 
 REFRESH = "refresh-token-of-alice"
 
@@ -681,7 +683,7 @@ def test_a_cloud_run_jobs_execution_is_asked_for_with_the_run_id(monkeypatch: py
     monkeypatch.setattr(jobs.requests, "get", get)
     monkeypatch.setattr(jobs.requests, "post", post)
     monkeypatch.setenv("IMPORT_JOB", "projects/p/locations/r/jobs/myworld-import")
-    dispatch = REAL_DISPATCHER(cast(Any, None))  # a job, not the app, does the run
+    dispatch = REAL_DISPATCHER(cast("Any", None))  # a job, not the app, does the run
     assert dispatch(42) == "projects/p/locations/r/jobs/myworld-import/executions/x1"
     assert asked == [(
         "https://run.googleapis.com/v2/projects/p/locations/r/jobs/myworld-import:run",

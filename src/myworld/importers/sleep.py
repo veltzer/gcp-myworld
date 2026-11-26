@@ -6,12 +6,14 @@ at a time if wanted, and that their jobs keep going without the page.
 """
 
 import time
-from typing import Any
-
-from sqlalchemy.orm import Session
+from typing import TYPE_CHECKING, Any
 
 from myworld.importers.core import Importer, Report, register
-from myworld.models import User
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from myworld.models import User
 
 SECONDS = 300
 SAY_EVERY = 30

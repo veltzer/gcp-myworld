@@ -16,14 +16,16 @@ log and left as it is.
 import re
 import time
 import unicodedata
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import requests
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
 
 from myworld.importers.core import Importer, Report, register
 from myworld.models import AudioBook, User
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 SEARCH_URL = "https://openlibrary.org/search.json"
 SEARCH_FIELDS = "key,title,author_name,id_goodreads,id_wikidata"

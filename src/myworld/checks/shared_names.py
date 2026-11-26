@@ -3,7 +3,8 @@ Checks of the shared lists of names: the kinds of place (Museum, Concert
 venue, ...) and the types of visit (Museum visit, ...).
 """
 
-from sqlalchemy.orm import Session
+
+from typing import TYPE_CHECKING
 
 from myworld.checks.core import (
     Result,
@@ -14,6 +15,9 @@ from myworld.checks.core import (
     twice,
 )
 from myworld.models import PlaceKind, Visit, VisitType, place_kind_links
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 @check("place-kind-used", "Every place kind has a place", "place kinds", "place-kinds")

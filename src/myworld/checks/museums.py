@@ -3,8 +3,9 @@ Checks of the museums (shared places of the kind Museum) and of the users'
 visits to them (visits of the type Museum visit).
 """
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld.checks.core import (
     Result,
@@ -22,6 +23,9 @@ from myworld.models import (
     VisitType,
     visit_companions,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 def _museums(session: Session) -> list[Place]:

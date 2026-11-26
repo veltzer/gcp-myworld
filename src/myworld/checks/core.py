@@ -4,11 +4,9 @@ are in, and the readers they share.
 """
 
 import dataclasses
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld.models import (
     AUDIO_BOOK_KINDS,
@@ -52,6 +50,11 @@ from myworld.models import (
     YouTubeVideo,
     is_shared,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from sqlalchemy.orm import Session
 
 
 @dataclasses.dataclass(frozen=True)

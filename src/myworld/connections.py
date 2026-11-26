@@ -15,11 +15,9 @@ a new table that names people cannot be left out of them by forgetting.
 """
 
 import dataclasses
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Column, select, tuple_
-from sqlalchemy.orm import Session
 
 from myworld.models import (
     Base,
@@ -41,6 +39,11 @@ from myworld.models import (
     trip_companions,
     visit_companions,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from sqlalchemy.orm import Session
 
 
 @dataclasses.dataclass(frozen=True)

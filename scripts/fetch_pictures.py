@@ -73,9 +73,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 # the myworld package is in src/, not installed (see scripts/check.py)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -97,6 +96,9 @@ from myworld.models import (
     User,
     make_engine,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 ROOT = Path(__file__).resolve().parent.parent
 os.chdir(ROOT)

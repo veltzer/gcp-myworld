@@ -25,12 +25,10 @@ import threading
 import time
 import traceback
 from collections import Counter
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import requests
 from sqlalchemy import update
-from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -42,6 +40,11 @@ from myworld.models import (
     User,
     utcnow,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
 

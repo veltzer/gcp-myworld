@@ -4,12 +4,10 @@ views drives adding, editing and deleting, so each page is put through the
 same steps here. Also the dates, which several pages share.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
-import webtest
 from sqlalchemy import select
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld.models import (
@@ -22,6 +20,10 @@ from myworld.models import (
 )
 from myworld.world import VIEWS
 from tests.conftest import sign_in, sign_in_admin
+
+if TYPE_CHECKING:
+    import webtest
+    from sqlalchemy.engine import Engine
 
 # what a row is called after its edit, where the edit does not say a name
 NAMED = {

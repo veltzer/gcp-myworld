@@ -5,10 +5,9 @@ Checks several pages have, made once for each: a credit that says its source and
 import dataclasses
 import math
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld.checks.core import (
     CHECKS,
@@ -32,6 +31,9 @@ from myworld.models import (
     Place,
     is_shared,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 # what has a picture with a credit, by the page it is on: (model, what the picture is called, the link to a row)
 _CREDITED: dict[str, tuple[Any, str]] = {

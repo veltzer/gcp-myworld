@@ -3,13 +3,17 @@ The pictures (myworld/pictures.py): what may be uploaded, how an image is
 served, and how the photos of a row that has several are kept.
 """
 
+from typing import TYPE_CHECKING
+
 import pytest
-import webtest
-from sqlalchemy.engine import Engine
 
 from myworld import pictures
 from myworld.logos import logo_problems
 from tests.conftest import sign_in, sign_in_admin
+
+if TYPE_CHECKING:
+    import webtest
+    from sqlalchemy.engine import Engine
 
 JPEG = b"\xff\xd8\xff\xe0" + b"0" * 32
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 32

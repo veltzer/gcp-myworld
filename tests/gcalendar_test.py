@@ -5,17 +5,19 @@ Google is faked: nothing here goes to the network.
 """
 
 import urllib.parse
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
-import webtest
 from sqlalchemy import select
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld import gcalendar
 from myworld.models import CalendarConnection, User
 from tests.conftest import sign_in
+
+if TYPE_CHECKING:
+    import webtest
+    from sqlalchemy.engine import Engine
 
 REFRESH = "calendar-refresh-token"
 

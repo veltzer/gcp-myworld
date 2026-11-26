@@ -2,7 +2,8 @@
 Checks of the languages.
 """
 
-from sqlalchemy.orm import Session
+
+from typing import TYPE_CHECKING
 
 from myworld import languages
 from myworld.checks.core import (
@@ -10,6 +11,9 @@ from myworld.checks.core import (
     Result,
     check,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 @check("locale-scripts", "Every language is written in a script there is", "languages", "locales")

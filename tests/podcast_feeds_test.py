@@ -7,12 +7,10 @@ episodes after the last one heard, as heard now.
 """
 
 import datetime as dt
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
-import webtest
 from sqlalchemy import select
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, selectinload
 
 from myworld import podcasts
@@ -20,6 +18,10 @@ from myworld.importers import core, jobs
 from myworld.models import EpisodeHeard, Image, Podcast, PodcastEpisode
 from myworld.timeutil import naive_utc
 from tests.conftest import sign_in, sign_in_admin
+
+if TYPE_CHECKING:
+    import webtest
+    from sqlalchemy.engine import Engine
 
 FEED_URL = "https://feeds.example.com/history"
 COVER_URL = "https://img.example.com/cover.jpg"

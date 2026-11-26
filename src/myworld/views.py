@@ -5,11 +5,10 @@ it talks to.
 
 import os
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import flask
 import requests
-import werkzeug
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -36,6 +35,9 @@ from myworld.models import (
     Work,
     WorkTitle,
 )
+
+if TYPE_CHECKING:
+    import werkzeug
 
 bp = flask.Blueprint("views", __name__)
 

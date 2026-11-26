@@ -12,11 +12,10 @@ import os
 import secrets
 import urllib.parse
 import warnings
+from typing import TYPE_CHECKING
 
 import flask
-import werkzeug
 from flask.json.provider import DefaultJSONProvider
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld import (
@@ -38,6 +37,10 @@ from myworld import (
 )
 from myworld.api import ApiError, handle_api_error
 from myworld.models import make_engine
+
+if TYPE_CHECKING:
+    import werkzeug
+    from sqlalchemy.engine import Engine
 
 # JSON responses longer than this are sent gzipped to clients that take it
 GZIP_MIN_BYTES = 4096

@@ -5,17 +5,20 @@ End to end tests of the myworld app through webtest.
 import re
 import urllib.parse
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pytest
 import webtest
 from sqlalchemy import select
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld import auth, create_app
 from myworld.models import EmailVerification, Login
 from myworld.verification import VerificationError
 from tests.conftest import FakeMailer, sign_in
+
+if TYPE_CHECKING:
+    import pytest
+    from sqlalchemy.engine import Engine
 
 
 def test_index_anonymous(app: webtest.TestApp) -> None:

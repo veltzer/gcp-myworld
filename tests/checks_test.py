@@ -9,12 +9,10 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
-import webtest
 from sqlalchemy import create_engine, delete, select, update
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld import checks
@@ -68,6 +66,10 @@ from myworld.models import (
 )
 from myworld.timeutil import naive_utc
 from tests.conftest import sign_in
+
+if TYPE_CHECKING:
+    import webtest
+    from sqlalchemy.engine import Engine
 
 GOOD = b'<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="-1 -1 12 12"><rect width="10" height="10"/></svg>'
 

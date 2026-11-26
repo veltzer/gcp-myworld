@@ -13,12 +13,16 @@ Anywhere else (development) a run is done in a thread of the app itself.
 
 import os
 import threading
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import requests
-from sqlalchemy.engine import Engine
 
 from myworld.importers.core import ImporterError, execute
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from sqlalchemy.engine import Engine
 
 RUN_API = "https://run.googleapis.com/v2"
 # the token of the service account the service runs as, from the metadata server of Cloud Run

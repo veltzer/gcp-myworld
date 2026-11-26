@@ -2,8 +2,9 @@
 Checks of the organizations, and of their logos.
 """
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld.checks.core import (
     Problem,
@@ -20,6 +21,9 @@ from myworld.models import (
     Organization,
     organization_relation_types,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 @check("logos", "Every logo follows the logo convention", "logos", "organizations")

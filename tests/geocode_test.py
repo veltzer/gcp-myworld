@@ -5,9 +5,12 @@ which matches it takes for the place itself.
 
 import importlib.util
 from pathlib import Path
-from types import ModuleType
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 
 def load() -> ModuleType:

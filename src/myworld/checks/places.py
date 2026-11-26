@@ -2,7 +2,8 @@
 Checks of the places.
 """
 
-from sqlalchemy.orm import Session
+
+from typing import TYPE_CHECKING
 
 from myworld.checks.core import (
     Result,
@@ -17,6 +18,9 @@ from myworld.models import (
     Concert,
     Place,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 @check("place-used", "Every place has something that happened there", "places", "places")

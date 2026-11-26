@@ -4,8 +4,9 @@ rallies it went to: who a course was taken through, who came along, the
 countries a trip was in, who gave a lecture.
 """
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import Column, select
-from sqlalchemy.orm import Session
 
 from myworld.checks.core import (
     Result,
@@ -24,6 +25,9 @@ from myworld.models import (
     trip_companions,
     trip_countries,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 def _company(session: Session, model: type[Trip | Lecture | Rally], companion_rows: Column[int]) -> Result:

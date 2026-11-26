@@ -5,11 +5,10 @@ functions the checks of several pages are built from.
 """
 
 import datetime as dt
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld import checks
@@ -37,6 +36,9 @@ from myworld.models import (
     YouTubeVideo,
 )
 from myworld.timeutil import naive_utc
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Engine
 
 
 def test_squashed() -> None:

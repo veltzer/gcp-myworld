@@ -15,14 +15,18 @@ import os
 import sqlite3
 import subprocess
 import zlib
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 import flask
-from sqlalchemy.engine import URL, Engine
 
 from myworld import auth
 from myworld.api import ApiError
 from myworld.models import ROLE_ADMIN, utcnow
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from sqlalchemy.engine import URL, Engine
 
 logger = logging.getLogger(__name__)
 

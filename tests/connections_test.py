@@ -7,9 +7,9 @@ the API too, a shared view showing only its own pages. A table added that
 names people and is left out of all three fails here.
 """
 
-import webtest
+from typing import TYPE_CHECKING
+
 from sqlalchemy import select
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld import checks, connections
@@ -35,6 +35,10 @@ from myworld.models import (
     Work,
 )
 from tests.conftest import sign_in
+
+if TYPE_CHECKING:
+    import webtest
+    from sqlalchemy.engine import Engine
 
 
 def test_every_column_that_names_a_person_is_accounted_for() -> None:

@@ -3,7 +3,8 @@ Checks of the certifications each account holds: who issued each, and what
 kind it is.
 """
 
-from sqlalchemy.orm import Session
+
+from typing import TYPE_CHECKING
 
 from myworld.checks.core import (
     Result,
@@ -12,6 +13,9 @@ from myworld.checks.core import (
     rows,
 )
 from myworld.models import CERTIFICATION_KINDS, Certification
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 @check("certification-issuers", "Every certification has the organization that issued it", "certifications", "certifications")

@@ -3,8 +3,7 @@ Checks of the YouTube videos.
 """
 
 import re
-
-from sqlalchemy.orm import Session
+from typing import TYPE_CHECKING
 
 from myworld.checks.core import (
     Result,
@@ -17,6 +16,9 @@ from myworld.models import (
     YOUTUBE_ID_LENGTH,
     YouTubeVideo,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 YOUTUBE_ID = re.compile(rf"[A-Za-z0-9_-]{{{YOUTUBE_ID_LENGTH}}}")
 

@@ -9,8 +9,10 @@ book-notes (checks/library.py) finds the notes that still say them.
 import difflib
 import re
 import unicodedata
+from typing import TYPE_CHECKING
 
-from myworld.models import UserWork
+if TYPE_CHECKING:
+    from myworld.models import UserWork
 
 WRITTEN = re.compile(r"Written in (\w+)(?:\. |\.?$)")
 # the name the book once had: the last thing its notes say, after a sentence or a clause

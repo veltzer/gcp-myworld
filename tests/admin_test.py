@@ -3,12 +3,16 @@ Roles: every account is a user; an admin also sees every account and gives
 or takes the admin role, but the last admin cannot be demoted.
 """
 
-import webtest
+from typing import TYPE_CHECKING
+
 from sqlalchemy import select, update
-from sqlalchemy.engine import Engine
 
 from myworld.models import ROLE_ADMIN, Login, User
 from tests.conftest import sign_in
+
+if TYPE_CHECKING:
+    import webtest
+    from sqlalchemy.engine import Engine
 
 
 def make_admin(engine: Engine, sub: str) -> None:

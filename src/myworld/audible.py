@@ -33,8 +33,7 @@ import os
 import secrets
 import urllib.parse
 import uuid
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import flask
 import requests
@@ -43,7 +42,6 @@ from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld import auth
 from myworld.api import ApiError, json_body, text
@@ -57,6 +55,11 @@ from myworld.models import (
     User,
     utcnow,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from sqlalchemy.orm import Session
 
 bp = flask.Blueprint("audible", __name__, url_prefix="/audible")
 

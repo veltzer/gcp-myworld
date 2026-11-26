@@ -2,11 +2,15 @@
 Checks of the currencies.
 """
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld.checks.core import Result, check, problem, rows
 from myworld.models import Currency, country_currencies
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 @check("currency-names", "Every currency has a name", "currencies", "currencies")

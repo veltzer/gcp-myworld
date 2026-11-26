@@ -29,8 +29,7 @@ They are loaded by scripts/import_world.py.
 
 import datetime as dt
 import os
-from collections.abc import Callable
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import (
     JSON,
@@ -58,10 +57,14 @@ from sqlalchemy import (
     select,
     text,
 )
-from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 
 from myworld.addresses import compose
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from sqlalchemy.engine import Connection, Engine
 
 # kind -> (display name, plural, what the "creator" column is called for that kind)
 KINDS: dict[str, tuple[str, str, str]] = {
@@ -940,7 +943,7 @@ class PersonOrganization(Base):
 
 
 # the link table itself, for queries and deletes that need no objects
-person_organizations = cast(Table, PersonOrganization.__table__)
+person_organizations = cast("Table", PersonOrganization.__table__)
 
 
 class PersonRelation(Base):

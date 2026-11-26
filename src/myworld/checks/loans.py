@@ -2,7 +2,8 @@
 Checks of what each account lent, and of the websites it keeps.
 """
 
-from sqlalchemy.orm import Session
+
+from typing import TYPE_CHECKING
 
 from myworld.checks.core import (
     Result,
@@ -11,6 +12,9 @@ from myworld.checks.core import (
     rows,
 )
 from myworld.models import Loan, Website
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 @check("loan-borrowers", "Every loan says who has it", "loans", "loans")

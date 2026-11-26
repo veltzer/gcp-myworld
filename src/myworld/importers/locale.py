@@ -28,8 +28,7 @@ import csv
 import io
 import unicodedata
 import zipfile
-from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import babel
 import babel.languages
@@ -43,6 +42,9 @@ from sqlalchemy.orm import Session, selectinload
 from myworld import languages
 from myworld.importers.core import Importer, Param, ParamError, Report, register
 from myworld.models import City, Country, Currency, Locale, Region, User
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 # what may be imported, in the order it is done
 WHAT = (("currencies", "Currencies"), ("languages", "Languages"), ("countries", "Countries"), ("cities", "Cities"))

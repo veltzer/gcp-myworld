@@ -10,11 +10,14 @@ import collections
 import functools
 import sys
 import unicodedata
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld.models import Locale
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 def known(session: Session) -> dict[str, Locale]:

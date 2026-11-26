@@ -7,15 +7,17 @@ and keeps what was known of it. Nothing is added, and what the user wrote
 is never changed.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
 
 from myworld import youtube
 from myworld.importers.core import Importer, ImporterError, Report, register
 from myworld.importers.youtube_playlists import client_of, store, unavailable
 from myworld.models import User, YouTubeVideo
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 def lacking(session: Session, owner: User) -> list[str]:

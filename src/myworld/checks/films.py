@@ -3,10 +3,10 @@ Checks of the films and the series (shared: a series is a film of another
 kind), and of those each account watched or means to see.
 """
 
-from collections.abc import Callable
+
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld.checks.core import (
     Result,
@@ -15,6 +15,11 @@ from myworld.checks.core import (
     problem,
 )
 from myworld.models import Film, FilmWatch
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from sqlalchemy.orm import Session
 
 
 def _films(session: Session, kind: str) -> list[Film]:

@@ -2,7 +2,8 @@
 Checks of the countries.
 """
 
-from sqlalchemy.orm import Session
+
+from typing import TYPE_CHECKING
 
 from myworld.checks.core import (
     Result,
@@ -19,6 +20,9 @@ from myworld.models import (
     Organization,
     Place,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 @check("country-used", "Every country has a city", "countries", "countries")

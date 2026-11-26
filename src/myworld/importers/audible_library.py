@@ -9,13 +9,15 @@ anyone wrote (a rating, a review, a title) stays. It only ever adds: a
 book gone from the library since stays.
 """
 
-from typing import Any
-
-from sqlalchemy.orm import Session
+from typing import TYPE_CHECKING, Any
 
 from myworld import audible
 from myworld.importers.core import Importer, ImporterError, Report, register
-from myworld.models import User
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from myworld.models import User
 
 # what store_library counts -> what the run's report calls it
 COUNTS = {

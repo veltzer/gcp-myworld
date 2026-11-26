@@ -25,17 +25,20 @@ import hmac
 import os
 import secrets
 import urllib.parse
-from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import flask
 import requests
-import werkzeug
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy.orm import Session
 
 from myworld import auth
 from myworld.models import CalendarConnection, User, utcnow
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    import werkzeug
+    from sqlalchemy.orm import Session
 
 bp = flask.Blueprint("gcalendar", __name__, url_prefix="/calendar")
 

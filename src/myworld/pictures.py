@@ -5,10 +5,9 @@ photos of a row that has several, and dropping the images nothing shows.
 """
 
 import hashlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import flask
-import werkzeug
 from sqlalchemy import select
 
 from myworld import auth
@@ -33,6 +32,9 @@ from myworld.models import (
     Podcast,
     UserWork,
 )
+
+if TYPE_CHECKING:
+    import werkzeug
 
 bp = flask.Blueprint("pictures", __name__)
 

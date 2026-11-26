@@ -3,9 +3,9 @@ Checks of the audio courses.
 """
 
 import datetime as dt
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld.checks.core import (
     Result,
@@ -19,6 +19,9 @@ from myworld.models import (
     AudioCourse,
     audio_course_lecturers,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 # in progress for longer than this, a course is reported as stalled
 STALLED_AFTER = dt.timedelta(days=365)

@@ -14,8 +14,7 @@ import dataclasses
 import datetime as dt
 import re
 import zoneinfo
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import flask
 from sqlalchemy import select
@@ -102,6 +101,9 @@ from myworld.pictures import (
     picture_json,
     sent_photos,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 bp = flask.Blueprint("world", __name__)
 

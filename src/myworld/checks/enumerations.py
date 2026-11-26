@@ -2,9 +2,9 @@
 Checks of the small lists a user keeps: the types, the relations and the devices.
 """
 
-from collections.abc import Callable
 
-from sqlalchemy.orm import Session
+
+from typing import TYPE_CHECKING
 
 from myworld.checks.core import (
     Result,
@@ -33,6 +33,11 @@ from myworld.models import (
     organization_type_links,
     person_type_links,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from sqlalchemy.orm import Session
 
 type _Enumeration = type[OrganizationType | PersonType | RelationType | PersonRelationType | PersonOrganizationType | Device]
 

@@ -2,14 +2,16 @@
 Checks of the chess games.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld import pgn
 from myworld.checks.core import Problem, Result, check
 from myworld.models import ChessGame
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 # what a check reads of each game: never its text, there may be 60,000 of them
 READ = (

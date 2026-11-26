@@ -4,14 +4,11 @@ The concerts, museums, people and organizations: the import script and the API.
 
 import gzip
 import json
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import flask
 import pytest
-import webtest
 from sqlalchemy import delete, func, select
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 import fetch_book_details
@@ -53,6 +50,12 @@ from myworld.models import (
 )
 from myworld.timeutil import naive_utc
 from tests.conftest import sign_in, sign_in_admin
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import webtest
+    from sqlalchemy.engine import Engine
 
 PEOPLE = """
 items:

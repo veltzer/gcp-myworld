@@ -2,7 +2,8 @@
 Checks of the groups.
 """
 
-from sqlalchemy.orm import Session
+
+from typing import TYPE_CHECKING
 
 from myworld.checks.core import (
     Result,
@@ -18,6 +19,9 @@ from myworld.models import (
     concert_groups,
     group_members,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 @check("group-members", "Every group has its members", "groups", "groups")

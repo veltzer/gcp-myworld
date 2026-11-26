@@ -8,20 +8,22 @@ requests, importing the library, and that a second run adds nothing.
 import base64
 import datetime as dt
 import urllib.parse
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
-import webtest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from sqlalchemy import select
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld import audible
 from myworld.importers import core, jobs
 from myworld.models import AudibleConnection, AudioBook, AudioBookListen, Image
 from tests.conftest import sign_in
+
+if TYPE_CHECKING:
+    import webtest
+    from sqlalchemy.engine import Engine
 
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 # as Amazon gives a device's key

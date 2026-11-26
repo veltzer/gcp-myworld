@@ -6,12 +6,15 @@ pg_dump's on Postgres, connected as the app is.
 import contextlib
 import gzip
 import sqlite3
+from typing import TYPE_CHECKING
 
-import webtest
 from sqlalchemy.engine import Engine, make_url
 
 from myworld import dump
 from tests.conftest import sign_in, sign_in_admin
+
+if TYPE_CHECKING:
+    import webtest
 
 
 def test_only_an_admin_downloads_the_database(app: webtest.TestApp, engine: Engine) -> None:

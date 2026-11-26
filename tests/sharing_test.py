@@ -3,9 +3,13 @@ Views (doc/views.md): a user's named selections of their own data sets,
 opened by anyone at /view/<username>/<name>, read only.
 """
 
-import webtest
+
+from typing import TYPE_CHECKING
 
 from tests.conftest import sign_in
+
+if TYPE_CHECKING:
+    import webtest
 
 JPEG = b"\xff\xd8\xff\xe0" + b"0" * 32
 

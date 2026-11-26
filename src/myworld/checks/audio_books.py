@@ -3,8 +3,9 @@ Checks of the audio books and their versions (shared), and of the audio
 books and versions each account heard.
 """
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld.checks.core import (
     Result,
@@ -14,6 +15,9 @@ from myworld.checks.core import (
     twice,
 )
 from myworld.models import AudioBook, AudioBookHeard, AudioBookListen, AudioBookVersion
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 @check("audio-book-authors", "Every audio book has an author", "audio books", "audio-books")

@@ -3,9 +3,13 @@ Each user's theme (Settings): "system" (the device's) to start with, or
 "light" or "dark", kept with their account so every device shows it.
 """
 
-import webtest
+
+from typing import TYPE_CHECKING
 
 from tests.conftest import sign_in
+
+if TYPE_CHECKING:
+    import webtest
 
 
 def test_each_user_picks_their_own_theme(app: webtest.TestApp) -> None:

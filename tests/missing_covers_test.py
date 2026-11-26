@@ -5,18 +5,20 @@ Movie Database faked: only what has no cover is given one, and a run again
 asks only about those still missing one.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
-import webtest
 from sqlalchemy import select
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld import audible, movies
 from myworld.importers import core, jobs
 from myworld.models import AudioBook, AudioBookVersion, Film, Image
 from tests.conftest import sign_in, sign_in_admin
+
+if TYPE_CHECKING:
+    import webtest
+    from sqlalchemy.engine import Engine
 
 JPEG = b"\xff\xd8cover"
 

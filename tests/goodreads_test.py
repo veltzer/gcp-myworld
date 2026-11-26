@@ -6,12 +6,10 @@ are. The export is in Goodreads' columns; covers are faked: nothing here
 goes to the network.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
-import webtest
 from sqlalchemy import select
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld import goodreads
@@ -19,6 +17,10 @@ from myworld.importers import core, jobs
 from myworld.importers.goodreads_to_read import split_series
 from myworld.models import Person, User, UserWork
 from tests.conftest import sign_in
+
+if TYPE_CHECKING:
+    import webtest
+    from sqlalchemy.engine import Engine
 
 HEADER = (
     "﻿Book Id,Title,Author,Author l-f,Additional Authors,ISBN,ISBN13,My Rating,Average Rating,Publisher,Binding,"

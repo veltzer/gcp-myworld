@@ -2,8 +2,9 @@
 Checks of the concerts.
 """
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld.checks.core import (
     Result,
@@ -19,6 +20,9 @@ from myworld.models import (
     concert_groups,
     concert_performers,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 @check("concert-dates", "Every concert has a date", "concerts", "concerts")

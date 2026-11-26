@@ -7,18 +7,20 @@ was there (whatever points at it stays).
 
 import io
 import zipfile
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
-import webtest
 from sqlalchemy import select
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld.importers import core, jobs
 from myworld.importers import locale as locale_importer
 from myworld.models import City, Country, Currency, Locale, Region
 from tests.conftest import sign_in, sign_in_admin
+
+if TYPE_CHECKING:
+    import webtest
+    from sqlalchemy.engine import Engine
 
 # GeoNames' first-level divisions, and its cities: id, name, ascii name, other names, latitude, longitude,
 # feature class and code, country, cc2, region, admin2-4, population, elevation, dem, timezone, modified

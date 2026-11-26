@@ -18,11 +18,9 @@ out of the view (or deleting it) makes the old addresses stop working.
 import hashlib
 import hmac
 import re
-from collections.abc import Callable, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import flask
-import werkzeug
 from sqlalchemy import select
 from werkzeug.exceptions import MethodNotAllowed, NotFound
 from werkzeug.routing import RequestRedirect
@@ -38,6 +36,11 @@ from myworld.models import (
     User,
 )
 from myworld.views import HTML_DIR, vocabularies
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+
+    import werkzeug
 
 bp = flask.Blueprint("sharing", __name__)
 

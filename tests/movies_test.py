@@ -3,13 +3,15 @@ The film lookups (The Movie Database plus Wikidata), with the HTTP calls
 replaced by canned answers.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
-import webtest
 
 from myworld import movies
 from tests.conftest import sign_in
+
+if TYPE_CHECKING:
+    import webtest
 
 SEARCH_ANSWER: dict[str, Any] = {
     "results": [

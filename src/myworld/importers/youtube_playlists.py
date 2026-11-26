@@ -10,14 +10,16 @@ the playlist), so a video added has no date.
 """
 
 from collections import Counter
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld import youtube
 from myworld.importers.core import Importer, ImporterError, Param, Report, register
 from myworld.models import User, YouTubeVideo
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 ADDED = "YouTube videos added"
 REFRESHED = "YouTube videos given YouTube's details"

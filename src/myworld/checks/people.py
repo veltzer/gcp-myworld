@@ -2,8 +2,9 @@
 Checks of the people.
 """
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld import connections, languages, names
 from myworld.checks.core import (
@@ -23,6 +24,9 @@ from myworld.models import (
     person_organizations,
     person_type_links,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 @check("people-known", "Every person has a profession or a relation", "people", "people")

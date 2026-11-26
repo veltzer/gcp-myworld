@@ -17,16 +17,18 @@ ever adds: a book taken off the shelf since stays.
 
 import hashlib
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld import goodreads, languages
 from myworld import names as naming
 from myworld.importers.core import Importer, Param, ParamError, Report, register
 from myworld.models import DEFAULT_LOCALE, Image, Person, PersonType, Read, User, UserWork, Work
 from myworld.pictures import IMAGE_EXTENSIONS
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 SHELF = "to-read"
 # "Dune (Dune, #1)": the series Goodreads adds to a title

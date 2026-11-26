@@ -3,17 +3,20 @@ Give every test a fresh app on an in-memory sqlite database, with Google
 token verification stubbed out.
 """
 
-from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import webtest
 from sqlalchemy import create_engine, select, update
-from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 
 from myworld import auth, create_app
 from myworld.models import ROLE_ADMIN, Base, Login, User
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from sqlalchemy.engine import Engine
 
 FAKE_CLAIMS: dict[str, Any] = {
     "sub": "1234567890",

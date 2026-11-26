@@ -7,10 +7,9 @@ the checks.
 
 import datetime as dt
 import gzip
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-import webtest
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
@@ -20,6 +19,11 @@ from myworld import checks, pgn
 from myworld.models import ChessGame, User
 from myworld.timeutil import naive_utc
 from tests.conftest import sign_in
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import webtest
 
 # a game as Chess.com writes it: a moment, an address, the clocks, where it ended
 LIVE = """[Event "Live Chess"]

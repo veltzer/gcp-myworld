@@ -3,9 +3,13 @@ Each account's username: chosen by its user, one account's alone,
 lowercase, and none of the names that would read as the site's own.
 """
 
-import webtest
+
+from typing import TYPE_CHECKING
 
 from tests.conftest import sign_in
+
+if TYPE_CHECKING:
+    import webtest
 
 
 def test_a_new_account_has_no_username_until_it_chooses_one(app: webtest.TestApp) -> None:

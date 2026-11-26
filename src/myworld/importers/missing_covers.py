@@ -11,14 +11,16 @@ One its source has no cover for is said in the log and left as it is.
 """
 
 import hashlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld import audible, movies
 from myworld.importers.core import Importer, Report, register
 from myworld.models import AudioBook, AudioBookVersion, Film, Image, User
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 def _versions(session: Session) -> list[AudioBookVersion]:

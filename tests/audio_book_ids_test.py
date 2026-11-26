@@ -4,17 +4,19 @@ The audio book ids importer, an admin's, into the shared data
 faked: which result is the same book, and that only what is empty is filled.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
-import webtest
 from sqlalchemy import select
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from myworld.importers import audio_book_ids, core, jobs
 from myworld.models import AudioBook
 from tests.conftest import sign_in, sign_in_admin
+
+if TYPE_CHECKING:
+    import webtest
+    from sqlalchemy.engine import Engine
 
 # title -> what the faked search answers
 ANSWERS: dict[str, list[dict[str, Any]]] = {

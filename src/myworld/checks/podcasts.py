@@ -3,8 +3,9 @@ Checks of the podcasts and their episodes (shared), and of the podcasts
 and episodes each account heard.
 """
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from myworld.checks.core import (
     Result,
@@ -14,6 +15,9 @@ from myworld.checks.core import (
     rows,
 )
 from myworld.models import EpisodeHeard, Podcast, PodcastEpisode, PodcastHeard
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 @check("podcast-covers", "Every podcast has a cover", "podcasts", "podcasts")

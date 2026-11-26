@@ -42,8 +42,7 @@ import logging
 import os
 import secrets
 import urllib.parse
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import flask
 import requests
@@ -52,11 +51,15 @@ import werkzeug.exceptions
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from myworld.models import ROLE_ADMIN, EmailVerification, Login, User, utcnow
 from myworld.verification import Mailer, VerificationError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from sqlalchemy.orm import Session
 
 bp = flask.Blueprint("auth", __name__, url_prefix="/auth")
 
