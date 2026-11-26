@@ -110,7 +110,7 @@ def _theirs(model: Any, row: Any) -> bool:
 
 def owned[T](model: type[T], row_id: int) -> T:
     """ The user's own row row_id of model (or a shared one): the one an address names (404 when there is none for them). """
-    row: Any = flask.g.db.get(model, row_id)
+    row: T | None = flask.g.db.get(model, row_id)
     if row is None or not _theirs(model, row):
         raise ApiError(404, "no such entry")
     return row
@@ -121,7 +121,7 @@ def owned_ref[T](body: dict[str, Any], key: str, model: type[T], what: str) -> T
     row_id = opt_int(body, key, 1, 2**31 - 1)
     if row_id is None:
         return None
-    row: Any = flask.g.db.get(model, row_id)
+    row: T | None = flask.g.db.get(model, row_id)
     if row is None or not _theirs(model, row):
         raise ApiError(400, f"{key}: unknown {what}")
     return row

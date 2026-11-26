@@ -403,7 +403,7 @@ class WorldImportError(Exception):
 def _items(source: Path, name: str, fields: set[str]) -> list[dict[str, Any]]:
     path = source / "data" / "yaml" / f"{name}.yaml"
     with path.open(encoding="UTF8") as fp:
-        items = yaml.safe_load(fp)["items"]
+        items: list[dict[str, Any]] = yaml.safe_load(fp)["items"]
     for item in items:
         unknown = set(item) - fields
         if unknown:
@@ -1194,7 +1194,7 @@ def _book_items(source: Path) -> list[dict[str, Any]]:
     """ books_read.yaml, every level checked for fields this import does not know, with text_books.yaml's ratings in. """
     path = source / "data" / "yaml" / "books_read.yaml"
     with path.open(encoding="UTF8") as fp:
-        items = yaml.safe_load(fp)["items"]
+        items: list[dict[str, Any]] = yaml.safe_load(fp)["items"]
     for item in items:
         what = repr(item["names"][0]["name"])
         _check_fields(path, what, item, BOOK_FIELDS)
@@ -1966,7 +1966,7 @@ def _history_items(source: Path) -> list[dict[str, Any]]:
     if not path.exists():
         raise WorldImportError(f"{path} is not there ({NOT_KEPT})")
     with gzip.open(path, "rt", encoding="UTF8") as fp:
-        items = json.load(fp)["items"]
+        items: list[dict[str, Any]] = json.load(fp)["items"]
     for item in items:
         unknown = set(item) - YOUTUBE_HISTORY_FIELDS
         if unknown:

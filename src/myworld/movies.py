@@ -70,7 +70,8 @@ def wikidata_entity(qid: str) -> dict[str, Any]:
     )
     if not response.ok:
         raise MovieLookupError(f"Wikidata answered {response.status_code}")
-    return response.json().get("entities", {}).get(qid, {})
+    claims: dict[str, Any] = response.json().get("entities", {}).get(qid, {})
+    return claims
 
 
 def _year(release_date: str | None) -> int | None:

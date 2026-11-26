@@ -66,7 +66,8 @@ def reverse(latitude: float, longitude: float) -> dict[str, str]:
     time.sleep(PAUSE)
     with urllib.request.urlopen(request, timeout=30) as response:
         found: dict[str, Any] = json.load(response)
-    return found.get("address", {})
+    address: dict[str, str] = found.get("address", {})
+    return address
 
 
 def columns(connection: Connection, table: str) -> set[str]:

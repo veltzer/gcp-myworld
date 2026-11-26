@@ -2208,7 +2208,8 @@ def test_person_with_no_name(imported: webtest.TestApp) -> None:
 def a_museum(app: webtest.TestApp, name: str, **columns: Any) -> int:
     """ A museum, as an admin adds it to the Places page: a place of the kind Museum; its id. """
     kinds = {k["name"]: k["id"] for k in app.get("/api/place-kinds").json}
-    return app.post_json("/api/places", {"name": name, "kinds": [kinds["Museum"]], **columns}, status=201).json["id"]
+    place_id: int = app.post_json("/api/places", {"name": name, "kinds": [kinds["Museum"]], **columns}, status=201).json["id"]
+    return place_id
 
 
 def test_add_museum_and_person(imported: webtest.TestApp) -> None:

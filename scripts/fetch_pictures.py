@@ -150,7 +150,8 @@ def get(url: str) -> bytes:
     time.sleep(PAUSE)
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=30) as response:
-        return response.read()
+        body: bytes = response.read()
+        return body
 
 
 @functools.cache

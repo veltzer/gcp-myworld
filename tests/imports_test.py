@@ -439,7 +439,8 @@ def test_the_playlists_of_the_last_run_are_picked_to_start_with(app: webtest.Tes
     connect(app)
 
     def chosen() -> list[str]:
-        return app.get("/api/importers").json["importers"][0]["params"][0]["chosen"]
+        picked: list[str] = app.get("/api/importers").json["importers"][0]["params"][0]["chosen"]
+        return picked
 
     assert chosen() == []
     # any number of them, dry run or not, in the order picked

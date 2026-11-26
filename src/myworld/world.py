@@ -1099,7 +1099,7 @@ def api_chess_game(row_id: int) -> flask.Response:
 
 
 def _museum_visit_type() -> VisitType:
-    found = flask.g.db.scalars(select(VisitType).where(VisitType.name == MUSEUM_VISIT)).first()
+    found: VisitType | None = flask.g.db.scalars(select(VisitType).where(VisitType.name == MUSEUM_VISIT)).first()
     if found is None:
         raise ApiError(500, f"there is no visit type {MUSEUM_VISIT!r}")
     return found

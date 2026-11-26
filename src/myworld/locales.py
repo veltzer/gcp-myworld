@@ -59,7 +59,7 @@ def locale_json(locale: Locale) -> dict[str, Any]:
 
 
 def _locale(row_id: int) -> Locale:
-    locale = flask.g.db.scalars(select(Locale).where(Locale.position == row_id)).first()
+    locale: Locale | None = flask.g.db.scalars(select(Locale).where(Locale.position == row_id)).first()
     if locale is None:
         raise ApiError(404, "no such language")
     return locale

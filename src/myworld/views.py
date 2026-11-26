@@ -396,7 +396,7 @@ def _apply_work_ids(work: Work, body: dict[str, Any]) -> None:
 
 
 def _own_entry(work_id: int) -> UserWork:
-    entry = flask.g.db.get(UserWork, (flask.g.user.id, work_id))
+    entry: UserWork | None = flask.g.db.get(UserWork, (flask.g.user.id, work_id))
     if entry is None:
         raise ApiError(404, "no such entry in your library")
     return entry

@@ -32,7 +32,8 @@ WORKER_ARGS = ["-m", "myworld.importers.worker"]
 def access_token() -> str:
     response = requests.get(TOKEN_URL, headers={"Metadata-Flavor": "Google"}, timeout=HTTP_TIMEOUT)
     response.raise_for_status()
-    return response.json()["access_token"]
+    token: str = response.json()["access_token"]
+    return token
 
 
 def run_job(job: str, run_id: int) -> str:

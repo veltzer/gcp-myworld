@@ -57,7 +57,8 @@ def image_url(image_id: int | None) -> str | None:
     # read through a view (sharing.py): its visitor fetches the image through the view, by a signed address
     address = flask.g.get("image_address")
     if address is not None:
-        return address(image_id)
+        url: str = address(image_id)
+        return url
     return flask.url_for("pictures.api_image", image_id=image_id)
 
 

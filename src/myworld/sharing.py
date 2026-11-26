@@ -119,7 +119,7 @@ def view_json(view: SharedView) -> dict[str, Any]:
 # ─── the owner's ─────────────────────────────────────────────────────────────
 
 def _own(view_id: int) -> SharedView:
-    view = flask.g.db.get(SharedView, view_id)
+    view: SharedView | None = flask.g.db.get(SharedView, view_id)
     if view is None or view.owner_id != flask.g.user.id:
         raise ApiError(404, "no such view")
     return view
@@ -190,7 +190,7 @@ def api_view_delete(view_id: int) -> flask.Response:
 def _visited(username: str, name: str) -> SharedView:
     """ The view an address names, if anyone may open it (404 otherwise, the same for one that does not exist). """
     owner = flask.g.db.scalars(select(User).where(User.username == username.lower())).first()
-    view = None if owner is None else flask.g.db.scalars(select(SharedView).where(SharedView.owner_id == owner.id, SharedView.name == name.lower())).first()
+    view: SharedView | None = None if owner is None else flask.g.db.scalars(select(SharedView).where(SharedView.owner_id == owner.id, SharedView.name == name.lower())).first()
     if view is None or view.access != VIEW_ACCESS_PUBLIC:
         raise ApiError(404, "no such view")
     return view
