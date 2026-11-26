@@ -50,7 +50,7 @@ src_dirs = ["config"]
 src_files = [".ruff.toml", ".rumdl.toml", "pyproject.toml", "rsconstruct.toml"]
 
 [processor.checker.itidy]
-src_dirs = ["src"]
+src_dirs = ["art", "src"]
 
 # lint the YAML files with yamllint (policy: .yamllint.yaml)
 [processor.checker.iyamllint]
