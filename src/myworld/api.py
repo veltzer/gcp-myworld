@@ -31,7 +31,7 @@ def json_body() -> dict[str, Any]:
     return body
 
 
-def text(body: dict[str, Any], key: str, required: bool = False) -> str:
+def text(body: dict[str, Any], key: str, *, required: bool = False) -> str:
     value = body.get(key)
     if value is None:
         value = ""

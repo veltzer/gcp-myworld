@@ -159,7 +159,7 @@ def videos(engine: Engine) -> dict[str, YouTubeVideo]:
         return {v.youtube_id: v for v in session.scalars(select(YouTubeVideo))}
 
 
-def run(app: webtest.TestApp, playlists: list[str], dry_run: bool = False, status: int = 202) -> Any:
+def run(app: webtest.TestApp, playlists: list[str], *, dry_run: bool = False, status: int = 202) -> Any:
     return app.post_json("/api/importers/youtube-playlists/runs", {"params": {"playlists": playlists}, "dry_run": dry_run}, status=status).json
 
 
@@ -477,12 +477,12 @@ def test_youtube_details_fills_in_the_videos_that_have_none(app: webtest.TestApp
         ])
         session.commit()
 
-    def post(dry_run: bool) -> Any:
+    def post(*, dry_run: bool) -> Any:
         return app.post_json("/api/importers/youtube-details/runs", {"params": {}, "dry_run": dry_run}, status=202).json
 
-    assert post(True)["counts"] == {"YouTube videos given YouTube's details": 2}
+    assert post(dry_run=True)["counts"] == {"YouTube videos given YouTube's details": 2}
     assert videos(engine)["vidMusic001"].duration is None
-    done = post(False)
+    done = post(dry_run=False)
     assert done["status"] == "done"
     assert done["counts"] == {"YouTube videos given YouTube's details": 2}
     assert unstamped(done["log"]).split("\n") == [
@@ -497,7 +497,7 @@ def test_youtube_details_fills_in_the_videos_that_have_none(app: webtest.TestApp
     assert (have["vidTalks001"].channel, have["vidTalks001"].duration) == ("Mine", 60)
     assert (have["vidGone0001"].name, have["vidGone0001"].unavailable) == ("Gone", True)
     # again: only the gone one is asked about, and nothing changes
-    assert post(False)["counts"] == {"YouTube videos unchanged": 1}
+    assert post(dry_run=False)["counts"] == {"YouTube videos unchanged": 1}
     assert len(videos(engine)) == 3
 
 

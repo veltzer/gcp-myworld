@@ -217,7 +217,7 @@ def wikidata_file(item: str, prop: str) -> str | None:
     return None
 
 
-def picture(found: dict[str, Any], is_country: bool) -> str | None:
+def picture(found: dict[str, Any], *, is_country: bool) -> str | None:
     """ The Commons file to show for an article: a country's flag, a city's image, else its lead photo (not a drawing). """
     item = found.get("wikibase_item")
     chosen = wikidata_file(item, "P41" if is_country else "P18") if item else None
@@ -279,14 +279,14 @@ def group_picture(group: Group, overrides: dict[str, tuple[str, str]]) -> tuple[
     article's picture, else its leader's, else another member's.
     """
     own = named(overrides, "group", group.name) or musical(group.name) or musical(f"{group.name} (band)")
-    chosen = picture(own, False) if own else None
+    chosen = picture(own, is_country=False) if own else None
     if own and chosen and free(own, chosen):
         return own, chosen, ""
     leader = ENSEMBLE.sub("", group.name)
     members = sorted(group.members, key=lambda p: p.name != leader)
     for member in members:
         found = named(overrides, "person", member.name) or musical(member.name)
-        chosen = picture(found, False) if found else None
+        chosen = picture(found, is_country=False) if found else None
         if found and chosen and free(found, chosen):
             return found, chosen, member.name
     return None
@@ -367,13 +367,13 @@ def place_picture(place: Place, overrides: dict[str, tuple[str, str]]) -> tuple[
     with a free photo; an item with no English article, its Hebrew article's.
     """
     for found in place_articles(place, overrides):
-        chosen = picture(found, False)
+        chosen = picture(found, is_country=False)
         if chosen and free(found, chosen):
             return found, chosen
         item = found.get("wikibase_item")
         hebrew = wikidata_entity(item).get("sitelinks", {}).get("hewiki", {}).get("title") if item and "originalimage" not in found else None
         lead = summary(hebrew, "he") if hebrew else None
-        chosen = picture(lead, False) if lead else None
+        chosen = picture(lead, is_country=False) if lead else None
         # a lead photo may be any picture of the kind (a jazz club's article, a photo of some jazz):
         # taken only when its file names the place, in English or in Hebrew
         names = list(re.findall(r"\w{4,}", place.name.split(",")[0].lower())) + ([hebrew.replace(" ", "_").lower()] if hebrew else [])
@@ -403,7 +403,7 @@ def device_picture(device: Device, overrides: dict[str, tuple[str, str]]) -> tup
     """ (article, file) for a device: --title's article, else the first about a device its name is or search finds, with a free photo. """
     pointed = named(overrides, "device", device.name)
     if pointed is not None:
-        chosen = picture(pointed, False)
+        chosen = picture(pointed, is_country=False)
         return (pointed, chosen) if chosen and free(pointed, chosen) else None
     for title in dict.fromkeys([device.name, *search(device.name)]):
         found = summary(title)
@@ -411,7 +411,7 @@ def device_picture(device: Device, overrides: dict[str, tuple[str, str]]) -> tup
             continue
         if not DEVICE.search(found.get("description", "") + " " + found.get("extract", "")[:300]):
             continue
-        chosen = picture(found, False)
+        chosen = picture(found, is_country=False)
         if chosen and free(found, chosen):
             return found, chosen
     return None
@@ -425,7 +425,7 @@ def profession_picture(kind: PersonType, overrides: dict[str, tuple[str, str]]) 
     """
     pointed = named(overrides, "profession", kind.name)
     if pointed is not None:
-        chosen = picture(pointed, False)
+        chosen = picture(pointed, is_country=False)
         return (pointed, chosen) if chosen and free(pointed, chosen) else None
     words = kind.name.split()
     candidates = [(title, False) for title in dict.fromkeys([kind.name, words[-1].capitalize()] if words else [kind.name])]
@@ -436,7 +436,7 @@ def profession_picture(kind: PersonType, overrides: dict[str, tuple[str, str]]) 
             continue
         if searched and not ROLE.search(found.get("description", "").strip()):
             continue
-        chosen = picture(found, False)
+        chosen = picture(found, is_country=False)
         if chosen and free(found, chosen):
             return found, chosen
     return None
@@ -458,7 +458,7 @@ def person_picture(person: Person, overrides: dict[str, tuple[str, str]]) -> tup
     """
     pointed = named(overrides, "person", person.name)
     if pointed is not None:
-        chosen = picture(pointed, False)
+        chosen = picture(pointed, is_country=False)
         return (pointed, chosen) if chosen and free(pointed, chosen) else None
     english = " ".join(part for part in (person.first_name, person.middle_name, person.surname) if part)
     titles = [("en", english), *(("he", other.name) for other in person.names if other.locale == "he")]
@@ -471,7 +471,7 @@ def person_picture(person: Person, overrides: dict[str, tuple[str, str]]) -> tup
             continue
         if not PUBLIC.search(found.get("description", "") + " " + found.get("extract", "")[:400]) or not is_human(found["wikibase_item"]):
             continue
-        chosen = picture(found, False)
+        chosen = picture(found, is_country=False)
         if chosen and free(found, chosen):
             return found, chosen
     return None
@@ -557,7 +557,7 @@ def main() -> int:
                 found, chosen = place_picture(row, overrides) or (None, None)
             else:
                 found = article(city_titles(row), row.country.name if row.country else "", row.region) if isinstance(row, City) else article([row.name], "")
-                chosen = picture(found, isinstance(row, Country)) if found else None
+                chosen = picture(found, is_country=isinstance(row, Country)) if found else None
             info = file_info(chosen, found.get("lang", "en")) if found and chosen else None
             if info is not None and NON_FREE.search(info["license"]):
                 info = None

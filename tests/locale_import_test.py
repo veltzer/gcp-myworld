@@ -94,7 +94,7 @@ def _existing(app: webtest.TestApp) -> dict[str, int]:
     }
 
 
-def _run(app: webtest.TestApp, params: dict[str, Any], dry_run: bool = False) -> dict[str, Any]:
+def _run(app: webtest.TestApp, params: dict[str, Any], *, dry_run: bool = False) -> dict[str, Any]:
     run = app.post_json("/api/importers/locale/runs", {"params": params, "dry_run": dry_run}, status=202).json
     return next(r for r in app.get("/api/import-runs").json["ended"] if r["id"] == run["id"])
 
@@ -195,5 +195,5 @@ def test_an_admin_runs_it_with_the_shared_data_locked(app: webtest.TestApp, engi
     ("Massachusetts", "California", False),
     ("District", "Region", False),
 ])
-def test_region_like(here: str, there: str, same: bool) -> None:
+def test_region_like(here: str, there: str, *, same: bool) -> None:
     assert locale_importer.region_like(here, there) is same

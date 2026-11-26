@@ -46,5 +46,5 @@ def test_address_parts(address: str, parts: list[str]) -> None:
     # the word must be in the matched object's own name, not further along the address
     ("Micro Focus M3, Altalef, Yehud, Israel", "HP", "Yehud, Israel", False),
 ])
-def test_named(matched: str, name: str, city: str, wanted: bool) -> None:
+def test_named(matched: str, name: str, city: str, *, wanted: bool) -> None:
     assert geocode.named({"display_name": matched}, name, city) is wanted

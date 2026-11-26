@@ -94,12 +94,12 @@ def minimal(app: webtest.TestApp, path: str) -> tuple[dict[str, Any], dict[str, 
         version = {"version_id": shared_version(app).id}
         return {**first, **version}, {**changed, **version}
     if path in ("film-watches", "series-watches"):
-        film = {"film_id": shared_film(app, path == "series-watches").id}
+        film = {"film_id": shared_film(app, series=path == "series-watches").id}
         return {**first, **film}, {**changed, **film}
     return first, changed
 
 
-def shared_film(app: webtest.TestApp, series: bool = False) -> Film:
+def shared_film(app: webtest.TestApp, *, series: bool = False) -> Film:
     """ The shared film Interstellar (or the series The Leftovers), put there as an admin's import would (once). """
     flask_app: Any = app.app
     name, imdb = ("The Leftovers", "tt2699128") if series else ("Interstellar", "tt0816692")

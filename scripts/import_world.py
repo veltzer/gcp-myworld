@@ -655,7 +655,7 @@ def existing_rows(session: Session, owner: User) -> dict[str, int]:
     return {table: count for table, count in counts.items() if count}
 
 
-def import_world(session: Session, owner: User, source: Path, replace: bool = False) -> dict[str, int]:
+def import_world(session: Session, owner: User, source: Path, *, replace: bool = False) -> dict[str, int]:
     """ Replace owner's concerts, museums, people, organizations and images with those under source. Does not commit.
 
     Stops when owner has any of these rows already, unless replace: the rows may hold edits made in the app.
@@ -724,7 +724,7 @@ def import_world(session: Session, owner: User, source: Path, replace: bool = Fa
 
     images: dict[str, Image] = {}
 
-    def image(path: Path, required: bool) -> Image | None:
+    def image(path: Path, *, required: bool) -> Image | None:
         filename = path.name
         if filename in images:
             return images[filename]

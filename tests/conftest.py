@@ -77,7 +77,7 @@ def sign_in(app: webtest.TestApp, sub: str = "1234567890") -> None:
     assert response.status_int == 302
 
 
-def sign_in_admin(app: webtest.TestApp, engine: Engine, sub: str = "1234567890", edit_shared: bool = True) -> None:
+def sign_in_admin(app: webtest.TestApp, engine: Engine, sub: str = "1234567890", *, edit_shared: bool = True) -> None:
     """
     Sign in, as an admin: the one who may change what everyone shares
     (countries, cities, places, ...), by hand once Edit shared data is on

@@ -80,14 +80,14 @@ def fixture_web(monkeypatch: pytest.MonkeyPatch) -> FakeWeb:
     return web
 
 
-def run(app: webtest.TestApp, importer: str, params: dict[str, list[str]], dry_run: bool = False) -> Any:
+def run(app: webtest.TestApp, importer: str, params: dict[str, list[str]], *, dry_run: bool = False) -> Any:
     record = app.post_json(f"/api/importers/{importer}/runs", {"params": params, "dry_run": dry_run}, status=202).json
     assert record["status"] == "done", record["log"]
     return record
 
 
-def feeds(app: webtest.TestApp, chosen: list[str] | None = None, dry_run: bool = False) -> Any:
-    return run(app, "podcast-feeds", {"podcasts": chosen or []}, dry_run)
+def feeds(app: webtest.TestApp, chosen: list[str] | None = None, *, dry_run: bool = False) -> Any:
+    return run(app, "podcast-feeds", {"podcasts": chosen or []}, dry_run=dry_run)
 
 
 def next_heard(app: webtest.TestApp, podcast: int, count: str) -> Any:

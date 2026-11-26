@@ -66,7 +66,7 @@ def fixture_fake(monkeypatch: pytest.MonkeyPatch) -> FakeCovers:
     return fake
 
 
-def run(app: webtest.TestApp, export: Any, dry_run: bool = False, status: int = 202) -> Any:
+def run(app: webtest.TestApp, export: Any, *, dry_run: bool = False, status: int = 202) -> Any:
     return app.post_json("/api/importers/goodreads-to-read/runs", {"params": {"export": export}, "dry_run": dry_run}, status=status).json
 
 

@@ -193,7 +193,7 @@ def geocode_place(name: str, city: str, country: str) -> tuple[float, float, str
     return None
 
 
-def geocode_places(session: Session, every: bool) -> int:
+def geocode_places(session: Session, *, every: bool) -> int:
     """ Look up the places without coordinates (all of them with every); how many were not found. """
     missed = 0
     for place in session.scalars(select(Place).order_by(Place.id)):
@@ -238,7 +238,7 @@ def lookup_city(name: str, region: str, country: str) -> dict[str, Any] | None:
     return found[0] if found else lookup(", ".join(part for part in (name, region, country) if part))
 
 
-def geocode_cities(session: Session, every: bool) -> int:
+def geocode_cities(session: Session, *, every: bool) -> int:
     """
     Look up the countries and cities without coordinates (all of them with
     every): a city by its name, region and country, a country by its name;
@@ -297,8 +297,8 @@ def main() -> int:
             latitude, longitude, how, match = found
             print(f"ok    {what}: {latitude:.5f},{longitude:.5f} (by {how}) = {match}")
             row.latitude, row.longitude = latitude, longitude
-        missed += geocode_places(session, args.all)
-        missed += geocode_cities(session, args.all)
+        missed += geocode_places(session, every=args.all)
+        missed += geocode_cities(session, every=args.all)
         if args.dry_run:
             session.rollback()
         else:

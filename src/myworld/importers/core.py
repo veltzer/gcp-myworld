@@ -260,7 +260,7 @@ def _count_run(session: Session, owner: User) -> None:
         usage.runs += 1
 
 
-def start(session: Session, owner: User, importer: Importer, given: Any, dry_run: bool, dispatch: Callable[[int], str]) -> ImportRun:
+def start(session: Session, owner: User, importer: Importer, given: Any, *, dry_run: bool, dispatch: Callable[[int], str]) -> ImportRun:
     """
     Queue a run of importer as owner and have its job started (dispatch,
     which says the job's execution). ParamError when it cannot be run (its

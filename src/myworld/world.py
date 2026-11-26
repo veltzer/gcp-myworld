@@ -2123,7 +2123,7 @@ def _apply_person(person: Person, body: dict[str, Any]) -> None:
         person.relations = _person_relations(person, body["relations"])
 
 
-def localized(key: str, value: Any, field: str, one_per_locale: bool) -> list[tuple[str, str]]:
+def localized(key: str, value: Any, field: str, *, one_per_locale: bool) -> list[tuple[str, str]]:
     """
     [{"locale", field}, ...] as (locale, text) pairs, each once: a language
     of the locales table and a text not empty, written in that language's

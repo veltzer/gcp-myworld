@@ -211,7 +211,7 @@ def _status(body: dict[str, Any]) -> str:
 READ_FIELDS = ("finished_on", "locale", "status", "rating", "review", "started_on")
 
 
-def _apply_reads(entry: UserWork, body: dict[str, Any], new: bool = False) -> None:
+def _apply_reads(entry: UserWork, body: dict[str, Any], *, new: bool = False) -> None:
     """
     The readings of the entry. `reads`, a list of {date, locale, status,
     rating, review, started_on} (any may be empty; no status is done),
@@ -262,12 +262,12 @@ def _set_year(work: Work, year: int) -> None:
     work.year = year
 
 
-def _apply_entry_fields(entry: UserWork, body: dict[str, Any], new: bool = False) -> None:
+def _apply_entry_fields(entry: UserWork, body: dict[str, Any], *, new: bool = False) -> None:
     # where the user is with it, their rating and review are those of its readings (_apply_reads)
     if "notes" in body or new:
         entry.notes = text(body, "notes")
     _apply_work_facts(entry.work, body)
-    _apply_reads(entry, body, new)
+    _apply_reads(entry, body, new=new)
     _apply_owned(entry, body)
     # an entry edited with its title sent says all the titles of its work; with only titles sent they are added
     if "title" in body and not new:

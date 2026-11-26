@@ -101,7 +101,7 @@ def api_run(name: str) -> flask.Response:
         raise ApiError(400, "dry_run: expected true or false")
     dispatch = jobs.dispatcher(flask.current_app.config["engine"])
     try:
-        record = importers.start(flask.g.db, flask.g.user, importer, body.get("params") or {}, dry_run, dispatch)
+        record = importers.start(flask.g.db, flask.g.user, importer, body.get("params") or {}, dry_run=dry_run, dispatch=dispatch)
     except importers.ParamError as e:
         raise ApiError(400, str(e)) from e
     except importers.LimitError as e:
