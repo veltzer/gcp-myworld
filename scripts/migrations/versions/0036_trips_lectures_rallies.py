@@ -7,6 +7,8 @@ along (or alone) and a remark. A rally: what it was, where, when, a rating,
 a review, who came along (or alone) and a remark.
 """
 
+from typing import Any
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -16,7 +18,7 @@ branch_labels = None
 depends_on = None
 
 
-def _dated() -> list[sa.Column]:
+def _dated() -> list[sa.Column[Any]]:
     return [
         sa.Column("date_utcz", sa.DateTime(), nullable=True),
         sa.Column("date_ymd", sa.Date(), nullable=True),
@@ -26,7 +28,7 @@ def _dated() -> list[sa.Column]:
     ]
 
 
-def _owner() -> list[sa.Column]:
+def _owner() -> list[sa.Column[Any]]:
     return [
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("owner_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
@@ -42,7 +44,7 @@ def _people(table: str, column: str, row: str) -> None:
     )
 
 
-def _rated(name: str) -> list[sa.Column | sa.CheckConstraint]:
+def _rated(name: str) -> list[sa.Column[Any] | sa.CheckConstraint]:
     return [
         sa.Column("location", sa.String(length=300), nullable=False, server_default=""),
         sa.Column("country_id", sa.Integer(), sa.ForeignKey("countries.id", ondelete="SET NULL", name=f"fk_{name}_country_id"), nullable=True),
