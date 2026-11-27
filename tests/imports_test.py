@@ -11,6 +11,7 @@ import logging
 import re
 import urllib.parse
 from typing import TYPE_CHECKING, Any, cast
+from unittest.mock import Mock
 
 import pytest
 from sqlalchemy import select
@@ -543,7 +544,7 @@ def test_a_job_that_cannot_be_started_fails_the_run(app: webtest.TestApp, engine
     def refusing(_run_id: int) -> str:
         raise core.ImporterError("Cloud Run answered 403: permission denied")
 
-    monkeypatch.setattr(jobs, "dispatcher", lambda _engine: refusing)
+    monkeypatch.setattr(jobs, "dispatcher", Mock(return_value=refusing))
     failed = run(app, ["LLalice"])
     assert failed["status"] == "failed"
     assert unstamped(failed["log"]) == "Failed: its job could not be started: Cloud Run answered 403: permission denied"
@@ -593,7 +594,7 @@ def test_each_user_sees_their_own_runs_and_an_admin_everyones(app: webtest.TestA
 def test_the_sleep_importer_is_an_admins_only(app: webtest.TestApp, engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sleep, "SECONDS", 2)
     monkeypatch.setattr(sleep, "SAY_EVERY", 1)
-    monkeypatch.setattr(sleep.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(sleep.time, "sleep", Mock(return_value=None))
     sign_in(app)
     names = [i["name"] for i in app.get("/api/importers").json["importers"]]
     assert "sleep" not in names
@@ -690,7 +691,7 @@ def test_a_cloud_run_jobs_execution_is_asked_for_with_the_run_id(monkeypatch: py
         {"Authorization": "Bearer sa-token"},
         {"overrides": {"containerOverrides": [{"args": ["-m", "myworld.importers.worker", "42"]}]}},
     )]
-    monkeypatch.setattr(jobs.requests, "post", lambda *_args, **_kwargs: Answer(403, {"error": "denied"}))
+    monkeypatch.setattr(jobs.requests, "post", Mock(return_value=Answer(403, {"error": "denied"})))
     with pytest.raises(core.ImporterError, match="Cloud Run answered 403"):
         dispatch(43)
 

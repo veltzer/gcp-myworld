@@ -52,7 +52,10 @@ def fixture_asked(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     monkeypatch.setattr(audible, "fetch_cover", fetch_cover)
     monkeypatch.setattr(movies, "configured", lambda: True)
     monkeypatch.setattr(movies, "tmdb_get", tmdb_get)
-    monkeypatch.setattr(movies, "poster_bytes", lambda url: JPEG + url.encode())
+    def poster_of(url: str) -> bytes:
+        return JPEG + url.encode()
+
+    monkeypatch.setattr(movies, "poster_bytes", poster_of)
     return asked
 
 

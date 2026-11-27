@@ -6,6 +6,7 @@ import re
 import urllib.parse
 from pathlib import Path
 from typing import TYPE_CHECKING
+from unittest.mock import Mock
 
 import webtest
 from sqlalchemy import select
@@ -395,7 +396,10 @@ def test_mail_failure_is_said(app: webtest.TestApp, mailer: FakeMailer, monkeypa
 
 def test_google_unverified_email_is_refused(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch) -> None:
     """ Google not vouching for the email: back to the sign-in page with why, and no account is made. """
-    monkeypatch.setattr(auth, "verify_google_token", lambda token: {"sub": token, "email": "eve@example.com", "email_verified": False})
+    def unverified_token(token: str) -> dict[str, object]:
+        return {"sub": token, "email": "eve@example.com", "email_verified": False}
+
+    monkeypatch.setattr(auth, "verify_google_token", unverified_token)
     app.set_cookie("g_csrf_token", "csrf")
     response = app.post("/auth/login", {"credential": "666", "g_csrf_token": "csrf"})
     assert response.status_int == 302
@@ -545,8 +549,8 @@ def test_oauth_callback_failures_return_to_landing(app: webtest.TestApp, monkeyp
 def github_as(monkeypatch: pytest.MonkeyPatch, app: webtest.TestApp, claims: dict[str, str | bool]) -> None:
     """ Go through GitHub's sign-in, GitHub saying claims. """
     configure_github(monkeypatch)
-    monkeypatch.setattr(auth, "exchange_code", lambda _provider, _code, _redirect_uri: "token")
-    monkeypatch.setattr(auth, "fetch_claims", lambda _provider, _token: claims)
+    monkeypatch.setattr(auth, "exchange_code", Mock(return_value="token"))
+    monkeypatch.setattr(auth, "fetch_claims", Mock(return_value=claims))
     start = app.get("/auth/oauth/github")
     assert start.location is not None
     state = start.location.split("state=")[1].split("&")[0]
@@ -571,8 +575,8 @@ def test_logins_of_one_verified_email_are_one_account(app: webtest.TestApp, monk
 def github_as_location(app: webtest.TestApp, monkeypatch: pytest.MonkeyPatch, claims: dict[str, str | bool]) -> str:
     """ Go through GitHub's sign-in, GitHub saying claims; where it lands. """
     configure_github(monkeypatch)
-    monkeypatch.setattr(auth, "exchange_code", lambda _provider, _code, _redirect_uri: "token")
-    monkeypatch.setattr(auth, "fetch_claims", lambda _provider, _token: claims)
+    monkeypatch.setattr(auth, "exchange_code", Mock(return_value="token"))
+    monkeypatch.setattr(auth, "fetch_claims", Mock(return_value=claims))
     start = app.get("/auth/oauth/github")
     assert start.location is not None
     state = start.location.split("state=")[1].split("&")[0]

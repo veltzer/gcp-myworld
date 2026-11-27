@@ -1399,8 +1399,14 @@ def test_films_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_
         "tt0427312": {"tv_results": [], "movie_results": [{"id": 501, "release_date": "2005-01-24", "poster_path": "/g.jpg"}]},
         "tt4565380": {"tv_results": [], "movie_results": []},
     }
-    monkeypatch.setattr(movies, "tmdb_get", lambda path, **_params: found[path.removeprefix("/find/")])
-    monkeypatch.setattr(movies, "poster_bytes", lambda url: b"\xff\xd8" + url.encode())
+    def tmdb_get(path: str, **_params: object) -> dict[str, list[dict[str, Any]]]:
+        return found[path.removeprefix("/find/")]
+
+    def poster_of(url: str) -> bytes:
+        return b"\xff\xd8" + url.encode()
+
+    monkeypatch.setattr(movies, "tmdb_get", tmdb_get)
+    monkeypatch.setattr(movies, "poster_bytes", poster_of)
     source = write_source(tmp_path / "site")
     write_films(source)
     with Session(engine) as session:

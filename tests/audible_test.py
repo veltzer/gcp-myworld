@@ -223,7 +223,10 @@ def test_importing_the_library_adds_each_book_once_and_again_adds_nothing(app: w
     # again: nothing added, nothing changed (Audible still gives Political Order no cover)
     assert run(app)["counts"] == {}
     # its cover, which Audible's image server did not give when it was added, is asked for again, and given now
-    monkeypatch.setattr(audible, "fetch_cover", lambda url: COVER + url.encode())
+    def cover_of(url: str) -> bytes:
+        return COVER + url.encode()
+
+    monkeypatch.setattr(audible, "fetch_cover", cover_of)
     assert run(app)["counts"] == {"covers added": 1, "audio books given Audible's details": 1}
     order = next(b for b in app.get("/api/audio-book-listens").json if b["asin"] == "B07D23CFGR")
     assert app.get(order["image"]).body.startswith(COVER)
