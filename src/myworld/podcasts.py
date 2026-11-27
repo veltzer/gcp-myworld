@@ -19,6 +19,7 @@ import email.utils
 import html.parser
 import math
 import xml.etree.ElementTree as ET
+from typing import override
 
 import requests
 
@@ -130,9 +131,11 @@ class _Text(html.parser.HTMLParser):
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
 
+    @override
     def handle_data(self, data: str) -> None:
         self.parts.append(data)
 
+    @override
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         del attrs
         if tag in ("p", "br", "div", "li"):

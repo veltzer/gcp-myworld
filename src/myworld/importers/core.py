@@ -25,7 +25,7 @@ import threading
 import time
 import traceback
 from collections import Counter
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, override
 
 import requests
 from sqlalchemy import update
@@ -133,6 +133,7 @@ class _Captured(logging.Handler):
         self.report = report
         self.thread = threading.get_ident()
 
+    @override
     def emit(self, record: logging.LogRecord) -> None:
         if record.thread != self.thread:
             return
@@ -310,6 +311,7 @@ class Heartbeat(threading.Thread):
         self.report = report
         self.stopping = threading.Event()
 
+    @override
     def run(self) -> None:
         while not self.stopping.wait(HEARTBEAT_SECONDS):
             try:
