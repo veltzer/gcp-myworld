@@ -168,7 +168,7 @@ everything the user's account may, private playlists too. A token reaches
 only its own account. The quota (10,000 units a day for the whole site) is
 spent at about one unit per 50 videos.
 
-### One-time setup
+### One-time setup for YouTube
 
 It uses the OAuth web client that "Sign in with Google" uses
 (`gcp_oauth_client_id` in `.gcp.conf`), with its secret, and is offered only
@@ -252,7 +252,7 @@ Google's consent for the `calendar.readonly` scope, read only
 - `POST /calendar/disconnect` revokes it at Google and forgets it;
   `GET /calendar/status` says whether it is connected, and as whom.
 
-### One-time setup
+### One-time setup for Google Calendar
 
 The same OAuth web client and secret as YouTube's (`GOOGLE_CLIENT_SECRET`;
 without it the page says connecting is not set up). Then:
