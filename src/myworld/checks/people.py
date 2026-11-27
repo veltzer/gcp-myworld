@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from myworld import connections, languages, names
 from myworld.checks.core import (
+    Problem,
     Result,
     check,
     entries_of,
@@ -118,7 +119,8 @@ def check_person_name_languages(session: Session) -> Result:
     """
     people = rows(session, Person)
     locales = languages.known(session)
-    problems, checked = [], 0
+    problems: list[Problem] = []
+    checked = 0
     for person in people:
         for other in person.names:
             checked += 1

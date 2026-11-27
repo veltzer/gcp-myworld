@@ -310,7 +310,8 @@ def test_email_sign_up_needs_the_mailed_link(app: webtest.TestApp, mailer: FakeM
 
 
 def test_email_bad_input(app: webtest.TestApp, mailer: FakeMailer) -> None:
-    for body in ({"email": "not an email"}, {}, {"email": ["carol@example.com"]}):
+    bodies: tuple[dict[str, object], ...] = ({"email": "not an email"}, {}, {"email": ["carol@example.com"]})
+    for body in bodies:
         assert "error" in app.post_json("/auth/email/register", body, status=400).json
     app.post("/auth/email/register", "not json", status=400)
     assert not mailer.sent

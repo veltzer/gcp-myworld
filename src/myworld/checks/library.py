@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from myworld import languages, notes
 from myworld.checks.core import (
+    Problem,
     Result,
     check,
     entries_of,
@@ -170,7 +171,8 @@ def check_book_title_languages(session: Session) -> Result:
     sets the language its letters say.
     """
     locales = languages.known(session)
-    problems, checked = [], 0
+    problems: list[Problem] = []
+    checked = 0
     for book in entries_of(session, "book"):
         work = book.work
         for locale, title in [(work.title_locale, work.title), *((t.locale, t.title) for t in work.titles)]:

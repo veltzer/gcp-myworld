@@ -97,7 +97,7 @@ def test_a_picture_is_the_users_own(app: webtest.TestApp, engine: Engine) -> Non
     mine = app.post("/api/images", upload_files=[("file", "a.jpg", JPEG)], status=201).json["id"]
     assert app.post_json("/api/places", {"name": "Barby", "image_id": theirs}, status=400).json == {"error": "image_id: unknown image"}
     assert app.post_json("/api/places", {"name": "Barby", "image_id": "one"}, status=400).json == {"error": "image_id: expected a number"}
-    for photos, error in (
+    cases: tuple[tuple[object, str], ...] = (
         ("mine", "photos: expected a list of {image_id, image_source, image_license, image_author}"),
         ([mine], "photos: expected a list of {image_id, image_source, image_license, image_author}"),
         ([{"image_id": theirs}], "photos: unknown image"),
@@ -105,7 +105,8 @@ def test_a_picture_is_the_users_own(app: webtest.TestApp, engine: Engine) -> Non
         ([{"image_id": "one"}], "photos: expected a list of image ids, each once"),
         ([{}], "photos: expected a list of image ids, each once"),
         ([{"image_id": mine, "image_source": 3}], "image_source: expected a string"),
-    ):
+    )
+    for photos, error in cases:
         assert app.post_json("/api/cities", {"name": "Haifa", "photos": photos}, status=400).json == {"error": error}, photos
         assert app.post_json("/api/people", {"first_name": "Dana", "photos": photos}, status=400).json == {"error": error}, photos
 

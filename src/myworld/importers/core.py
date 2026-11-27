@@ -197,14 +197,13 @@ def parse_params(session: Session, owner: User, importer: Importer, given: Any) 
         raise ParamError(f"{importer.name} takes no parameter {', '.join(unknown)}")
     params: dict[str, Any] = {}
     for param in importer.params:
-        value = given.get(param.name)
+        given_value = given.get(param.name)
         if param.kind == "file":
-            params[param.name] = _read_file(param, value)
+            params[param.name] = _read_file(param, given_value)
             continue
-        if value is None:
-            value = []
-        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        if given_value is not None and (not isinstance(given_value, list) or not all(isinstance(v, str) for v in given_value)):
             raise ParamError(f"{param.title}: expected a list of choices")
+        value: list[str] = given_value or []
         if param.required and not value:
             raise ParamError(f"{param.title}: choose {'one' if param.single else 'at least one'}")
         if param.single and len(value) > 1:

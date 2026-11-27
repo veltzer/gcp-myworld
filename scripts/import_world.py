@@ -2237,6 +2237,7 @@ def main() -> int:
     with Session(engine) as session:
         try:
             owner = find_owner(session, args.email, args.subject)
+            counts: dict[str, int]
             if args.only_types:
                 counts = give_types(session, owner)
             elif args.books:

@@ -120,7 +120,8 @@ def test_what_old_files_write() -> None:
     assert (said.said, [move.san for move in said.moves]) == ("a ran out of time and b has no material to mate", ["e4"])
     assert pgn.decode(b"1. e4 {\xd8\xef\x00ok}") == "1. e4 {ok}"
     # a date as far as it is known
-    for date, wanted in (("1996.07.??", {"date_my": "07-1996"}), ("1996.??.??", {"date_y": 1996}), ("????.??.??", {}), ("1996.02.30", {})):
+    dates: tuple[tuple[str, dict[str, object]], ...] = (("1996.07.??", {"date_my": "07-1996"}), ("1996.??.??", {"date_y": 1996}), ("????.??.??", {}), ("1996.02.30", {}))
+    for date, wanted in dates:
         fields = pgn.fields(pgn.parse(f'[White "a"]\n[Date "{date}"]\n\n*'))
         assert {key: value for key, value in fields.items() if key.startswith("date_") and value} == wanted
 

@@ -1394,7 +1394,7 @@ def test_films_import_runs_again(imported: webtest.TestApp, engine: Engine, tmp_
     monkeypatch.setattr(movies, "sparql", sparql)
     # TMDB has Grizzly Man's poster (the only film with no poster of the site); Fauda it does not know
     monkeypatch.setattr(movies, "configured", lambda: True)
-    found = {
+    found: dict[str, dict[str, list[dict[str, Any]]]] = {
         "tt0816692": {"tv_results": [], "movie_results": [{"id": 157336, "release_date": "2014-11-05", "poster_path": "/i.jpg"}]},
         "tt0427312": {"tv_results": [], "movie_results": [{"id": 501, "release_date": "2005-01-24", "poster_path": "/g.jpg"}]},
         "tt4565380": {"tv_results": [], "movie_results": []},

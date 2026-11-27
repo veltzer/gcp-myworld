@@ -169,10 +169,12 @@ def amazon_post(url: str, *, json: dict[str, Any] | None = None, data: dict[str,
     try:
         answer = response.json()
     except ValueError:
-        answer = {}
+        answer = None
     if not response.ok:
-        said = answer.get("response", {}).get("error", {}).get("message") or answer.get("error_description") or response.reason
-        raise AudibleError(f"Amazon answered {response.status_code}: {said}")
+        said = None
+        if isinstance(answer, dict):
+            said = answer.get("response", {}).get("error", {}).get("message") or answer.get("error_description")
+        raise AudibleError(f"Amazon answered {response.status_code}: {said or response.reason}")
     if not isinstance(answer, dict):
         raise AudibleError("Amazon answered with something that is not an object")
     return answer
@@ -216,7 +218,7 @@ def register(login: dict[str, str], code: str, store_code: str = DEFAULT_MARKETP
     the name of the account.
     """
     store = marketplace(store_code)
-    body = {
+    body: dict[str, Any] = {
         "requested_token_type": ["bearer", "mac_dms"],
         "cookies": {"website_cookies": [], "domain": f".{store['amazon']}"},
         "registration_data": {
