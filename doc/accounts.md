@@ -10,12 +10,12 @@ way they sign in is a login (`logins`), keyed by a provider-qualified
 subject (see `src/myworld/auth.py` and `User` and `Login` in
 `src/myworld/models.py`):
 
-| Method             | Subject                     | The email is proven by                         |
-|--------------------|-----------------------------|------------------------------------------------|
-| Google             | `google:<sub claim>`        | Google's `email_verified`                      |
-| GitHub             | `github:<github user id>`   | GitHub's verified primary address              |
-| Email and password | `email:<address>`           | the mailed link, followed                      |
-| Development login  | `dev:<address>`             | nothing: only with `MYWORLD_DEV_LOGIN=1`, never on Cloud Run |
+| Method             | Subject                   | The email is proven by                                       |
+| ------------------ | ------------------------- | ------------------------------------------------------------ |
+| Google             | `google:<sub claim>`      | Google's `email_verified`                                    |
+| GitHub             | `github:<github user id>` | GitHub's verified primary address                            |
+| Email and password | `email:<address>`         | the mailed link, followed                                    |
+| Development login  | `dev:<address>`           | nothing: only with `MYWORLD_DEV_LOGIN=1`, never on Cloud Run |
 
 A login is found by its subject, never by email, so it survives an address
 change at the provider. A login that is new joins the user of its email, or

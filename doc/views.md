@@ -14,13 +14,13 @@ this document is the design it starts, and the questions still open.
 
 ## What a view is
 
-| Field         | What                                                                 |
-|---------------|----------------------------------------------------------------------|
+| Field         | What                                                                                                                                            |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `name`        | the last part of its address: 1 to 60 lowercase letters, digits, `.`, `-`, `_`, starting with a letter or digit; unique among the owner's views |
-| `title`       | what the page says it is ("Mark's concerts"); the name when empty    |
-| `description` | a line or two shown above it                                         |
-| `datasets`    | which of the owner's data sets it shows (below)                      |
-| `access`      | `public` (anyone with the address); later `private` (see below)      |
+| `title`       | what the page says it is ("Mark's concerts"); the name when empty                                                                               |
+| `description` | a line or two shown above it                                                                                                                    |
+| `datasets`    | which of the owner's data sets it shows (below)                                                                                                 |
+| `access`      | `public` (anyone with the address); later `private` (see below)                                                                                 |
 
 It is a row of `shared_views` (migration 0018), owned by its user, deleted
 with them. Renaming a view changes its address: the old one stops working
@@ -61,21 +61,21 @@ chess board. In visitor mode:
 
 Owner's (signed in):
 
-| Call                              | What                                          |
-|-----------------------------------|-----------------------------------------------|
-| `GET /api/shared-views`           | your views, and the data sets a view can show |
-| `POST /api/shared-views`          | a new view (you need a username first)        |
-| `PUT /api/shared-views/<id>`      | change one                                    |
-| `DELETE /api/shared-views/<id>`   | delete one (its address stops working)        |
+| Call                            | What                                          |
+| ------------------------------- | --------------------------------------------- |
+| `GET /api/shared-views`         | your views, and the data sets a view can show |
+| `POST /api/shared-views`        | a new view (you need a username first)        |
+| `PUT /api/shared-views/<id>`    | change one                                    |
+| `DELETE /api/shared-views/<id>` | delete one (its address stops working)        |
 
 Visitor's (no sign-in needed):
 
-| Call                                              | What                                         |
-|---------------------------------------------------|----------------------------------------------|
-| `GET /view/<username>/<viewname>`                 | the page                                     |
-| `GET /api/views/<username>/<viewname>`            | the page's configuration: the vocabularies, whose view it is, its data sets |
+| Call                                              | What                                                                                                                  |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `GET /view/<username>/<viewname>`                 | the page                                                                                                              |
+| `GET /api/views/<username>/<viewname>`            | the page's configuration: the vocabularies, whose view it is, its data sets                                           |
 | `GET /api/views/<username>/<viewname>/data/<api>` | `GET /api/<api>` answered as the owner would see it, if `<api>` belongs to a data set the view enables; 404 otherwise |
-| `.../data/images/<id>?sig=...`                    | an image a row of the view shows, by the signed address the view gave it |
+| `.../data/images/<id>?sig=...`                    | an image a row of the view shows, by the signed address the view gave it                                              |
 
 The data endpoint does not have endpoints of its own: it finds the library
 endpoint `<api>` names and runs it as the owner, read only, after checking it
@@ -155,12 +155,12 @@ usernames, sorted) in the owner's answers only, never in a visitor's.
 
 **Who may open it.** `_visited` decides, after finding the view:
 
-| Visitor                          | A public view | A `users` view           |
-|----------------------------------|---------------|--------------------------|
-| not signed in                    | sees it       | is asked to sign in      |
-| signed in, the owner             | sees it       | sees it                  |
-| signed in, a member              | sees it       | sees it                  |
-| signed in, anyone else           | sees it       | 404 "no such view"       |
+| Visitor                | A public view | A `users` view      |
+| ---------------------- | ------------- | ------------------- |
+| not signed in          | sees it       | is asked to sign in |
+| signed in, the owner   | sees it       | sees it             |
+| signed in, a member    | sees it       | sees it             |
+| signed in, anyone else | sees it       | 404 "no such view"  |
 
 The visitor's account is `auth.current_user()` (the session; these routes
 are not `login_required`). It must be read *before* `api_visit_data` sets
