@@ -181,7 +181,7 @@ def api_runs() -> flask.Response:
         query = query.where(ImportRun.owner_id == flask.g.user.id)
     going = flask.g.db.execute(query.where(ImportRun.status.not_in(IMPORT_ENDED))).all()
     ended = flask.g.db.execute(query.where(ImportRun.status.in_(IMPORT_ENDED)).limit(RUNS_SHOWN)).all()
-    def shown(record, owner):
+    def shown(record: ImportRun, owner: User) -> dict[str, Any]:
         return importers.run_json(record, owner if admin else None)
     return flask.jsonify({
         "running": [shown(record, owner) for record, owner in going],
