@@ -161,11 +161,12 @@ def summary(title: str, lang: str = "en") -> dict[str, Any] | None:
     try:
         found: dict[str, Any] = json.loads(get(SUMMARY.format(lang=lang) + urllib.parse.quote(title.replace(" ", "_"))))
         found["lang"] = lang
-        return found
     except urllib.error.HTTPError as e:
         if e.code == 404:
             return None
         raise
+    else:
+        return found
 
 
 def file_name(image_url: str) -> str:
